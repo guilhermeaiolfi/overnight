@@ -12,7 +12,7 @@ class PDOAdapter {
       return $this->_connection;
     }
     try {
-      $this->_connection = new PDO($this->config['dsn'], $this->config['username'], $this->config['password']);
+      $this->_connection = new \PDO($this->config['dsn'], $this->config['username'], $this->config['password']);
     } catch(Exception $e) {
       die($e->getMessage());
     }

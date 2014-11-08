@@ -32,24 +32,24 @@ class Application {
     return $router;
   }
 
-  public function __construct () {
-    $this->injector = $injector = new Auryn\Provider(new Auryn\ReflectionPool);
+  public function __construct ($config_path) {
+    $this->injector = $injector = new \Auryn\Provider(new \Auryn\ReflectionPool);
     $injector->share($this);
     $injector->share($injector);
-    $injector->alias('View', 'Aura\View\View');
-    $injector->alias('Injector', 'Auryn\Provider');
-    $injector->alias('Router', 'Aura\Router\Router');
-    $injector->delegate('View', ['\Aura\View\ViewFactory', 'newInstance']);
+    $injector->alias('Injector', '\Auryn\Provider');
+    $injector->alias('Router', '\Aura\Router\Router');
+    $injector->alias('Container', '\ON\Container');
+    $injector->alias('Application', '\ON\Application');
+    $injector->alias('Renderer', '\ON\Renderer');
     $injector->delegate('Router', ['\Aura\Router\RouterFactory', 'newInstance']);
     // $injector->prepare('IModel', function($obj) {
     //   $obj->setA('porcaria');
     // });
-
-    $this->loadConfigFiles();
+    $this->loadConfigFiles($config_path);
 
     $router = $this->setupRouter($this->getConfig("routes"));
 
-    $injector->prepare('Container', function($obj) use ($router) {
+    $injector->prepare('\ON\Container', function($obj) use ($router) {
       $obj->setRouter($router);
     });
 
@@ -58,8 +58,8 @@ class Application {
     $injector->share($container);
   }
 
-  public function loadConfigFiles() {
-    $files = glob(__DIR__ . '/../../app/config/*.php', GLOB_BRACE);
+  public function loadConfigFiles($config_path) {
+    $files = glob($config_path . '*.php', GLOB_BRACE);
     $ignore_config = array('di');
     foreach($files as $file) {
       $content = require_once($file);
@@ -91,8 +91,18 @@ class Application {
     }
     return $current;
   }
-  public function setConfig($config) {
-    $this->config = $config;
+  public function setConfig($path, $value) {
+    $current = $this->config;
+    $p = strtok($path, '.');
+
+    while ($p !== false) {
+      if (!isset($current[$p])) {
+        $current[$p] = array();
+      }
+      $current[$p] = $current;
+      $p = strtok('.');
+    }
+    $current = $value;
   }
   public function dispatch($url) {
 
