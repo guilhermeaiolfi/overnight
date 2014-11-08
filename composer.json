@@ -1,0 +1,10 @@
+{
+    "require": {
+        "aura/router": "v2.1.1",
+        "aura/web": "v2.0.0",
+        "rdlowrey/Auryn": "v0.14.2"
+    },
+    "autoload": {
+      "classmap": ["src/"]
+    }
+}
