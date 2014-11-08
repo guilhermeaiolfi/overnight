@@ -5,6 +5,8 @@
         "rdlowrey/Auryn": "v0.14.2"
     },
     "autoload": {
-      "classmap": ["src/"]
+      "psr-4": {
+        "ON\\": "src/"
+      }
     }
 }
