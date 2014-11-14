@@ -35,7 +35,7 @@ class Application {
     return $router;
   }
 
-  public function __construct ($config_path) {
+  public function __construct ($config) {
     $this->injector = $injector = new \Auryn\Provider(new \Auryn\ReflectionPool);
     $injector->share($this);
     $injector->share($injector);
@@ -48,7 +48,11 @@ class Application {
     // $injector->prepare('IModel', function($obj) {
     //   $obj->setA('porcaria');
     // });
-    $this->loadConfigFiles($config_path);
+    if (is_array($config)) {
+      $this->config = $config;
+    } else {
+      $this->loadConfigFiles($config);
+    }
 
     $router = $this->setupRouter($this->getConfig("routes"));
 

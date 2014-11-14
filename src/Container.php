@@ -6,7 +6,7 @@ class Container {
   protected $application = null;
   public $request = null;
   public $response = null;
-  protected $router = null;
+  public $router = null;
   private $_models = array();
   public function __construct (Application $app) {
     $this->application = $app;

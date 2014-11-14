@@ -57,6 +57,14 @@ class Renderer
     $this->slots[$name] = $content;
   }
 
+  public function setAssign($name, $value) {
+    $this->assigns[$name] = $value;
+  }
+
+  public function &getAssign($name) {
+    return $this->assigns[$name];
+  }
+
   public function getTemplateContent($template) {
     extract($this->assigns, EXTR_REFS | EXTR_PREFIX_INVALID, '_');
 
