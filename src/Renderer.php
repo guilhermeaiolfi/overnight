@@ -30,14 +30,18 @@ class Renderer
   protected $slots = array();
   protected $layout = null;
 
-  public function __construct()
-  {
+  public function __construct() {
 
   }
 
-  public function setAttributes(&$attributes) {
+  public function setAttributes($attributes) {
     $this->attributes = $attributes;
   }
+
+  public function setAttributesByRef(&$attributes) {
+    $this->attributes =& $attributes;
+  }
+
 
   public function setAttribute($name, $value) {
     $this->attributes[$name] = $value;
@@ -50,7 +54,8 @@ class Renderer
     $this->basePath = $base_path;
   }
 
-  public function getAttribute($name, $default) {
+  public function getAttribute($name, $default = null) {
+    //print_r($attributes);
     return isset($this->attributes[$name])? $this->attributes[$name] : $default;
   }
 

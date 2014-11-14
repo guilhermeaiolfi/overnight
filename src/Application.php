@@ -7,10 +7,13 @@ class Application {
   protected $config = array();
   protected $router = null;
   protected $injector = null;
-  protected $container = null;
+  public $container = null;
 
   public function setupRouter($routes) {
     $router = $this->injector->make('Router');
+    if (!$routes) {
+      return $router;
+    }
     foreach ($routes as $name => $route) {
       $r = $router->add($name, $route["pattern"]);
       foreach ($route as $key => $values) {

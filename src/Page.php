@@ -12,14 +12,20 @@ class Page implements IPage {
   public function setAttribute($name, $content) {
     $this->attributes[$name] = $content;
   }
+  public function &getAttributes() {
+    return $this->attributes;
+  }
+  public function getAttribute($name, $default = null) {
+    return isset($this->attributes[$name])? $this->attributes[$name] : $default;
+  }
   public function setupView($layout_name, $params = null) {
 
     $app = $this->application;
     $layout_config = $app->getConfig('layouts.' . $layout_name);
 
     $view = $this->application->getInjector()->make('Renderer');
-    $view->setAttributes($this->attributes);
-    $view->setBasePath($app->getPath("base"));
+    $view->setAttributesByRef($this->attributes);
+    $view->setBasePath($app->getConfig("paths.base"));
     //$app->getPath("base") . $template);
     $slots = array();
     if (isset($layout_config["slots"])) {

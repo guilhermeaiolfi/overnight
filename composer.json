@@ -4,6 +4,9 @@
         "aura/web": "v2.0.0",
         "rdlowrey/Auryn": "v0.14.2"
     },
+    "require-dev": {
+        "phpunit/phpunit": "4.1.*"
+    },
     "autoload": {
       "psr-4": {
         "ON\\": "src/"
