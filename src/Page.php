@@ -2,21 +2,14 @@
 namespace ON;
 
 class Page implements IPage {
+  use \ON\AttributeHolder;
+
   protected $application = null;
   protected $container = null;
-  protected $attributes = array();
+
   public function __construct (Application $app, Container $container) {
     $this->application = $app;
     $this->container = $container;
-  }
-  public function setAttribute($name, $content) {
-    $this->attributes[$name] = $content;
-  }
-  public function &getAttributes() {
-    return $this->attributes;
-  }
-  public function getAttribute($name, $default = null) {
-    return isset($this->attributes[$name])? $this->attributes[$name] : $default;
   }
   public function setupView($layout_name, $params = null) {
 

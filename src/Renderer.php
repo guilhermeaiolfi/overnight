@@ -3,9 +3,8 @@ namespace ON;
 
 class Renderer
 {
+  use \ON\AttributeHolder;
   protected $basePath = "";
-  protected $attributes = array();
-
   /**
    * @var        string A string with the default template file extension,
    *                    including the dot.
@@ -34,29 +33,11 @@ class Renderer
 
   }
 
-  public function setAttributes($attributes) {
-    $this->attributes = $attributes;
-  }
-
-  public function setAttributesByRef(&$attributes) {
-    $this->attributes =& $attributes;
-  }
-
-
-  public function setAttribute($name, $value) {
-    $this->attributes[$name] = $value;
-  }
-
   public function setLayout($layout) {
     $this->layout = $layout;
   }
   public function setBasePath($base_path) {
     $this->basePath = $base_path;
-  }
-
-  public function getAttribute($name, $default = null) {
-    //print_r($attributes);
-    return isset($this->attributes[$name])? $this->attributes[$name] : $default;
   }
 
   /**
