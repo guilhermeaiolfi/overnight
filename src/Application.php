@@ -40,7 +40,7 @@ class Application {
     $injector->share($this);
     $injector->share($injector);
     $injector->alias('Injector', '\Auryn\Provider');
-    $injector->alias('Router', '\Aura\Router\Router');
+    $injector->alias('Router', '\ON\Router');
     $injector->alias('Container', '\ON\Container');
     $injector->alias('Application', '\ON\Application');
     $injector->alias('Renderer', '\ON\Renderer');
@@ -54,11 +54,17 @@ class Application {
       $this->loadConfigFiles($config);
     }
 
+    $self = $this;
+    $injector->prepare('\ON\Router', function($obj) use ($self) {
+      $obj->setApplication($self);
+    });
+
     $router = $this->setupRouter($this->getConfig("routes"));
 
     $injector->prepare('\ON\Container', function($obj) use ($router) {
       $obj->setRouter($router);
     });
+
 
     $container = $injector->make('Container');
     $this->container = $container;

@@ -49,6 +49,6 @@ class Container {
       $view_method = $view_method[1];
       $view->setAttributes($page->getAttributes());
     }
-    return $view->{$view_method . 'View'}();
+    return $view->{$view_method . 'View'}($request);
   }
 }

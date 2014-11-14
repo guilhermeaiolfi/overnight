@@ -12,7 +12,6 @@ class Page implements IPage {
     $this->container = $app->container;
   }
   public function setupView($layout_name, $params = null) {
-
     $app = $this->application;
     $layout_config = $app->getConfig('output_types.html.layouts.' . $layout_name);
     $renderer_name = isset($params['renderer'])? $params['renderer'] : $layout_config['renderer'];
@@ -29,6 +28,9 @@ class Page implements IPage {
     if (isset($layout_config["slots"])) {
       foreach($layout_config["slots"] as $slot_name => $slot_config) {
         if (is_array($slot_config)) {
+          if (!isset($slot_config["renderer"])) {
+            $slot_config["renderer"] = $renderer_name;
+          }
           $content = $this->container->runAction($slot_config, $this->container->request);
         }
         else {
