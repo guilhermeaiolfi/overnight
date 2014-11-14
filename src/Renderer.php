@@ -35,7 +35,7 @@ class Renderer
 
   }
 
-  public function setAttributes($attributes) {
+  public function setAttributes(&$attributes) {
     $this->attributes = $attributes;
   }
 
