@@ -17,7 +17,7 @@ class Page implements IPage {
     $renderer_name = isset($params['renderer'])? $params['renderer'] : $layout_config['renderer'];
     $renderer = $app->getConfig('output_types.html.renderers.' . $renderer_name);
 
-    $renderer_class = isset($renderer['class'])? $renderer['class'] : 'Renderer';
+    $renderer_class = isset($renderer['class'])? $renderer['class'] : '\ON\Renderer';
 
     $view = $this->application->getInjector()->make($renderer_class);
     $view->setAttributesByRef($this->attributes);

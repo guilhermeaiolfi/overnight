@@ -5,75 +5,47 @@ use \Aura\Router\RouterFactory;
 
 class Application {
   protected $config = array();
-  protected $router = null;
   protected $injector = null;
   public $context = null;
 
-  public function setupRouter($routes) {
-    $router = $this->injector->make('Router');
-    if (!$routes) {
-      return $router;
-    }
-    foreach ($routes as $name => $route) {
-      $r = $router->add($name, $route["pattern"]);
-      foreach ($route as $key => $values) {
-        if (in_array($key, array('tokens', 'values', 'server', 'accept')))
-        {
-          $method = 'add' . ucfirst($key);
-          $r->$method($values);
-          $route[$key] = null;
-        }
-        else if (in_array($key, array('secure', 'wildcard', 'routable', 'isMatchCallable', 'generateCallable')))
-        {
-          $method = 'set' . ucfirst($key);
-          $r->$method($values);
-          $route[$key] = null;
-        }
-      }
-      $r->addValues($route);
-    }
-    return $router;
-  }
-
   public function __construct ($config) {
-    $this->injector = $injector = new \Auryn\Provider(new \Auryn\ReflectionPool);
-    $injector->share($this);
-    $injector->share($injector);
-    $injector->alias('Injector', '\Auryn\Provider');
-    $injector->alias('Router', '\ON\Router');
-    $injector->alias('Context', '\ON\Context');
-    $injector->alias('Application', '\ON\Application');
-    $injector->alias('Renderer', '\ON\Renderer');
-    $injector->delegate('Router', ['\Aura\Router\RouterFactory', 'newInstance']);
-    // $injector->prepare('IModel', function($obj) {
-    //   $obj->setA('porcaria');
-    // });
     if (is_array($config)) {
       $this->config = $config;
     } else {
       $this->loadConfigFiles($config);
     }
+    $injector = $this->getConfig('di');
+
+    $this->injector = $injector = $injector? $injector : new \Auryn\Provider();
+    $injector->share($this);
+    $injector->share($injector);
 
     $self = $this;
     $injector->prepare('\ON\Router', function($obj) use ($self) {
       $obj->setApplication($self);
     });
 
-    $router = $this->setupRouter($this->getConfig("routes"));
+    $router = $this->injector->make('\ON\Router');
+    if ($routes = $this->getConfig('routes')) {
+      $router->addRoutes($routes);
+    }
 
     $injector->prepare('\ON\Context', function($obj) use ($router) {
       $obj->setRouter($router);
     });
 
-
-    $context = $injector->make('Context');
+    $context = $injector->make('\ON\Context');
     $this->context = $context;
     $injector->share($context);
   }
 
+  public function getRouter() {
+    return $this->context->getRouter();
+  }
+
   public function loadConfigFiles($config_path) {
     $files = glob($config_path . '*.php', GLOB_BRACE);
-    $ignore_config = array('di');
+    $ignore_config = array();
     foreach($files as $file) {
       $content = require_once($file);
       $name = basename($file, ".php");
