@@ -1,13 +1,13 @@
 <?php
 namespace ON;
 
-use Aura\Router\RouterFactory;
+use \Aura\Router\RouterFactory;
 
 class Application {
   protected $config = array();
   protected $router = null;
   protected $injector = null;
-  public $container = null;
+  public $context = null;
 
   public function setupRouter($routes) {
     $router = $this->injector->make('Router');
@@ -41,7 +41,7 @@ class Application {
     $injector->share($injector);
     $injector->alias('Injector', '\Auryn\Provider');
     $injector->alias('Router', '\ON\Router');
-    $injector->alias('Container', '\ON\Container');
+    $injector->alias('Context', '\ON\Context');
     $injector->alias('Application', '\ON\Application');
     $injector->alias('Renderer', '\ON\Renderer');
     $injector->delegate('Router', ['\Aura\Router\RouterFactory', 'newInstance']);
@@ -61,14 +61,14 @@ class Application {
 
     $router = $this->setupRouter($this->getConfig("routes"));
 
-    $injector->prepare('\ON\Container', function($obj) use ($router) {
+    $injector->prepare('\ON\Context', function($obj) use ($router) {
       $obj->setRouter($router);
     });
 
 
-    $container = $injector->make('Container');
-    $this->container = $container;
-    $injector->share($container);
+    $context = $injector->make('Context');
+    $this->context = $context;
+    $injector->share($context);
   }
 
   public function loadConfigFiles($config_path) {
@@ -120,7 +120,7 @@ class Application {
   public function dispatch($url) {
 
     // get the route based on the path and server
-    $route = $this->container->getRouter()->match($url, $_SERVER);
+    $route = $this->context->getRouter()->match($url, $_SERVER);
 
     if (! $route) {
         // no route object was returned
@@ -128,7 +128,7 @@ class Application {
         exit();
     }
 
-    $content = $this->container->runAction($route->params, $this->container->request);
+    $content = $this->context->runAction($route->params, $this->context->request);
     if ($content)
     {
       echo $content;

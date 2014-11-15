@@ -3,10 +3,10 @@ namespace ON;
 
 abstract class Model implements IModel
 {
-  protected $container = null;
+  protected $context = null;
   protected $application = null;
-  public function __construct(Application $app, Container $container) {
+  public function __construct(Application $app) {
     $this->application = $app;
-    $this->container = $container;
+    $this->context = $app->context;
   }
 }

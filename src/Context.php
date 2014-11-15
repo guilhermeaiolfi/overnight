@@ -2,7 +2,7 @@
 namespace ON;
 use Aura\Web\WebFactory;
 
-class Container {
+class Context {
   protected $application = null;
   public $request = null;
   public $response = null;

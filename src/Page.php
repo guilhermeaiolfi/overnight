@@ -5,23 +5,26 @@ class Page implements IPage {
   use \ON\AttributeHolder;
 
   protected $application = null;
-  protected $container = null;
+  protected $context = null;
 
   public function __construct (Application $app) {
     $this->application = $app;
-    $this->container = $app->container;
+    $this->context = $app->context;
   }
   public function setupView($layout_name, $params = null) {
     $app = $this->application;
     $layout_config = $app->getConfig('output_types.html.layouts.' . $layout_name);
     $renderer_name = isset($params['renderer'])? $params['renderer'] : $layout_config['renderer'];
     $renderer = $app->getConfig('output_types.html.renderers.' . $renderer_name);
-    $view = $this->application->getInjector()->make($renderer['class']);
+
+    $renderer_class = isset($renderer['class'])? $renderer['class'] : 'Renderer';
+
+    $view = $this->application->getInjector()->make($renderer_class);
     $view->setAttributesByRef($this->attributes);
     $view->setBasePath($app->getConfig("paths.base"));
     if ($assigns = $renderer['assigns']) {
       foreach($assigns as $key => $assign_key) {
-        $view->setAssign($assign_key, $this->container->$key);
+        $view->setAssign($assign_key, $this->context->$key);
       }
     }
     $slots = array();
@@ -31,7 +34,7 @@ class Page implements IPage {
           if (!isset($slot_config["renderer"])) {
             $slot_config["renderer"] = $renderer_name;
           }
-          $content = $this->container->runAction($slot_config, $this->container->request);
+          $content = $this->context->runAction($slot_config, $this->context->request);
         }
         else {
           $content = $view->getTemplateContent($slot_config);
@@ -42,11 +45,11 @@ class Page implements IPage {
     $view->setLayout($layout_config['file']);
     return $view;
   }
-  public function setContainer($container) {
-    $this->container = $container;
+  public function setContext($context) {
+    $this->context = $context;
   }
-  public function getContainer($container) {
-    return $this->container;
+  public function getContext($context) {
+    return $this->context;
   }
 };
 ?>
