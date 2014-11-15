@@ -6,7 +6,10 @@ use \Aura\Router\RouterFactory;
 class Application {
   protected $config = array();
   protected $injector = null;
-  public $context = null;
+  public $request = null;
+  public $response = null;
+  public $router = null;
+  private $_models = array();
 
   public function __construct ($config) {
     if (is_array($config)) {
@@ -25,22 +28,13 @@ class Application {
       $obj->setApplication($self);
     });
 
-    $router = $this->injector->make('\ON\Router');
+    $this->router = $this->injector->make('\ON\Router');
     if ($routes = $this->getConfig('routes')) {
-      $router->addRoutes($routes);
+      $this->router->addRoutes($routes);
     }
 
-    $injector->prepare('\ON\Context', function($obj) use ($router) {
-      $obj->setRouter($router);
-    });
+    $this->request = $injector->make('\ON\request\Request');
 
-    $context = $injector->make('\ON\Context');
-    $this->context = $context;
-    $injector->share($context);
-  }
-
-  public function getRouter() {
-    return $this->context->getRouter();
   }
 
   public function loadConfigFiles($config_path) {
@@ -89,10 +83,11 @@ class Application {
     }
     $current = $value;
   }
+
   public function dispatch($url) {
 
     // get the route based on the path and server
-    $route = $this->context->getRouter()->match($url, $_SERVER);
+    $route = $this->router->match($url, $_SERVER);
 
     if (! $route) {
         // no route object was returned
@@ -100,11 +95,49 @@ class Application {
         exit();
     }
 
-    $content = $this->context->runAction($route->params, $this->context->request);
+    $content = $this->runAction($route->params, $this->request);
     if ($content)
     {
       echo $content;
     }
+  }
+
+  public function getDbManager($name = 'default') {
+    $config = $this->getConfig("db" .  "." . "$name");
+    return $this->dbs[$name] = new $config["adapter_class"]($config);
+  }
+  public function getDbConnection ($name = 'default') {
+    return $this->getDbManager($name)->getConnection();
+  }
+  public function getModel($module, $class) {
+    $full_class = $module . "_" . $class;
+    if (isset($this->_models[$full_class]))
+    {
+      return $this->_models[$full_class];
+    }
+    return $this->_models[$full_class] = $this->getInjector()->make($full_class);
+  }
+  public function setRouter($router) {
+    $this->router = $router;
+  }
+  public function getRouter() {
+    return $this->router;
+  }
+  public function runAction($config, $request) {
+    $page_class = $config["module"] . "_" . $config["page"] . 'Page';
+
+     // instantiate the action class
+    $page = $this->getInjector()->make($page_class);
+    $request->mergeParameters($config);
+    $view_method = $page->{$config["action"] . 'Action'}($request);
+    $view = $page;
+    if (strpos($view_method, ":") !== FALSE) {
+      $view_method = explode(":", $view_method);
+      $view = $this->application->getInjector()->make($view_method[0] . 'Page');
+      $view_method = $view_method[1];
+      $view->setAttributes($page->getAttributes());
+    }
+    return $view->{$view_method . 'View'}($request);
   }
 }
 

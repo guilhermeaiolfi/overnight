@@ -5,11 +5,9 @@ class Page implements IPage {
   use \ON\AttributeHolder;
 
   protected $application = null;
-  protected $context = null;
 
   public function __construct (Application $app) {
     $this->application = $app;
-    $this->context = $app->context;
   }
   public function setupView($layout_name, $params = null) {
     $app = $this->application;
@@ -24,7 +22,7 @@ class Page implements IPage {
     $view->setBasePath($app->getConfig("paths.base"));
     if ($assigns = $renderer['assigns']) {
       foreach($assigns as $key => $assign_key) {
-        $view->setAssign($assign_key, $this->context->$key);
+        $view->setAssign($assign_key, $this->application->$key);
       }
     }
     $slots = array();
@@ -34,7 +32,7 @@ class Page implements IPage {
           if (!isset($slot_config["renderer"])) {
             $slot_config["renderer"] = $renderer_name;
           }
-          $content = $this->context->runAction($slot_config, $this->context->request);
+          $content = $this->application->runAction($slot_config, $this->application->request);
         }
         else {
           $content = $view->getTemplateContent($slot_config);
@@ -44,12 +42,6 @@ class Page implements IPage {
     }
     $view->setLayout($layout_config['file']);
     return $view;
-  }
-  public function setContext($context) {
-    $this->context = $context;
-  }
-  public function getContext($context) {
-    return $this->context;
   }
 };
 ?>

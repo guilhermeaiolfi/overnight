@@ -30,7 +30,7 @@ class ViewTest extends PHPUnit_Framework_TestCase
 
     $page = new \ON\Page($app);
     $view = $page->setupView('default');
-    $this->assertEquals($view->getAssign('ro'), $app->context->router);
+    $this->assertEquals($view->getAssign('ro'), $app->getRouter());
   }
 }
 
