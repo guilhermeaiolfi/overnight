@@ -9,6 +9,7 @@ class Router extends \Aura\Router\Router {
   }
   public function matchRequest($request) {
     $url = parse_url($request->server->get('REQUEST_URI'), PHP_URL_PATH);
+    $url = str_replace($url, $this->getBaseUrl(), "/");
     return $this->match($url, $request->server->all());
   }
   public function getBaseHref() {
@@ -26,15 +27,23 @@ class Router extends \Aura\Router\Router {
   public function isPortNecessary ($schema, $port) {
     return ($schema === "https" && $port != 443) || ($schema === 'http' && $port != 80);
   }
-  public function addRoute($name, $route) {
+
+  public function getBaseUrl () {
     $base = $this->application->request->getScriptName();
     $pos = strpos($base, "www/");
     $base = substr($base, 0, $pos);
 
     //$base = $this->application->getConfig("paths.base_url_subdir");
-    $base = substr($base, -1) == "/"? substr($base, 0, -1) : $base;
+    return $base = substr($base, -1) == "/"? substr($base, 0, -1) : $base;
+  }
 
-    $r = $this->add($name, $base . $route["pattern"]);
+  public function generate($name, $params = array()) {
+    return $this->getBaseUrl() . parent::generate($name, $params);
+  }
+
+  public function addRoute($name, $route) {
+
+    $r = $this->add($name, $route["pattern"]);
     foreach ($route as $key => $values) {
       if (in_array($key, array('tokens', 'values', 'server', 'accept')))
       {

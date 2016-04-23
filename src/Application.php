@@ -12,6 +12,7 @@ use Symfony\Component\Routing\RouteCollection;
 use Symfony\Component\Routing\Route;
 use Symfony\Component\Routing\Matcher\UrlMatcher;
 use Symfony\Component\Routing\RequestContext;
+use Symfony\Component\HttpKernel\HttpKernelInterface;
 
 use ON\controller\ControllerResolver;
 use ON\eventlisteners\RouterListener;
@@ -20,7 +21,7 @@ use ON\eventlisteners\SecurityListener;
 use ON\eventlisteners\ExceptionListener;
 
 
-class Application {
+class Application implements HttpKernelInterface {
   protected $config = array();
   protected $injector = null;
   public $request = null;
@@ -29,9 +30,9 @@ class Application {
   private $_models = array();
   protected $kernel = null;
   public $user = array();
+  public $dispatcher = null;
 
   public function __construct ($config) {
-    $this->request = $request = Request::createFromGlobals();
 
     if (is_array($config)) {
       $this->config = $config;
@@ -49,13 +50,33 @@ class Application {
       $obj->setApplication($self);
     });
 
-    $this->router = $this->injector->make('\ON\Router');
+    $this->router = $router = $this->injector->make('\ON\Router');
     if ($routes = $this->getConfig('routes')) {
       $this->router->addRoutes($routes);
     }
 
-    //$injector->make('\ON\request\Request');
+    $this->dispatcher = $dispatcher = $this->injector->make('EventDispatcher');
+    $injector->share($dispatcher);
 
+    $this->controller_resolver = $resolver = $this->injector->make('ControllerResolver');
+    $injector->share($resolver);
+
+
+    $dispatcher->addSubscriber(new RouterListener($router, new RequestStack()));
+    $dispatcher->addSubscriber(new ViewListener());
+
+    $user = $this->user;
+    $user["authenticated"] = false;
+
+    $dispatcher->addSubscriber(new SecurityListener($user));
+    $dispatcher->addSubscriber(new ExceptionListener($this));
+
+    $this->kernel = $this->injector->make('Kernel');
+  }
+
+  public function handle(Request $request, $type = HttpKernelInterface::MASTER_REQUEST, $catch = true) {
+    $this->request = $request;
+    return $this->kernel->handle($request);
   }
 
   public function loadConfigFiles($config_path) {
@@ -105,41 +126,6 @@ class Application {
     $current = $value;
   }
 
-  public function dispatch($url) {
-
-
-    $router = $this->router;
-
-    $dispatcher = new EventDispatcher();
-    $dispatcher->addSubscriber(new RouterListener($router, new RequestStack()));
-    $dispatcher->addSubscriber(new ViewListener());
-
-    $user = $this->user;
-    $user["authenticated"] = false;
-    $dispatcher->addSubscriber(new SecurityListener($user));
-    $dispatcher->addSubscriber(new ExceptionListener($this));
-
-    $resolver = new ControllerResolver($this->injector);
-
-    // $controller = $resolver->getController($request);
-    // $arguments = $resolver->getArguments($request, $controller);
-
-    // $response = call_user_func_array($controller, $arguments);
-
-    $this->kernel = new HttpKernel($dispatcher, $resolver);
-
-    $response = $this->kernel->handle($this->request);
-
-    $response->send();
-
-    $this->kernel->terminate($this->request, $response);
-    // $content = $this->runAction($route->params, $this->request);
-    // if ($content)
-    // {
-    //   echo $content;
-    // }
-  }
-
   public function getDbManager($name = 'default') {
     $config = $this->getConfig("db" .  "." . "$name");
     return $this->dbs[$name] = new $config["adapter_class"]($config);
@@ -182,6 +168,20 @@ class Application {
     $response = new Response();
     $response->setContent($content);
     return $response;
+  }
+  /**
+   * Handles the request and delivers the response.
+   *
+   * @param Request|null $request Request to process
+   */
+  public function run(Request $request = null)
+  {
+      if (null === $request) {
+          $request = Request::createFromGlobals();
+      }
+      $response = $this->handle($request);
+      $response->send();
+      $this->terminate($request, $response);
   }
 }
 
