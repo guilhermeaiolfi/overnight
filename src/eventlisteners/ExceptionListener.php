@@ -14,7 +14,6 @@ use Symfony\Component\HttpKernel\Event\GetResponseEvent;
 use Symfony\Component\HttpKernel\Event\FinishRequestEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Symfony\Component\HttpKernel\Exception\MethodNotAllowedHttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpFoundation\RequestStack;
 use Symfony\Component\Routing\Exception\MethodNotAllowedException;
 use Symfony\Component\Routing\Exception\ResourceNotFoundException;
@@ -28,6 +27,7 @@ use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpKernel\Event\FilterControllerEvent;
 use Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException;
 use Symfony\Component\HttpKernel\Event\GetResponseForExceptionEvent;
+use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 
 class ExceptionListener implements EventSubscriberInterface
@@ -44,6 +44,12 @@ class ExceptionListener implements EventSubscriberInterface
         $app = $this->app;
         if ($event->getException() instanceof AccessDeniedHttpException) {
             $event->setResponse(new RedirectResponse($app->router->generate("login")));
+        }
+        else if ($event->getException() instanceof NotFoundHttpException) {
+            $response = new Response();
+            $response->setStatusCode(404);
+            $response->setContent("Not found");
+            $event->setResponse($response);
         }
     }
 
