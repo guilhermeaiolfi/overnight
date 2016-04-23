@@ -3,6 +3,23 @@ namespace ON;
 
 use \Aura\Router\RouterFactory;
 
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\RequestStack;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\HttpKernel\HttpKernel;
+use Symfony\Component\EventDispatcher\EventDispatcher;
+use Symfony\Component\Routing\RouteCollection;
+use Symfony\Component\Routing\Route;
+use Symfony\Component\Routing\Matcher\UrlMatcher;
+use Symfony\Component\Routing\RequestContext;
+
+use ON\controller\ControllerResolver;
+use ON\eventlisteners\RouterListener;
+use ON\eventlisteners\ViewListener;
+use ON\eventlisteners\SecurityListener;
+use ON\eventlisteners\ExceptionListener;
+
+
 class Application {
   protected $config = array();
   protected $injector = null;
@@ -10,8 +27,12 @@ class Application {
   public $response = null;
   public $router = null;
   private $_models = array();
+  protected $kernel = null;
+  public $user = array();
 
   public function __construct ($config) {
+    $this->request = $request = Request::createFromGlobals();
+
     if (is_array($config)) {
       $this->config = $config;
     } else {
@@ -33,7 +54,7 @@ class Application {
       $this->router->addRoutes($routes);
     }
 
-    $this->request = $injector->make('\ON\request\Request');
+    //$injector->make('\ON\request\Request');
 
   }
 
@@ -86,20 +107,37 @@ class Application {
 
   public function dispatch($url) {
 
-    // get the route based on the path and server
-    $route = $this->router->match($url, $_SERVER);
 
-    if (! $route) {
-        // no route object was returned
-        echo "No application route was found for that URL path.";
-        exit();
-    }
+    $router = $this->router;
 
-    $content = $this->runAction($route->params, $this->request);
-    if ($content)
-    {
-      echo $content;
-    }
+    $dispatcher = new EventDispatcher();
+    $dispatcher->addSubscriber(new RouterListener($router, new RequestStack()));
+    $dispatcher->addSubscriber(new ViewListener());
+
+    $user = $this->user;
+    $user["authenticated"] = false;
+    $dispatcher->addSubscriber(new SecurityListener($user));
+    $dispatcher->addSubscriber(new ExceptionListener($this));
+
+    $resolver = new ControllerResolver($this->injector);
+
+    // $controller = $resolver->getController($request);
+    // $arguments = $resolver->getArguments($request, $controller);
+
+    // $response = call_user_func_array($controller, $arguments);
+
+    $this->kernel = new HttpKernel($dispatcher, $resolver);
+
+    $response = $this->kernel->handle($this->request);
+
+    $response->send();
+
+    $this->kernel->terminate($this->request, $response);
+    // $content = $this->runAction($route->params, $this->request);
+    // if ($content)
+    // {
+    //   echo $content;
+    // }
   }
 
   public function getDbManager($name = 'default') {
@@ -124,20 +162,26 @@ class Application {
     return $this->router;
   }
   public function runAction($config, $request) {
-    $page_class = $config["module"] . "_" . $config["page"] . 'Page';
+    if (is_array($config)) {
+      $page_class = $config["module"] . "_" . $config["page"] . 'Page';
+       // instantiate the action class
+      $page = $this->getInjector()->make($page_class);
+      $request->attributes->add(array("_module" => $config["module"],
+                                      "_action" => $config["action"],
+                                      "_page" => $config["page"]));
 
-     // instantiate the action class
-    $page = $this->getInjector()->make($page_class);
-    $request->mergeParameters($config);
-    $view_method = $page->{$config["action"] . 'Action'}($request);
-    $view = $page;
-    if (strpos($view_method, ":") !== FALSE) {
-      $view_method = explode(":", $view_method);
-      $view = $this->application->getInjector()->make($view_method[0] . 'Page');
-      $view_method = $view_method[1];
-      $view->setAttributes($page->getAttributes());
+      return $this->kernel->handle($request);
     }
-    return $view->{$view_method . 'View'}($request);
+
+
+    ob_start();
+    include $config;
+    $content = ob_get_contents();
+    ob_end_clean();
+
+    $response = new Response();
+    $response->setContent($content);
+    return $response;
   }
 }
 

@@ -1,6 +1,8 @@
 <?php
 namespace ON;
 
+use Symfony\Component\HttpFoundation\Request;
+
 class Page implements IPage {
   use \ON\AttributeHolder;
 
@@ -8,6 +10,9 @@ class Page implements IPage {
 
   public function __construct (Application $app) {
     $this->application = $app;
+  }
+  public function isSecure() {
+    return false;
   }
   public function setupView($layout_name, $params = null) {
     $app = $this->application;
@@ -32,7 +37,9 @@ class Page implements IPage {
           if (!isset($slot_config["renderer"])) {
             $slot_config["renderer"] = $renderer_name;
           }
-          $content = $this->application->runAction($slot_config, $this->application->request);
+          $request = new Request();
+          $response = $this->application->runAction($slot_config, $request);
+          $content = $response->getContent();
         }
         else {
           $content = $view->getTemplateContent($slot_config);
