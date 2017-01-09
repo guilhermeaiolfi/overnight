@@ -1,9 +1,9 @@
 <?php
-namespace ON;
+namespace ON\view;
 
 class Renderer
 {
-  use \ON\AttributeHolder;
+  use \ON\common\AttributeHolder;
   protected $basePath = "";
   /**
    * @var        string A string with the default template file extension,
@@ -40,14 +40,6 @@ class Renderer
     $this->basePath = $base_path;
   }
 
-  /**
-   * Get the template file extension
-   *
-   * @return     string The extension, including a leading dot.
-   *
-   * @author     David Zülke <dz@bitxtender.com>
-   * @since      0.11.0
-   */
   public function getDefaultExtension()
   {
     return $this->defaultExtension;
@@ -124,6 +116,5 @@ class Renderer
 
     return $content;
   }
-
 }
 ?>

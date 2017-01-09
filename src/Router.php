@@ -1,23 +1,31 @@
 <?php
 namespace ON;
 
-class Router extends \Aura\Router\Router {
+use Aura\Router\RouterContainer;
+
+
+class Router extends \Aura\Router\RouterContainer {
   protected $application = null;
+  protected $routerContainer = null;
+  protected $matcher = null;
+  public $map = null;
 
   public function setApplication($app) {
     $this->application = $app;
   }
   public function matchRequest($request) {
-    $url = parse_url($request->server->get('REQUEST_URI'), PHP_URL_PATH);
-    $url = str_replace($url, $this->getBaseUrl(), "/");
-    return $this->match($url, $request->server->all());
+    //$url = /' . ltrim($_SERVER('REQUEST_URI'), PHP_URL_PATH);
+    //$url = str_replace($url, $this->getBaseUrl(), "/");
+    //echo $request->getUri()->getPath();exit;
+    $uri = '/' . ltrim($request->getUri()->getPath(), '/');
+    return $this->getMatcher()->match($request);
   }
   public function getBaseHref() {
-    $basePath = str_replace('\\', '/', $this->application->getConfig("paths.base_url_subdir"));
+    $basePath = str_replace('\\', '/', $this->application->config->get("paths.base_url_subdir"));
     $request = $this->application->request;
-    $port = $request->getPort();
-    $scheme = $request->isSecure()? "https" : "http";
-    $urlHost = preg_replace('/\]\:' . preg_quote($port, '/') . '$/', '', $request->getHost()) . ($this->isPortNecessary($scheme, $port) ? ':' . $port: '');
+    $port = $request->getUri()->getPort();
+    $scheme = $request->getUri()->getScheme()? "https" : "http";
+    $urlHost = preg_replace('/\]\:' . preg_quote($port, '/') . '$/', '', $request->getUri()->getHost()) . ($this->isPortNecessary($scheme, $port) ? ':' . $port: '');
     if(substr($basePath, -1, 1) != '/') {
       $basePath .= '/';
     }
@@ -29,7 +37,8 @@ class Router extends \Aura\Router\Router {
   }
 
   public function getBaseUrl () {
-    $base = $this->application->request->getScriptName();
+    $request = \Zend\Diactoros\ServerRequestFactory::fromGlobals($_SERVER);
+    $base = $request->getServerParams()['SCRIPT_NAME'];
     $pos = strpos($base, "www/");
     $base = substr($base, 0, $pos);
 
@@ -41,24 +50,23 @@ class Router extends \Aura\Router\Router {
     return $this->getBaseUrl() . parent::generate($name, $params);
   }
 
-  public function addRoute($name, $route) {
-
-    $r = $this->add($name, $route["pattern"]);
-    foreach ($route as $key => $values) {
+  public function addRoute($name, $params) {
+    $route = $this->getMap()->route($name, $params["pattern"]);
+    foreach ($params as $key => $values) {
       if (in_array($key, array('tokens', 'values', 'server', 'accept')))
       {
-        $method = 'add' . ucfirst($key);
-        $r->$method($values);
-        $route[$key] = null;
+        $method = $key;
+        $route->$method($values);
+        $params[$key] = null;
       }
       else if (in_array($key, array('secure', 'wildcard', 'routable', 'isMatchCallable', 'generateCallable')))
       {
-        $method = 'set' . ucfirst($key);
-        $r->$method($values);
-        $route[$key] = null;
+        $method = $key;
+        $route->$method($values->toArray());
+        $params[$key] = null;
       }
     }
-    $r->addValues($route);
+    $route->extras($params);
   }
   public function addRoutes($routes) {
     if (!$routes) {

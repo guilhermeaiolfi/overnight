@@ -1,5 +1,5 @@
 <?php
-namespace ON;
+namespace ON\common;
 trait AttributeHolder {
   protected $attributes = array();
 
@@ -23,6 +23,5 @@ trait AttributeHolder {
   public function &getAttributes() {
     return $this->attributes;
   }
-
 }
 ?>
