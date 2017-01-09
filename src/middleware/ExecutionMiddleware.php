@@ -12,7 +12,7 @@ class ExecutionMiddleware
 
     public function __invoke ($request, $response, $next)
     {
-        $routeResult = $request->getAttribute("_route", false);
+        $routeResult = $request->getAttribute("ON:route", false);
         if (!$routeResult) {
             return $next($request, $response);
         }

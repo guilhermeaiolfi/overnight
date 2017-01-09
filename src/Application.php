@@ -113,7 +113,7 @@ class Application {
   public function runAction($config, $request) {
     if (is_array($config)) {
       $route = $this->getRouter()->map->getRoute($config["route"]);
-      $request = $request->withAttribute("_route", $route);
+      $request = $request->withAttribute("ON:route", $route);
 
       return $this->run($request);
     }
