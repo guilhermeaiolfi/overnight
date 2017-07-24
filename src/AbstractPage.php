@@ -37,6 +37,10 @@ abstract class AbstractPage implements IPage {
     return 'Error';
   }
 
+  public function validate () {
+    return true;
+  }
+
   public function render($layout_name, $template_name, $data = null, $params = []) {
     // if nothing is passed, use the attributes of the page instance
     if (!isset($data)) {
