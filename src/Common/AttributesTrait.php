@@ -45,7 +45,7 @@ trait AttributesTrait {
     return isset($this->attributes[$name]);
   }
 
-  public function &getAttribute($name, $default = null) {
+  public function getAttribute($name, $default = null) {
     return !$this->hasAttribute($name)? $default : $this->attributes[$name];
   }
 }

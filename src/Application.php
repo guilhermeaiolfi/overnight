@@ -19,6 +19,7 @@ use Zend\Expressive\UnexpectedValueException;
 use Zend\Expressive\Emitter\EmitterStack;
 use Zend\Expressive\InvalidArgumentException;
 use ON\Middleware\RouteMiddleware;
+use ON\Router\StatefulRouterInterface;
 
 class Application extends \Zend\Expressive\Application
 {
@@ -88,7 +89,7 @@ class Application extends \Zend\Expressive\Application
      *     invoked.
      */
     public function __construct(
-        Router\RouterInterface $router,
+        StatefulRouterInterface $router,
         ContainerInterface $container = null,
         DelegateInterface $defaultDelegate = null,
         EmitterInterface $emitter = null
@@ -240,7 +241,7 @@ class Application extends \Zend\Expressive\Application
      */
     public function pipeRoutingMiddleware()
     {
-        $this->pipe(new RouteMiddleware($this->router, $this->responsePrototype));
+        $this->pipe(new RouteMiddleware($this->router, $this->responsePrototype, $this->container->get(\ON\Context::class)));
     }
 
 

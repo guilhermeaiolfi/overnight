@@ -9,7 +9,9 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
+use ON\Router\StatefulRouterInterface;
 use Zend\Expressive\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
+use ON\Context;
 
 /**
  * Extends the Default routing middleware because it needs to skip the matcher if
@@ -31,14 +33,17 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      */
     private $router;
 
+    protected $context;
+
     /**
      * @param RouterInterface $router
      * @param ResponseInterface $responsePrototype
      */
-    public function __construct(RouterInterface $router, ResponseInterface $responsePrototype)
+    public function __construct(StatefulRouterInterface $router, ResponseInterface $responsePrototype, Context $context = null)
     {
         $this->router = $router;
         $this->responsePrototype = $responsePrototype;
+        $this->context = $context;
     }
 
     /**
@@ -64,9 +69,14 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
 
         // Inject the actual route result, as well as individual matched parameters.
         $request = $request->withAttribute(RouteResult::class, $result);
+
         foreach ($result->getMatchedParams() as $param => $value) {
             $request = $request->withAttribute($param, $value);
         }
+
+        $this->context->setAttribute(RouteResult::class, $result);
+        $this->context->setAttribute("REQUEST", $request);
+        $this->router->addRouteResult($result);
 
         return $delegate->process($request);
     }

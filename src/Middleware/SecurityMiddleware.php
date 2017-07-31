@@ -15,6 +15,7 @@ use Zend\Expressive\Helper\UrlHelper;
 use Zend\Authentication\AuthenticationServiceInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
+use ON\Router\StatefulRouterInterface;
 
 class SecurityMiddleware implements ServerMiddlewareInterface
 {
@@ -40,13 +41,11 @@ class SecurityMiddleware implements ServerMiddlewareInterface
     public function __construct(
         AuthenticationServiceInterface $auth,
         ContainerInterface $container = null,
-        RouterInterface $router,
-        UrlHelper $urlHelper
+        StatefulRouterInterface $router
     ) {
         $this->auth = $auth;
         $this->container = $container;
         $this->router = $router;
-        $this->urlHelper = $urlHelper;
     }
 
     /**
@@ -70,7 +69,7 @@ class SecurityMiddleware implements ServerMiddlewareInterface
 
         if ($page->isSecure() && !$this->auth->hasIdentity()) {
             //throw new Exception('User has no permittion!');
-            return new RedirectResponse($this->urlHelper->generate("login"));
+            return new RedirectResponse($this->router->gen("login"));
         }
         try {
             return $delegate->process($request);

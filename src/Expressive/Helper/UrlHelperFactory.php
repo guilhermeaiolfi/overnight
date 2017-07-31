@@ -25,7 +25,7 @@ class UrlHelperFactory
         }
         $urlHelper = new UrlHelper($container->get(RouterInterface::class));
         $config = $container->get('config');
-        $urlHelper->setBasePath($config["los_basepath"]);
+        $urlHelper->setBasePath($config["paths"]["basepath"]);
         return $urlHelper;
     }
 }
