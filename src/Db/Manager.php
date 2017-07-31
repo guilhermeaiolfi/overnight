@@ -13,6 +13,22 @@ class Manager {
     $this->c = $c;
   }
 
+  public function getDatabaseConnection ($name = null) {
+    $database = $this->getDatabase($name);
+    if ($database) {
+      return $database->getDriver()->getConnection();
+    }
+    return null;
+  }
+
+  public function getDatabaseResource ($name = null) {
+    $conn = $this->getDatabaseConnection($name);
+    if ($conn) {
+      return $conn->getResource();
+    }
+    return null;
+  }
+
   public function getDatabase ($name = null) {
     $config = $this->c->get("config");
     if (!isset($name)) {
@@ -34,8 +50,8 @@ class Manager {
       // register the connection in the DataCollector of DebugBar
       // for debugging purposes
       if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
-          $pdo = $adapter->getDriver()->getConnection();
-          $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($pdo->getResource());
+          $connection = $adapter->getDriver()->getConnection();
+          $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection->getResource());
           $debugbar = $this->c->get(\DebugBar\DebugBar::class);
           $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
           if (!$collector) {
