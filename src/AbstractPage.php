@@ -17,11 +17,13 @@ abstract class AbstractPage implements IPage {
 
   protected $container = null;
 
+  protected $default_template_name;
+
   public function __construct (ContainerInterface $c) {
     $this->container = $c;
   }
 
-  public function isSecure() {
+  public function isSecure () {
     return false;
   }
 
@@ -41,14 +43,38 @@ abstract class AbstractPage implements IPage {
     return true;
   }
 
-  public function render($layout_name, $template_name, $data = null, $params = []) {
+  public function getDefaultTemplateName () {
+    return $this->default_template_name;
+  }
+
+  public function setDefaultTemplateName ($template_name) {
+    $this->default_template_name = $template_name;
+  }
+
+  public function render($layout_name = null, $template_name = null, $data = null, $params = []) {
+
+    $container = $this->container;
+    $config = $this->container->get('config');
+
     // if nothing is passed, use the attributes of the page instance
     if (!isset($data)) {
       $data = $this->getAttributes();
     }
 
-    $container = $this->container;
-    $config = $this->container->get('config');
+    // get the page method executed to determine the template name
+    if (!isset($template_name)) {
+      $template_name = $this->getDefaultTemplateName();
+      if (!isset($template_name)) {
+        throw new \Exception("No template name set.");
+      }
+    }
+
+    if (!isset($layout_name)) {
+      $layout_name = isset($config["output_types"]["html"]["default"])? $config["output_types"]["html"]["default"] : 'default';
+    }
+    if (!isset($config['output_types']['html']['layouts'][$layout_name])) {
+      throw \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
+    }
     $layout_config = $config['output_types']['html']['layouts'][$layout_name];
 
     $renderer_name = isset($params['renderer'])? $params['renderer'] : $layout_config['renderer'];

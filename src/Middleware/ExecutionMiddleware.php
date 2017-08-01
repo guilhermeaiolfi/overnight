@@ -37,7 +37,7 @@ class ExecutionMiddleware implements ServerMiddlewareInterface
 
         $action_response = $this->executor->execute($action->getExecutable(), [$request, $delegate]);
 
-        return $this->buildView($action->getPageInstance(), $action_response, $request, $delegate);
+        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $delegate);
     }
 }
 ?>
