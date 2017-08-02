@@ -16,15 +16,15 @@ class Manager {
   public function getDatabaseConnection ($name = null) {
     $database = $this->getDatabase($name);
     if ($database) {
-      return $database->getDriver()->getConnection();
+      return $database->getConnection();
     }
     return null;
   }
 
   public function getDatabaseResource ($name = null) {
-    $conn = $this->getDatabaseConnection($name);
-    if ($conn) {
-      return $conn->getResource();
+    $database = $this->getDatabase($name);
+    if ($database) {
+      return $database->getResource();
     }
     return null;
   }
@@ -39,37 +39,33 @@ class Manager {
       }
     }
 
-    $adapter = null;
+    $database = null;
     if (isset($this->instances[$name])) {
-      $adapter = $this->instances[$name];
+      return  $this->instances[$name];
+    }
+    $db_config = $config["db"]["databases"][$name];
+    $database_class = null;
+    if (isset($db_config["class"])) {
+      $database_class = $db_config["class"];
     } else {
-      $db_config = $config["db"]["adapters"][$name];
-      $adapter_class = $this->getAdapterClass($name);
-      $adapter = new $adapter_class($db_config);
-
-      // register the connection in the DataCollector of DebugBar
-      // for debugging purposes
-      if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
-          $connection = $adapter->getDriver()->getConnection();
-          $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection->getResource());
-          $debugbar = $this->c->get(\DebugBar\DebugBar::class);
-          $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
-          if (!$collector) {
-            $collector = new \DebugBar\DataCollector\PDO\PDOCollector();
-            $debugbar->addCollector($collector);
-          }
-          $collector->addConnection($pdo, $name);
-      }
-      $this->instances[$name] = $adapter;
+      throw new \Exception ("There is no \"class\" defined for " . $name . " database configuration");
     }
 
-    return $adapter;
-  }
+    $database = new $database_class($name, $db_config, $this->c);
 
-  protected function getAdapterClass ($name) {
-    $config = $this->c->get("config");
-    $default_class = isset($config["db"]["default_class"])? $config["db"]["default_class"] : Adapter::class;
-
-    return isset($config["db"]["adapters"][$name]) && isset($config["db"]["adapters"][$name]["class"])? $config["db"]["adapters"][$name]["class"] : $default_class;
+    /*// register the connection in the DataCollector of DebugBar
+    // for debugging purposes
+    if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
+        $connection = $database->getConnection();
+        $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection->getResource());
+        $debugbar = $this->c->get(\DebugBar\DebugBar::class);
+        $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
+        if (!$collector) {
+          $collector = new \DebugBar\DataCollector\PDO\PDOCollector();
+          $debugbar->addCollector($collector);
+        }
+        $collector->addConnection($pdo, $name);
+    }*/
+    return $this->instances[$name] = $database;
   }
 }
