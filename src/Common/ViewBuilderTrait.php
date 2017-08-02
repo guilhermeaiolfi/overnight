@@ -19,11 +19,11 @@ trait ViewBuilderTrait {
 
       // sets the adefault template name is case the developer whats to use a convention
       // to $this->render() without any parameters
-      $view->setDefaultTemplateName(strtolower(explode("\\", get_class($view))[0] . "::" . $action_name . "-" . $view_method));
+      $path = explode("\\", get_class($view));
+      $view->setDefaultTemplateName(strtolower($path[0] . "::" . str_replace("Page", "", array_pop($path)) . "-" . $action_name . "-" . $view_method));
 
       return $view->{$view_method . 'View'}($request, $delegate);
     }
-    echo $action_name;exit;
     // in case it is something else, returns the object
     // it could be a redirect or response object
     return $response;
