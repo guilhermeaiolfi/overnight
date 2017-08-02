@@ -13,6 +13,7 @@ use ON\Router\RouterInterface as ONRouterInterface;
 use Zend\Expressive\Router\RouterInterface as ZendRouterInterface;
 use Zend\Diactoros\ServerRequest;
 use ON\Context;
+use Zend\Expressive\Router\Exception;
 use Zend\Expressive\Router\RouterInterface;
 
 class Router implements StatefulRouterInterface {
@@ -77,7 +78,7 @@ class Router implements StatefulRouterInterface {
 
     $request = $this->context->getAttribute("REQUEST");
 
-    if ($routeName === null || $result === false) {
+    if ($routeName === null && $result === null) {
         // get current URL
         throw new Exception\RuntimeException(
             'Attempting to use matched result when none was injected; aborting'
@@ -97,7 +98,7 @@ class Router implements StatefulRouterInterface {
 
       $params = $result->getMatchedParams();
 
-      $queryParams = array_key_diff($routeParams, $params);
+      $queryParams = array_diff_key($routeParams, $params);
 
       $path = $this->router->generateUri($name, $params, $routerOptions);
       if (count($queryParams) > 0) {
