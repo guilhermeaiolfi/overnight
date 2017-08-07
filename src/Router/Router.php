@@ -68,15 +68,20 @@ class Router implements StatefulRouterInterface {
     $default_opts = [
       "relative" => true,
       "fragment" => null,
-      "absolute" => false
+      "absolute" => false,
+      "port"    =>  80,
+      "scheme"  => "http"
     ];
 
     $basepath = $this->getBasePath();
+
     $options = array_merge($default_opts, $options);
 
     $result = $this->getFirstRouteResult();
 
     $request = $this->context->getAttribute("REQUEST");
+
+    $uri = $request->getUri();
 
     if ($routeName === null && $result === null) {
         // get current URL
@@ -100,6 +105,8 @@ class Router implements StatefulRouterInterface {
 
       $queryParams = array_diff_key($routeParams, $params);
 
+      $params = array_merge($params, $routeParams);
+
       $path = $this->router->generateUri($name, $params, $routerOptions);
       if (count($queryParams) > 0) {
         return $path .= '?' . http_build_query($queryParams);
@@ -122,14 +129,20 @@ class Router implements StatefulRouterInterface {
       $result = $this->match(new ServerRequest([], [], $path));
       $params = $result->getMatchedParams();
     } catch (\Exception $e) {
-      $path = $routeName;
+      $path = $this->getBasePath() . "/" . $routeName;
       $params = [];
     }
 
+    $uri = $request->getUri()->withPath($path);
+
     $queryParams = array_diff_key($routeParams, $params);
+
     // Append query parameters if there are any
     if (count($queryParams) > 0) {
-      $path .= '?' . http_build_query($queryParams);
+      //$path .= '?' . http_build_query($queryParams);
+      $uri = $uri->withQuery(http_build_query($queryParams));
+    } else {
+      $uri = $uri->withQuery('');
     }
 
     // Append the fragment identifier
@@ -137,18 +150,27 @@ class Router implements StatefulRouterInterface {
       if (! preg_match(self::FRAGMENT_IDENTIFIER_REGEX, $options["fragment"])) {
         throw new InvalidArgumentException('Fragment identifier must conform to RFC 3986', 400);
       }
-
-      $path .= '#' . $options["fragment"];
+      //$path .= '#' . $options["fragment"];
+      $uri = $uri->withFragment($options["fragment"]);
     }
 
-    $uri = "";
-    if ($options["absolute"]) {
-      $uri = $request->getUri()->withPath('');
+
+    if ($options["scheme"] != "http") {
+      $uri = $uri->withScheme($options["scheme"]);
+    }
+    if ($options["port"] != 80) {
+      $uri = $uri->withPort($options["port"]);
+    }
+
+    if (!$options["absolute"] || $options["scheme"] == "http" || $options["port"] == 80) {
+      $uri = $uri->withHost("")->withScheme('')->withPort(80);
     }
 
     $uri = (string) $uri;
 
-    return $uri . $path;
+    return $uri;
+
+
   }
 
   protected function mergeParams($route, RouteResult $result, array $params)
