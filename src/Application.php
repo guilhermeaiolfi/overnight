@@ -241,7 +241,7 @@ class Application extends \Zend\Expressive\Application
      */
     public function pipeRoutingMiddleware()
     {
-        $this->pipe(new RouteMiddleware($this->router, $this->responsePrototype, $this->container->get(\ON\Context::class)));
+        $this->pipe(new RouteMiddleware($this->router, $this->responsePrototype, $this->container->get(\ON\Context::class), $this->container));
     }
 
 

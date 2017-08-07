@@ -35,15 +35,18 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
 
     protected $context;
 
+    protected  $container;
+
     /**
      * @param RouterInterface $router
      * @param ResponseInterface $responsePrototype
      */
-    public function __construct(StatefulRouterInterface $router, ResponseInterface $responsePrototype, Context $context = null)
+    public function __construct(StatefulRouterInterface $router, ResponseInterface $responsePrototype, Context $context = null, $container = null)
     {
         $this->router = $router;
         $this->responsePrototype = $responsePrototype;
         $this->context = $context;
+        $this->container = $container;
     }
 
     /**
@@ -65,6 +68,13 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
                     ->withHeader('Allow', implode(',', $result->getAllowedMethods()));
             }
             return $delegate->process($request);
+        }
+
+        if ($options = $result->getMatchedRoute()->getOptions()) {
+            foreach ($options["callbacks"] as $callback) {
+                $callback = $this->container->get($callback);
+                $result = $callback->onMatched($result);
+            }
         }
 
         // Inject the actual route result, as well as individual matched parameters.
