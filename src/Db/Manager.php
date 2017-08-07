@@ -53,11 +53,12 @@ class Manager {
 
     $database = new $database_class($name, $db_config, $this->c);
 
-    /*// register the connection in the DataCollector of DebugBar
+    // register the connection in the DataCollector of DebugBar
     // for debugging purposes
     if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
-        $connection = $database->getConnection();
-        $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection->getResource());
+      $connection = $database->getResource();
+      if ($connection instanceof \PDO) {
+        $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection);
         $debugbar = $this->c->get(\DebugBar\DebugBar::class);
         $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
         if (!$collector) {
@@ -65,7 +66,8 @@ class Manager {
           $debugbar->addCollector($collector);
         }
         $collector->addConnection($pdo, $name);
-    }*/
+      }
+    }
     return $this->instances[$name] = $database;
   }
 }
