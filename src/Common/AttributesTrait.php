@@ -48,5 +48,9 @@ trait AttributesTrait {
   public function getAttribute($name, $default = null) {
     return !$this->hasAttribute($name)? $default : $this->attributes[$name];
   }
+
+  public function mergeAttributes ($attributes = []) {
+    $this->attributes = array_merge($this->attributes, $attributes);
+  }
 }
 ?>
