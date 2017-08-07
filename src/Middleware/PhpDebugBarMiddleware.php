@@ -12,7 +12,6 @@ use PhpMiddleware\PhpDebugBar\PhpDebugBarMiddleware as DebugBarMiddleware;
  */
 class PhpDebugBarMiddleware extends DebugBarMiddleware
 {
-
     public function process(ServerRequestInterface $request, DelegateInterface $delegate)
     {
         if ($request->getAttribute("PARENT-REQUEST")) {
