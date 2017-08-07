@@ -73,7 +73,7 @@ abstract class AbstractPage implements IPage {
       $layout_name = isset($config["output_types"]["html"]["default"])? $config["output_types"]["html"]["default"] : 'default';
     }
     if (!isset($config['output_types']['html']['layouts'][$layout_name])) {
-      throw \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
+      throw new \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
     }
     $layout_config = $config['output_types']['html']['layouts'][$layout_name];
 
