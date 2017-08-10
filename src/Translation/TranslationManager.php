@@ -347,11 +347,9 @@ class TranslationManager implements TranslationManagerInterface
     }
 
     $domainExtra = '';
-    $translator = $this->getTranslators($domain, $domainExtra, self::CURRENCY);
+    $translator = $this->getTranslator($domain, $domainExtra, self::CURRENCY);
 
     $retval = $translator->translate($number, $domainExtra, $locale);
-
-    $retval = $this->applyFilters($retval, $domain, self::CURRENCY);
 
     return $retval;
   }
