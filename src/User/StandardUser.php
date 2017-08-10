@@ -22,4 +22,20 @@ class StandardUser implements UserInterface {
   public function getUsername () {
     return $this->data["username"];
   }
+
+  public function getName () {
+    return $this->data["name"];
+  }
+
+  public function getEmail () {
+    return $this->data["email"];
+  }
+
+  public function getId () {
+    return $this->data["id"];
+  }
+
+  public function getCurrentUser () {
+    return $this->data;
+  }
 }
