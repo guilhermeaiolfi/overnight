@@ -65,7 +65,7 @@ class Doctrine2Database implements DatabaseInterface {
   {
     $cfg = $this->container->get('config');
     // auto-generate proxy classes in debug mode by default
-    $auto_generate = isset($this->parameters['configuration']) && isset($this->parameters['configuration']['auto_generate_proxy_classes'])? $this->parameters['configuration']['autolo_generate_proxy_classes'] : $cfg["debug"];
+    $auto_generate = isset($this->parameters['configuration']) && isset($this->parameters['configuration']['auto_generate_proxy_classes'])? $this->parameters['configuration']['auto_generate_proxy_classes'] : $cfg["debug"];
 
     $config->setAutoGenerateProxyClasses($auto_generate);
 
@@ -91,7 +91,7 @@ class Doctrine2Database implements DatabaseInterface {
     $proxy_namespace = isset($this->parameters['configuration']['proxy_namespace'])? $this->parameters['configuration']['proxy_namespace'] : 'Doctrine2Database_Proxy_' . preg_replace('#\W#', '_', $this->name);
     $config->setProxyNamespace($proxy_namespace);
 
-    $proxy_dir = isset($this->paramerters['configuration']['proxy_dir'])? $this->paramerters['configuration']['proxy_dir'] : $cfg["paths"]["cache"];
+    $proxy_dir = isset($this->parameters['configuration']['proxy_dir'])? $this->parameters['configuration']['proxy_dir'] : $cfg["paths"]["cache"];
     $config->setProxyDir($proxy_dir);
 
     // unless configured differently, use ArrayCache in debug mode and APC (if available) otherwise
