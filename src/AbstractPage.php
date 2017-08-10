@@ -144,5 +144,17 @@ abstract class AbstractPage implements IPage {
     return $template->render($data);
   }
 
+  public function processForward($middleware, $request) {
+    $result = $request->getAttribute(RouteResult::class);
+    $matched = $result->getMatchedRoute();
+    $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
+    $request = $request->withAttribute(RouteResult::class, $result);
+    return $this->container->get(Application::class)->runAction($request);
+  }
+
+  public function getContainer() {
+    return $this->container;
+  }
+
 };
 ?>
