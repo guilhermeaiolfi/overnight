@@ -56,16 +56,23 @@ class Manager {
     // register the connection in the DataCollector of DebugBar
     // for debugging purposes
     if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
-      $connection = $database->getResource();
+      $connection = $database->getConnection();
+      $debugbar = $this->c->get(\DebugBar\DebugBar::class);
+
       if ($connection instanceof \PDO) {
         $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection);
-        $debugbar = $this->c->get(\DebugBar\DebugBar::class);
         $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
         if (!$collector) {
           $collector = new \DebugBar\DataCollector\PDO\PDOCollector();
           $debugbar->addCollector($collector);
         }
         $collector->addConnection($pdo, $name);
+        $database->setConnection($pdo);
+        $database->setResource($pdo);
+      } else if ($database instanceof \ON\Db\Doctrine2Database) {
+        $debugStack = new \Doctrine\DBAL\Logging\DebugStack();
+        $database->getConnection()->getConnection()->getConfiguration()->setSQLLogger($debugStack);
+        $debugbar->addCollector(new \DebugBar\Bridge\DoctrineCollector($debugStack));
       }
     }
     return $this->instances[$name] = $database;
