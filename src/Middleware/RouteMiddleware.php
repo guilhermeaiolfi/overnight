@@ -69,8 +69,8 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
             }
             return $delegate->process($request);
         }
-
-        if ($options = $result->getMatchedRoute()->getOptions()) {
+        $options = $result->getMatchedRoute()->getOptions();
+        if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
             foreach ($options["callbacks"] as $callback) {
                 $callback = $this->container->get($callback);
                 $result = $callback->onMatched($result);
