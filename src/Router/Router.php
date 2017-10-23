@@ -12,6 +12,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 use ON\Router\RouterInterface as ONRouterInterface;
 use Zend\Expressive\Router\RouterInterface as ZendRouterInterface;
 use Zend\Diactoros\ServerRequest;
+use Zend\Diactoros\ServerRequestFactory;
 use ON\Context;
 use Zend\Expressive\Router\Exception;
 use Zend\Expressive\Router\RouterInterface;
@@ -64,6 +65,38 @@ class Router implements StatefulRouterInterface {
     return $this->getRouteResult(count($this->routed_stack) - 1);
   }
 
+  static public function detectBaseUrl ($request = null) {
+    if ($request == null) {
+      $request = ServerRequestFactory::fromGlobals();
+    }
+    $server = $request->getServerParams();
+
+    // Path
+    $requestScriptName = parse_url($server['SCRIPT_NAME'], PHP_URL_PATH);
+    $requestScriptDir = dirname($requestScriptName);
+
+    // parse_url() requires a full URL. As we don't extract the domain name or scheme,
+    // we use a stand-in.
+    $requestUri = parse_url('http://example.com' . $server['REQUEST_URI'], PHP_URL_PATH);
+
+    $requestRootDir = dirname($requestScriptDir); // remove /public from it
+
+    $basePath = '';
+    $virtualPath = $requestUri;
+    //var_dump($requestUri, $requestScriptName, $requestScriptDir, $requestRootDir);
+    if (stripos($requestUri, $requestRootDir) === 0) {
+        $basePath = $requestRootDir;
+    } elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
+        $basePath = $requestScriptDir;
+    }
+    if ($basePath) {
+        $virtualPath = ltrim(substr($requestUri, strlen($basePath)), '/');
+    }
+
+    //$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
+    return $basePath;
+  }
+
   public function gen($routeName = null, $routeParams = [], $options = []) {
     $default_opts = [
       "relative" => true,
@@ -107,11 +140,7 @@ class Router implements StatefulRouterInterface {
 
       $params = array_merge($params, $routeParams);
 
-      $path = $this->router->generateUri($name, $params, $routerOptions);
-      if (count($queryParams) > 0) {
-        return $path .= '?' . http_build_query($queryParams);
-      }
-      return $path;
+      return $this->gen($name, $params, $options);
     }
 
 
