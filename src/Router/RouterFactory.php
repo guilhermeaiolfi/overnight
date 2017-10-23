@@ -20,6 +20,7 @@ class RouterFactory {
     $config = $this->container->get('config');
     $context = $this->container->get(Context::class);
     $basepath = $config["paths"]["basepath"];
+    $basepath = isset($basepath) && $basepath != null? $basepath : Router::detectBaseUrl();
     $aura = new RouterContainer($basepath);
 
     $router = new AuraRouter($aura);
