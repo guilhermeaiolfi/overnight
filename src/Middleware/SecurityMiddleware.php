@@ -9,6 +9,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
+use Zend\Expressive\Router\Route;
 use Zend\Diactoros\Response\RedirectResponse;
 use Zend\Diactoros\Response\EmptyResponse;
 use Zend\Expressive\Helper\UrlHelper;
@@ -16,6 +17,7 @@ use Zend\Authentication\AuthenticationServiceInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
 use ON\Router\StatefulRouterInterface;
+use ON\Application;
 
 class SecurityMiddleware implements ServerMiddlewareInterface
 {
@@ -68,8 +70,10 @@ class SecurityMiddleware implements ServerMiddlewareInterface
         $page = $this->container->get($middleware);
 
         if ($page->isSecure() && !$this->auth->hasIdentity()) {
+            $config = $this->container->get('config');
             //throw new Exception('User has no permittion!');
-            return new RedirectResponse($this->router->gen("login"));
+            return $this->processForward($config->get('login'), $request);
+            //return new RedirectResponse($this->router->gen("login"));
         }
         try {
             return $delegate->process($request);
@@ -77,4 +81,12 @@ class SecurityMiddleware implements ServerMiddlewareInterface
             return new EmptyResponse(403);
         }
     }
+
+    public function processForward($middleware, $request) {
+        $result = $request->getAttribute(RouteResult::class);
+        $matched = $result->getMatchedRoute();
+        $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
+        $request = $request->withAttribute(RouteResult::class, $result);
+        return $this->container->get(Application::class)->runAction($request);
+      }
 }
