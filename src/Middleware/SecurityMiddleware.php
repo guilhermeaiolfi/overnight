@@ -88,5 +88,5 @@ class SecurityMiddleware implements ServerMiddlewareInterface
         $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
         $request = $request->withAttribute(RouteResult::class, $result);
         return $this->container->get(Application::class)->runAction($request);
-      }
+    }
 }

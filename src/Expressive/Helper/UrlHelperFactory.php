@@ -29,5 +29,3 @@ class UrlHelperFactory
         return $urlHelper;
     }
 }
-
-?>

@@ -4,6 +4,4 @@ namespace ON;
 interface IPage {
 
 
-};
-
-?>
+}

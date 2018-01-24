@@ -617,5 +617,3 @@ class TranslationManager implements TranslationManagerInterface
     return $this->defaultTimeZone;
   }
 }
-
-?>

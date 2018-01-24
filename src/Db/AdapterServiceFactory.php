@@ -18,4 +18,3 @@ class AdapterServiceFactory
         return new Adapter($config['db']);
     }
 }
-?>

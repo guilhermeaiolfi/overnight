@@ -91,5 +91,3 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
         return $delegate->process($request);
     }
 }
-
-?>

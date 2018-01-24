@@ -39,4 +39,3 @@ class ActionInjectionMiddleware implements ServerMiddlewareInterface
         return $delegate->process($request);
     }
 }
-?>

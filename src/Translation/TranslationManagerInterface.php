@@ -48,5 +48,3 @@ interface TranslationManagerInterface
 
   public function getDefaultTimeZone();
 }
-
-?>
