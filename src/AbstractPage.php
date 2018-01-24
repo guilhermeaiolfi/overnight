@@ -27,6 +27,7 @@ abstract class AbstractPage implements IPage {
     return false;
   }
 
+  /*
   public function checkPermissions () {
     return true;
   }
@@ -41,6 +42,26 @@ abstract class AbstractPage implements IPage {
 
   public function validate () {
     return true;
+  }*/
+
+  public function defaultIndex () {
+    return 'Success';
+  }
+
+  public function defaultHandleError () {
+    return 'Error';
+  }
+
+  public function defaultValidate () {
+    return true;
+  }
+
+  public function defaultCheckPermissions () {
+    return true;
+  }
+
+  public function defaultIsSecure () {
+    return false;
   }
 
   public function getDefaultTemplateName () {
@@ -140,7 +161,6 @@ abstract class AbstractPage implements IPage {
     }
 
     $template->layout($layout_name, $data);
-
     return $template->render($data);
   }
 
@@ -155,6 +175,4 @@ abstract class AbstractPage implements IPage {
   public function getContainer() {
     return $this->container;
   }
-
-};
-?>
+}

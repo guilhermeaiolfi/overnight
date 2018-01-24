@@ -58,6 +58,9 @@ class ValidationMiddleware implements ServerMiddlewareInterface
         if(!method_exists($page, $validateMethod)) {
             $validateMethod = 'validate';
         }
+        if (!method_exists($page, $validateMethod)) {
+            $validateMethod = 'defaultValidate';
+        }
 
         $args = [$request];
         $result = $this->executor->execute([$page, $validateMethod], $args);
@@ -68,6 +71,9 @@ class ValidationMiddleware implements ServerMiddlewareInterface
 
         //if it's not validated, we need to handle the error response
         $handlerErrorMethod = "handleError";
+        if (!method_exists($page, $handleErrorMethod)) {
+            $handleErrorMethod = "defaultHandleError";
+        }
         $response = $this->executor->execute([$page, $handlerErrorMethod], $args);
         return $this->buildView($page, $action->getActionName(), $response, $request, $delegate);
     }

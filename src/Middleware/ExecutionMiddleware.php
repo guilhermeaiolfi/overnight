@@ -12,6 +12,8 @@ use ON\Action;
 use ON\Common\ViewBuilderTrait;
 use ON\Container\ExecutorInterface;
 
+use Zend\Expressive\Delegate\NotFoundDelegateInterface;
+
 class ExecutionMiddleware implements ServerMiddlewareInterface
 {
     use ViewBuilderTrait;
@@ -40,4 +42,3 @@ class ExecutionMiddleware implements ServerMiddlewareInterface
         return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $delegate);
     }
 }
-?>

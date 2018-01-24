@@ -57,7 +57,7 @@ class Doctrine2Database implements DatabaseInterface {
     }
   }
 
-  protected function prepareEventManager($eventManager) {
+  protected function prepareEventManager(\Doctrine\Common\EventManager $eventManager) {
 
   }
 
