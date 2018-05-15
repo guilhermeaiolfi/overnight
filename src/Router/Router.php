@@ -138,7 +138,7 @@ class Router implements StatefulRouterInterface {
 
       $queryParams = array_diff_key($routeParams, $params);
 
-      $params = array_merge($params, $routeParams);
+      $params = array_merge($request->getQueryParams(), $params, $routeParams);
 
       return $this->gen($name, $params, $options);
     }
