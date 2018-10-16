@@ -184,13 +184,17 @@ class Router implements StatefulRouterInterface {
     }
 
 
-   if (!$options["absolute"]) {
+    if (!$options["absolute"]) {
       $uri = $uri->withHost("");
     }
     if ($options["scheme"] != "http") {
       $uri = $uri->withScheme($options["scheme"]);
     } else {
-      $uri = $uri->withScheme('');
+      if ($options["absolute"]) {
+        $uri = $uri->withScheme('http');
+      } else {
+        $uri = $uri->withScheme('');
+      }
     }
     if ($options["port"] != 80) {
       $uri = $uri->withPort($options["port"]);
