@@ -1,9 +1,10 @@
 {
+    "name": "guilhermeaiolfi/overnight",
+    "description": "Modern framework based on Zend Expressive",
     "require": {
-        "aura/router": "v2.1.1",
+        "aura/router": "^3.0",
         "aura/web": "v2.0.0",
-        "rdlowrey/Auryn": "v0.14.2",
-        "symfony/http-kernel": "^3.0"
+        "rdlowrey/Auryn": "^1.1"
     },
     "require-dev": {
         "phpunit/phpunit": "4.1.*"
