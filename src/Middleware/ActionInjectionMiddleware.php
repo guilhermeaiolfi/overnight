@@ -28,7 +28,12 @@ class ActionInjectionMiddleware implements ServerMiddlewareInterface
 
         $middleware = $routeResult->getMatchedMiddleware();
 
-        $action = new Action($middleware);
+        $action = null;
+        if (is_string($middleware)) {
+            $action = new Action($middleware);
+        } else {
+            $action = new Action($middleware->process($request, $delegate));
+        }
 
         $instance = $this->container->get($action->getClassName());
 

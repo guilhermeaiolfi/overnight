@@ -234,18 +234,7 @@ class Application extends \Zend\Expressive\Application
         return $this;
     }
 
-    /**
-     * Register the routing middleware in the middleware pipeline.
-     *
-     * @return void
-     */
-    public function pipeRoutingMiddleware()
-    {
-        $this->pipe(new RouteMiddleware($this->router, $this->responsePrototype, $this->container->get(\ON\Context::class), $this->container));
-    }
-
-
-    /**
+     /**
      * Add a route for the route middleware to match.
      *
      * Accepts either a Router\Route instance, or a combination of a path and

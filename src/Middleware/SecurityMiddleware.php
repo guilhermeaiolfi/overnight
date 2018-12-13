@@ -63,6 +63,9 @@ class SecurityMiddleware implements ServerMiddlewareInterface
             return $delegate->process($request);
         }
         $middleware = $routeResult->getMatchedMiddleware();
+        if (!is_string($middleware)) {
+            $middleware = $middleware->process($request, $delegate);
+        }
         if (!class_exists($middleware)) {
             list($middleware, $action) = explode("::", $middleware);
         }

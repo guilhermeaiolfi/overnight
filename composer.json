@@ -10,6 +10,11 @@
         "phpunit/phpunit": "4.1.*"
     },
     "autoload": {
+      "autoload": {
+        "files": [
+          "src/Common/actionMiddleware.php",
+        ]
+      },
       "psr-4": {
         "ON\\": "src/"
       }
