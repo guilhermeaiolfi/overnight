@@ -2,8 +2,8 @@
 
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\DelegateInterface;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -17,7 +17,7 @@ use ON\User\UserInterface;
 use ON\Action;
 use ON\Common\ViewBuilderTrait;
 
-class ValidationMiddleware implements ServerMiddlewareInterface
+class ValidationMiddleware implements MiddlewareInterface
 {
     use ViewBuilderTrait;
     /**
@@ -40,15 +40,15 @@ class ValidationMiddleware implements ServerMiddlewareInterface
 
     /**
      * @param ServerRequestInterface $request
-     * @param DelegateInterface $delegate
+     * @param RequestHandlerInterface $handler
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         $action = $request->getAttribute(Action::class, false);
 
         if (!$action) {
-            return $delegate->process($request, $delegate);
+            return $handler->process($request, $handler);
         }
 
         $page = $action->getPageInstance();
@@ -66,7 +66,7 @@ class ValidationMiddleware implements ServerMiddlewareInterface
         $result = $this->executor->execute([$page, $validateMethod], $args);
 
         if ($result) {
-            return $delegate->process($request, $delegate);
+            return $handler->process($request, $handler);
         }
 
         //if it's not validated, we need to handle the error response
@@ -75,6 +75,6 @@ class ValidationMiddleware implements ServerMiddlewareInterface
             $handleErrorMethod = "defaultHandleError";
         }
         $response = $this->executor->execute([$page, $handlerErrorMethod], $args);
-        return $this->buildView($page, $action->getActionName(), $response, $request, $delegate);
+        return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
     }
 }

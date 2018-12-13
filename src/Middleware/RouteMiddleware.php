@@ -3,8 +3,8 @@
 namespace ON\Middleware;
 
 use Fig\Http\Message\StatusCodeInterface as StatusCode;
-use Interop\Http\ServerMiddleware\DelegateInterface;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Zend\Expressive\Router\RouteResult;
@@ -54,10 +54,10 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      * @param DelegateInterface $delegate
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         if ($request->getAttribute(RouteResult::class)) {
-            return $delegate->process($request);
+            return $handler->process($request);
         }
 
         $result = $this->router->match($request);
@@ -67,7 +67,7 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
                 return $this->responsePrototype->withStatus(StatusCode::STATUS_METHOD_NOT_ALLOWED)
                     ->withHeader('Allow', implode(',', $result->getAllowedMethods()));
             }
-            return $delegate->process($request);
+            return $handler->process($request);
         }
         $options = $result->getMatchedRoute()->getOptions();
         if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
@@ -88,6 +88,6 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
         $this->context->setAttribute("REQUEST", $request);
         $this->router->addRouteResult($result);
 
-        return $delegate->process($request);
+        return $handler->process($request);
     }
 }

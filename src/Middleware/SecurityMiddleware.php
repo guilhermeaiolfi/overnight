@@ -2,8 +2,8 @@
 
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\DelegateInterface;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -19,7 +19,7 @@ use ON\User\UserInterface;
 use ON\Router\StatefulRouterInterface;
 use ON\Application;
 
-class SecurityMiddleware implements ServerMiddlewareInterface
+class SecurityMiddleware implements MiddlewareInterface
 {
 
     /**
@@ -52,19 +52,19 @@ class SecurityMiddleware implements ServerMiddlewareInterface
 
     /**
      * @param ServerRequestInterface $request
-     * @param DelegateInterface $delegate
+     * @param RequestHandlerInterface $handler
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
         if (!$routeResult) {
-            return $delegate->process($request);
+            return $handler->process($request);
         }
         $middleware = $routeResult->getMatchedMiddleware();
         if (!is_string($middleware)) {
-            $middleware = $middleware->process($request, $delegate);
+            $middleware = $middleware->process($request, $handler);
         }
         if (!class_exists($middleware)) {
             list($middleware, $action) = explode("::", $middleware);
@@ -79,7 +79,7 @@ class SecurityMiddleware implements ServerMiddlewareInterface
             //return new RedirectResponse($this->router->gen("login"));
         }
         try {
-            return $delegate->process($request);
+            return $handler->process($request);
         } catch (SecurityException $e) {
             return new EmptyResponse(403);
         }

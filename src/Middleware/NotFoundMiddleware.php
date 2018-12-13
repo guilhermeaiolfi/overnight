@@ -1,17 +1,16 @@
 <?php
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
-use Interop\Http\ServerMiddleware\DelegateInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use ON\Container\ExecutorInterface;
-use Zend\Expressive\Delegate\NotFoundDelegateInterface;
 use ON\Exception\NotFoundException;
 
 
-class NotFoundMiddleware implements ServerMiddlewareInterface
+class NotFoundMiddleware implements MiddlewareInterface
 {
     /**
      * @var ContainerInterface|null
@@ -27,17 +26,17 @@ class NotFoundMiddleware implements ServerMiddlewareInterface
 
     /**
      * @param ServerRequestInterface $request
-     * @param DelegateInterface $delegate
+     * @param RequestHandlerInterface $handler
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         try {
-            $response = $delegate->process($request);
+            $response = $handler->process($request);
             return $response;
         } catch (NotFoundException $e) {
-            $notFoundDelegate = $this->container->get(\Zend\Expressive\Delegate\NotFoundDelegate::class);
-            return $notFoundDelegate->process($request);
+            $notFoundHandler = $this->container->get(\Zend\Expressive\Handler\NotFoundHandler::class);
+            return $notFoundHandler->process($request);
         }
     }
 }

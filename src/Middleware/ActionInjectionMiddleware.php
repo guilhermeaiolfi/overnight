@@ -1,8 +1,8 @@
 <?php
 
 namespace ON\Middleware;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
-use Interop\Http\ServerMiddleware\DelegateInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -10,7 +10,7 @@ use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
 use ON\Action;
 
-class ActionInjectionMiddleware implements ServerMiddlewareInterface
+class ActionInjectionMiddleware implements MiddlewareInterface
 {
     protected $container = null;
 
@@ -18,12 +18,12 @@ class ActionInjectionMiddleware implements ServerMiddlewareInterface
         $this->container = $container;
     }
 
-    public function process (ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process (ServerRequestInterface $request,  RequestHandlerInterface $handler)
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
         if (! $routeResult) {
-            return $delegate->process($request);
+            return $handler->process($request);
         }
 
         $middleware = $routeResult->getMatchedMiddleware();
@@ -32,7 +32,7 @@ class ActionInjectionMiddleware implements ServerMiddlewareInterface
         if (is_string($middleware)) {
             $action = new Action($middleware);
         } else {
-            $action = new Action($middleware->process($request, $delegate));
+            $action = new Action($middleware->process($request, $handler));
         }
 
         $instance = $this->container->get($action->getClassName());
@@ -41,6 +41,6 @@ class ActionInjectionMiddleware implements ServerMiddlewareInterface
 
         $request = $request->withAttribute(Action::class, $action);
 
-        return $delegate->process($request);
+        return $handler->process($request);
     }
 }

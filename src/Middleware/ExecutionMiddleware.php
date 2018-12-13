@@ -1,8 +1,9 @@
 <?php
 
 namespace ON\Middleware;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
-use Interop\Http\ServerMiddleware\DelegateInterface;
+
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -14,7 +15,7 @@ use ON\Container\ExecutorInterface;
 
 use Zend\Expressive\Delegate\NotFoundDelegateInterface;
 
-class ExecutionMiddleware implements ServerMiddlewareInterface
+class ExecutionMiddleware implements MiddlewareInterface
 {
     use ViewBuilderTrait;
 
@@ -26,19 +27,19 @@ class ExecutionMiddleware implements ServerMiddlewareInterface
         $this->executor  = $executor;
     }
 
-    public function process (ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
         $action = $request->getAttribute(Action::class);
 
         if (!$routeResult || !$action) {
-            return $delegate->process($request);
+            return $handler->process($request);
         }
 
         $action = $request->getAttribute(Action::class);
 
-        $action_response = $this->executor->execute($action->getExecutable(), [$request, $delegate]);
+        $action_response = $this->executor->execute($action->getExecutable(), [$request, $handler]);
 
-        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $delegate);
+        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);
     }
 }

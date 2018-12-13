@@ -2,8 +2,8 @@
 
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\DelegateInterface;
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -18,7 +18,7 @@ use ON\Exception\SecurityException;
 use ON\Action;
 use ON\User\UserInterface;
 
-class AuthorizationMiddleware implements ServerMiddlewareInterface
+class AuthorizationMiddleware implements MiddlewareInterface
 {
   /**
    * @var ContainerInterface|null
@@ -48,14 +48,14 @@ class AuthorizationMiddleware implements ServerMiddlewareInterface
 
   /**
    * @param ServerRequestInterface $request
-   * @param DelegateInterface $delegate
+   * @param RequestHandlerInterface $handler
    * @return ResponseInterface
    */
-  public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+  public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
   {
     $action = $request->getAttribute(Action::class, false);
     if (!$action) {
-      return $delegate->process($request, $delegate);
+      return $handler->process($request, $handler);
     }
 
     $page = $action->getPageInstance();
@@ -69,7 +69,7 @@ class AuthorizationMiddleware implements ServerMiddlewareInterface
     $args = [$this->auth, $this->authorizationService, $request];
     $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
     if($result) {//$page->$checkPermissionsMethod($this->auth, $request)) {
-      return $delegate->process($request);
+      return $handler->process($request);
     } else {
       // TODO: allow actions to handle this case e.g. through handleDenial() or something like that?
       // this exception will bubble up to the security filter and cause a forward to the "secure" action there

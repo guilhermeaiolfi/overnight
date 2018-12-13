@@ -2,7 +2,8 @@
 
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\DelegateInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use PhpMiddleware\PhpDebugBar\PhpDebugBarMiddleware as DebugBarMiddleware;
 
@@ -12,11 +13,11 @@ use PhpMiddleware\PhpDebugBar\PhpDebugBarMiddleware as DebugBarMiddleware;
  */
 class PhpDebugBarMiddleware extends DebugBarMiddleware
 {
-    public function process(ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
         if ($request->getAttribute("PARENT-REQUEST")) {
-            return $delegate->process($request);
+            return $handler->process($request);
         }
-        return parent::process($request, $delegate);
+        return parent::process($request, $handler);
     }
 }

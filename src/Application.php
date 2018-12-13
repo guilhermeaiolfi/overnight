@@ -2,7 +2,7 @@
 namespace ON;
 
 use Fig\Http\Message\StatusCodeInterface as StatusCode;
-use Interop\Http\ServerMiddleware\DelegateInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -21,6 +21,12 @@ use Zend\Expressive\InvalidArgumentException;
 use ON\Middleware\RouteMiddleware;
 use ON\Router\StatefulRouterInterface;
 
+use ON\Router\ActionMiddlewareDecorator;
+
+function actionMiddleware ($middleware) {
+  return new ActionMiddlewareDecorator($middleware);
+}
+
 class Application extends \Zend\Expressive\Application
 {
     use \Zend\Expressive\ApplicationConfigInjectionTrait;
@@ -33,7 +39,7 @@ class Application extends \Zend\Expressive\Application
     /**
      * @var callable
      */
-    private $defaultDelegate;
+    private $defaultRequestHandler;
 
     /**
      * @var bool Flag indicating whether or not the dispatch middleware is
@@ -83,7 +89,7 @@ class Application extends \Zend\Expressive\Application
      *
      * @param Router\RouterInterface $router
      * @param null|ContainerInterface $container IoC container from which to pull services, if any.
-     * @param null|DelegateInterface $defaultDelegate Default delegate
+     * @param null|RequestHandlerInterface $handler Default request handler
      *     to use when $out is not provided on invocation / run() is invoked.
      * @param null|EmitterInterface $emitter Emitter to use when `run()` is
      *     invoked.
@@ -91,13 +97,13 @@ class Application extends \Zend\Expressive\Application
     public function __construct(
         StatefulRouterInterface $router,
         ContainerInterface $container = null,
-        DelegateInterface $defaultDelegate = null,
+        RequestHandlerInterface $handler = null,
         EmitterInterface $emitter = null
     ) {
-        parent::__construct($router, $container, $defaultDelegate, $emitter);
+        parent::__construct($router, $container, $handler, $emitter);
         $this->router          = $router;
         $this->container       = $container;
-        $this->defaultDelegate = $defaultDelegate;
+        $this->defaultRequestHandler = $handler;
         $this->emitter         = $emitter;
     }
 
@@ -259,6 +265,10 @@ class Application extends \Zend\Expressive\Application
             ));
         }
 
+        if (is_string($middleware)) {
+            $middleware = actionMiddleware($middleware);
+        }
+
         if ($path instanceof Router\Route) {
             $route   = $path;
             $path    = $route->getPath();
@@ -302,7 +312,7 @@ class Application extends \Zend\Expressive\Application
      * ServerRequestFactory::fromGlobals to create a request instance, and
      * instantiate a default response instance.
      *
-     * It retrieves the default delegate using getDefaultDelegate(), and
+     * It retrieves the default delegate using getDefaultRequestHandler(), and
      * uses that to process itself.
      *
      * Once it has processed itself, it emits the returned response using the
@@ -328,9 +338,9 @@ class Application extends \Zend\Expressive\Application
 
         $response = $response ?: new Response();
         $request  = $request->withAttribute('originalResponse', $response);
-        $delegate = $this->getDefaultDelegate();
+        $handler = $this->getDefaultRequestHandler();
 
-        $response = $this->process($request, $delegate);
+        $response = $this->process($request, $handler);
 
         $emitter = $this->getEmitter();
         $emitter->emit($response);
@@ -343,7 +353,7 @@ class Application extends \Zend\Expressive\Application
      * ServerRequestFactory::fromGlobals to create a request instance, and
      * instantiate a default response instance.
      *
-     * It retrieves the default delegate using getDefaultDelegate(), and
+     * It retrieves the default delegate using getDefaultRequestHandler(), and
      * uses that to process itself.
      *
      * Once it has processed itself, it emits the returned response using the
@@ -369,9 +379,9 @@ class Application extends \Zend\Expressive\Application
 
         $response = $response ?: new Response();
         $request  = $request->withAttribute('originalResponse', $response);
-        $delegate = $this->getDefaultDelegate();
+        $handler = $this->getDefaultRequestHandler();
 
-        return $this->process($request, $delegate);
+        return $this->process($request, $handler);
     }
 
     /**
@@ -395,32 +405,32 @@ class Application extends \Zend\Expressive\Application
      *
      * If no default delegate is present, attempts the following:
      *
-     * - If a container is composed, and it has the 'Zend\Expressive\Delegate\DefaultDelegate'
+     * - If a container is composed, and it has the 'Psr\Http\Server\RequestHandlerInterface'
      *   service, pulls that service, assigns it, and returns it.
      * - If no container is composed, creates an instance of Delegate\NotFoundDelegate
      *   using the current response prototype only (i.e., no templating).
      *
-     * @return DelegateInterface
+ * @return RequestHandlerInterface
      */
-    public function getDefaultDelegate()
+    public function getDefaultRequestHandler()
     {
-        if ($this->defaultDelegate) {
-            return $this->defaultDelegate;
+        if ($this->defaultRequestHandler) {
+            return $this->defaultRequestHandler;
         }
 
-        if ($this->container && $this->container->has('Zend\Expressive\Delegate\DefaultDelegate')) {
-            $this->defaultDelegate = $this->container->get('Zend\Expressive\Delegate\DefaultDelegate');
-            return $this->defaultDelegate;
+        if ($this->container && $this->container->has(RequestHandlerInterface::class)) {
+            $this->defaultRequestHandler = $this->container->get(RequestHandlerInterface::class);
+            return $this->defaultRequestHandler;
         }
 
         if ($this->container) {
             $factory = new Container\NotFoundDelegateFactory();
-            $this->defaultDelegate = $factory($this->container);
-            return $this->defaultDelegate;
+            $this->defaultRequestHandler = $factory($this->container);
+            return $this->defaultRequestHandler;
         }
 
-        $this->defaultDelegate = new Delegate\NotFoundDelegate($this->responsePrototype);
-        return $this->defaultDelegate;
+        $this->defaultRequestHandler = new Delegate\NotFoundDelegate($this->responsePrototype);
+        return $this->defaultRequestHandler;
     }
 
     /**

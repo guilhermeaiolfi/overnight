@@ -4,17 +4,17 @@
     "require": {
         "aura/router": "^3.0",
         "aura/web": "v2.0.0",
-        "rdlowrey/Auryn": "^1.1"
+        "rdlowrey/Auryn": "^1.1",
+        "psr/http-server-handler": "^1.0",
+        "psr/http-server-middleware": "^1.0"
     },
     "require-dev": {
         "phpunit/phpunit": "4.1.*"
     },
     "autoload": {
-      "autoload": {
-        "files": [
-          "src/Common/actionMiddleware.php",
-        ]
-      },
+      "files": [
+        "src/Common/actionMiddleware.php"
+      ],
       "psr-4": {
         "ON\\": "src/"
       }

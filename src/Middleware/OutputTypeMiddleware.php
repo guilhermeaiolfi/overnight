@@ -1,17 +1,17 @@
 <?php
 namespace ON\Middleware;
 
-use Interop\Http\ServerMiddleware\MiddlewareInterface as ServerMiddlewareInterface;
-use Interop\Http\ServerMiddleware\DelegateInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
 
-class OutputTypeMiddleware implements ServerMiddlewareInterface
+class OutputTypeMiddleware implements MiddlewareInterface
 {
-    public function process (ServerRequestInterface $request, DelegateInterface $delegate)
+    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler)
     {
       $accept = $request->getHeader('Accept')[0];
       if (!$accept || ! preg_match('#^application/([^+\s]+\+)?json#', $accept)) {
@@ -19,6 +19,6 @@ class OutputTypeMiddleware implements ServerMiddlewareInterface
       } else {
         $request = $request->withAttribute("OUTPUT_TYPE", "json");
       }
-      return $delegate->process($request);
+      return $handler->process($request);
     }
 }
