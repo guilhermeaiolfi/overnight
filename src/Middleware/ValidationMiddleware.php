@@ -48,7 +48,7 @@ class ValidationMiddleware implements MiddlewareInterface
         $action = $request->getAttribute(Action::class, false);
 
         if (!$action) {
-            return $handler->process($request, $handler);
+            return $handler->handle($request, $handler);
         }
 
         $page = $action->getPageInstance();
@@ -66,7 +66,7 @@ class ValidationMiddleware implements MiddlewareInterface
         $result = $this->executor->execute([$page, $validateMethod], $args);
 
         if ($result) {
-            return $handler->process($request, $handler);
+            return $handler->handle($request, $handler);
         }
 
         //if it's not validated, we need to handle the error response

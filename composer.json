@@ -1,6 +1,7 @@
 {
     "name": "guilhermeaiolfi/overnight",
     "description": "Modern framework based on Zend Expressive",
+    "type": "library",
     "require": {
         "aura/router": "^3.0",
         "aura/web": "v2.0.0",

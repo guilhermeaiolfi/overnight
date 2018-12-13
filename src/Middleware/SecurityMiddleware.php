@@ -60,11 +60,11 @@ class SecurityMiddleware implements MiddlewareInterface
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
         if (!$routeResult) {
-            return $handler->process($request);
+            return $handler->handle($request);
         }
-        $middleware = $routeResult->getMatchedMiddleware();
+        $middleware = $routeResult->getMatchedRoute()->getMiddleware();
         if (!is_string($middleware)) {
-            $middleware = $middleware->process($request, $handler);
+            $middleware = $middleware->getString();
         }
         if (!class_exists($middleware)) {
             list($middleware, $action) = explode("::", $middleware);
@@ -79,7 +79,7 @@ class SecurityMiddleware implements MiddlewareInterface
             //return new RedirectResponse($this->router->gen("login"));
         }
         try {
-            return $handler->process($request);
+            return $handler->handle($request);
         } catch (SecurityException $e) {
             return new EmptyResponse(403);
         }

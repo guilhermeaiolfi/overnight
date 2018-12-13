@@ -10,8 +10,9 @@ use Psr\Http\Message\ServerRequestInterface;
 use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
 use ON\Router\StatefulRouterInterface;
-use Zend\Expressive\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
-use Webimpress\HttpMiddlewareCompatibility\HandlerInterface;
+use Zend\Expressive\Router\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
+
+
 use ON\Context;
 
 /**
@@ -23,16 +24,9 @@ use ON\Context;
 class RouteMiddleware extends ExpressiveRouteMiddleware
 {
     /**
-     * Response prototype for 405 responses.
-     *
-     * @var ResponseInterface
-     */
-    private $responsePrototype;
-
-    /**
      * @var RouterInterface
      */
-    private $router;
+    protected $router;
 
     protected $context;
 
@@ -42,10 +36,9 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      * @param RouterInterface $router
      * @param ResponseInterface $responsePrototype
      */
-    public function __construct(StatefulRouterInterface $router, ResponseInterface $responsePrototype, Context $context = null, $container = null)
+    public function __construct(StatefulRouterInterface $router, Context $context = null, $container = null)
     {
         $this->router = $router;
-        $this->responsePrototype = $responsePrototype;
         $this->context = $context;
         $this->container = $container;
     }
@@ -55,10 +48,10 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      * @param DelegateInterface $delegate
      * @return ResponseInterface
      */
-    public function process (ServerRequestInterface $request, HandlerInterface $handler): ResponseInterface
+    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         if ($request->getAttribute(RouteResult::class)) {
-            return $handler->process($request);
+            return $handler->handle($request);
         }
 
         $result = $this->router->match($request);
@@ -69,13 +62,6 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
                     ->withHeader('Allow', implode(',', $result->getAllowedMethods()));
             }
             return $handler->process($request);
-        }
-        $options = $result->getMatchedRoute()->getOptions();
-        if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
-            foreach ($options["callbacks"] as $callback) {
-                $callback = $this->container->get($callback);
-                $result = $callback->onMatched($result);
-            }
         }
 
         // Inject the actual route result, as well as individual matched parameters.
@@ -89,6 +75,14 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
         $this->context->setAttribute("REQUEST", $request);
         $this->router->addRouteResult($result);
 
-        return $handler->process($request);
+        $options = $result->getMatchedRoute()->getOptions();
+        if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
+            foreach ($options["callbacks"] as $callback) {
+                $callback = $this->container->get($callback);
+                $result = $callback->onMatched($result);
+            }
+        }
+
+        return $handler->handle($request);
     }
 }

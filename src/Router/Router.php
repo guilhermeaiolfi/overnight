@@ -226,15 +226,17 @@ class Router implements StatefulRouterInterface {
     return $this->basepath;
   }
 
-  public function match(Request $request) {
+  public function match(Request $request): \Zend\Expressive\Router\RouteResult
+  {
     return $this->router->match($request);
   }
 
-  public function generateUri($name, array $substitutions = [], array $options = []) {
+  public function generateUri($name, array $substitutions = [], array $options = []): string
+  {
     return $this->router->generateUri($name, $substitutions, $options);
   }
 
-  public function addRoute(Route $route)
+  public function addRoute(Route $route): void
   {
       $this->router->addRoute($route);
   }

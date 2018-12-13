@@ -48,6 +48,6 @@ class RouteMiddlewareFactory
             $response = $response();
         }
         //$container->get(RouterInterface::class), $container->get(ResponseInterface::class), $container->get(Context::class))
-        return new RouteMiddleware($container->get(RouterInterface::class), $response, $container->get(Context::class), $container);
+        return new RouteMiddleware($container->get(RouterInterface::class), $container->get(Context::class), $container);
     }
 }

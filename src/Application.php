@@ -2,7 +2,6 @@
 namespace ON;
 
 use Fig\Http\Message\StatusCodeInterface as StatusCode;
-use Psr\Http\Server\RequestHandlerInterface;
 use Zend\Expressive\Handler\NotFoundHandler;
 
 use Zend\Diactoros\Response;
@@ -29,6 +28,7 @@ use Zend\HttpHandlerRunner\RequestHandlerRunner;
 use Zend\Stratigility\MiddlewarePipeInterface;
 
 use function Zend\Stratigility\path;
+use Zend\Expressive\MiddlewareFactory;
 
 use ON\Router\ActionMiddlewareDecorator;
 
@@ -70,7 +70,7 @@ class Application extends \Zend\Expressive\Application
      */
     public function __construct(
         MiddlewareFactory $factory,
-        MiddlewarePipeInterface $pipeline
+        MiddlewarePipeInterface $pipeline,
         RouteCollector $routes,
         RequestHandlerRunner $runner,
 
@@ -81,6 +81,7 @@ class Application extends \Zend\Expressive\Application
         $this->runner          = $runner;
         $this->routes          = $routes;
         $this->pipeline        = $pipeline;
+        $this->factory        = $factory;
     }
 
      /**
@@ -99,8 +100,9 @@ class Application extends \Zend\Expressive\Application
      * @return Router\Route
      * @throws Exception\InvalidArgumentException if $path is not a Router\Route AND middleware is null.
      */
-    public function route($path, $middleware = null, array $methods = null, $name = null)
+    public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): \Zend\Expressive\Router\Route
     {
+        $middleware = actionMiddleware($middleware);
         return $this->routes->route(
             $path,
             $this->factory->prepare($middleware),
@@ -114,7 +116,7 @@ class Application extends \Zend\Expressive\Application
      *
      * @return Router\Route[]
      */
-    public function getRoutes()
+    public function getRoutes(): array
     {
         return $this->routes;
     }
@@ -138,22 +140,9 @@ class Application extends \Zend\Expressive\Application
      */
     public function runAction(ServerRequestInterface $request = null, ResponseInterface $response = null)
     {
-        try {
-            $request  = $request ?: ServerRequestFactory::fromGlobals();
-        } catch (InvalidArgumentException $e) {
-            // Unable to parse uploaded files
-            $this->emitMarshalServerRequestException($e);
-            return;
-        } catch (UnexpectedValueException $e) {
-            // Invalid request method
-            $this->emitMarshalServerRequestException($e);
-            return;
-        }
-
         $response = $response ?: new Response();
         $request  = $request->withAttribute('originalResponse', $response);
-        $handler = $this->getDefaultRequestHandler();
 
-        return $this->process($request, $handler);
+        return $this->handle($request);
     }
 }

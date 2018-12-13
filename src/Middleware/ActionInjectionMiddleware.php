@@ -23,17 +23,14 @@ class ActionInjectionMiddleware implements MiddlewareInterface
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
         if (! $routeResult) {
-            return $handler->process($request);
+            return $handler->handle($request, $handler);
         }
 
-        $middleware = $routeResult->getMatchedMiddleware();
+        $middleware = $routeResult->getMatchedRoute()->getMiddleware();
 
         $action = null;
-        if (is_string($middleware)) {
-            $action = new Action($middleware);
-        } else {
-            $action = new Action($middleware->process($request, $handler));
-        }
+
+        $action = new Action($middleware->getString());
 
         $instance = $this->container->get($action->getClassName());
 
@@ -41,6 +38,6 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
         $request = $request->withAttribute(Action::class, $action);
 
-        return $handler->process($request);
+        return $handler->handle($request, $handler);
     }
 }

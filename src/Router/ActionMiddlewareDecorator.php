@@ -2,8 +2,10 @@
 namespace ON\Router;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Webimpress\HttpMiddlewareCompatibility\HandlerInterface as RequestHandlerInterface;
-use Webimpress\HttpMiddlewareCompatibility\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Zend\Expressive\Router\RouteResult;
+use ON\Action;
 
 class ActionMiddlewareDecorator implements MiddlewareInterface
 {
@@ -17,13 +19,31 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
         $this->middleware = $middleware;
     }
 
+    public function getString() {
+        return $this->middleware;
+    }
+
     /**
      * {@inheritDoc}
      * @throws Exception\MissingResponseException if the decorated middleware
      *     fails to produce a response.
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        return $middleware = $this->middleware;
+        $routeResult = $request->getAttribute(RouteResult::class, false);
+
+        $action = $request->getAttribute(Action::class);
+
+        if (!$routeResult || !$action) {
+            return $handler->handle($request);
+        }
+
+        $action = $request->getAttribute(Action::class);
+
+return $handler->handle($request);
+        $action_response = $this->executor->execute($action->getExecutable(), [$request, $handler]);
+
+        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);
+        //return $middleware = $this->middleware;
     }
 }

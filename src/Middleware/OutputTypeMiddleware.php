@@ -19,6 +19,6 @@ class OutputTypeMiddleware implements MiddlewareInterface
       } else {
         $request = $request->withAttribute("OUTPUT_TYPE", "json");
       }
-      return $handler->process($request);
+      return $handler->handle($request);
     }
 }

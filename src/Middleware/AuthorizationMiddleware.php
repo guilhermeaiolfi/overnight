@@ -55,7 +55,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
   {
     $action = $request->getAttribute(Action::class, false);
     if (!$action) {
-      return $handler->process($request, $handler);
+      return $handler->handle($request, $handler);
     }
 
     $page = $action->getPageInstance();
@@ -69,7 +69,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
     $args = [$this->auth, $this->authorizationService, $request];
     $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
     if($result) {//$page->$checkPermissionsMethod($this->auth, $request)) {
-      return $handler->process($request);
+      return $handler->handle($request);
     } else {
       // TODO: allow actions to handle this case e.g. through handleDenial() or something like that?
       // this exception will bubble up to the security filter and cause a forward to the "secure" action there

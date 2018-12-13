@@ -33,7 +33,7 @@ class ExecutionMiddleware implements MiddlewareInterface
         $action = $request->getAttribute(Action::class);
 
         if (!$routeResult || !$action) {
-            return $handler->process($request);
+            return $handler->handle($request);
         }
 
         $action = $request->getAttribute(Action::class);

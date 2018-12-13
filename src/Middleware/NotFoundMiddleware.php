@@ -32,11 +32,13 @@ class NotFoundMiddleware implements MiddlewareInterface
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         try {
-            $response = $handler->process($request);
+            $response = $handler->handle($request, $handler);
+            echo "dsdsa";exit;
             return $response;
         } catch (NotFoundException $e) {
+
             $notFoundHandler = $this->container->get(\Zend\Expressive\Handler\NotFoundHandler::class);
-            return $notFoundHandler->process($request);
+            return $notFoundHandler->handle($request, $handler);
         }
     }
 }
