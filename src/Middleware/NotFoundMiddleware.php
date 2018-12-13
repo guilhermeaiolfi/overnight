@@ -4,8 +4,8 @@ namespace ON\Middleware;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Container\ContainerInterface;
 use ON\Container\ExecutorInterface;
 use ON\Exception\NotFoundException;
 
@@ -29,7 +29,7 @@ class NotFoundMiddleware implements MiddlewareInterface
      * @param RequestHandlerInterface $handler
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
+    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         try {
             $response = $handler->process($request);

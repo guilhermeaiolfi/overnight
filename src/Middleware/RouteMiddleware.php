@@ -11,6 +11,7 @@ use Zend\Expressive\Router\RouteResult;
 use Zend\Expressive\Router\RouterInterface;
 use ON\Router\StatefulRouterInterface;
 use Zend\Expressive\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
+use Webimpress\HttpMiddlewareCompatibility\HandlerInterface;
 use ON\Context;
 
 /**
@@ -54,7 +55,7 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      * @param DelegateInterface $delegate
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
+    public function process (ServerRequestInterface $request, HandlerInterface $handler): ResponseInterface
     {
         if ($request->getAttribute(RouteResult::class)) {
             return $handler->process($request);

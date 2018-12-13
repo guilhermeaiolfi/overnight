@@ -11,7 +11,7 @@ use Zend\Expressive\Router\RouterInterface;
 
 class OutputTypeMiddleware implements MiddlewareInterface
 {
-    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler)
+    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
       $accept = $request->getHeader('Accept')[0];
       if (!$accept || ! preg_match('#^application/([^+\s]+\+)?json#', $accept)) {

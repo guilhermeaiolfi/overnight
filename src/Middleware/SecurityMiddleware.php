@@ -55,7 +55,7 @@ class SecurityMiddleware implements MiddlewareInterface
      * @param RequestHandlerInterface $handler
      * @return ResponseInterface
      */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler)
+    public function process (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
