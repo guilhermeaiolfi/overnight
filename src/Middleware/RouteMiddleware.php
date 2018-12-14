@@ -61,7 +61,7 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
                 return $this->responsePrototype->withStatus(StatusCode::STATUS_METHOD_NOT_ALLOWED)
                     ->withHeader('Allow', implode(',', $result->getAllowedMethods()));
             }
-            return $handler->process($request);
+            return $handler->handle($request);
         }
 
         // Inject the actual route result, as well as individual matched parameters.

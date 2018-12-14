@@ -16,8 +16,13 @@ class PdoDatabase implements DatabaseInterface {
     $username = !empty($parameters["username"])? $parameters["username"] : null;
     $password = !empty($parameters["password"])? $parameters["password"] : null;
     $options = !empty($parameters["options"])? $parameters["options"] : null;
+    $config = $container->get('config');
     try {
       $this->connection = $this->resource = new \PDO($dsn, $username, $password, $options);
+
+      if ($config->get('debug')) {
+        $this->connection = $this->resource = new \DebugBar\DataCollector\PDO\TraceablePDO($this->connection);
+      }
       // default connection attributes
       $attributes = array(
         // lets generate exceptions instead of silent failures
