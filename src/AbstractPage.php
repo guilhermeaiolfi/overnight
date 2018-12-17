@@ -11,6 +11,7 @@ use Zend\Diactoros\Response\HtmlResponse;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Common\AttributesTrait;
+use ON\Container\MiddlewareFactory;
 
 abstract class AbstractPage implements IPage {
   use AttributesTrait;
@@ -132,6 +133,9 @@ abstract class AbstractPage implements IPage {
       foreach($layout_config["sections"] as $section_name => $section_config) {
         if (is_array($section_config)) {
           $request = ServerRequestFactory::fromGlobals();
+          if (is_string($section_config[1])) { //middleware
+            $section_config[1] = $this->container->get(MiddlewareFactory::class)->prepare($section_config[1]);
+          }
           $route = new Route(...$section_config);
           $route_result = RouteResult::fromRoute($route);
 

@@ -18,6 +18,7 @@ use ON\Exception\SecurityException;
 use ON\User\UserInterface;
 use ON\Router\StatefulRouterInterface;
 use ON\Application;
+use ON\Container\MiddlewareFactory;
 
 class SecurityMiddleware implements MiddlewareInterface
 {
@@ -88,6 +89,9 @@ class SecurityMiddleware implements MiddlewareInterface
     public function processForward($middleware, $request) {
         $result = $request->getAttribute(RouteResult::class);
         $matched = $result->getMatchedRoute();
+        if (is_string($middleware)) {
+            $middleware = $this->container->get(MiddlewareFactory::class)->prepare($middleware);
+        }
         $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
         $request = $request->withAttribute(RouteResult::class, $result);
         return $this->container->get(Application::class)->runAction($request);
