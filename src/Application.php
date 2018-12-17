@@ -30,12 +30,6 @@ use Zend\Stratigility\MiddlewarePipeInterface;
 use function Zend\Stratigility\path;
 use Zend\Expressive\MiddlewareFactory;
 
-use ON\Router\ActionMiddlewareDecorator;
-
-function actionMiddleware ($middleware) {
-  return new ActionMiddlewareDecorator($middleware);
-}
-
 class Application extends \Zend\Expressive\Application
 {
     /**
@@ -82,43 +76,6 @@ class Application extends \Zend\Expressive\Application
         $this->routes          = $routes;
         $this->pipeline        = $pipeline;
         $this->factory        = $factory;
-    }
-
-     /**
-     * Add a route for the route middleware to match.
-     *
-     * Accepts either a Router\Route instance, or a combination of a path and
-     * middleware, and optionally the HTTP methods allowed.
-     *
-     * On first invocation, pipes the route middleware to the middleware
-     * pipeline.
-     *
-     * @param string|Router\Route $path
-     * @param callable|string|array $middleware Middleware (or middleware service name) to associate with route.
-     * @param null|array $methods HTTP method to accept; null indicates any.
-     * @param null|string $name The name of the route.
-     * @return Router\Route
-     * @throws Exception\InvalidArgumentException if $path is not a Router\Route AND middleware is null.
-     */
-    public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): \Zend\Expressive\Router\Route
-    {
-        $middleware = actionMiddleware($middleware);
-        return $this->routes->route(
-            $path,
-            $this->factory->prepare($middleware),
-            $methods,
-            $name
-        );
-    }
-
-    /**
-     * Retrieve all directly registered routes with the application.
-     *
-     * @return Router\Route[]
-     */
-    public function getRoutes(): array
-    {
-        return $this->routes;
     }
 
     /**

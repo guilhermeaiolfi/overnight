@@ -6,7 +6,7 @@ namespace ON\Container;
 use ON\Application;
 use Psr\Container\ContainerInterface;
 use Zend\Expressive\ApplicationPipeline;
-use Zend\Expressive\MiddlewareFactory;
+use ON\Container\MiddlewareFactory;
 use Zend\Expressive\Router\RouteCollector;
 use Zend\Expressive\Router\RouterInterface;
 use Zend\HttpHandlerRunner\RequestHandlerRunner;
