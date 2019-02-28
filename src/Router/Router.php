@@ -94,7 +94,7 @@ class Router implements StatefulRouterInterface {
     }
 
     //$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
-    return $basePath;
+    return ltrim($basePath, '/');
   }
 
   public function gen($routeName = null, $routeParams = [], $options = []) {
