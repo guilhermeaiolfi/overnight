@@ -62,9 +62,12 @@ class AuthorizationMiddleware implements MiddlewareInterface
 
     $checkPermissionsMethod = 'check' . ucfirst($request->getMethod()) . 'Permissions';
     if(!method_exists($page, $checkPermissionsMethod)) {
-      $checkPermissionsMethod = 'defaultCheckPermissions';
+      $checkPermissionsMethod = 'checkPermissions';
     }
 
+    if(!method_exists($page, $checkPermissionsMethod)) {
+      $checkPermissionsMethod = 'defaultCheckPermissions';
+    }
     // TODO: do we need to wrap this in a try/catch block? what happens if an exception is thrown in checkPermissions()?
     $args = [$this->auth, $this->authorizationService, $request];
     $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
