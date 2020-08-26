@@ -3,19 +3,19 @@
 namespace ON\Router;
 
 use Aura\Router\RouterContainer;
-use Zend\Expressive\Router\AuraRouter;
+use Mezzio\Router\AuraRouter;
 use Aura\Router\Route as AuraRoute;
-use Zend\Expressive\Router\Route;
-use Zend\Expressive\Router\RouteResult;
+use Mezzio\Router\Route;
+use Mezzio\Router\RouteResult;
 use Fig\Http\Message\RequestMethodInterface as RequestMethod;
 use Psr\Http\Message\ServerRequestInterface as Request;
 use ON\Router\RouterInterface as ONRouterInterface;
-use Zend\Expressive\Router\RouterInterface as ZendRouterInterface;
+use Mezzio\Router\RouterInterface as ZendRouterInterface;
 use Zend\Diactoros\ServerRequest;
 use Zend\Diactoros\ServerRequestFactory;
 use ON\Context;
-use Zend\Expressive\Router\Exception;
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\Exception;
+use Mezzio\Router\RouterInterface;
 
 class Router implements StatefulRouterInterface {
 
@@ -226,7 +226,7 @@ class Router implements StatefulRouterInterface {
     return $this->basepath;
   }
 
-  public function match(Request $request): \Zend\Expressive\Router\RouteResult
+  public function match(Request $request): \Mezzio\Router\RouteResult
   {
     return $this->router->match($request);
   }

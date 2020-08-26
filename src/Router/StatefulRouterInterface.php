@@ -2,7 +2,7 @@
 
 namespace ON\Router;
 
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\RouterInterface;
 
 interface StatefulRouterInterface extends RouterInterface {
   public function getRouteResult ($index);

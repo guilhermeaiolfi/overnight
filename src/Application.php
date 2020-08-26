@@ -1,36 +1,19 @@
 <?php
 namespace ON;
 
-use Fig\Http\Message\StatusCodeInterface as StatusCode;
-use Zend\Expressive\Handler\NotFoundHandler;
-
-use Zend\Diactoros\Response;
-use Zend\Diactoros\Response\EmitterInterface;
-use Zend\Diactoros\Response\SapiEmitter;
-use Zend\Diactoros\ServerRequest;
-use Zend\Diactoros\ServerRequestFactory;
-use Zend\Stratigility\MiddlewarePipe;
-use Zend\Expressive\Router\Route;
-use Zend\Expressive\Router;
-use Zend\Expressive\RouterInterface;
-use Zend\Expressive\UnexpectedValueException;
-use Zend\Expressive\Emitter\EmitterStack;
-use Zend\Expressive\InvalidArgumentException;
-use ON\Middleware\RouteMiddleware;
-use ON\Router\StatefulRouterInterface;
-
+use Laminas\HttpHandlerRunner\RequestHandlerRunner;
+use Laminas\Stratigility\MiddlewarePipeInterface;
+use Mezzio\Router\RouteCollector;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Zend\Expressive\Router\RouteCollector;
-use Zend\HttpHandlerRunner\RequestHandlerRunner;
-use Zend\Stratigility\MiddlewarePipeInterface;
 
-use function Zend\Stratigility\path;
-use Zend\Expressive\MiddlewareFactory;
+use ON\Router\StatefulRouterInterface;
 
-class Application extends \Zend\Expressive\Application
+use Mezzio\MiddlewareFactory;
+
+class Application extends \Mezzio\Application
 {
     /**
      * @var MiddlewareFactory
@@ -55,12 +38,6 @@ class Application extends \Zend\Expressive\Application
      * Calls on the parent constructor, and then uses the provided arguments
      * to set internal properties.
      *
-     * @param Router\RouterInterface $router
-     * @param null|ContainerInterface $container IoC container from which to pull services, if any.
-     * @param null|RequestHandlerInterface $handler Default request handler
-     *     to use when $out is not provided on invocation / run() is invoked.
-     * @param null|EmitterInterface $emitter Emitter to use when `run()` is
-     *     invoked.
      */
     public function __construct(
         MiddlewareFactory $factory,
@@ -71,11 +48,11 @@ class Application extends \Zend\Expressive\Application
         StatefulRouterInterface $router
     ) {
         parent::__construct($factory, $pipeline, $routes, $runner);
-        $this->router          = $router;
-        $this->runner          = $runner;
-        $this->routes          = $routes;
-        $this->pipeline        = $pipeline;
         $this->factory        = $factory;
+        $this->pipeline        = $pipeline;
+        $this->routes          = $routes;
+        $this->runner          = $runner;
+        $this->router          = $router;
     }
 
     /**

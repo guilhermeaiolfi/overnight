@@ -4,7 +4,7 @@ namespace ON\Container;
 use Psr\Http\Server\MiddlewareInterface;
 use ON\Router\ActionMiddlewareDecorator;
 
-class MiddlewareFactory extends \Zend\Expressive\MiddlewareFactory
+class MiddlewareFactory extends \Mezzio\MiddlewareFactory
 {
 	public function prepare ($middleware): MiddlewareInterface
 	{

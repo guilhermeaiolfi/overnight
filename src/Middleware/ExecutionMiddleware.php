@@ -7,13 +7,13 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
 use ON\Action;
 use ON\Common\ViewBuilderTrait;
 use ON\Container\ExecutorInterface;
 
-use Zend\Expressive\Delegate\NotFoundDelegateInterface;
+use Mezzio\Delegate\NotFoundDelegateInterface;
 
 class ExecutionMiddleware implements MiddlewareInterface
 {

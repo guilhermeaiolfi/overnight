@@ -3,13 +3,14 @@ declare(strict_types=1);
 
 namespace ON\Container;
 
+
 use ON\Application;
-use Psr\Container\ContainerInterface;
-use Zend\Expressive\ApplicationPipeline;
+use Mezzio\ApplicationPipeline;
 use ON\Container\MiddlewareFactory;
-use Zend\Expressive\Router\RouteCollector;
-use Zend\Expressive\Router\RouterInterface;
-use Zend\HttpHandlerRunner\RequestHandlerRunner;
+use Mezzio\Router\RouteCollector;
+use Mezzio\Router\RouterInterface;
+use Psr\Container\ContainerInterface;
+use Laminas\HttpHandlerRunner\RequestHandlerRunner;
 
 /**
  * Create an Application instance.
@@ -27,12 +28,13 @@ class ApplicationFactory
 {
     public function __invoke(ContainerInterface $container) : Application
     {
-        return new Application(
+        $app = new Application(
             $container->get(MiddlewareFactory::class),
             $container->get(ApplicationPipeline::class),
             $container->get(RouteCollector::class),
             $container->get(RequestHandlerRunner::class),
             $container->get(RouterInterface::class)
         );
+        return $app;
     }
 }

@@ -6,8 +6,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
 use ON\Action;
 
 class ActionInjectionMiddleware implements MiddlewareInterface
@@ -22,7 +22,7 @@ class ActionInjectionMiddleware implements MiddlewareInterface
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
 
-        if (! $routeResult) {
+        if (!$routeResult) {
             return $handler->handle($request, $handler);
         }
 
@@ -30,13 +30,15 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
         $action = null;
 
-        $action = new Action($middleware->getString());
+        if ($middleware instanceof \ON\Router\ActionMiddlewareDecorator && strpos($middleware->getString(), "::") !== FALSE) {
+            $action = new Action($middleware->getString());
 
-        $instance = $this->container->get($action->getClassName());
+            $instance = $this->container->get($action->getClassName());
 
-        $action->setPageInstance($instance);
+            $action->setPageInstance($instance);
 
-        $request = $request->withAttribute(Action::class, $action);
+            $request = $request->withAttribute(Action::class, $action);
+        }
 
         return $handler->handle($request, $handler);
     }

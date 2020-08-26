@@ -7,10 +7,10 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
 use ON\Router\StatefulRouterInterface;
-use Zend\Expressive\Router\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
+use Mezzio\Router\Middleware\RouteMiddleware as MezzioRouteMiddleware;
 
 
 use ON\Context;
@@ -21,7 +21,7 @@ use ON\Context;
  *
  * @internal
  */
-class RouteMiddleware extends ExpressiveRouteMiddleware
+class RouteMiddleware extends MezzioRouteMiddleware
 {
     /**
      * @var RouterInterface

@@ -3,8 +3,8 @@ namespace ON\Middleware;
 
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Zend\Expressive\Router\Exception\MissingDependencyException;
-use Zend\Expressive\Router\RouterInterface;
+use Mezzio\Router\Exception\MissingDependencyException;
+use Mezzio\Router\RouterInterface;
 use ON\Context;
 
 /**
@@ -12,7 +12,7 @@ use ON\Context;
  *
  * This factory depends on one other service:
  *
- * - Zend\Expressive\Router\RouterInterface, which should resolve to
+ * - Mezzio\Router\RouterInterface, which should resolve to
  *   a class implementing that interface.
  * - Psr\Http\Message\ResponseInterface, which should resolve to an instance
  *   implementing that interface. NOTE: in version 3, this should resolve to a
