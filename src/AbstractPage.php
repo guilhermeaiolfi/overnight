@@ -2,16 +2,17 @@
 namespace ON;
 
 use Psr\Container\ContainerInterface;
+use League\Plates\Engine;
 use Zend\Diactoros\ServerRequestFactory;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\Route;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\Route;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Request;
 use Zend\Diactoros\Response\HtmlResponse;
-use League\Plates\Engine;
 use ON\Application;
 use ON\Common\AttributesTrait;
 use ON\Container\MiddlewareFactory;
+use ON\Action;
 
 abstract class AbstractPage implements IPage {
   use AttributesTrait;
@@ -105,21 +106,11 @@ abstract class AbstractPage implements IPage {
     $renderer_class = isset($renderer_config['class'])? $renderer_config['class'] : '\ON\Renderer';
 
     $engine = $this->container->get(Engine::class);
-
     // Set file extension
     if (isset($config['templates']['extension'])) {
         $engine->setFileExtension($config['templates']['extension']);
     }
-
-    $renderer = new $renderer_class($engine);
-
-    $allPaths = isset($config['templates']['paths']) && is_array($config['templates']['paths']) ? $config['templates']['paths'] : [];
-    foreach ($allPaths as $namespace => $paths) {
-      $namespace = is_numeric($namespace) ? null : $namespace;
-      foreach ((array) $paths as $path) {
-        $renderer->addPath($path, $namespace);
-      }
-    }
+    $renderer = $this->container->get($renderer_class);
 
     if ($assigns = $renderer_config['inject']) {
       foreach($assigns as $key => $class) {
@@ -136,6 +127,7 @@ abstract class AbstractPage implements IPage {
           if (is_string($section_config[1])) { //middleware
             $section_config[1] = $this->container->get(MiddlewareFactory::class)->prepare($section_config[1]);
           }
+          //var_dump($section_config);
           $route = new Route(...$section_config);
           $route_result = RouteResult::fromRoute($route);
 
@@ -149,7 +141,7 @@ abstract class AbstractPage implements IPage {
           $response = new Response();
           $app = $this->container->get(Application::class);
 
-          $response = $app->runAction($request, $response);
+          $response = Action::runAction($app, $request, $response);
           // create section
           $template->start($section_name);
             echo $response->getBody();
@@ -158,7 +150,7 @@ abstract class AbstractPage implements IPage {
         else {
           // create section
           $template->start($section_name);
-          include $section_config;
+            include $section_config;
           $template->end();
         }
       }

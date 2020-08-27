@@ -37,7 +37,6 @@ class ExecutionMiddleware implements MiddlewareInterface
         }
 
         $action = $request->getAttribute(Action::class);
-
         $action_response = $this->executor->execute($action->getExecutable(), [$request, $handler]);
 
         return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);

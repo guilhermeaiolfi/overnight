@@ -70,11 +70,12 @@ class ValidationMiddleware implements MiddlewareInterface
         }
 
         //if it's not validated, we need to handle the error response
-        $handlerErrorMethod = "handleError";
+        $handleErrorMethod = "handleError";
         if (!method_exists($page, $handleErrorMethod)) {
             $handleErrorMethod = "defaultHandleError";
         }
-        $response = $this->executor->execute([$page, $handlerErrorMethod], $args);
+        $response = $this->executor->execute([$page, $handleErrorMethod], $args);
+
         return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
     }
 }

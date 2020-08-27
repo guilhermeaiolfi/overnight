@@ -17,13 +17,11 @@ use ON\Context;
 use Mezzio\Router\Exception;
 use Mezzio\Router\RouterInterface;
 
-class Router implements StatefulRouterInterface {
+class RouterBridge implements StatefulRouterInterface {
 
   const FRAGMENT_IDENTIFIER_REGEX = '/^([!$&\'()*+,;=._~:@\/?-]|%[0-9a-fA-F]{2}|[a-zA-Z0-9])+$/';
 
   protected $basepath = "";
-
-  protected $routed_stack = [];
 
   protected $router;
 
@@ -49,20 +47,12 @@ class Router implements StatefulRouterInterface {
     $this->basepath = $basepath;
   }
 
-  public function getRouteResult ($index) {
-    return isset($this->routed_stack[$index])? $this->routed_stack[$index] : null;
+  public function setContext($context) {
+      $this->context = $context;
   }
 
-  public function addRouteResult ($route) {
-    $this->routed_stack[] = $route;
-  }
-
-  public function getFirstRouteResult () {
-    return $this->getRouteResult(0);
-  }
-
-  public function getLastRouteResult () {
-    return $this->getRouteResult(count($this->routed_stack) - 1);
+  public function getContext($context) {
+      return $this->context;
   }
 
   static public function detectBaseUrl ($request = null) {
@@ -94,7 +84,42 @@ class Router implements StatefulRouterInterface {
     }
 
     //$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
-    return ltrim($basePath, '/');
+     return "/" . ltrim($basePath, '/');
+  }
+
+  static public function getBaseHref ($config) {
+    if (isset($config["paths"]) && isset($config["paths"]["basepath"]) && $config["paths"]["basepath"] != null) {
+        return RouterBridge::normalizePath($config["paths"]["basepath"]);
+    }
+    return RouterBridge::normalizePath(RouterBridge::detectBaseUrl());
+  }
+
+  static public function normalizePath ($href) {
+      return rtrim($href,"/");
+  }
+
+  public function getRouteResult ($index) {
+    $context = $this->context;
+    $routed_stack = $context->getAttribute("routed_stack");
+    return isset($routed_stack[$index])? $routed_stack[$index] : null;
+  }
+
+  public function addRouteResult ($route) {
+    $routed_stack = $this->context->getAttribute('routed_stack');
+    if (!$routed_stack) {
+        $routed_stack = [];
+    }
+    $routed_stack[] = $route;
+    $this->context->setAttribute("routed_stack", $routed_stack);
+  }
+
+  public function getFirstRouteResult () {
+    return $this->getRouteResult(0);
+  }
+
+  public function getLastRouteResult () {
+    $routed_stack = $this->context->getAttribute('routed_stack');
+    return $this->getRouteResult(count($routed_stack) - 1);
   }
 
   public function gen($routeName = null, $routeParams = [], $options = []) {
@@ -110,9 +135,11 @@ class Router implements StatefulRouterInterface {
 
     $options = array_merge($default_opts, $options);
 
-    $result = $this->getFirstRouteResult();
+    //$result = $this->getFirstRouteResult();
 
     $request = $this->context->getAttribute("REQUEST");
+
+    $result = $request->getAttribute(\Mezzio\Router\RouteResult::class);
 
     $uri = $request->getUri();
 
@@ -154,8 +181,8 @@ class Router implements StatefulRouterInterface {
 
     try {
       // Generate the route
-      $path = $this->generateUri($routeName, $routeParams, $routerOptions);
-      $result = $this->match(new ServerRequest([], [], $path));
+      $path = $this->router->generateUri($routeName, $routeParams, $routerOptions);
+      $result = $this->router->match(new ServerRequest([], [], $path));
       $params = $result->getMatchedParams();
     } catch (\Exception $e) {
       $path = $this->getBasePath() . "/" . $routeName;
@@ -205,8 +232,6 @@ class Router implements StatefulRouterInterface {
     $uri = (string) $uri;
 
     return $uri;
-
-
   }
 
   protected function mergeParams($route, RouteResult $result, array $params)
@@ -225,20 +250,4 @@ class Router implements StatefulRouterInterface {
   public function getBasePath() {
     return $this->basepath;
   }
-
-  public function match(Request $request): \Mezzio\Router\RouteResult
-  {
-    return $this->router->match($request);
-  }
-
-  public function generateUri($name, array $substitutions = [], array $options = []): string
-  {
-    return $this->router->generateUri($name, $substitutions, $options);
-  }
-
-  public function addRoute(Route $route): void
-  {
-      $this->router->addRoute($route);
-  }
-
 }

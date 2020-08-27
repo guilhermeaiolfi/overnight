@@ -9,7 +9,6 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\RouterInterface;
-use ON\Router\StatefulRouterInterface;
 use Mezzio\Router\Middleware\RouteMiddleware as MezzioRouteMiddleware;
 
 
@@ -36,7 +35,7 @@ class RouteMiddleware extends MezzioRouteMiddleware
      * @param RouterInterface $router
      * @param ResponseInterface $responsePrototype
      */
-    public function __construct(StatefulRouterInterface $router, Context $context = null, $container = null)
+    public function __construct(RouterInterface $router, Context $context = null, $container = null)
     {
         $this->router = $router;
         $this->context = $context;
@@ -73,7 +72,7 @@ class RouteMiddleware extends MezzioRouteMiddleware
 
         $this->context->setAttribute(RouteResult::class, $result);
         $this->context->setAttribute("REQUEST", $request);
-        $this->router->addRouteResult($result);
+        //$this->router->addRouteResult($result);
 
         $options = $result->getMatchedRoute()->getOptions();
         if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
