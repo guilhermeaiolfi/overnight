@@ -7,10 +7,9 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
-use ON\Router\StatefulRouterInterface;
-use Zend\Expressive\Router\Middleware\RouteMiddleware as ExpressiveRouteMiddleware;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
+use Mezzio\Router\Middleware\RouteMiddleware as MezzioRouteMiddleware;
 
 
 use ON\Context;
@@ -21,7 +20,7 @@ use ON\Context;
  *
  * @internal
  */
-class RouteMiddleware extends ExpressiveRouteMiddleware
+class RouteMiddleware extends MezzioRouteMiddleware
 {
     /**
      * @var RouterInterface
@@ -36,7 +35,7 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
      * @param RouterInterface $router
      * @param ResponseInterface $responsePrototype
      */
-    public function __construct(StatefulRouterInterface $router, Context $context = null, $container = null)
+    public function __construct(RouterInterface $router, Context $context = null, $container = null)
     {
         $this->router = $router;
         $this->context = $context;
@@ -73,7 +72,7 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
 
         $this->context->setAttribute(RouteResult::class, $result);
         $this->context->setAttribute("REQUEST", $request);
-        $this->router->addRouteResult($result);
+        //$this->router->addRouteResult($result);
 
         $options = $result->getMatchedRoute()->getOptions();
         if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {

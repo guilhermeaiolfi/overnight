@@ -7,12 +7,11 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
-use Zend\Expressive\Router\Route;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
+use Mezzio\Router\Route;
 use Zend\Diactoros\Response\RedirectResponse;
 use Zend\Diactoros\Response\EmptyResponse;
-use Zend\Expressive\Helper\UrlHelper;
 use Zend\Authentication\AuthenticationServiceInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
@@ -27,8 +26,6 @@ class SecurityMiddleware implements MiddlewareInterface
      * @var ContainerInterface|null
      */
     protected $container;
-
-    protected $urlHelper;
 
     protected $auth;
     /**

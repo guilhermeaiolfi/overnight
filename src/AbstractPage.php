@@ -3,15 +3,15 @@ namespace ON;
 
 use Psr\Container\ContainerInterface;
 use Zend\Diactoros\ServerRequestFactory;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\Route;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\Route;
 use Zend\Diactoros\Response;
 use Zend\Diactoros\Request;
 use Zend\Diactoros\Response\HtmlResponse;
-use League\Plates\Engine;
 use ON\Application;
 use ON\Common\AttributesTrait;
 use ON\Container\MiddlewareFactory;
+use ON\Action;
 
 abstract class AbstractPage implements IPage {
   use AttributesTrait;
@@ -104,22 +104,8 @@ abstract class AbstractPage implements IPage {
 
     $renderer_class = isset($renderer_config['class'])? $renderer_config['class'] : '\ON\Renderer';
 
-    $engine = $this->container->get(Engine::class);
 
-    // Set file extension
-    if (isset($config['templates']['extension'])) {
-        $engine->setFileExtension($config['templates']['extension']);
-    }
-
-    $renderer = new $renderer_class($engine);
-
-    $allPaths = isset($config['templates']['paths']) && is_array($config['templates']['paths']) ? $config['templates']['paths'] : [];
-    foreach ($allPaths as $namespace => $paths) {
-      $namespace = is_numeric($namespace) ? null : $namespace;
-      foreach ((array) $paths as $path) {
-        $renderer->addPath($path, $namespace);
-      }
-    }
+    $renderer = $this->container->get($renderer_class);
 
     if ($assigns = $renderer_config['inject']) {
       foreach($assigns as $key => $class) {
@@ -127,45 +113,13 @@ abstract class AbstractPage implements IPage {
       }
     }
 
-    $sections = array();
-    $template = $engine->make($template_name);
-    if (isset($layout_config["sections"])) {
-      foreach($layout_config["sections"] as $section_name => $section_config) {
-        if (is_array($section_config)) {
-          $request = ServerRequestFactory::fromGlobals();
-          if (is_string($section_config[1])) { //middleware
-            $section_config[1] = $this->container->get(MiddlewareFactory::class)->prepare($section_config[1]);
-          }
-          $route = new Route(...$section_config);
-          $route_result = RouteResult::fromRoute($route);
-
-          $request = $request->withAttribute(RouteResult::class, $route_result);
-
-          $request = $request->withAttribute("PARENT-REQUEST", $request);
-
-          if (!isset($section_config["renderer"])) {
-            $section_config["renderer"] = $renderer_name;
-          }
-          $response = new Response();
-          $app = $this->container->get(Application::class);
-
-          $response = $app->runAction($request, $response);
-          // create section
-          $template->start($section_name);
-            echo $response->getBody();
-          $template->end();
-        }
-        else {
-          // create section
-          $template->start($section_name);
-          include $section_config;
-          $template->end();
-        }
-      }
+    // get the page method executed to determine the template name
+    if (!isset($template_name)) {
+        throw new \Exception("No template name set.");
     }
 
-    $template->layout($layout_name, $data);
-    return $template->render($data);
+    $layout_config["name"] = $layout_name;
+    return $renderer->render($layout_config, $template_name, $data);
   }
 
   public function processForward($middleware, $request) {

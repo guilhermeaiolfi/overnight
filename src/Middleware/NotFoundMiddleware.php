@@ -33,7 +33,6 @@ class NotFoundMiddleware implements MiddlewareInterface
     {
         try {
             $response = $handler->handle($request, $handler);
-            echo "dsdsa";exit;
             return $response;
         } catch (NotFoundException $e) {
 
