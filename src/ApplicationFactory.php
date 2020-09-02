@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace ON\Container;
+namespace ON;
 
 
 use ON\Application;
@@ -28,13 +28,11 @@ class ApplicationFactory
 {
     public function __invoke(ContainerInterface $container) : Application
     {
-        $app = new Application(
+        return new Application(
             $container->get(MiddlewareFactory::class),
             $container->get(ApplicationPipeline::class),
             $container->get(RouteCollector::class),
-            $container->get(RequestHandlerRunner::class),
-            $container->get(RouterInterface::class)
+            $container->get(RequestHandlerRunner::class)
         );
-        return $app;
     }
 }

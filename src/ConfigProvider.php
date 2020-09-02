@@ -44,7 +44,7 @@ class ConfigProvider
                 //ContainerInterface::class                     => Container\InjectorContainer::class,
                 //Container\ExecutorInterface::class            => Container\InjectorContainer::class,
                 \Mezzio\MiddlewareFactory::class              => \ON\Container\MiddlewareFactory::class,
-                Application::class                           => \Mezzio\Application::class,
+                \Mezzio\Application::class                           => Application::class,
 
                 DEFAULT_DELEGATE            => Handler\NotFoundHandler::class,
                 DISPATCH_MIDDLEWARE         => Router\Middleware\DispatchMiddleware::class,
@@ -55,6 +55,8 @@ class ConfigProvider
 
             ],
             'factories' => [
+                Application::class                           => \ON\ApplicationFactory::class,
+
                 RouterBridge::class                         => \ON\Router\RouterBridgeFactory::class,
                 \Mezzio\Router\AuraRouter::class            => \ON\Router\RouterFactory::class,
                 \Mezzio\ApplicationPipeline::class           => \Mezzio\Container\ApplicationPipelineFactory::class,
