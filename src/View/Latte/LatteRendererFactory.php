@@ -16,7 +16,12 @@ class LatteRendererFactory {
     $latte = $c->get(Engine::class);
     $app = $c->get(Application::class);
 
-    var_dump($config["latte"]);exit;
+    // lets create a set
+    $set = new \Latte\Macros\MacroSet($latte->getCompiler());
+
+    $set->addMacro('section', function ($node, $writer) {
+      return $writer->write('echo isset($__sections)? $__sections[%node.args] : null');
+    });
 
     $latte->setTempDirectory($config["paths"]["latte"]);
     $latte->setAutoRefresh($config["latte"]["autorefresh"]);

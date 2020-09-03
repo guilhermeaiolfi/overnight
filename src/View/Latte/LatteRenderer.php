@@ -46,16 +46,19 @@ class LatteRenderer  implements RendererInterface
                 if (is_array($section_config)) {
                     $response = $this->runSection(...$section_config);
                     // create section
-                    $data["sections"][$section_name] = $response->getBody();
+                    $data["__sections"][$section_name] = $response->getBody();
                 }
                 else {
                     // create section
-                    $data["sections"][$section_name] = $section_config;
+                    $data["__sections"][$section_name] = $section_config;
                 }
             }
         }
+        $engine->onCompile[] = function ($latte) {
+
+        };
         $contentPath = $this->findTemplate($template_name, $ext);
-        $data["sections"]["content"] = $engine->renderToString($contentPath, $data);
+        $data["__sections"]["content"] = $engine->renderToString($contentPath, $data);
         return $engine->renderToString($templatePath, $data);
     }
 
