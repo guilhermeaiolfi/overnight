@@ -4,9 +4,9 @@ namespace ON\View\Plates;
 use League\Plates\Engine;
 use Mezzio\Plates\PlatesRenderer as MezzioPlatesRenderer;
 
-use Zend\Diactoros\Response;
-use Zend\Diactoros\Request;
-use Zend\Diactoros\Response\HtmlResponse;
+use Laminas\Diactoros\Response;
+use Laminas\Diactoros\Request;
+use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Container\MiddlewareFactory;
 use ON\Action;
 use ON\View\RendererInterface;

@@ -1,16 +1,16 @@
 <?php
 namespace ON\View\Latte;
 
-use Zend\Diactoros\ServerRequestFactory;
-use ON\Container\MiddlewareFactory;
 use Mezzio\Application;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
-use Zend\Diactoros\Response;
-use Zend\Diactoros\Request;
-use Zend\Diactoros\Response\HtmlResponse;
+use Laminas\Diactoros\Response;
+use Laminas\Diactoros\Request;
+use Laminas\Diactoros\Response\HtmlResponse;
+use Laminas\Diactoros\ServerRequestFactory;
 use ON\Action;
 use ON\View\RendererInterface;
+use ON\Container\MiddlewareFactory;
 use Latte\Engine;
 
 use function explode;
@@ -40,26 +40,40 @@ class LatteRenderer  implements RendererInterface
 
         $templatePath = $this->findTemplate($layout["name"], $ext);
         $sections = array();
-        $data["sections"] = [];
+        $blocks = [];
         if (isset($layout["sections"])) {
             foreach($layout["sections"] as $section_name => $section_config) {
                 if (is_array($section_config)) {
                     $response = $this->runSection(...$section_config);
                     // create section
-                    $data["__sections"][$section_name] = $response->getBody();
+                    $blocks[$section_name] = '{block ' . $section_name .'}' . $response->getBody() . '{/block}';
                 }
                 else {
                     // create section
-                    $data["__sections"][$section_name] = $section_config;
+                    $blocks[$section_name] = $section_config;
                 }
             }
         }
+        //$engine->getCompiler()->openMacro("define", )
         $engine->onCompile[] = function ($latte) {
 
         };
         $contentPath = $this->findTemplate($template_name, $ext);
-        $data["__sections"]["content"] = $engine->renderToString($contentPath, $data);
-        return $engine->renderToString($templatePath, $data);
+
+        $engine->addProvider('coreParentFinder', function ($template) use ($templatePath) {
+            if (!$template->getReferenceType()) {
+                return $templatePath;
+            }
+        });
+        //$data["__sections"]["content"] = $engine->renderToString($contentPath, $data);
+        //return $engine->renderToString($templatePath, $data);
+        $templates = $blocks;
+        $templates[$templatePath] = file_get_contents($templatePath);
+        $templates[$contentPath] = $template["content"] = '{block content}' . file_get_contents($contentPath) . '{block}';
+
+        $loader = new \Latte\Loaders\StringLoader($templates);
+        $engine->setLoader($loader);
+        return $engine->renderToString($contentPath, $data);
     }
 
     public function findTemplate($name, $ext) {

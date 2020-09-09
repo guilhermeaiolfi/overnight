@@ -2,7 +2,7 @@
 namespace ON\Db;
 
 use Psr\Container\ContainerInterface;
-use Zend\Db\Adapter\Adapter;
+use Laminas\Db\Adapter\Adapter;
 
 class AdapterServiceFactory
 {

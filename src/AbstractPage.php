@@ -2,12 +2,12 @@
 namespace ON;
 
 use Psr\Container\ContainerInterface;
-use Zend\Diactoros\ServerRequestFactory;
+use Laminas\Diactoros\ServerRequestFactory;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
-use Zend\Diactoros\Response;
-use Zend\Diactoros\Request;
-use Zend\Diactoros\Response\HtmlResponse;
+use Laminas\Diactoros\Response;
+use Laminas\Diactoros\Request;
+use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Common\AttributesTrait;
 use ON\Container\MiddlewareFactory;

@@ -9,12 +9,12 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Mezzio\MiddlewareFactory;
-use Zend\Diactoros\ServerRequestFactory;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
 
-use Zend\Diactoros\Response;
-use Zend\Diactoros\Request;
+use Laminas\Diactoros\ServerRequestFactory;
+use Laminas\Diactoros\Response;
+use Laminas\Diactoros\Request;
 
 class Application extends \Mezzio\Application {
 

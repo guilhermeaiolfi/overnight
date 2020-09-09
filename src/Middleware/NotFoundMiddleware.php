@@ -36,7 +36,7 @@ class NotFoundMiddleware implements MiddlewareInterface
             return $response;
         } catch (NotFoundException $e) {
 
-            $notFoundHandler = $this->container->get(\Zend\Expressive\Handler\NotFoundHandler::class);
+            $notFoundHandler = $this->container->get(\Mezzio\Handler\NotFoundHandler::class);
             return $notFoundHandler->handle($request, $handler);
         }
     }
