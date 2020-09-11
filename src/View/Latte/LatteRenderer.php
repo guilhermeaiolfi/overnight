@@ -1,6 +1,7 @@
 <?php
 namespace ON\View\Latte;
 
+use Psr\Container\ContainerInterface;
 use Mezzio\Application;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
@@ -20,10 +21,12 @@ class LatteRenderer  implements RendererInterface
     protected $config = null;
     protected $app = null;
     protected $engine = null;
-    public function __construct($config, Engine $engine, Application $app) {
+    protected $container = null;
+    public function __construct($config, Engine $engine, Application $app, ContainerInterface $container) {
         $this->config = $config;
         $this->engine = $engine;
         $this->app = $app;
+        $this->container = $container;
     }
 
     public function render ($layout, $template_name = null, $data = null, $params = []) {
@@ -36,60 +39,65 @@ class LatteRenderer  implements RendererInterface
         //print_r($layout);
         $latte_renderer_config = $config["output_types"]["html"]["renderers"]["latte"];
 
+        if (isset($latte_renderer_config["inject"]) && is_array($latte_renderer_config["inject"])) {
+            foreach ($latte_renderer_config["inject"] as $key => $class) {
+                $data[$key] = $this->container->get($class);
+            }
+        }
         $ext = isset($latte_renderer_config["extension"])? $latte_renderer_config["extension"] : $config["latte"]["extension"];
 
         $templatePath = $this->findTemplate($layout["name"], $ext);
         $sections = array();
         $blocks = [];
+        $loader = null;
+        $templates = null;
         if (isset($layout["sections"])) {
             foreach($layout["sections"] as $section_name => $section_config) {
-                if (is_array($section_config)) {
+                if (is_array($section_config)) { // run action
                     $response = $this->runSection(...$section_config);
                     // create section
-                    $blocks[$section_name] = '{block ' . $section_name .'}' . $response->getBody() . '{/block}';
+
+                    if (isset($section_config[4]) && ($options = $section_config[4]) && $options["compile"]) { // not supported yet
+                        $blocks[$section_name] = ["type" => "latte", "content" => $response->getBody()];
+                        //if ($loader )
+                    } else {
+                        $blocks[$section_name] = ["type" => "text", "content" => $response->getBody()];
+                    }
                 }
-                else {
+                else if (is_string($section_config) && strpos($section_config, "." . $ext) !== false) { // file
+                    $blocks[$section_name] = ["type" => "file", "content" => $this->findTemplate($section_config)];
+                } else {
                     // create section
-                    $blocks[$section_name] = $section_config;
+                    $blocks[$section_name] = ["type" => "text", "content" => $section_config];
                 }
             }
         }
-        //$engine->getCompiler()->openMacro("define", )
-        $engine->onCompile[] = function ($latte) {
-
-        };
         $contentPath = $this->findTemplate($template_name, $ext);
-
+        $blocks["content"] = ["type" => "text", "content" => $engine->renderToString($contentPath, $data)];
         $engine->addProvider('coreParentFinder', function ($template) use ($templatePath) {
             if (!$template->getReferenceType()) {
                 return $templatePath;
             }
         });
-        //$data["__sections"]["content"] = $engine->renderToString($contentPath, $data);
-        //return $engine->renderToString($templatePath, $data);
-        $templates = $blocks;
-        $templates[$templatePath] = file_get_contents($templatePath);
-        $templates[$contentPath] = $template["content"] = '{block content}' . file_get_contents($contentPath) . '{block}';
-
-        $loader = new \Latte\Loaders\StringLoader($templates);
-        $engine->setLoader($loader);
+        $data["__sections"] = $blocks;
         return $engine->renderToString($contentPath, $data);
+
     }
 
-    public function findTemplate($name, $ext) {
+    public function findTemplate($name, $ext = null) {
         list($namespace, $template_path) = explode("::", $name);
         $config = $this->config;
         $fs = null;
         $namespace_paths = $config["templates"]["paths"][$namespace];
         if (is_array($namespace_paths)) {
             foreach ($namespace_paths as $index => $path) {
-                $fs_path = $path . "/" . $template_path . "." . $ext;
+                $fs_path = $path . "/" . $template_path . ($ext? "." . $ext : "");
                 if (file_exists($fs_path)) {
                     return $fs_path;
                 }
             }
         } else if (is_string($namespace_paths)) {
-            $fs_path = $namespace_paths . "/" . $template_path . "." . $ext;
+            $fs_path = $namespace_paths . "/" . $template_path . ($ext? "." . $ext : "");
             if (file_exists($fs_path)) {
                 return $fs_path;
             }
@@ -100,7 +108,7 @@ class LatteRenderer  implements RendererInterface
     /*
     $section_config example: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
     */
-    public function runSection ($section_path, $controller, $methods, $route_name) {
+    public function runSection ($section_path, $controller, $methods, $route_name, $options = null) {
         $request = $this->app->prepareRequest($section_path, $controller, $methods, $route_name);
         return $this->app->handle($request);
     }
