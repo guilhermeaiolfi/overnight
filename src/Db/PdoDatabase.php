@@ -20,7 +20,7 @@ class PdoDatabase implements DatabaseInterface {
     try {
       $this->connection = $this->resource = new \PDO($dsn, $username, $password, $options);
 
-      if ($config->get('debug')) {
+      if ($config['debug'] && class_exists(\DebugBar\DataCollector\PDO\TraceablePDO::class)) {
         $this->connection = $this->resource = new \DebugBar\DataCollector\PDO\TraceablePDO($this->connection);
       }
       // default connection attributes

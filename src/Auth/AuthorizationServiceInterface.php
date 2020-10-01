@@ -1,7 +1,5 @@
 <?php
 namespace ON\Auth;
 
-interface AuthorizationServiceInterface {
-
+interface AuthorizationServiceInterface extends \Laminas\Authorization\AuthorizationServiceInterface {
 }
-?>

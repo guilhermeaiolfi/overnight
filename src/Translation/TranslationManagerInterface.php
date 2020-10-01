@@ -7,7 +7,7 @@ namespace ON\Translation;
 interface TranslationManagerInterface
 {
 
-  public function __construct(array $config = array());
+  public function __construct($config = array());
 
   public function getAvailableLocales();
 

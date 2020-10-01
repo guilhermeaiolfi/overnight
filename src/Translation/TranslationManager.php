@@ -145,16 +145,8 @@ class TranslationManager implements TranslationManagerInterface
     }
     $this->availableLocales = $availables;
   }
-  /**
-   * Initialize this TranslationManager.
-   *
-   * @param      AgaviContext The current application context.
-   * @param      array        An associative array of initialization parameters.
-   *
-   * @author     Dominik del Bondio <ddb@bitxtender.com>
-   * @since      0.11.0
-   */
-  public function __construct(array $config = array())
+
+  public function __construct($config = array())
   {
     $this->config = $config;
     $this->translators = $config["translators"];
