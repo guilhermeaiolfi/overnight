@@ -53,7 +53,7 @@ class Application extends \Mezzio\Application {
 
     }
 
-    public function runAction ($request, $response) {
+    public function runAction ($request, $response = null) {
         $response = $response ?: new Response();
         $request  = $request->withAttribute('originalResponse', $response);
         return $this->handle($request);

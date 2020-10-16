@@ -12,7 +12,6 @@ use const \Mezzio\NOT_FOUND_MIDDLEWARE;
 use const \Mezzio\ROUTE_MIDDLEWARE;
 use Mezzio\Middleware\ErrorResponseGenerator;
 use Mezzio\Response\ServerRequestErrorResponseGenerator;
-use Mezzio\Handler\NotFoundHandler;
 use Mezzio\MiddlewareContainer;
 use Mezzio\ApplicationPipeline;
 use Mezzio\Router\AuraRouter;
@@ -28,6 +27,7 @@ use ON\Router\RouterBridge;
 use ON\Container\ExecutorInterface;
 use ON\Middleware\RouteMiddleware;
 use ON\Application;
+use ON\Handler\NotFoundHandler;
 use ON\Router\StatefulRouterInterface;
 
 class ConfigProvider
@@ -70,12 +70,12 @@ class ConfigProvider
                 RouterBridge::class                                 => \ON\Router\RouterBridgeFactory::class,
                 AuraRouter::class                                   => \ON\Router\RouterFactory::class,
                 ExecutorInterface::class                            => \ON\Container\ExecutorFactory::class,
-                RouteMiddleware::class        	                    => \ON\Middleware\RouteMiddlewareFactory::class,
+                RouteMiddleware::class        	                    => \ON\Container\RouteMiddlewareFactory::class,
+                NotFoundHandler::class                              => \ON\Container\NotFoundHandlerFactory::class,
 
                 ApplicationPipeline::class                          => \Mezzio\Container\ApplicationPipelineFactory::class,
                 EmitterInterface::class                             => \Mezzio\Container\EmitterFactory::class,
                 ErrorHandler::class                                 => \Mezzio\Container\ErrorHandlerFactory::class,
-                NotFoundHandler::class                              => \Mezzio\Container\NotFoundHandlerFactory::class,
                 MiddlewareContainer::class                          => \Mezzio\Container\MiddlewareContainerFactory::class,
                 //\Mezzio\MiddlewareFactory::class                  => \Mezzio\Container\MiddlewareFactoryFactory::class,
 

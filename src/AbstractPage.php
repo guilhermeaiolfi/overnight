@@ -112,22 +112,24 @@ abstract class AbstractPage implements IPage {
         $data[$key] = $this->container->get($class);
       }
     }
-
     // get the page method executed to determine the template name
     if (!isset($template_name)) {
-        throw new \Exception("No template name set.");
+      throw new \Exception("No template name set.");
     }
-
     $layout_config["name"] = $layout_name;
     return $renderer->render($layout_config, $template_name, $data);
   }
 
   public function processForward($middleware, $request) {
+    $app = $this->container->get(Application::class);
     $result = $request->getAttribute(RouteResult::class);
     $matched = $result->getMatchedRoute();
+    if (is_string($middleware)) {
+      $middleware = $app->factory->prepare($middleware);
+    }
     $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
     $request = $request->withAttribute(RouteResult::class, $result);
-    return $this->container->get(Application::class)->runAction($request);
+    return $app->runAction($request);
   }
 
   public function getContainer() {

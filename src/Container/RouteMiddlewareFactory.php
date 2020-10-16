@@ -1,11 +1,12 @@
 <?php
-namespace ON\Middleware;
+namespace ON\Container;
 
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Mezzio\Router\Exception\MissingDependencyException;
 use Mezzio\Router\RouterInterface;
 use ON\Context;
+use ON\Middleware\RouteMiddleware;
 
 /**
  * Create and return a RouteMiddleware instance.
