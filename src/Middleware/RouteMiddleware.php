@@ -82,6 +82,17 @@ class RouteMiddleware extends MezzioRouteMiddleware
             }
         }
 
+        // Inject the actual route result, as well as individual matched parameters.
+        $request = $request->withAttribute(RouteResult::class, $result);
+
+        foreach ($result->getMatchedParams() as $param => $value) {
+            $request = $request->withAttribute($param, $value);
+        }
+
+        $this->context->setAttribute(RouteResult::class, $result);
+        $this->context->setAttribute("REQUEST", $request);
+        //$this->router->addRouteResult($result);
+
         return $handler->handle($request);
     }
 }

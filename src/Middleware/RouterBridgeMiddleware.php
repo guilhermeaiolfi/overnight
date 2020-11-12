@@ -38,10 +38,12 @@ class RouterBridgeMiddleware implements MiddlewareInterface
     {
         $result = $request->getAttribute(RouteResult::class, false);
         $this->context->setAttribute("REQUEST", $request);
+        if (!$this->context->getAttribute("ORIGINAL-REQUEST")) {
+            $this->context->setAttribute("ORIGINAL-REQUEST", $request);
+        }
         $this->bridge->setContext($this->context);
 
         if ($result instanceof RouteResult) {
-            //$this->context->setAttribute(RouteResult::class, $result);
             $this->bridge->addRouteResult($result);
         }
 

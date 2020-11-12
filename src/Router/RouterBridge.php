@@ -135,13 +135,31 @@ class RouterBridge implements StatefulRouterInterface {
 
     $options = array_merge($default_opts, $options);
 
-    //$result = $this->getFirstRouteResult();
-
-    $request = $this->context->getAttribute("REQUEST");
+    $request = $this->context->getAttribute("ORIGINAL-REQUEST");
 
     $result = $request->getAttribute(\Mezzio\Router\RouteResult::class);
 
     $uri = $request->getUri();
+
+    if ($routeName === null) {
+      if ($result->isFailure()) {
+        throw new Exception\RuntimeException(
+          'Attempting to use matched result when routing failed; aborting'
+        );
+      }
+
+      $result = $this->getFirstRouteResult();
+
+      $name   = $result->getMatchedRouteName();
+
+      $params = $result->getMatchedParams();
+
+      $queryParams = array_diff_key($routeParams, $params);
+
+      $params = array_merge($request->getQueryParams(), $params, $routeParams);
+
+      return $this->gen($name, $params, $options);
+    }
 
     if ($routeName === null && $result === null) {
         // get current URL
@@ -153,22 +171,7 @@ class RouterBridge implements StatefulRouterInterface {
     // Get the options to be passed to the router
     $routerOptions = array_key_exists('router', $options) ? $options['router'] : [];
 
-    if ($routeName === null) {
-      if ($result->isFailure()) {
-        throw new Exception\RuntimeException(
-          'Attempting to use matched result when routing failed; aborting'
-        );
-      }
-      $name   = $result->getMatchedRouteName();
 
-      $params = $result->getMatchedParams();
-
-      $queryParams = array_diff_key($routeParams, $params);
-
-      $params = array_merge($request->getQueryParams(), $params, $routeParams);
-
-      return $this->gen($name, $params, $options);
-    }
 
 
     $reuseResultParams = ! isset($options['reuse_result_params']) || (bool) $options['reuse_result_params'];

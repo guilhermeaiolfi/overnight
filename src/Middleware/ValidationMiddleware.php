@@ -68,7 +68,6 @@ class ValidationMiddleware implements MiddlewareInterface
         if ($result) {
             return $handler->handle($request, $handler);
         }
-
         //if it's not validated, we need to handle the error response
         $handleErrorMethod = "handleError";
         if (!method_exists($page, $handleErrorMethod)) {

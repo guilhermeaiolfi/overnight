@@ -52,6 +52,7 @@ class PlatesRenderer  implements RendererInterface
             }
         }
         $template->layout($layout["name"], $data);
+
         return $template->render($data);
     }
 

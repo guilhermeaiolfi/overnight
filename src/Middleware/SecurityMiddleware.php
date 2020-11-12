@@ -12,7 +12,7 @@ use Mezzio\Router\RouterInterface;
 use Mezzio\Router\Route;
 use Laminas\Diactoros\Response\RedirectResponse;
 use Laminas\Diactoros\Response\EmptyResponse;
-use Laminas\Authentication\AuthenticationServiceInterface;
+use ON\Auth\AuthenticationServiceInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
 use ON\Router\StatefulRouterInterface;
