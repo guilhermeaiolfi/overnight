@@ -11,7 +11,7 @@ use Mezzio\Router\RouteResult;
 use Mezzio\Router\RouterInterface;
 use Mezzio\Helper\UrlHelper;
 use Laminas\Diactoros\Response\RedirectResponse;
-use Laminas\Authentication\AuthenticationServiceInterface;
+use ON\Auth\AuthenticationServiceInterface;
 use ON\Auth\AuthorizationServiceInterface;
 use ON\Container\ExecutorInterface;
 use ON\Exception\SecurityException;
