@@ -4,7 +4,6 @@ namespace ON\Router;
 
 use Psr\Container\ContainerInterface;
 use Aura\Router\RouterContainer;
-use Mezzio\Router\AuraRouter;
 use ON\Router\Router;
 use ON\Context;
 use ON\Router\RouterBridge;

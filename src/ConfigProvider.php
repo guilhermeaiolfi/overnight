@@ -49,7 +49,7 @@ class ConfigProvider
     {
          return [
             'aliases' =>[
-                //RouterInterface::class                        => Router\StatefulRouterInterface::class,
+                RouterInterface::class                              => AuraRouter::class,
                 //ContainerInterface::class                     => Container\InjectorContainer::class,
                 //Container\ExecutorInterface::class            => Container\InjectorContainer::class,
                 \Mezzio\MiddlewareFactory::class                    => \ON\Container\MiddlewareFactory::class,
@@ -70,7 +70,7 @@ class ConfigProvider
                 RouterBridge::class                                 => \ON\Router\RouterBridgeFactory::class,
                 AuraRouter::class                                   => \ON\Router\RouterFactory::class,
                 ExecutorInterface::class                            => \ON\Container\ExecutorFactory::class,
-                RouteMiddleware::class        	                    => \ON\Container\RouteMiddlewareFactory::class,
+                RouteMiddleware::class                              => \ON\Container\RouteMiddlewareFactory::class,
                 NotFoundHandler::class                              => \ON\Container\NotFoundHandlerFactory::class,
 
                 ApplicationPipeline::class                          => \Mezzio\Container\ApplicationPipelineFactory::class,
@@ -87,7 +87,7 @@ class ConfigProvider
 
                 ServerRequestErrorResponseGenerator::class          => \Mezzio\Container\ServerRequestErrorResponseGeneratorFactory::class,
                 ServerRequestInterface::class                       => \Mezzio\Container\ServerRequestFactoryFactory::class,
-                StreamInterface::class                              => \Mezzio\Container\StreamFactoryFactory::class,
+                StreamInterface::class                              => \Mezzio\Container\StreamFactoryFactory::class
             ]
         ];
      }
