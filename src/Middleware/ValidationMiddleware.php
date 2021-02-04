@@ -62,19 +62,22 @@ class ValidationMiddleware implements MiddlewareInterface
             $validateMethod = 'defaultValidate';
         }
 
-        $args = [$request];
-        $result = $this->executor->execute([$page, $validateMethod], $args);
+        if (method_exists($page, $validateMethod)) {
+            $args = [$request];
+            $result = $this->executor->execute([$page, $validateMethod], $args);
 
-        if ($result) {
-            return $handler->handle($request, $handler);
-        }
-        //if it's not validated, we need to handle the error response
-        $handleErrorMethod = "handleError";
-        if (!method_exists($page, $handleErrorMethod)) {
-            $handleErrorMethod = "defaultHandleError";
-        }
-        $response = $this->executor->execute([$page, $handleErrorMethod], $args);
+            if ($result) {
+                return $handler->handle($request, $handler);
+            }
+            // if it's not validated, we need to handle the error response
+            $handleErrorMethod = "handleError";
+            if (!method_exists($page, $handleErrorMethod)) {
+                $handleErrorMethod = "defaultHandleError";
+            }
+            $response = $this->executor->execute([$page, $handleErrorMethod], $args);
 
-        return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
+            return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
+        }
+        return $handler->handle($request, $handler);
     }
 }

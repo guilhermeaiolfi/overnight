@@ -70,7 +70,7 @@ class SecurityMiddleware implements MiddlewareInterface
 
         $page = $this->container->get($middleware);
 
-        if ($page->isSecure() && !$this->auth->hasIdentity()) {
+        if (is_a($page, \ON\AbstractPage::class) && $page->isSecure() && !$this->auth->hasIdentity()) {
             $config = $this->container->get('config');
             //throw new Exception('User has no permittion!');
             return $this->processForward($config->get('login'), $request);

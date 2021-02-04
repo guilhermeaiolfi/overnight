@@ -69,14 +69,18 @@ class AuthorizationMiddleware implements MiddlewareInterface
       $checkPermissionsMethod = 'defaultCheckPermissions';
     }
     // TODO: do we need to wrap this in a try/catch block? what happens if an exception is thrown in checkPermissions()?
-    $args = [$this->auth, $this->authorizationService, $request];
-    $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
-    if($result) {//$page->$checkPermissionsMethod($this->auth, $request)) {
-      return $handler->handle($request);
+    if(method_exists($page, $checkPermissionsMethod)) {
+      $args = [$this->auth, $this->authorizationService, $request];
+      $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
+      if($result) {//$page->$checkPermissionsMethod($this->auth, $request)) {
+        return $handler->handle($request);
+      } else {
+        // TODO: allow actions to handle this case e.g. through handleDenial() or something like that?
+        // this exception will bubble up to the security filter and cause a forward to the "secure" action there
+        throw new SecurityException();
+      }
     } else {
-      // TODO: allow actions to handle this case e.g. through handleDenial() or something like that?
-      // this exception will bubble up to the security filter and cause a forward to the "secure" action there
-      throw new SecurityException();
+      return $handler->handle($request, $handler);
     }
   }
 }

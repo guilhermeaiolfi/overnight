@@ -67,13 +67,13 @@ class RouterBridge implements StatefulRouterInterface {
 
     // parse_url() requires a full URL. As we don't extract the domain name or scheme,
     // we use a stand-in.
-    $requestUri = parse_url('http://example.com' . $server['REQUEST_URI'], PHP_URL_PATH);
+    $requestUri = parse_url('http://example.com' . (isset($server['REQUEST_URI'])?$server['REQUEST_URI']: null), PHP_URL_PATH);
 
     $requestRootDir = dirname($requestScriptDir); // remove /public from it
 
     $basePath = '';
     $virtualPath = $requestUri;
-    //var_dump($requestUri, $requestScriptName, $requestScriptDir, $requestRootDir);
+
     if (stripos($requestUri, $requestRootDir) === 0) {
         $basePath = $requestRootDir;
     } elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
