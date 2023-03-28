@@ -57,10 +57,6 @@ class RouteMiddleware extends ExpressiveRouteMiddleware
         $result = $this->router->match($request);
 
         if ($result->isFailure()) {
-            if ($result->isMethodFailure()) {
-                return $this->responsePrototype->withStatus(StatusCode::STATUS_METHOD_NOT_ALLOWED)
-                    ->withHeader('Allow', implode(',', $result->getAllowedMethods()));
-            }
             return $handler->handle($request);
         }
 
