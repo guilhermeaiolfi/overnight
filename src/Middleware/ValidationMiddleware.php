@@ -7,10 +7,10 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Zend\Expressive\Router\RouteResult;
-use Zend\Expressive\Router\RouterInterface;
-use Zend\Diactoros\Response\RedirectResponse;
-use Zend\Diactoros\Response\EmptyResponse;
+use Mezzio\Router\RouteResult;
+use Mezzio\Router\RouterInterface;
+use Laminas\Diactoros\Response\RedirectResponse;
+use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Container\ExecutorInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
@@ -62,19 +62,22 @@ class ValidationMiddleware implements MiddlewareInterface
             $validateMethod = 'defaultValidate';
         }
 
-        $args = [$request];
-        $result = $this->executor->execute([$page, $validateMethod], $args);
+        if (method_exists($page, $validateMethod)) {
+            $args = [$request];
+            $result = $this->executor->execute([$page, $validateMethod], $args);
 
-        if ($result) {
-            return $handler->handle($request, $handler);
-        }
+            if ($result) {
+                return $handler->handle($request, $handler);
+            }
+            // if it's not validated, we need to handle the error response
+            $handleErrorMethod = "handleError";
+            if (!method_exists($page, $handleErrorMethod)) {
+                $handleErrorMethod = "defaultHandleError";
+            }
+            $response = $this->executor->execute([$page, $handleErrorMethod], $args);
 
-        //if it's not validated, we need to handle the error response
-        $handlerErrorMethod = "handleError";
-        if (!method_exists($page, $handleErrorMethod)) {
-            $handleErrorMethod = "defaultHandleError";
+            return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
         }
-        $response = $this->executor->execute([$page, $handlerErrorMethod], $args);
-        return $this->buildView($page, $action->getActionName(), $response, $request, $handler);
+        return $handler->handle($request, $handler);
     }
 }

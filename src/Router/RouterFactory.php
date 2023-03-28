@@ -4,8 +4,8 @@ namespace ON\Router;
 
 use Psr\Container\ContainerInterface;
 use Aura\Router\RouterContainer;
-use Zend\Expressive\Router\AuraRouter;
-use ON\Router\Router;
+use Mezzio\Router\AuraRouter;
+use ON\Router\RouterBridge;
 use ON\Context;
 
 class RouterFactory {
@@ -17,14 +17,11 @@ class RouterFactory {
   }
 
   public function __invoke () {
-    $config = $this->container->get('config');
-    $context = $this->container->get(Context::class);
-    $basepath = $config["paths"]["basepath"];
-    $basepath = isset($basepath) && $basepath != null? $basepath : Router::detectBaseUrl();
+    $config = $this->container->get("config");
+    $basepath = RouterBridge::getBaseHref($config);
     $aura = new RouterContainer($basepath);
 
     $router = new AuraRouter($aura);
-    $router = new Router ($router, $basepath, $context);
     return $router;
   }
 }

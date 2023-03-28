@@ -33,11 +33,10 @@ class NotFoundMiddleware implements MiddlewareInterface
     {
         try {
             $response = $handler->handle($request, $handler);
-            echo "dsdsa";exit;
             return $response;
         } catch (NotFoundException $e) {
 
-            $notFoundHandler = $this->container->get(\Zend\Expressive\Handler\NotFoundHandler::class);
+            $notFoundHandler = $this->container->get(\Mezzio\Handler\NotFoundHandler::class);
             return $notFoundHandler->handle($request, $handler);
         }
     }

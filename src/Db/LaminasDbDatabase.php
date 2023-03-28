@@ -2,10 +2,10 @@
 namespace ON\Db;
 
 use ON\Db\DatabaseInterface;
-use Zend\Db\Adapter\AdapterInterface;
-use Zend\Db\Adapter\Adapter;
+use Laminas\Db\Adapter\AdapterInterface;
+use Laminas\Db\Adapter\Adapter;
 
-class ZendDbDatabase implements DatabaseInterface {
+class LaminasDbDatabase implements DatabaseInterface {
   protected $adapter;
   protected $parameters;
   protected $container;

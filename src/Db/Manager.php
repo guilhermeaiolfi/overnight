@@ -1,7 +1,7 @@
 <?php
 namespace ON\Db;
 
-use Zend\Db\Adapter\Adapter;
+use Laminas\Db\Adapter\Adapter;
 use Psr\Container\ContainerInterface;
 
 class Manager {

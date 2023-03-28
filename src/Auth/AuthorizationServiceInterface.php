@@ -2,6 +2,4 @@
 namespace ON\Auth;
 
 interface AuthorizationServiceInterface {
-
 }
-?>

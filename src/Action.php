@@ -1,6 +1,12 @@
 <?php
 namespace ON;
 
+use \Mezzio\Application;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
+use Psr\Http\Server\RequestHandlerInterface;
+
 class Action {
   protected $class_name = null;
   protected $action = null;
@@ -44,5 +50,12 @@ class Action {
   public function isClass () {
     return $this->getActionName() != null;
   }
+
+  static public function runAction(Application $app, ServerRequestInterface $request = null, ResponseInterface $response = null)
+    {
+        $response = $response ?: new Response();
+        $request  = $request->withAttribute('originalResponse', $response);
+        return $app->handle($request);
+    }
 }
 ?>
