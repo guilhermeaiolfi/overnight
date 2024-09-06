@@ -9,18 +9,8 @@ use ON\Action;
 
 class ActionMiddlewareDecorator implements MiddlewareInterface
 {
-    /**
-     * @var callable
-     */
-    private $middleware;
-
-    public function __construct($middleware)
+    public function __construct(public readonly string $middlewareName)
     {
-        $this->middleware = $middleware;
-    }
-
-    public function getString() {
-        return $this->middleware;
     }
 
     /**
@@ -40,10 +30,6 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 
         $action = $request->getAttribute(Action::class);
 
-return $handler->handle($request);
-        $action_response = $this->executor->execute($action->getExecutable(), [$request, $handler]);
-
-        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);
-        //return $middleware = $this->middleware;
+        return $handler->handle($request);
     }
 }

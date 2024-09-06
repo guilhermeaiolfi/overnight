@@ -1,11 +1,4 @@
 <?php
-
-/**
- * @see       https://github.com/mezzio/mezzio for the canonical source repository
- * @copyright https://github.com/mezzio/mezzio/blob/master/COPYRIGHT.md
- * @license   https://github.com/mezzio/mezzio/blob/master/LICENSE.md New BSD License
- */
-
 declare(strict_types=1);
 
 namespace ON\Handler;
@@ -20,42 +13,26 @@ use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
 
 use ON\Application;
+use ON\Middleware\OutputTypeMiddleware;
+use Psr\Http\Message\ResponseFactoryInterface;
 
 use function sprintf;
 
 class NotFoundHandler implements RequestHandlerInterface
 {
     /**
-     * @var callable
-     */
-    private $responseFactory;
-
-    /**
-     * @var string
-     */
-    private $template;
-
-    /**
-     * @var string
-     */
-    private $middleware;
-
-    /**
-     * @todo Allow nullable $layout
-     */
+    * @param callable|ResponseFactoryInterface $responseFactory
+    **/
     public function __construct(
-        Application $app,
-        $middleware,
-        callable $responseFactory
+        private Application $app,
+        private string $middleware,
+        private $responseFactory
     ) {
-        $this->app = $app;
-        $this->middleware = $middleware;
-        $this->responseFactory = $responseFactory;
     }
 
     public function handle(ServerRequestInterface $request) : ResponseInterface
     {
-        if ($request->getAttribute("OUTPUT_TYPE") != "html") {
+        if ($request->getAttribute(OutputTypeMiddleware::class) != "html") {
             return $this->generatePlainTextResponse($request);
         }
 
@@ -68,8 +45,6 @@ class NotFoundHandler implements RequestHandlerInterface
         $route_result = RouteResult::fromRoute($route);
 
         $request = $request->withAttribute(RouteResult::class, $route_result);
-
-        $request = $request->withAttribute("PARENT-REQUEST", $request);
 
         return $this->app->runAction($request);
     }

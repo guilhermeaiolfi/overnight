@@ -7,6 +7,7 @@ use Mezzio\Router\Exception\MissingDependencyException;
 use Mezzio\Router\RouterInterface;
 use ON\Context;
 use ON\Middleware\RouteMiddleware;
+use ON\RequestStack;
 
 /**
  * Create and return a RouteMiddleware instance.
@@ -48,7 +49,10 @@ class RouteMiddlewareFactory
         if (! $response instanceof ResponseInterface && is_callable($response)) {
             $response = $response();
         }
-        //$container->get(RouterInterface::class), $container->get(ResponseInterface::class), $container->get(Context::class))
-        return new RouteMiddleware($container->get(RouterInterface::class), $container->get(Context::class), $container);
+        return new RouteMiddleware(
+            $container->get(RouterInterface::class), 
+            $container->get(RequestStack::class), 
+            $container
+        );
     }
 }

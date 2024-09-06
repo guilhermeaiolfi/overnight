@@ -13,7 +13,7 @@ use Mezzio\Helper\UrlHelper;
 use Laminas\Diactoros\Response\RedirectResponse;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Auth\AuthorizationServiceInterface;
-use ON\Container\ExecutorInterface;
+use ON\Container\Executor\ExecutorInterface;
 use ON\Exception\SecurityException;
 use ON\Action;
 use ON\User\UserInterface;
@@ -21,29 +21,16 @@ use ON\User\UserInterface;
 class AuthorizationMiddleware implements MiddlewareInterface
 {
   /**
-   * @var ContainerInterface|null
-   */
-  protected $container;
-
-  protected $auth;
-
-  protected $executor;
-
-  /**
    * @param RouterInterface $router
    * @param ResponseInterface $responsePrototype
    * @param ContainerInterface|null $container
    */
   public function __construct(
-      AuthenticationServiceInterface $auth,
-      ExecutorInterface $executor,
-      AuthorizationServiceInterface $authorizationService,
-      ContainerInterface $container = null
+      protected AuthenticationServiceInterface $auth,
+      protected ExecutorInterface $executor,
+      protected AuthorizationServiceInterface $authorizationService,
+      protected ?ContainerInterface $container = null
   ) {
-    $this->auth = $auth;
-    $this->container = $container;
-    $this->authorizationService = $authorizationService;
-    $this->executor = $executor;
   }
 
   /**
@@ -70,7 +57,9 @@ class AuthorizationMiddleware implements MiddlewareInterface
     }
     // TODO: do we need to wrap this in a try/catch block? what happens if an exception is thrown in checkPermissions()?
     if(method_exists($page, $checkPermissionsMethod)) {
-      $args = [$this->auth, $this->authorizationService, $request];
+      $args = [
+        ServerRequestInterface::class => $request
+      ];
       $result = $this->executor->execute([$page, $checkPermissionsMethod], $args);
       if($result) {//$page->$checkPermissionsMethod($this->auth, $request)) {
         return $handler->handle($request);

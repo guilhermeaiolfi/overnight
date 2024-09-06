@@ -14,17 +14,14 @@ use ON\Application;
 
 class PlatesRenderer  implements RendererInterface
 {
-    protected $config = null;
-    protected $engine = null;
-    protected $app = null;
-    public function __construct($config, Engine $engine, Application $app) {
-        $this->config = $config;
-        $this->engine = $engine;
-        $this->app = $app;
+    public function __construct(
+        protected $config, 
+        protected Engine $engine, 
+        protected Application $app) 
+    {
     }
 
     public function render ($layout, $template_name = null, $data = null, $params = []) {
-
         $config = $this->config;
 
         //$renderer = $this->renderer;
@@ -32,6 +29,7 @@ class PlatesRenderer  implements RendererInterface
         $app = $this->app;
 
         $sections = array();
+
         $template = $engine->make($template_name);
         if (isset($layout["sections"])) {
             foreach($layout["sections"] as $section_name => $section_config) {

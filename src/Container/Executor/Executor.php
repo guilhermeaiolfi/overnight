@@ -1,5 +1,5 @@
 <?php
-namespace ON\Container;
+namespace ON\Container\Executor;
 
 use Invoker\Invoker;
 

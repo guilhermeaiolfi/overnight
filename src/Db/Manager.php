@@ -55,7 +55,8 @@ class Manager {
 
     // register the connection in the DataCollector of DebugBar
     // for debugging purposes
-    if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
+    // TODO: Need to figure out a better way to handle this (for clockwork too)
+    /*if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
       $connection = $database->getConnection();
       $debugbar = $this->c->get(\DebugBar\DebugBar::class);
 
@@ -74,7 +75,7 @@ class Manager {
         $database->getConnection()->getConnection()->getConfiguration()->setSQLLogger($debugStack);
         $debugbar->addCollector(new \DebugBar\Bridge\DoctrineCollector($debugStack));
       }
-    }
+    }*/
     return $this->instances[$name] = $database;
   }
 }

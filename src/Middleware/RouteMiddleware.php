@@ -2,17 +2,14 @@
 
 namespace ON\Middleware;
 
-use Fig\Http\Message\StatusCodeInterface as StatusCode;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\RouterInterface;
-use Mezzio\Router\Middleware\RouteMiddleware as MezzioRouteMiddleware;
 
-
-use ON\Context;
+use ON\RequestStack;
 
 /**
  * Extends the Default routing middleware because it needs to skip the matcher if
@@ -20,26 +17,14 @@ use ON\Context;
  *
  * @internal
  */
-class RouteMiddleware extends MezzioRouteMiddleware
+class RouteMiddleware implements MiddlewareInterface
 {
-    /**
-     * @var RouterInterface
-     */
-    protected $router;
 
-    protected $context;
-
-    protected  $container;
-
-    /**
-     * @param RouterInterface $router
-     * @param ResponseInterface $responsePrototype
-     */
-    public function __construct(RouterInterface $router, Context $context = null, $container = null)
+    public function __construct(
+        protected RouterInterface $router, 
+        protected RequestStack $stack, 
+        protected $container)
     {
-        $this->router = $router;
-        $this->context = $context;
-        $this->container = $container;
     }
 
     /**
@@ -49,6 +34,8 @@ class RouteMiddleware extends MezzioRouteMiddleware
      */
     public function process (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
+        $original_request = $request;
+
         if ($request->getAttribute(RouteResult::class)) {
             return $handler->handle($request);
         }
@@ -66,9 +53,6 @@ class RouteMiddleware extends MezzioRouteMiddleware
             $request = $request->withAttribute($param, $value);
         }
 
-        $this->context->setAttribute(RouteResult::class, $result);
-        $this->context->setAttribute("REQUEST", $request);
-        //$this->router->addRouteResult($result);
 
         $options = $result->getMatchedRoute()->getOptions();
         if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
@@ -78,16 +62,15 @@ class RouteMiddleware extends MezzioRouteMiddleware
             }
         }
 
-        // Inject the actual route result, as well as individual matched parameters.
+        // We need to update the params again, since it may have entered callbacks that changed it
         $request = $request->withAttribute(RouteResult::class, $result);
 
         foreach ($result->getMatchedParams() as $param => $value) {
             $request = $request->withAttribute($param, $value);
         }
 
-        $this->context->setAttribute(RouteResult::class, $result);
-        $this->context->setAttribute("REQUEST", $request);
-        //$this->router->addRouteResult($result);
+
+        $this->stack->update($original_request, $request);
 
         return $handler->handle($request);
     }

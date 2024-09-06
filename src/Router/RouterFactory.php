@@ -3,25 +3,18 @@
 namespace ON\Router;
 
 use Psr\Container\ContainerInterface;
-use Aura\Router\RouterContainer;
-use Mezzio\Router\AuraRouter;
-use ON\Router\RouterBridge;
+use ON\Router\Router;
 use ON\Context;
+use Mezzio\Router\RouterInterface as MezzioRouterInterface;
+use ON\RequestStack;
 
 class RouterFactory {
 
-  protected $container;
+  public function __invoke (ContainerInterface $c) {
+    $config = $c->has('config')
+    ? $c->get('config')
+    : [];
 
-  public function __construct (ContainerInterface $c) {
-    $this->container = $c;
-  }
-
-  public function __invoke () {
-    $config = $this->container->get("config");
-    $basepath = RouterBridge::getBaseHref($config);
-    $aura = new RouterContainer($basepath);
-
-    $router = new AuraRouter($aura);
-    return $router;
+    return new Router(null, null, $config->all(), $c->get(RequestStack::class));
   }
 }

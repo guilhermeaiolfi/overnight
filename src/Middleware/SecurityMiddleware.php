@@ -8,14 +8,13 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
 use Mezzio\Router\Route;
 use Laminas\Diactoros\Response\RedirectResponse;
 use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Exception\SecurityException;
 use ON\User\UserInterface;
-use ON\Router\StatefulRouterInterface;
+use ON\Router\RouterInterface;
 use ON\Application;
 use ON\Container\MiddlewareFactory;
 
@@ -41,7 +40,7 @@ class SecurityMiddleware implements MiddlewareInterface
     public function __construct(
         AuthenticationServiceInterface $auth,
         ContainerInterface $container = null,
-        StatefulRouterInterface $router
+        RouterInterface $router
     ) {
         $this->auth = $auth;
         $this->container = $container;
@@ -60,9 +59,14 @@ class SecurityMiddleware implements MiddlewareInterface
         if (!$routeResult) {
             return $handler->handle($request);
         }
+
         $middleware = $routeResult->getMatchedRoute()->getMiddleware();
+        if (is_object($middleware)) {
+            return $handler->handle($request);
+        }
+
         if (!is_string($middleware)) {
-            $middleware = $middleware->getString();
+            $middleware = $middleware->middlewareName;
         }
         if (!class_exists($middleware)) {
             list($middleware, $action) = explode("::", $middleware);

@@ -1,6 +1,7 @@
 <?php
 namespace ON;
 
+use Laminas\Diactoros\Response;
 use \Mezzio\Application;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;

@@ -2,25 +2,21 @@
 namespace ON;
 
 use Psr\Container\ContainerInterface;
-use Laminas\Diactoros\ServerRequestFactory;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
-use Laminas\Diactoros\Response;
-use Laminas\Diactoros\Request;
-use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Common\AttributesTrait;
-use ON\Container\MiddlewareFactory;
-use ON\Action;
 
 abstract class AbstractPage implements IPage {
   use AttributesTrait;
 
-  protected $container = null;
-
   protected $default_template_name;
 
-  public function __construct (ContainerInterface $c) {
+  protected $container = null;
+  
+  public function __construct (
+    ContainerInterface $c
+  ) {
     $this->container = $c;
   }
 
@@ -75,7 +71,6 @@ abstract class AbstractPage implements IPage {
 
   public function render($layout_name = null, $template_name = null, $data = null, $params = []) {
 
-    $container = $this->container;
     $config = $this->container->get('config');
 
     // if nothing is passed, use the attributes of the page instance
@@ -90,19 +85,19 @@ abstract class AbstractPage implements IPage {
         throw new \Exception("No template name set.");
       }
     }
-
+    
     if (!isset($layout_name)) {
-      $layout_name = isset($config["output_types"]["html"]["default"])? $config["output_types"]["html"]["default"] : 'default';
+      $layout_name = $config["output_types"]["html"]["default"]?? 'default';
     }
     if (!isset($config['output_types']['html']['layouts'][$layout_name])) {
       throw new \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
     }
     $layout_config = $config['output_types']['html']['layouts'][$layout_name];
 
-    $renderer_name = isset($params['renderer'])? $params['renderer'] : $layout_config['renderer'];
+    $renderer_name = $params['renderer']?? $layout_config['renderer'];
     $renderer_config = $config['output_types']['html']['renderers'][$renderer_name];
 
-    $renderer_class = isset($renderer_config['class'])? $renderer_config['class'] : '\ON\Renderer';
+    $renderer_class = $renderer_config['class']?? '\ON\Renderer';
 
 
     $renderer = $this->container->get($renderer_class);

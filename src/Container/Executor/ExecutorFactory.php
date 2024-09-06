@@ -1,9 +1,8 @@
 <?php
-namespace ON\Container;
+namespace ON\Container\Executor;
 
 use Psr\Container\ContainerInterface;
-use Mezzio\Router\RouterInterface;
-use ON\Container\Executor;
+use ON\Container\Executor\TypeHintContainerResolver;
 
 class ExecutorFactory
 {
@@ -11,9 +10,9 @@ class ExecutorFactory
     {
         $executor = new Executor(null, $container);
 
-        //$containerResolver = new TypeHintContainerResolver($container);
+        $containerResolver = new TypeHintContainerResolver($container);
         // or
-        $containerResolver = new \Invoker\ParameterResolver\Container\ParameterNameContainerResolver($container);
+        //$containerResolver = new \Invoker\ParameterResolver\Container\ParameterNameContainerResolver($container);
 
         $executor->getParameterResolver()->prependResolver($containerResolver);
 

@@ -8,20 +8,13 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Container\ContainerInterface;
 use ON\Container\ExecutorInterface;
 use ON\Exception\NotFoundException;
-
+use Mezzio\Handler\NotFoundHandler;
 
 class NotFoundMiddleware implements MiddlewareInterface
 {
-    /**
-     * @var ContainerInterface|null
-     */
-    protected $container;
-
-    /**
-     * @param ContainerInterface|null $container
-     */
-    public function __construct(ContainerInterface $container) {
-        $this->container = $container;
+    public function __construct(
+        protected NotFoundHandler $notFoundHandler
+    ) {
     }
 
     /**
@@ -35,9 +28,7 @@ class NotFoundMiddleware implements MiddlewareInterface
             $response = $handler->handle($request, $handler);
             return $response;
         } catch (NotFoundException $e) {
-
-            $notFoundHandler = $this->container->get(\Mezzio\Handler\NotFoundHandler::class);
-            return $notFoundHandler->handle($request, $handler);
+            return $this->notFoundHandler->handle($request, $handler);
         }
     }
 }

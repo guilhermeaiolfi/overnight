@@ -7,13 +7,7 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
-use Laminas\Diactoros\Response\RedirectResponse;
-use Laminas\Diactoros\Response\EmptyResponse;
-use ON\Container\ExecutorInterface;
-use ON\Exception\SecurityException;
-use ON\User\UserInterface;
+use ON\Container\Executor\ExecutorInterface;
 use ON\Action;
 use ON\Common\ViewBuilderTrait;
 
@@ -63,7 +57,9 @@ class ValidationMiddleware implements MiddlewareInterface
         }
 
         if (method_exists($page, $validateMethod)) {
-            $args = [$request];
+            $args = [
+                ServerRequestInterface::class => $request
+            ];
             $result = $this->executor->execute([$page, $validateMethod], $args);
 
             if ($result) {

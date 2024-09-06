@@ -8,10 +8,9 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
 use ON\Action;
 use ON\Common\ViewBuilderTrait;
-use ON\Container\ExecutorInterface;
+use ON\Container\Executor\ExecutorInterface;
 
 use Mezzio\Delegate\NotFoundDelegateInterface;
 
@@ -31,13 +30,15 @@ class ExecutionMiddleware implements MiddlewareInterface
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
         $action = $request->getAttribute(Action::class);
-
         if (!$routeResult || !$action) {
             return $handler->handle($request);
         }
-
+        
         $action = $request->getAttribute(Action::class);
-        $action_response = $this->executor->execute($action->getExecutable(), [$request, $handler]);
+        $args = [
+            ServerRequestInterface::class => $request
+        ];
+        $action_response = $this->executor->execute($action->getExecutable(), $args);
 
         return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);
     }

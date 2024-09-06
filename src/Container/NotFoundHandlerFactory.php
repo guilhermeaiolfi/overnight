@@ -6,11 +6,8 @@ namespace ON\Container;
 
 use ON\Handler\NotFoundHandler;
 use ON\Application;
-use Mezzio\Template\TemplateRendererInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-
-use function array_key_exists;
 
 class NotFoundHandlerFactory
 {

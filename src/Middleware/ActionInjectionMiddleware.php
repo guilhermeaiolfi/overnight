@@ -9,13 +9,11 @@ use Psr\Http\Message\ResponseInterface;
 use Mezzio\Router\RouteResult;
 use Mezzio\Router\RouterInterface;
 use ON\Action;
+use ON\RequestStack;
 
 class ActionInjectionMiddleware implements MiddlewareInterface
 {
-    protected $container = null;
-
-    public function __construct(ContainerInterface $container) {
-        $this->container = $container;
+    public function __construct(protected ContainerInterface $container, protected RequestStack $stack) {
     }
 
     public function process (ServerRequestInterface $request,  RequestHandlerInterface $handler): ResponseInterface
@@ -30,14 +28,18 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
         $action = null;
 
-        if ($middleware instanceof \ON\Router\ActionMiddlewareDecorator && strpos($middleware->getString(), "::") !== FALSE) {
-            $action = new Action($middleware->getString());
+        if ($middleware instanceof \ON\Router\ActionMiddlewareDecorator && strpos($middleware->middlewareName, "::") !== FALSE) {
+            $action = new Action($middleware->middlewareName);
 
             $instance = $this->container->get($action->getClassName());
 
             $action->setPageInstance($instance);
 
+            $old_request = $request;
+
             $request = $request->withAttribute(Action::class, $action);
+
+            $this->stack->update($old_request, $request);
         }
 
         return $handler->handle($request, $handler);

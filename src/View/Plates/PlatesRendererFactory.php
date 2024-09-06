@@ -5,7 +5,7 @@ namespace ON\View\Plates;
 use Psr\Container\ContainerInterface;
 use Mezzio\Plates\PlatesRenderer as MezzioPlatesRenderer;
 use ON\Container\MiddlewareFactory;
-use Mezzio\Application;
+use ON\Application;
 
 class PlatesRendererFactory {
 
