@@ -1,6 +1,7 @@
 <?php
 namespace ON;
 
+use Exception;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -8,33 +9,115 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Container\ContainerInterface;
 
 use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
-use Laminas\Stratigility\MiddlewarePipeInterface;
-
-use Mezzio\MiddlewareFactoryInterface;
-use Mezzio\Router\RouteCollectorInterface;
-use Mezzio\Router\RouteResult;
 use Mezzio\Router\Route;
 
-use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\Diactoros\Response;
-
-use function Laminas\Stratigility\path;
+use Laminas\HttpHandlerRunner\RequestHandlerRunner;
+use Laminas\Stratigility\Middleware\ErrorHandler;
+use ON\Event\NamedEvent;
+use ON\Extension\ConfigExtension;
+use ON\Extension\ExtensionInterface;
+use ON\Extension\PipelineExtension;
+use ON\Extension\RouterExtension;
+use ON\Router\RouterInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
+use Symfony\Component\Dotenv\Dotenv;
 
 class Application implements MiddlewareInterface, RequestHandlerInterface {
 
     public RequestStack $requestStack;
+    protected RequestHandlerRunnerInterface $runner;
+    public EventDispatcherInterface $eventDispatcher;
+
+    protected string $project_dir;
+
+    protected array $extensions = [];
+
+    protected array $__methods = [];
+
+    protected array $__properties = [];
+
+    private static ContainerInterface $container;
+    /**
+     * @param array {
+     *   debug?: ?bool,
+     *   env?: ?string,
+     *   disable_dotenv?: ?bool,
+     *   project_dir?: ?string,
+     *   prod_envs?: ?string[],
+     *   dotenv_path?: ?string,
+     *   test_envs?: ?string[],
+     *   use_putenv?: ?bool,
+     *   runtimes?: ?array,
+     *   error_handler?: string|false,
+     *   env_var_name?: string,
+     *   debug_var_name?: string,
+     *   dotenv_overload?: ?bool,
+     * } $options
+     */
 
     public function __construct(
-        public MiddlewareFactoryInterface $factory,
-        private MiddlewarePipeInterface $pipeline,
-        private RouteCollectorInterface $routes,
-        private RequestHandlerRunnerInterface $runner
+        protected ?array $options = null
     ) {
+        
+        $this->project_dir = $project_dir = $options["project_dir"]?? dirname(getcwd(), 1);
+        
+        // defines the default dir to the project root
+        if ($project_dir != getcwd()) {
+            chdir($project_dir);
+        }
+
+        // load .env file vars
+        $dotenv = new Dotenv();
+        $dotenv->load($project_dir.'/.env');
+
+        
+        $this->options["debug"] = $_ENV["APP_DEBUG"] = $options["debug"]?? (bool) $_ENV["APP_DEBUG"];
+        
         $this->requestStack = new RequestStack();
+        
+        // the config extension is the most basic, it needs to be register always
+        $this->install(ConfigExtension::class);
+
+        $this->loadDefaultExtensions();
+
+        $this->runner = self::getContainer()->get(RequestHandlerRunner::class);
     }
 
-    /** @var ContainerInterface */
-    private static $container;
+    protected function loadDefaultExtensions() {
+        $config = $this->getExtension(ConfigExtension::class)->getConfig();
+
+        foreach ($config["extensions"] as $extension) {
+            $this->install($extension);
+        }
+    }
+
+    public function install(string $extension_class) {
+
+        if (!class_exists($extension_class)) {
+            throw new Exception("It was passed an invalid class as extension.");
+        }
+        $interfaces = class_implements($extension_class);
+
+        if (isset($interfaces['ON\Extension\ExtesionInterface'])) {
+            throw new Exception("Extensions must implement \ON\Extension\ExtesionInterface.");
+        }
+
+        $this->extensions[$extension_class] = $extension_class::install($this);
+    }
+
+    public function registerExtension($name, $obj): void {
+        $this->extensions[$name] = $obj;
+    }
+
+    public function hasExtension($class): bool {
+        return array_key_exists($class, $this->extensions);
+    }
+
+    public function getExtension(string $class): ExtensionInterface {
+        if (!$this->hasExtension($class)) return null;
+        return $this->extensions[$class];
+    }
 
     /**
      * Returns currently active container scope if any.
@@ -51,22 +134,19 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
     }
     
 
-    /**
-     * Proxies to composed pipeline to handle.
-     * {@inheritDocs}
-     */
     public function handle(ServerRequestInterface $request): ResponseInterface
     {
-        return $this->pipeline->handle($request);
+        return $this->extensions[PipelineExtension::class]->handle($request);
     }
 
-    /**
-     * Proxies to composed pipeline to process.
-     * {@inheritDocs}
-     */
     public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
-        return $this->pipeline->process($request, $handler);
+        return $this->extensions[PipelineExtension::class]->process($request, $handler);
+    }
+
+    public function pipe($middlewareOrPath, $middleware = null): void
+    {
+        $this->extensions[PipelineExtension::class]->pipe($middlewareOrPath, $middleware);
     }
 
     /**
@@ -76,161 +156,40 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
      */
     public function run(): void
     {
+        // add listeners
+        if ($this->eventDispatcher != null) {
+            $this->eventDispatcher->dispatch(new NamedEvent("app.init"));
+        }
         $this->runner->run();
     }
 
-    /**
-     * Pipe middleware to the pipeline.
-     *
-     * If two arguments are present, they are passed to pipe(), after first
-     * passing the second argument to the factory's prepare() method.
-     *
-     * If only one argument is presented, it is passed to the factory prepare()
-     * method.
-     *
-     * The resulting middleware, in both cases, is piped to the pipeline.
-     *
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middlewareOrPath
-     *     Either the middleware to pipe, or the path to segregate the $middleware
-     *     by, via a PathMiddlewareDecorator.
-     * @param null|string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     If present, middleware or request handler to segregate by the path
-     *     specified in $middlewareOrPath.
-     * @psalm-param string|MiddlewareParam $middlewareOrPath
-     * @psalm-param null|MiddlewareParam $middleware
-     */
-    public function pipe($middlewareOrPath, $middleware = null): void
-    {
-        $middleware = $middleware ?? $middlewareOrPath;
-        $path       = $middleware === $middlewareOrPath ? '/' : $middlewareOrPath;
-
-        $middleware = $path !== '/'
-            ? path($path, $this->factory->prepare($middleware))
-            : $this->factory->prepare($middleware);
-
-        $this->pipeline->pipe($middleware);
-    }
-
-    /**
-     * Add a route for the route middleware to match.
-     *
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|list<string> $methods HTTP method to accept; null indicates any.
-     * @param null|non-empty-string $name The name of the route.
-     */
     public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
     {
-        return $this->routes->route(
-            $path,
-            $this->factory->prepare($middleware),
-            $methods,
-            $name
-        );
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function get(string $path, $middleware, ?string $name = null): Route
-    {
-        return $this->route($path, $middleware, ['GET'], $name);
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function post(string $path, $middleware, $name = null): Route
-    {
-        return $this->route($path, $middleware, ['POST'], $name);
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function put(string $path, $middleware, ?string $name = null): Route
-    {
-        return $this->route($path, $middleware, ['PUT'], $name);
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function patch(string $path, $middleware, ?string $name = null): Route
-    {
-        return $this->route($path, $middleware, ['PATCH'], $name);
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function delete(string $path, $middleware, ?string $name = null): Route
-    {
-        return $this->route($path, $middleware, ['DELETE'], $name);
-    }
-
-    /**
-     * @param non-empty-string $path
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     *     Middleware or request handler (or service name resolving to one of
-     *     those types) to associate with route.
-     * @param null|non-empty-string $name The name of the route.
-     */
-    public function any(string $path, $middleware, ?string $name = null): Route
-    {
-        return $this->route($path, $middleware, null, $name);
-    }
-
-    /**
-     * Retrieve all directly registered routes with the application.
-     *
-     * @return list<Router\Route>
-     */
-    public function getRoutes(): array
-    {
-        return $this->routes->getRoutes();
-    }
-
-    public function prepareRequest($path, $controller, $methods, $route_name) {
-        $request = ServerRequestFactory::fromGlobals();
-
-        if (is_string($controller)) { //middleware
-            $controller = $this->factory->prepare($controller);
-        }
-
-        $route = new Route($path, $controller, $methods, $route_name);
-        $route_result = RouteResult::fromRoute($route);
-
-        $request = $request->withAttribute(RouteResult::class, $route_result);
-
-        return $request;
+        /** @var \ON\Extension\RouterExtension $router_ext */
+        $router_ext = $this->getExtension(RouterExtension::class);
+        $router_ext->route($path, $middleware, $methods, $name);
     }
 
     public function runAction ($request, $response = null) {
         $response = $response ?: new Response();
-        $request  = $request->withAttribute('originalResponse', $response);
         return $this->handle($request);
+    }
+
+    public function __get($name)
+    {
+        return $this->__properties[$name];
+    }
+
+    public function __set($name, $value)
+    {
+        $this->__properties[$name] = $value;
+    }
+
+    public function __call ($name, $args)    {
+        return call_user_func_array ($this->__methods[$name], $args); 
+    }
+
+    public function registerMethod($name, callable $method) {
+        $this->__methods[$name] = $method;
     }
 }

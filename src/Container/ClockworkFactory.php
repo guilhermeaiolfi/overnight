@@ -21,6 +21,7 @@ class ClockworkFactory
 
         $settings = $config["clockwork"];
 
+
         $clockwork = Clockwork::init($settings);
 
         $logger = $container->get(LoggerInterface::class);

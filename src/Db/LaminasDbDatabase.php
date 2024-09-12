@@ -9,8 +9,10 @@ class LaminasDbDatabase implements DatabaseInterface {
   protected $adapter;
   protected $parameters;
   protected $container;
+  protected string $name;
 
   public function __construct ($name, $parameters, $container) {
+    $this->name = $name;
     $this->parameters = $parameters;
     $this->container = $container;
 
@@ -30,5 +32,13 @@ class LaminasDbDatabase implements DatabaseInterface {
 
   public function getResource() {
     return $this->adapter->getDriver()->getConnection()->getResource();
+  }
+
+  public function getName(): string {
+    return $this->name;
+  }
+
+  public function setName(string $name): void {
+    $this->name = $name;
   }
 }

@@ -117,5 +117,11 @@ class Doctrine2Database implements DatabaseInterface {
   public function getResource() {
     return $this->connection->getConnection();
   }
+  public function getName(): string {
+    return $this->name;
+  }
 
+  public function setName(string $name): void {
+    $this->name = $name;
+  }
 }

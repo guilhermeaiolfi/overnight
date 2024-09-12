@@ -8,8 +8,10 @@ class PdoDatabase implements DatabaseInterface {
   protected $connection;
   protected $parameters;
   protected $container;
+  protected string $name;
 
   public function __construct ($name, $parameters, $container) {
+    $this->name = $name;
     $this->parameters = $parameters;
     $this->container = $container;
     $dsn = !empty($parameters["dsn"])? $parameters["dsn"] : null;
@@ -20,9 +22,10 @@ class PdoDatabase implements DatabaseInterface {
     try {
       $this->connection = $this->resource = new \PDO($dsn, $username, $password, $options);
 
-      if ($config['debug'] && class_exists(\DebugBar\DataCollector\PDO\TraceablePDO::class)) {
-        $this->connection = $this->resource = new \DebugBar\DataCollector\PDO\TraceablePDO($this->connection);
+      if ($parameters["wrapper_class"] && class_exists($parameters["wrapper_class"])) {
+        $this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
       }
+
       // default connection attributes
       $attributes = array(
         // lets generate exceptions instead of silent failures
@@ -63,5 +66,13 @@ class PdoDatabase implements DatabaseInterface {
 
   public function setResource ($resource) {
     $this->resource = $resource;
+  }
+
+  public function getName(): string {
+    return $this->name;
+  }
+
+  public function setName(string $name): void {
+    $this->name = $name;
   }
 }

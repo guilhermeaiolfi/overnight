@@ -15,6 +15,7 @@ use Mezzio\Exception\InvalidArgumentException;
 use Mezzio\Router\Route;
 use Psr\Container\ContainerInterface;
 use SplPriorityQueue;
+use Mezzio\Container\Exception\InvalidServiceException;
 
 use function array_key_exists;
 use function array_map;
@@ -42,7 +43,7 @@ class ApplicationConfigInjectionDelegator
     {
         $application = $callback();
         if (! $application instanceof Application) {
-            throw new Exception\InvalidServiceException(sprintf(
+            throw new InvalidServiceException(sprintf(
                 'Delegator factory %s cannot operate on a %s; please map it only to the %s service',
                 __CLASS__,
                 is_object($application) ? get_class($application) . ' instance' : gettype($application),
@@ -62,7 +63,6 @@ class ApplicationConfigInjectionDelegator
         if (! empty($config['routes'])) {
             self::injectRoutesFromConfig($application, $config->all());
         }
-
         return $application;
     }
 

@@ -19,9 +19,15 @@
         "php-di/invoker": "^2.3",
         "psr/log": "^3.0",
         "monolog/monolog": "^3.7",
-        "itsgoingd/clockwork": "^5.2"
-    },
-    "require-dev": {
+        "laminas/laminas-db": "^2.20",
+        "symfony/event-dispatcher": "^7.1",
+        "league/event": "^3.0",
+        "symfony/dotenv": "^7.1",
+        "symfony/config": "^7.1",
+        "laminas/laminas-config-aggregator-parameters": "^1.15"
+      },
+      "require-dev": {
+        "itsgoingd/clockwork": "^5.2",
         "phpunit/phpunit": "11.x.x"
     },
     "autoload": {

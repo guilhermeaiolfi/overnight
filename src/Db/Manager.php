@@ -1,16 +1,28 @@
 <?php
 namespace ON\Db;
 
-use Laminas\Db\Adapter\Adapter;
+use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 class Manager {
-  protected $c;
+  protected $config;
+  protected ContainerInterface $container;
 
   protected $instances = [];
 
-  public function __construct (ContainerInterface $c) {
-    $this->c = $c;
+  protected $eventDispatcher = null;
+
+  public function __construct (
+    $config,
+    ContainerInterface $c,
+  ) {
+    $this->config = $config;
+    $this->container = $c;
+  }
+
+  public function setEventDispatcher (EventDispatcherInterface $dispatcher) {
+    $this->eventDispatcher = $dispatcher;
   }
 
   public function getDatabaseConnection ($name = null) {
@@ -30,20 +42,22 @@ class Manager {
   }
 
   public function getDatabase ($name = null) {
-    $config = $this->c->get("config");
     if (!isset($name)) {
-      if (isset($config["db"]["default"])) {
-        $name = $config["db"]["default"];
+      if (isset($this->config["default"])) {
+        $name = $this->config["default"];
       } else {
         throw new \Exception("There is no \"default\" DB set and none was given.");
       }
     }
 
     $database = null;
+
+    // don't creates another one, gets from cache
     if (isset($this->instances[$name])) {
       return  $this->instances[$name];
     }
-    $db_config = $config["db"]["databases"][$name];
+
+    $db_config = $this->config["databases"][$name];
     $database_class = null;
     if (isset($db_config["class"])) {
       $database_class = $db_config["class"];
@@ -51,31 +65,13 @@ class Manager {
       throw new \Exception ("There is no \"class\" defined for " . $name . " database configuration");
     }
 
-    $database = new $database_class($name, $db_config, $this->c);
+    $database = new $database_class($name, $db_config, $this->container);
 
-    // register the connection in the DataCollector of DebugBar
-    // for debugging purposes
-    // TODO: Need to figure out a better way to handle this (for clockwork too)
-    /*if ($config["debug"] && $this->c->has(\DebugBar\DebugBar::class)) {
-      $connection = $database->getConnection();
-      $debugbar = $this->c->get(\DebugBar\DebugBar::class);
+    if ($this->eventDispatcher) {
+      $event = new NamedEvent("on.db.manager.create", $database);
+      $this->eventDispatcher->dispatch($event);
+    }
 
-      if ($connection instanceof \PDO) {
-        $pdo = new \DebugBar\DataCollector\PDO\TraceablePDO($connection);
-        $collector = $debugbar->hasCollector("pdo")? $debugbar->getCollector("pdo") : null;
-        if (!$collector) {
-          $collector = new \DebugBar\DataCollector\PDO\PDOCollector();
-          $debugbar->addCollector($collector);
-        }
-        $collector->addConnection($pdo, $name);
-        $database->setConnection($pdo);
-        $database->setResource($pdo);
-      } else if ($database instanceof \ON\Db\Doctrine2Database) {
-        $debugStack = new \Doctrine\DBAL\Logging\DebugStack();
-        $database->getConnection()->getConnection()->getConfiguration()->setSQLLogger($debugStack);
-        $debugbar->addCollector(new \DebugBar\Bridge\DoctrineCollector($debugStack));
-      }
-    }*/
     return $this->instances[$name] = $database;
   }
 }

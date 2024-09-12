@@ -18,9 +18,7 @@ use Psr\Http\Message\ServerRequestInterface as Request;
 
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\ServerRequestFactory;
-use ON\Context;
 use Mezzio\Router\Exception;
-use Mezzio\Router\RouterInterface as MezzioRouterInterface;
 use ON\RequestStack;
 
 use function array_keys;
@@ -69,7 +67,7 @@ use const E_WARNING;
  * }
  * @psalm-type FastRouteResult = FastRouteNotFoundResult|FastRouteBadMethodResult|FastRouteFoundResult
  */
-class Router implements RouterInterface, MezzioRouterInterface
+class Router implements RouterInterface
 {
     /**
      * Template used when generating the cache file.
@@ -135,7 +133,7 @@ class Router implements RouterInterface, MezzioRouterInterface
     /**
      * FastRoute router
      */
-    private ?RouteCollector $router = null;
+    private ?RouteCollector $collection = null;
 
     /**
      * All attached routes as Route instances
@@ -177,17 +175,17 @@ class Router implements RouterInterface, MezzioRouterInterface
      * @psalm-param FastRouteConfig $config
      */
     public function __construct(
-        ?RouteCollector $router = null,
+        ?RouteCollector $collection = null,
         ?callable $dispatcherFactory = null,
         ?array $config = null,
         RequestStack $stack
     ) {
-        if (null === $router) {
-            $router = $this->createRouter();
+        if (null === $collection) {
+            $collection = $this->createCollection();
         }
 
         $this->stack              = $stack;
-        $this->router             = $router;
+        $this->collection         = $collection;
         $this->dispatcherCallback = $dispatcherFactory;
         $this->loadConfig($config);
     }
@@ -203,18 +201,18 @@ class Router implements RouterInterface, MezzioRouterInterface
             return;
         }
 
-        if (isset($config[self::CONFIG_CACHE_ENABLED])) {
+        if (isset($config["router"][self::CONFIG_CACHE_ENABLED])) {
             $this->cacheEnabled = (bool) $config["router"][self::CONFIG_CACHE_ENABLED];
         }
 
-        if (isset($config[self::CONFIG_CACHE_FILE])) {
+        if (isset($config["router"][self::CONFIG_CACHE_FILE])) {
             $this->cacheFile = (string) $config["router"][self::CONFIG_CACHE_FILE];
         }
 
-        if (isset($config[self::CONFIG_BASEPATH])) {
+        if (isset($config["router"][self::CONFIG_BASEPATH])) {
             $this->basepath = (string) $config["router"][self::CONFIG_BASEPATH];
         } else {
-          $this->basepath = Router::getBaseHref($config);
+          $this->basepath = self::getBaseHref($config);
         }
 
         if ($this->cacheEnabled) {
@@ -495,7 +493,7 @@ class Router implements RouterInterface, MezzioRouterInterface
     /**
      * Create a default FastRoute Collector instance
      */
-    private function createRouter(): RouteCollector
+    private function createCollection(): RouteCollector
     {
         return new RouteCollector(new RouteParser(), new RouteGenerator());
     }
@@ -619,9 +617,9 @@ class Router implements RouterInterface, MezzioRouterInterface
             $methods = self::HTTP_METHODS_STANDARD;
         }
 
-        assert($this->router instanceof RouteCollector);
+        assert($this->collection instanceof RouteCollector);
 
-        $this->router->addRoute($methods, $route->getPath(), $route->getPath());
+        $this->collection->addRoute($methods, $route->getPath(), $route->getPath());
     }
 
     /**
@@ -636,9 +634,9 @@ class Router implements RouterInterface, MezzioRouterInterface
             return $this->dispatchData;
         }
 
-        assert($this->router instanceof RouteCollector);
+        assert($this->collection instanceof RouteCollector);
 
-        $dispatchData = (array) $this->router->getData();
+        $dispatchData = (array) $this->collection->getData();
 
         if ($this->cacheEnabled) {
             $this->cacheDispatchData($dispatchData);
