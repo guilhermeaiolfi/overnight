@@ -13,13 +13,21 @@ class OwnParameterPostProcessor
 {
     private array $parameters;
 
-    public function __invoke(array $config): array
+    public function __invoke(array $current, array $chunk = null): array
     {
+        $second_pass = isset($chunk);
+        if (!$second_pass) {
+            $chunk = $current;
+        }
         try {
-            $parameters = $this->getResolvedParameters($config);
+
+            // parameters to be resolved, in this case, all config values could be used
+            $parameters = $this->getResolvedParameters($current, $second_pass);
             //$parameters = $this->getResolvedParameters([ "app" => $config["app"] ]);
 
-            array_walk_recursive($config, static function (mixed &$value) use ($parameters): void {
+            //here is where we go to every and each index in the array and resolve the value
+            // using the parameters defined earlier
+            array_walk_recursive($chunk, static function (mixed &$value) use ($parameters): void {
                 $value = $parameters->unescapeValue($parameters->resolveValue($value));
             });
         } catch (SymfonyParameterNotFoundException $exception) {
@@ -29,7 +37,7 @@ class OwnParameterPostProcessor
         $allParameters        = $parameters->all();
         $config['parameters'] = $allParameters;
 
-        return $config;
+        return $chunk;
     }
 
     
@@ -53,12 +61,15 @@ class OwnParameterPostProcessor
         return $convertedValues;
     }
 
-    private function getResolvedParameters($config): ParameterBag
+    private function getResolvedParameters($config, $second_pass = false): ParameterBag
     {
         $resolved = $this->resolveNestedParameters($config);
         $bag      = new ParameterBag($resolved);
 
-        $bag->resolve();
+        if (!$second_pass) {
+            $bag->resolve();
+        }
+
         return $bag;
     }
 }

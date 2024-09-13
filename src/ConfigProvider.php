@@ -25,6 +25,8 @@ use Psr\Http\Message\StreamInterface;
 
 use ON\Middleware\RouteMiddleware;
 use ON\Application;
+use ON\Auth\AuthorizationServiceInterface;
+use ON\Config\ConfigInterface;
 use ON\Handler\NotFoundHandler;
 use ON\Router\RouterInterface;
 use ON\Router\Router;
@@ -33,7 +35,7 @@ use ON\Container\Executor\ExecutorInterface;
 use ON\Db\Manager;
 use ON\Extension\ConfigExtension;
 use ON\Extension\ContainerExtension;
-use ON\Extension\ListenersExtension;
+use ON\Extension\EventsExtension;
 use ON\Extension\PipelineExtension;
 use ON\Extension\RouterExtension;
 use ON\Service\RoutesLoader;
@@ -60,14 +62,7 @@ class ConfigProvider
                 'routes_file' => '%app.config_dir%/routes.php'
             ],
             'listeners' => [
-                "app.init" => [ RoutesLoader::class ]
-            ],
-            'extensions' => [
-                //ConfigExtension::class,
-                ContainerExtension::class,
-                ListenersExtension::class,
-                PipelineExtension::class,
-                RouterExtension::class
+                "core.run" => [ RoutesLoader::class ]
             ]
         ];
     }
@@ -84,13 +79,9 @@ class ConfigProvider
                 MiddlewarePipeInterface::class                      => \Laminas\Stratigility\MiddlewarePipe::class,
                 MiddlewareFactoryInterface::class                   => \ON\Container\MiddlewareFactory::class,
                 MezzioRouterInterface::class                        => \ON\Router\Router::class,
-                EventDispatcherInterface::class                     => \League\Event\EventDispatcher::class,
+                EventDispatcherInterface::class                     => \ON\Event\EventDispatcher::class,
             ],
-            'delegators' => [
-                /*ApplicationInterface::class                                  => [
-                    \ON\Container\ApplicationConfigInjectionDelegator::class
-                ]*/
-            ],
+            'delegators' => [],
             'factories' => [
                 Manager::class                                      => \ON\Db\ManagerFactory::class,
                 Router::class                                       => \ON\Router\RouterFactory::class,

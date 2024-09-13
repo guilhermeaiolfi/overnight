@@ -14,15 +14,13 @@ use ON\Container\MiddlewareFactory;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use ON\Event\EventSubscriberInterface;
 
 use function Laminas\Stratigility\path;
 
-class PipelineExtension implements ExtensionInterface
+class PipelineExtension extends AbstractExtension
 {
- 
-    
-
+    protected int $type = self::TYPE_EXTENSION;
     public function __construct(
         protected Application $app,
         protected MiddlewarePipeInterface $pipeline,
@@ -31,10 +29,11 @@ class PipelineExtension implements ExtensionInterface
 
     }
 
-    public static function install(Application $app): mixed {
+    public static function install(Application $app, ?array $options = []): mixed {
         $container = Application::getContainer();
         $extension = $container->get(self::class);
         $app->registerExtension(self::class, $extension);
+        $app->registerExtension('pipeline', $extension);
         $extension->loadPipeline($container->get('config')->get('app.pipeline_file'));
         return $extension;
     }

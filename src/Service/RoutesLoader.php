@@ -1,12 +1,12 @@
 <?php
 namespace ON\Service;
 
-use League\Event\HasEventName;
 use ON\Application;
 use ON\Container\ApplicationConfigInjectionDelegator;
+use ON\Event\EventSubscriberInterface;
 use Psr\Container\ContainerInterface;
 
-class RoutesLoader implements HasEventName {
+class RoutesLoader {
     public function __construct (
         protected ContainerInterface $container,
         protected Application $app
@@ -18,9 +18,5 @@ class RoutesLoader implements HasEventName {
     {
         $config = $this->container->get('config');
         ApplicationConfigInjectionDelegator::injectRoutesFromConfig($this->app, $config->all());
-    }
-
-    public function eventName(): string {
-        return "app.init";
     }
 }

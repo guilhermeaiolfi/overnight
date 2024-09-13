@@ -24,7 +24,8 @@
         "league/event": "^3.0",
         "symfony/dotenv": "^7.1",
         "symfony/config": "^7.1",
-        "laminas/laminas-config-aggregator-parameters": "^1.15"
+        "laminas/laminas-config-aggregator-parameters": "^1.15",
+        "adbario/php-dot-notation": "^3.3"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",

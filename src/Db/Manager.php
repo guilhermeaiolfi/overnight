@@ -68,7 +68,7 @@ class Manager {
     $database = new $database_class($name, $db_config, $this->container);
 
     if ($this->eventDispatcher) {
-      $event = new NamedEvent("on.db.manager.create", $database);
+      $event = new NamedEvent("core.db.manager.create", $database);
       $this->eventDispatcher->dispatch($event);
     }
 

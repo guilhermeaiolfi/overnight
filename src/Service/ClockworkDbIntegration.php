@@ -2,7 +2,7 @@
 namespace ON\Service;
 
 use ON\Application;
-use Symfony\Component\EventDispatcher\EventSubscriberInterface;
+use ON\Event\EventSubscriberInterface;
 
 class ClockworkDbIntegration implements EventSubscriberInterface {
     public function onQuery($event)
@@ -41,7 +41,7 @@ class ClockworkDbIntegration implements EventSubscriberInterface {
     public static function getSubscribedEvents(): array {
         return [
             "pdo.query" => 'onQuery',
-            "on.db.manager.create" => 'onManagerCreate'
+            "core.db.manager.create" => 'onManagerCreate'
         ];
     }
 }

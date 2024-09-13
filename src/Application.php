@@ -33,6 +33,8 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
 
     protected array $extensions = [];
 
+    protected array $installedExtensions = [];
+
     protected array $__methods = [];
 
     protected array $__properties = [];
@@ -76,19 +78,31 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
         
         $this->requestStack = new RequestStack();
         
-        // the config extension is the most basic, it needs to be register always
-        $this->install(ConfigExtension::class);
-
-        $this->loadDefaultExtensions();
+        $this->loadExtensions();
 
         $this->runner = self::getContainer()->get(RequestHandlerRunner::class);
     }
 
-    protected function loadDefaultExtensions() {
-        $config = $this->getExtension(ConfigExtension::class)->getConfig();
+    public function isDebug() {
+        return $this->options["debug"];
+    }
 
-        foreach ($config["extensions"] as $extension) {
+    public function ext($name) {
+        return $this->getExtension($name);
+    }
+
+    public function getInstalledExtensions() {
+        return $this->installedExtensions;
+    }
+
+    protected function loadExtensions() {
+        $extensions = require_once ("config/extensions.php");
+        foreach ($extensions as $extension) {
             $this->install($extension);
+        }
+
+        if ($this->hasExtension('events')) {
+            $this->ext('events')->dispatch(new NamedEvent("core.ready"));
         }
     }
 
@@ -104,6 +118,7 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
         }
 
         $this->extensions[$extension_class] = $extension_class::install($this);
+        $this->installedExtensions[] = $extension_class;
     }
 
     public function registerExtension($name, $obj): void {
@@ -115,7 +130,9 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
     }
 
     public function getExtension(string $class): ExtensionInterface {
-        if (!$this->hasExtension($class)) return null;
+        if (!$this->hasExtension($class)) {
+            throw new Exception("Extension {$class} is not installed.");
+        }
         return $this->extensions[$class];
     }
 
@@ -156,9 +173,10 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
      */
     public function run(): void
     {
-        // add listeners
-        if ($this->eventDispatcher != null) {
-            $this->eventDispatcher->dispatch(new NamedEvent("app.init"));
+        // send run 
+        if ($this->hasExtension('events')) {
+            /** @var \ON\Extension\EventsExtension $router_ext */
+            $this->ext('events')->dispatch(new NamedEvent("core.run"));
         }
         $this->runner->run();
     }
@@ -166,8 +184,8 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
     public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
     {
         /** @var \ON\Extension\RouterExtension $router_ext */
-        $router_ext = $this->getExtension(RouterExtension::class);
-        $router_ext->route($path, $middleware, $methods, $name);
+        $router_ext = $this->ext('router');
+        return $router_ext->route($path, $middleware, $methods, $name);
     }
 
     public function runAction ($request, $response = null) {

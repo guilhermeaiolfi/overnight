@@ -6,11 +6,12 @@ use Exception;
 use Mezzio\Router\DuplicateRouteDetector;
 use Mezzio\Router\Route;
 use ON\Application;
+use ON\Event\EventSubscriberInterface;
 use ON\Router\RouterInterface;
 
-class RouterExtension implements ExtensionInterface
+class RouterExtension extends AbstractExtension implements EventSubscriberInterface
 {
- 
+    protected int $type = self::TYPE_EXTENSION;
     private ?DuplicateRouteDetector $duplicateRouteDetector = null;
     private bool $detectDuplicates = true;
     
@@ -21,7 +22,7 @@ class RouterExtension implements ExtensionInterface
 
     }
 
-    public static function install(Application $app): mixed {
+    public static function install(Application $app, ?array $options = []): mixed {
         $container = Application::getContainer();
         $extension = $container->get(self::class);
 
@@ -35,8 +36,14 @@ class RouterExtension implements ExtensionInterface
         $app->registerMethod("any", [$extension, 'any']);
         $app->registerMethod("post", [$extension, 'post']);
 
+        $app->registerExtension('router', $extension);
+
         $extension->loadRoutes($container->get('config')->get('app.routes_file'));
         
+        if ($dispatcher = $app->ext('events')) {
+            /** @var ListenersExtension $dispatcher */
+            $dispatcher->loadEventSubscriber($extension);
+        }
         return $extension;
     }
 
@@ -147,5 +154,15 @@ class RouterExtension implements ExtensionInterface
     public function any(string $path, $middleware, ?string $name = null): Route
     {
         return $this->route($path, $middleware, null, $name);
+    }
+
+    public function onRun($event) {
+        return;
+    }
+
+    public static function getSubscribedEvents() {
+        return [
+            'core.run' => 'onRun'
+        ];
     }
 }
