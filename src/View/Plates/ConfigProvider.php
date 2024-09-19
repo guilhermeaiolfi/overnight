@@ -1,6 +1,8 @@
 <?php
 namespace ON\View\Plates;
 
+use League\Plates\Engine;
+
 class ConfigProvider
 {
     /**
@@ -24,6 +26,7 @@ class ConfigProvider
 
             ],
             'factories' => [
+                Engine::class         => PlatesEngineFactory::class,
                 PlatesRenderer::class => PlatesRendererFactory::class
             ]
         ];

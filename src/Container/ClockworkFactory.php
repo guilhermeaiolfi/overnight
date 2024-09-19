@@ -4,13 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Container;
 
-use Clockwork\DataSource\MonologDataSource;
 use Clockwork\Support\Vanilla\Clockwork;
-use ON\Handler\NotFoundHandler;
-use ON\Application;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Log\LoggerInterface;
 
 class ClockworkFactory
@@ -20,7 +16,6 @@ class ClockworkFactory
         $config   = $container->has('config') ? $container->get('config') : [];
 
         $settings = $config["clockwork"];
-
 
         $clockwork = Clockwork::init($settings);
 

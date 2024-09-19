@@ -3,51 +3,90 @@
 namespace ON\Extension;
 
 use Exception;
-use League\Event\EventDispatcher;
 use League\Event\ListenerPriority;
 use ON\Application;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use ON\Event\EventSubscriberInterface;
+use ON\Event\NamedEvent;
+
+use ON\Event\EventDispatcher;
 
 class EventsExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
-    public function __construct(
-        protected Application $app,
-        public EventDispatcherInterface $eventDispatcher
-    ) {
+    protected int $i = 1;
 
+    /** @var EventDispatcher $eventDispatcher */
+    public EventDispatcherInterface $eventDispatcher;
+
+    protected array $q = [];
+
+    public function __construct(
+        protected Application $app
+    ) {
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
-        $container = Application::getContainer();
-        $extension = $container->get(self::class);
+        // we can't use the container since it may not be started yet
+        $class = self::class;
+        $extension = new $class($app);
         $app->registerExtension('events', $extension); // register shortcut
-
-        $config = $container->get('config');
-        $extension->configureListeners($config["listeners"]);
-
-        $extension->registerEventSubscribersForExtensionsBeforeThis();
         return $extension;
     }
+    
+    public function setup(int $counter): bool
+    {
+        if ($this->app->isExtensionReady('container')) {
+            $container = $this->app->getContainer();
+            if (!$container->has(EventDispatcherInterface::class)) {
+                throw new Exception("There is no defenition for EventDispatcherInterface::class in the container");
+                return false;
+            }
+            $this->eventDispatcher = $container->get(EventDispatcherInterface::class);
+            $this->dispatch(new NamedEvent("core.init"));
+            return true;
+        }
+        return false;
+    }
 
-    public function registerEventSubscribersForExtensionsBeforeThis() {
+    public function registerEventSubscribersForExtensions() {
         $exts = $this->app->getInstalledExtensions();
         foreach ($exts as $ext) {
             $class = $ext;
             if (is_array($ext)) {
                 $class = $ext["class"];
             }
-            if ($class == self::class) {
-                break;
-            }
             $obj = $this->app->ext($class);
-            $this->loadEventSubscriber($obj);
+            if ($obj) {
+                $this->loadEventSubscriber($obj);
+            }
+            $this->dispatch(new NamedEvent("core.extension.ready", $obj?? $class));
+        }
+    }
+
+    function ready() {
+        // register events for extensions
+        $this->registerEventSubscribersForExtensions();
+
+        // clear the queue of events to dispatch
+        $this->flush();
+        
+        // tell the world we are ready
+        $this->dispatch(new NamedEvent("core.ready"));
+    }
+
+    protected function flush()
+    {
+        while ($event = array_shift($this->q)) {
+            $this->dispatch($event);
         }
     }
 
     public function dispatch($event) {
-        return $this->eventDispatcher->dispatch($event);
+        if (isset($this->eventDispatcher)) {
+            return $this->eventDispatcher->dispatch($event);
+        }
+        $this->q[] = $event;
     }
 
 
@@ -125,7 +164,7 @@ class EventsExtension extends AbstractExtension
             throw new Exception("Listener is not callable for event \"" . $event . "\"");
         }
         if (!is_string($event)) {
-            throw new Exception("Event name (" . $event . ") is not valid for listener: " . $class?? $listener);
+            throw new Exception("Event name (" . $event . ") is not valid for listener: " . get_class($listener));
         }
         $this->eventDispatcher->subscribeTo($event, $listener, $priority);
     }

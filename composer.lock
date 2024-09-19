@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "58c3b137f81e050ea7cd143b392883b4",
+    "content-hash": "1e856dc49c75a4c018119b53c1bdaa30",
     "packages": [
         {
             "name": "adbario/php-dot-notation",
@@ -108,71 +108,6 @@
                 }
             ],
             "time": "2024-05-10T17:15:19+00:00"
-        },
-        {
-            "name": "elie29/zend-phpdi-config",
-            "version": "v9.0.1",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/elie29/zend-di-config.git",
-                "reference": "ffbe0af6fd7ed8bc1099cd44417ecfa40e30d52d"
-            },
-            "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/elie29/zend-di-config/zipball/ffbe0af6fd7ed8bc1099cd44417ecfa40e30d52d",
-                "reference": "ffbe0af6fd7ed8bc1099cd44417ecfa40e30d52d",
-                "shasum": ""
-            },
-            "require": {
-                "laminas/laminas-stdlib": "^3.2",
-                "php": "^8.1",
-                "php-di/php-di": "^6.3 || ^7.0"
-            },
-            "require-dev": {
-                "laminas/laminas-coding-standard": "^2.1.4",
-                "mikey179/vfsstream": "^1.6.11",
-                "mockery/mockery": "^1.0",
-                "phpspec/prophecy-phpunit": "^2.0",
-                "phpstan/phpstan": "^1.8",
-                "phpstan/phpstan-mockery": "^1.1",
-                "phpunit/phpunit": "^9.0"
-            },
-            "bin": [
-                "bin/add-autowires-entry"
-            ],
-            "type": "library",
-            "autoload": {
-                "psr-4": {
-                    "Elie\\PHPDI\\Config\\": "src"
-                }
-            },
-            "notification-url": "https://packagist.org/downloads/",
-            "license": [
-                "MIT"
-            ],
-            "authors": [
-                {
-                    "name": "Elie NEHME",
-                    "email": "elie29@gmail.com"
-                }
-            ],
-            "description": "PSR-11 PHP-DI autowire container configurator for Laminas, Mezzio, ZF2, ZF3 and Zend Expressive applications",
-            "keywords": [
-                "PSR-11",
-                "ZendFramework",
-                "container",
-                "di",
-                "expressive",
-                "laminas",
-                "mezzio",
-                "php-di",
-                "zf"
-            ],
-            "support": {
-                "issues": "https://github.com/elie29/zend-di-config/issues",
-                "source": "https://github.com/elie29/zend-di-config"
-            },
-            "time": "2023-03-28T13:51:38+00:00"
         },
         {
             "name": "fig/http-message-util",
@@ -2748,6 +2683,70 @@
             "time": "2024-06-28T10:03:55+00:00"
         },
         {
+            "name": "symfony/finder",
+            "version": "v7.1.4",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/symfony/finder.git",
+                "reference": "d95bbf319f7d052082fb7af147e0f835a695e823"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/symfony/finder/zipball/d95bbf319f7d052082fb7af147e0f835a695e823",
+                "reference": "d95bbf319f7d052082fb7af147e0f835a695e823",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=8.2"
+            },
+            "require-dev": {
+                "symfony/filesystem": "^6.4|^7.0"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Component\\Finder\\": ""
+                },
+                "exclude-from-classmap": [
+                    "/Tests/"
+                ]
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Fabien Potencier",
+                    "email": "fabien@symfony.com"
+                },
+                {
+                    "name": "Symfony Community",
+                    "homepage": "https://symfony.com/contributors"
+                }
+            ],
+            "description": "Finds files and directories via an intuitive fluent interface",
+            "homepage": "https://symfony.com",
+            "support": {
+                "source": "https://github.com/symfony/finder/tree/v7.1.4"
+            },
+            "funding": [
+                {
+                    "url": "https://symfony.com/sponsor",
+                    "type": "custom"
+                },
+                {
+                    "url": "https://github.com/fabpot",
+                    "type": "github"
+                },
+                {
+                    "url": "https://tidelift.com/funding/github/packagist/symfony/symfony",
+                    "type": "tidelift"
+                }
+            ],
+            "time": "2024-08-13T14:28:19+00:00"
+        },
+        {
             "name": "symfony/polyfill-ctype",
             "version": "v1.31.0",
             "source": {
@@ -3258,6 +3257,71 @@
                 }
             ],
             "time": "2024-04-14T10:49:22+00:00"
+        },
+        {
+            "name": "kint-php/kint",
+            "version": "5.1.1",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/kint-php/kint.git",
+                "reference": "8c5ec370c3382ceae0b88e91f9bbb00e6bb4f93b"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/kint-php/kint/zipball/8c5ec370c3382ceae0b88e91f9bbb00e6bb4f93b",
+                "reference": "8c5ec370c3382ceae0b88e91f9bbb00e6bb4f93b",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.1"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3",
+                "phpspec/prophecy-phpunit": "^2",
+                "phpunit/phpunit": "^9",
+                "seld/phar-utils": "^1",
+                "symfony/finder": ">=4.0",
+                "vimeo/psalm": "^5"
+            },
+            "suggest": {
+                "kint-php/kint-helpers": "Provides extra helper functions",
+                "kint-php/kint-twig": "Provides d() and s() functions in twig templates"
+            },
+            "type": "library",
+            "autoload": {
+                "files": [
+                    "init.php"
+                ],
+                "psr-4": {
+                    "Kint\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Jonathan Vollebregt",
+                    "homepage": "https://github.com/jnvsor"
+                },
+                {
+                    "name": "Contributors",
+                    "homepage": "https://github.com/kint-php/kint/graphs/contributors"
+                }
+            ],
+            "description": "Kint - debugging tool for PHP developers",
+            "homepage": "https://kint-php.github.io/kint/",
+            "keywords": [
+                "debug",
+                "kint",
+                "php"
+            ],
+            "support": {
+                "issues": "https://github.com/kint-php/kint/issues",
+                "source": "https://github.com/kint-php/kint/tree/5.1.1"
+            },
+            "time": "2024-04-26T14:20:09+00:00"
         },
         {
             "name": "myclabs/deep-copy",

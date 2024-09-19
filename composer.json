@@ -11,7 +11,6 @@
         "mezzio/mezzio": "4.0.x-dev",
         "laminas/laminas-diactoros": "3.x",
         "php-di/php-di": "^7.0",
-        "elie29/zend-phpdi-config": "9.x",
         "mezzio/mezzio-fastroute": "^3.11",
         "laminas/laminas-stratigility": "^3.5",
         "laminas/laminas-authentication": "^2.17",
@@ -25,11 +24,13 @@
         "symfony/dotenv": "^7.1",
         "symfony/config": "^7.1",
         "laminas/laminas-config-aggregator-parameters": "^1.15",
-        "adbario/php-dot-notation": "^3.3"
+        "adbario/php-dot-notation": "^3.3",
+        "symfony/finder": "^7.1"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
-        "phpunit/phpunit": "11.x.x"
+        "phpunit/phpunit": "11.x.x",
+        "kint-php/kint": "^5.1"
     },
     "autoload": {
       "files": [

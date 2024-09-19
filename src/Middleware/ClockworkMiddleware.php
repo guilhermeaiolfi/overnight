@@ -37,9 +37,9 @@ class ClockworkMiddleware implements MiddlewareInterface
     }
     
     // Returns a new middleware instance with a default singleton Clockwork instance, takes an additional configuration as argument
-    public static function init($config = [])
+    public static function init($config = [], RequestStack $stack)
     {
-        return new static(Clockwork::init($config));
+        return new static(Clockwork::init($config), $stack);
     }
     
     // Sets a PSR-17 compatible response factory. When using the middleware with routing enabled, response factory must be manually set

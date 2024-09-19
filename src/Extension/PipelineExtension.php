@@ -2,10 +2,13 @@
 
 namespace ON\Extension;
 
+use DI\Attribute\Inject;
 use Exception;
+use Laminas\Diactoros\Response;
 use Laminas\Diactoros\ServerRequestFactory;
+use Laminas\HttpHandlerRunner\RequestHandlerRunner;
+use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
 use Laminas\Stratigility\MiddlewarePipeInterface;
-use League\Event\HasEventName;
 use League\Event\ListenerPriority;
 use Mezzio\Router\Route;
 use Mezzio\Router\RouteResult;
@@ -15,27 +18,58 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use ON\Event\EventSubscriberInterface;
+use ON\Event\NamedEvent;
+use ON\RequestStack;
 
 use function Laminas\Stratigility\path;
 
 class PipelineExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
+    protected RequestHandlerRunnerInterface $runner;
+
+    protected RequestStack $requestStack;
+    
+    protected MiddlewarePipeInterface $pipeline;
+    public MiddlewareFactory $factory;
+
     public function __construct(
         protected Application $app,
-        protected MiddlewarePipeInterface $pipeline,
-        public MiddlewareFactory $factory
+
     ) {
 
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
-        $container = Application::getContainer();
-        $extension = $container->get(self::class);
-        $app->registerExtension(self::class, $extension);
+        $extension = new self($app);
         $app->registerExtension('pipeline', $extension);
-        $extension->loadPipeline($container->get('config')->get('app.pipeline_file'));
         return $extension;
+    }
+
+    public function setup(int $counter): bool
+    {
+        if ($this->app->isExtensionReady('container')) {
+
+            $this->app->requestStack = $this->requestStack = new RequestStack();
+            
+            $container = $this->app->getContainer();
+            
+            $this->pipeline = $container->get(MiddlewarePipeInterface::class);
+            $this->factory = $container->get(MiddlewareFactory::class);
+
+            $config = $container->get('config');
+            
+            $this->app->registerMethod("pipe", [$this, "pipe"]);
+            $this->app->registerMethod("runAction", [$this, "runAction"]);
+            $this->app->registerMethod("process", [$this, "process"]);
+            $this->app->registerMethod("handle", [$this, "handle"]);
+            $this->app->registerMethod("run", [$this, "run"]);
+
+            $this->runner = $container->get(RequestHandlerRunner::class);
+            $this->loadPipeline($config->get('app.pipeline_file'));
+            return true;
+        }
+        return false;
     }
 
     protected function loadPipeline(string $file) {
@@ -97,5 +131,32 @@ class PipelineExtension extends AbstractExtension
         $request = $request->withAttribute(RouteResult::class, $route_result);
 
         return $request;
+    }
+
+    public function runAction ($request, $response = null) {
+        $response = $response ?: new Response();
+        return $this->handle($request);
+    }
+
+    /**
+     * Run the application.
+     *
+     * Proxies to the RequestHandlerRunner::run() method.
+     */
+    public function run(): void
+    {
+        // core.run event
+        if ($dispatcher = $this->app->ext('events')) {
+            /** @var \ON\Extension\EventsExtension $dispatcher */
+            $dispatcher->dispatch(new NamedEvent("core.run"));
+        }
+
+        $this->runner->run();
+
+        // core.end event
+        if ($dispatcher = $this->app->ext('events')) {
+            /** @var \ON\Extension\EventsExtension $dispatcher */
+            $dispatcher->dispatch(new NamedEvent("core.end"));
+        }
     }
 }

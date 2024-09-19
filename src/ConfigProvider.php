@@ -33,11 +33,6 @@ use ON\Router\Router;
 
 use ON\Container\Executor\ExecutorInterface;
 use ON\Db\Manager;
-use ON\Extension\ConfigExtension;
-use ON\Extension\ContainerExtension;
-use ON\Extension\EventsExtension;
-use ON\Extension\PipelineExtension;
-use ON\Extension\RouterExtension;
 use ON\Service\RoutesLoader;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -52,6 +47,7 @@ class ConfigProvider
             'dependencies' => $this->getDependencies(),
             'app' => [
                 // use null to be automatically detected
+                "a" => true,
                 'basepath' => null,
                 'project_dir' => getcwd(),
                 'cache_dir' => 'var/cache',
@@ -60,9 +56,6 @@ class ConfigProvider
                 'config_dir' => 'config',
                 'pipeline_file' => '%app.config_dir%/pipeline.php',
                 'routes_file' => '%app.config_dir%/routes.php'
-            ],
-            'listeners' => [
-                "core.run" => [ RoutesLoader::class ]
             ]
         ];
     }
@@ -73,6 +66,9 @@ class ConfigProvider
     public function getDependencies()
     {
          return [
+            'autowires' => [
+                
+            ],
             'aliases' =>[
                 RouteCollectorInterface::class                      => \Mezzio\Router\RouteCollector::class,
                 RouterInterface::class                              => \ON\Router\Router::class,

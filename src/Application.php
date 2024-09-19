@@ -2,38 +2,20 @@
 namespace ON;
 
 use Exception;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
+use Kint\Kint;
 use Psr\Container\ContainerInterface;
-
-use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
-use Mezzio\Router\Route;
-
-use Laminas\Diactoros\Response;
-use Laminas\HttpHandlerRunner\RequestHandlerRunner;
-use Laminas\Stratigility\Middleware\ErrorHandler;
-use ON\Event\NamedEvent;
-use ON\Extension\ConfigExtension;
 use ON\Extension\ExtensionInterface;
-use ON\Extension\PipelineExtension;
-use ON\Extension\RouterExtension;
-use ON\Router\RouterInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
 use Symfony\Component\Dotenv\Dotenv;
 
-class Application implements MiddlewareInterface, RequestHandlerInterface {
-
-    public RequestStack $requestStack;
-    protected RequestHandlerRunnerInterface $runner;
-    public EventDispatcherInterface $eventDispatcher;
+class Application {
 
     protected string $project_dir;
 
     protected array $extensions = [];
 
     protected array $installedExtensions = [];
+
+    protected array $setupExtensions = [];
 
     protected array $__methods = [];
 
@@ -71,16 +53,14 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
 
         // load .env file vars
         $dotenv = new Dotenv();
-        $dotenv->load($project_dir.'/.env');
+        $dotenv->load('.env');
+        //d($_ENV);exit;
 
-        
-        $this->options["debug"] = $_ENV["APP_DEBUG"] = $options["debug"]?? (bool) $_ENV["APP_DEBUG"];
-        
-        $this->requestStack = new RequestStack();
-        
+        $this->options["debug"] = $_ENV["APP_DEBUG"] = $options["debug"]?? "true" === $_ENV["APP_DEBUG"];
+
+        Benchmark::start("LoadExtensions");
         $this->loadExtensions();
-
-        $this->runner = self::getContainer()->get(RequestHandlerRunner::class);
+        Benchmark::end("LoadExtensions");
     }
 
     public function isDebug() {
@@ -95,18 +75,87 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
         return $this->installedExtensions;
     }
 
-    protected function loadExtensions() {
-        $extensions = require_once ("config/extensions.php");
-        foreach ($extensions as $extension) {
-            $this->install($extension);
-        }
-
-        if ($this->hasExtension('events')) {
-            $this->ext('events')->dispatch(new NamedEvent("core.ready"));
-        }
+    public function isExtensionReady($ext): bool 
+    {
+        return $this->extensions[$ext]->isReady();
     }
 
-    public function install(string $extension_class) {
+    public function getExtensionsByPendingTag(mixed $tag): array
+    {
+        $result = [];
+        foreach($this->installedExtensions as $ext_class) {
+            $tags = $this->extensions[$ext_class]->getPendingTags();
+            if (in_array($tag, $tags)) {
+                $result[] = $ext_class;
+            }
+        }
+        return $result;
+    }
+    protected function loadExtensions() {
+
+        Benchmark::start("LoadExtensionFile");
+        $extensions = require_once ("config/extensions.php");
+        Benchmark::end("LoadExtensionFile");
+
+        $this->setupExtensions = [];
+        foreach ($extensions as $extension) {
+            $extension_class = $extension;
+            $extension_options = [];
+            if (is_array($extension)) {
+                $extension_class= $extension[0];
+                $extension_options= $extension[1];
+            }
+            Benchmark::start("install::" . $extension_class);
+            $ext = $this->install($extension_class, $extension_options);
+            Benchmark::end("install::" . $extension_class);
+            $this->setupExtensions[] = $extension_class;
+            /*Benchmark::start("setup::" . $extension_class);
+            if (!$ext->setup()) {
+                $this->setupExtensions[] = $extension_class;
+            }
+            Benchmark::end("setup::" . $extension_class);*/
+        }
+        Benchmark::start("Setupping");
+        $counter = 0;
+        $pointer = $this->setupExtensions[array_key_last($this->setupExtensions)];
+        while($ext_class = array_shift($this->setupExtensions)) {
+            $ext = $this->extensions[$ext_class];
+            
+            if ($ext) {
+                //echo "setup {$ext_class}";
+                $completed = $ext->setup($counter);
+                if (!$completed) {
+                    $this->setupExtensions[] = $ext_class;
+                    if (!$completed && count($this->setupExtensions) == 1) {
+                        throw new Exception("There is a deadlock booting " . $ext_class . " extension.");
+                    }
+                } else {
+                    $ext->setReady(true);
+                }
+                
+                if ($pointer == $ext_class) {
+                    $counter++;
+                    if ($completed) {
+                        $pointer = count($this->setupExtensions) > 0? $this->setupExtensions[array_key_last($this->setupExtensions)] : null;
+                    }
+                }
+            }
+        }
+        Benchmark::end("Setupping");
+
+        Benchmark::start("Readying");
+        foreach($this->installedExtensions as $extension) {
+            $ext = $this->extensions[$extension];
+            
+            if (isset($ext)) {
+                $ext->ready();
+            }
+        }
+        Benchmark::end("Readying");
+    }
+
+    public function install(string $extension_class, array $extension_options): mixed {
+
 
         if (!class_exists($extension_class)) {
             throw new Exception("It was passed an invalid class as extension.");
@@ -117,8 +166,9 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
             throw new Exception("Extensions must implement \ON\Extension\ExtesionInterface.");
         }
 
-        $this->extensions[$extension_class] = $extension_class::install($this);
+        $this->extensions[$extension_class] = $extension_class::install($this, $extension_options);
         $this->installedExtensions[] = $extension_class;
+        return $this->extensions[$extension_class];
     }
 
     public function registerExtension($name, $obj): void {
@@ -143,56 +193,13 @@ class Application implements MiddlewareInterface, RequestHandlerInterface {
      */
     public static function getContainer(): ?ContainerInterface
     {
-        return self::$container;
+        return self::$container?? null;
     }
 
     public static function setContainer($container) {
         self::$container = $container;
     }
     
-
-    public function handle(ServerRequestInterface $request): ResponseInterface
-    {
-        return $this->extensions[PipelineExtension::class]->handle($request);
-    }
-
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
-    {
-        return $this->extensions[PipelineExtension::class]->process($request, $handler);
-    }
-
-    public function pipe($middlewareOrPath, $middleware = null): void
-    {
-        $this->extensions[PipelineExtension::class]->pipe($middlewareOrPath, $middleware);
-    }
-
-    /**
-     * Run the application.
-     *
-     * Proxies to the RequestHandlerRunner::run() method.
-     */
-    public function run(): void
-    {
-        // send run 
-        if ($this->hasExtension('events')) {
-            /** @var \ON\Extension\EventsExtension $router_ext */
-            $this->ext('events')->dispatch(new NamedEvent("core.run"));
-        }
-        $this->runner->run();
-    }
-
-    public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
-    {
-        /** @var \ON\Extension\RouterExtension $router_ext */
-        $router_ext = $this->ext('router');
-        return $router_ext->route($path, $middleware, $methods, $name);
-    }
-
-    public function runAction ($request, $response = null) {
-        $response = $response ?: new Response();
-        return $this->handle($request);
-    }
-
     public function __get($name)
     {
         return $this->__properties[$name];

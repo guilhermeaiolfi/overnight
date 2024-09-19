@@ -14,17 +14,19 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
     protected int $type = self::TYPE_EXTENSION;
     private ?DuplicateRouteDetector $duplicateRouteDetector = null;
     private bool $detectDuplicates = true;
+
+    protected RouterInterface $router;
     
+    protected array $pendingTags = ['router:load', 'events:load'];
     public function __construct(
-        protected Application $app,
-        protected RouterInterface $router
+        protected Application $app
     ) {
 
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
-        $container = Application::getContainer();
-        $extension = $container->get(self::class);
+        $class = self::class;
+        $extension = new $class($app);
 
         if (!$app->hasExtension(PipelineExtension::class)) {
             throw new Exception("The RouterExtension needs the PipelineExtension to work property.");
@@ -35,16 +37,38 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
         $app->registerMethod("patch", [$extension, 'patch']);
         $app->registerMethod("any", [$extension, 'any']);
         $app->registerMethod("post", [$extension, 'post']);
+        $app->registerMethod("route", [$extension, 'route']);
 
         $app->registerExtension('router', $extension);
-
-        $extension->loadRoutes($container->get('config')->get('app.routes_file'));
         
-        if ($dispatcher = $app->ext('events')) {
-            /** @var ListenersExtension $dispatcher */
-            $dispatcher->loadEventSubscriber($extension);
-        }
         return $extension;
+    }
+
+    public function setup(int $counter): bool
+    {
+        if (!$this->app->hasExtension('events'))
+        {
+            throw new Exception("RouterExtension needs the EventsExtension to work properly.");
+            return false;
+        }
+
+        if ($this->app->isExtensionReady('container') && $this->hasPendingTag('router:load')) {
+            $container = $this->app->getContainer();
+            $this->router = $container->get(RouterInterface::class);
+            $this->loadRoutes($container->get('config')->get('app.routes_file'));
+            $this->removePendingTag('router:load');
+        }
+        if ($this->app->isExtensionReady('events') && $this->hasPendingTag('events:load')) {
+            /** @var EventsExtension $dispatcher */
+            $dispatcher = $this->app->ext('events');
+            $dispatcher->loadEventSubscriber($this);
+            $this->removePendingTag('events:load');
+        }
+
+        if (empty($this->getPendingTags())) {
+            return true;
+        }
+        return false;
     }
 
     protected function loadRoutes(string $file) {

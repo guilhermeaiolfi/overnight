@@ -99,7 +99,6 @@ abstract class AbstractPage implements IPage {
 
     $renderer_class = $renderer_config['class']?? '\ON\Renderer';
 
-
     $renderer = $this->container->get($renderer_class);
 
     if ($assigns = $renderer_config['inject']) {

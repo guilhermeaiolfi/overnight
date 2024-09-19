@@ -32,6 +32,7 @@ class PlatesRenderer  implements RendererInterface
         $sections = array();
 
         $template = $engine->make($template_name);
+
         if (isset($layout["sections"])) {
             foreach($layout["sections"] as $section_name => $section_config) {
                 if (is_array($section_config)) {
