@@ -10,7 +10,7 @@ abstract class AbstractExtension implements ExtensionInterface
 
     protected int $type = self::TYPE_MODULE;
 
-    protected array $pendingTags = [];
+    protected array $pendingTasks = [];
 
     protected bool $__ready = false;
 
@@ -39,21 +39,26 @@ abstract class AbstractExtension implements ExtensionInterface
         return true;
     }
 
-    public function getPendingTags(): array
+    public function getPendingTasks(): array
     {
-        return $this->pendingTags;
+        return $this->pendingTasks;
     }
 
-    public function removePendingTag(mixed $tag): void
+    public function removePendingTask(mixed $task): void
     {
-        $key = array_search($tag, $this->pendingTags);
+        $key = array_search($task, $this->pendingTasks);
         if ($key !== false) {
-            unset($this->pendingTags[$key]);
-        }        
+            unset($this->pendingTasks[$key]);
+        }
     }
 
-    public function hasPendingTag(mixed $tag): bool
+    public function hasPendingTask(mixed $task): bool
     {
-        return in_array($tag, $this->pendingTags);
+        return in_array($task, $this->pendingTasks);
+    }
+
+    public function hasPendingTasks(): bool
+    {
+        return count($this->pendingTasks) > 0;
     }
 }

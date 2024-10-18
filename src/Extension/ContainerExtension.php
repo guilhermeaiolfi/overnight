@@ -6,6 +6,8 @@ use DI\ContainerBuilder;
 use Exception;
 use Laminas\Stratigility\Middleware\ErrorHandler;
 use ON\Application;
+use ON\Config\ConfigInterface;
+use ON\Config\ContainerConfig;
 use ON\Container\ConfigDefinitionSource;
 use Psr\Container\ContainerInterface;
 
@@ -50,26 +52,31 @@ class ContainerExtension extends AbstractExtension
         if ($this->app->isExtensionReady('config')) {
             // we need to get the container working here (and not in the setup()),
             // because it may be used in the setup method by other extensions
-
+            
             /** @var \ON\Extension\ConfigExtension $config_ext */
-            $config_ext = $this->app->getExtension(ConfigExtension::class);
+            $config_ext = $this->app->getExtension('config');
+                        
+            $configs = $config_ext->get();
 
-            $config = $config_ext->getConfig();
-
-            $this->container = $container = $this->createContainer($config);
-        
+            $this->container = $container = $this->createContainer($configs[ContainerConfig::class]);
+            
             Application::setContainer($container);
+            foreach ($configs as $class => $config) {
+                $container->set($class, $config);
+            }
+            /*
+            $container->set(ConfigInterface::class, $this->app->ext('config')->getConfig());*/
 
             //echo VarExporter::export($container, VarExporter::ADD_RETURN | VarExporter::CLOSURE_SNAPSHOT_USES);exit;
             // we need to set it to the container in case other places need the instance of Application
             $container->set(get_class($this->app), $this->app);
-            if ($config->get("errors") && $this->container->has(ErrorHandler::class)) {
+            /*if ($config->get("errors") && $this->container->has(ErrorHandler::class)) {
                 //creates the error handler early on so anything gets handled
                 $this->container->get(ErrorHandler::class);
     
                 //var_dump($config->get('templates.paths'));
                 return true;
-            }
+            }*/
             //throw new Exception("ON doesn't know how create ErrorHandler class. Configure it in the DI config.");
             return true;
         }
@@ -85,15 +92,14 @@ class ContainerExtension extends AbstractExtension
 
         $builder = new ContainerBuilder();
         
-        $this->cache_path = $this->options["cache_path"]?? $config->get('di.cache_path', "var/container/");
+        $this->cache_path = $this->options["cache_path"]?? $config->get('cache_path', "var/container/");
 
-        if (!$_ENV["APP_DEBUG"] || $config->get("di.enable_cache", false))
+        if ($config->get("enable_cache", false))
         {
-            //var_dump("ok");
             $builder->enableCompilation($this->cache_path);
         }
         
-        $write_proxies_to_file = $config->get("di.write_proxies", true);
+        $write_proxies_to_file = $config->get("write_proxies", true);
         $builder->writeProxiesToFile($write_proxies_to_file, $this->cache_path);
         
 
@@ -102,15 +108,15 @@ class ContainerExtension extends AbstractExtension
             // lets build the container
             //$this->dependencies = $config->get("dependencies", []);
 
-            foreach ($config->get('dependencies.services', []) as $name => $service) {
+            foreach ($config->get('definitions.services', []) as $name => $service) {
                 $this->definitions[$name] = is_object($service) ? $service : create($service);
             }
 
-            foreach ($config->get('dependencies.factories', []) as $name => $factory) {
+            foreach ($config->get('definitions.factories', []) as $name => $factory) {
                 $this->definitions[$name] = factory($factory);
             }
 
-            foreach ($config->get('dependencies.invokables', []) as $key => $object) {
+            foreach ($config->get('definitions.invokables', []) as $key => $object) {
                 $name = is_numeric($key) ? $object : $key;
                 $this->definitions[$name] = create($object);
                 if ($name !== $object) {
@@ -119,15 +125,15 @@ class ContainerExtension extends AbstractExtension
                 }
             }
 
-            foreach ($config->get('dependencies.autowires', []) as $name) {
+            foreach ($config->get('definitions.autowires', []) as $name) {
                 $this->definitions[$name] = autowire($name);
             }
 
-            foreach ($config->get('dependencies.aliases', []) as $alias => $target) {
+            foreach ($config->get('definitions.aliases', []) as $alias => $target) {
                 $this->definitions[$alias] = get((string) $target);
             }
 
-            foreach ($config->get('dependencies.delegators', []) as $name => $delegators) {
+            foreach ($config->get('definitions.delegators', []) as $name => $delegators) {
                 foreach ($delegators as $delegator) {
                     $previous                     = $name . '-' . ++$this->delegatorCounter;
                     $this->definitions[$previous] = $this->definitions[$name];
@@ -145,15 +151,15 @@ class ContainerExtension extends AbstractExtension
         }
 
         // default autowire is true
-        $autowire = $config->get("di.autowire", true);
+        $autowire = $config->get("autowire", true);
         $builder->useAutowiring($autowire);
 
-        if ($config->get('di.definition_cache', false)) {
+        if ($config->get('definition_cache', false)) {
             $builder->enableDefinitionCache();
         }
 
         // default autowire is true
-        $use_attributes = $config->get("di.use_attributes", true);
+        $use_attributes = $config->get("use_attributes", true);
         $builder->useAttributes($use_attributes);
 
         $container = $builder->build();

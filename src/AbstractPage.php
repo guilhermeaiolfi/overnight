@@ -2,12 +2,13 @@
 namespace ON;
 
 use Psr\Container\ContainerInterface;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\Route;
+use ON\Router\RouteResult;
+use ON\Router\Route;
 use ON\Application;
 use ON\Common\AttributesTrait;
+use ON\View\ViewConfig;
 
-abstract class AbstractPage implements IPage {
+abstract class AbstractPage implements PageInterface {
   use AttributesTrait;
 
   protected $default_template_name;
@@ -71,7 +72,7 @@ abstract class AbstractPage implements IPage {
 
   public function render($layout_name = null, $template_name = null, $data = null, $params = []) {
 
-    $config = $this->container->get('config');
+    $config = $this->container->get(ViewConfig::class);
 
     // if nothing is passed, use the attributes of the page instance
     if (!isset($data)) {
@@ -87,15 +88,15 @@ abstract class AbstractPage implements IPage {
     }
     
     if (!isset($layout_name)) {
-      $layout_name = $config["output_types"]["html"]["default"]?? 'default';
+      $layout_name = $config["formats"]["html"]["default"]?? 'default';
     }
-    if (!isset($config['output_types']['html']['layouts'][$layout_name])) {
+    if (!isset($config["formats"]['html']['layouts'][$layout_name])) {
       throw new \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
     }
-    $layout_config = $config['output_types']['html']['layouts'][$layout_name];
+    $layout_config = $config["formats"]['html']['layouts'][$layout_name];
 
     $renderer_name = $params['renderer']?? $layout_config['renderer'];
-    $renderer_config = $config['output_types']['html']['renderers'][$renderer_name];
+    $renderer_config = $config["formats"]['html']['renderers'][$renderer_name];
 
     $renderer_class = $renderer_config['class']?? '\ON\Renderer';
 

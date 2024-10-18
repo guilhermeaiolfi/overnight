@@ -67,6 +67,11 @@ class Application {
         return $this->options["debug"];
     }
 
+    /**
+     * @template T
+     * @param class-string<T> $name
+     * @return T
+     */
     public function ext($name) {
         return $this->getExtension($name);
     }
@@ -80,12 +85,12 @@ class Application {
         return $this->extensions[$ext]->isReady();
     }
 
-    public function getExtensionsByPendingTag(mixed $tag): array
+    public function getExtensionsByPendingTask(mixed $task): array
     {
         $result = [];
         foreach($this->installedExtensions as $ext_class) {
-            $tags = $this->extensions[$ext_class]->getPendingTags();
-            if (in_array($tag, $tags)) {
+            $tasks = $this->extensions[$ext_class]->getPendingTasks();
+            if (in_array($task, $tasks)) {
                 $result[] = $ext_class;
             }
         }
@@ -109,11 +114,6 @@ class Application {
             $ext = $this->install($extension_class, $extension_options);
             Benchmark::end("install::" . $extension_class);
             $this->setupExtensions[] = $extension_class;
-            /*Benchmark::start("setup::" . $extension_class);
-            if (!$ext->setup()) {
-                $this->setupExtensions[] = $extension_class;
-            }
-            Benchmark::end("setup::" . $extension_class);*/
         }
         Benchmark::start("Setupping");
         $counter = 0;
@@ -179,11 +179,16 @@ class Application {
         return array_key_exists($class, $this->extensions);
     }
 
-    public function getExtension(string $class): ExtensionInterface {
-        if (!$this->hasExtension($class)) {
-            throw new Exception("Extension {$class} is not installed.");
+    /**
+     * @template T
+     * @param class-string<T> $className
+     * @return T
+     */
+    public function getExtension(string $className): ExtensionInterface {
+        if (!$this->hasExtension($className)) {
+            throw new Exception("Extension {$className} is not installed.");
         }
-        return $this->extensions[$class];
+        return $this->extensions[$className];
     }
 
     /**

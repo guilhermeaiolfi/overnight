@@ -5,6 +5,7 @@ namespace ON\Extension;
 use Exception;
 use League\Event\ListenerPriority;
 use ON\Application;
+use ON\Config\ContainerConfig;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
@@ -14,12 +15,13 @@ use ON\Event\EventDispatcher;
 class EventsExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
-    protected int $i = 1;
 
     /** @var EventDispatcher $eventDispatcher */
     public EventDispatcherInterface $eventDispatcher;
 
     protected array $q = [];
+
+    protected array $pendingTasks = [ "container:define" ];
 
     public function __construct(
         protected Application $app
@@ -36,12 +38,27 @@ class EventsExtension extends AbstractExtension
     
     public function setup(int $counter): bool
     {
+
+        if ($this->hasPendingTask("container:define")) {
+            $config = $this->app->ext('config');
+
+            if (!isset($config)) {
+                throw new Exception("Router Extension needs the config extension");
+            }
+            $containerConfig = $config->get(ContainerConfig::class);
+            $containerConfig->mergeRecursiveDistinct([
+                "definitions" => [
+                    "aliases" => [
+                        EventDispatcherInterface::class => \ON\Event\EventDispatcher::class,
+                    ]
+                ]
+            ]);
+            $this->removePendingTask('container:define');
+        }
+        
+
         if ($this->app->isExtensionReady('container')) {
             $container = $this->app->getContainer();
-            if (!$container->has(EventDispatcherInterface::class)) {
-                throw new Exception("There is no defenition for EventDispatcherInterface::class in the container");
-                return false;
-            }
             $this->eventDispatcher = $container->get(EventDispatcherInterface::class);
             $this->dispatch(new NamedEvent("core.init"));
             return true;

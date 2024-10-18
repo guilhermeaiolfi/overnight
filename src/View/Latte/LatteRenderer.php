@@ -2,18 +2,11 @@
 namespace ON\View\Latte;
 
 use Psr\Container\ContainerInterface;
-use Mezzio\Application;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\Route;
-use Laminas\Diactoros\Response;
-use Laminas\Diactoros\Request;
-use Laminas\Diactoros\Response\HtmlResponse;
-use Laminas\Diactoros\ServerRequestFactory;
-use ON\Action;
+use ON\Application;
 use ON\View\RendererInterface;
-use ON\Container\MiddlewareFactory;
 use Latte\Engine;
 use ON\Extension\PipelineExtension;
+use ON\View\ViewConfig;
 
 use function explode;
 
@@ -23,7 +16,7 @@ class LatteRenderer  implements RendererInterface
     protected $app = null;
     protected $engine = null;
     protected $container = null;
-    public function __construct($config, Engine $engine, Application $app, ContainerInterface $container) {
+    public function __construct(ViewConfig $config, Engine $engine, Application $app, ContainerInterface $container) {
         $this->config = $config;
         $this->engine = $engine;
         $this->app = $app;
@@ -35,10 +28,9 @@ class LatteRenderer  implements RendererInterface
         $config = $this->config;
 
         $engine = $this->engine;
-        $app = $this->app;
 
         //print_r($layout);
-        $latte_renderer_config = $config["output_types"]["html"]["renderers"]["latte"];
+        $latte_renderer_config = $config["formats"]["html"]["renderers"]["latte"];
 
         if (isset($latte_renderer_config["inject"]) && is_array($latte_renderer_config["inject"])) {
             foreach ($latte_renderer_config["inject"] as $key => $class) {

@@ -3,9 +3,9 @@ namespace ON\Container;
 
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Mezzio\Router\Exception\MissingDependencyException;
-use Mezzio\Router\RouterInterface;
-use ON\Context;
+use ON\Router\Exception\MissingDependencyException;
+use ON\Router\Middleware\ImplicitHeadMiddleware;
+use ON\Router\RouterInterface;
 use ON\Middleware\RouteMiddleware;
 use ON\RequestStack;
 
@@ -14,7 +14,7 @@ use ON\RequestStack;
  *
  * This factory depends on one other service:
  *
- * - Mezzio\Router\RouterInterface, which should resolve to
+ * - ON\Router\RouterInterface, which should resolve to
  *   a class implementing that interface.
  * - Psr\Http\Message\ResponseInterface, which should resolve to an instance
  *   implementing that interface. NOTE: in version 3, this should resolve to a

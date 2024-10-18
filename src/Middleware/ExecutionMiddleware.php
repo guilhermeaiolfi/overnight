@@ -7,12 +7,10 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Mezzio\Router\RouteResult;
+use ON\Router\RouteResult;
 use ON\Action;
 use ON\Common\ViewBuilderTrait;
 use ON\Container\Executor\ExecutorInterface;
-
-use Mezzio\Delegate\NotFoundDelegateInterface;
 
 class ExecutionMiddleware implements MiddlewareInterface
 {
@@ -36,7 +34,8 @@ class ExecutionMiddleware implements MiddlewareInterface
         
         $action = $request->getAttribute(Action::class);
         $args = [
-            ServerRequestInterface::class => $request
+            ServerRequestInterface::class => $request,
+            RequestHandlerInterface::class => $handler
         ];
         $action_response = $this->executor->execute($action->getExecutable(), $args);
 

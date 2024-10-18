@@ -16,6 +16,8 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
     protected Clockwork $clockwork;
 
+    protected array $pendingTasks = [ 'config:inject' ];
+
     public static function install(Application $app, ?array $options = []): mixed {
         $extension = new self($app, $options);
         return $extension;
@@ -46,7 +48,11 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
     public function setup(int $counter): bool
     {
-        if ($this->app->isExtensionReady('container')) {
+        if ($counter > 0 && $this->app->hasExtension('config') && $this->hasPendingTask("config:inject")) {
+            //$this->app->ext('config')->load($this);
+            $this->removePendingTask('config:inject');
+        }
+        else if ($this->app->isExtensionReady('container')) {
             $container = Application::getContainer();
             $container->set(Clockwork::class, $this->clockwork);
             $logger = $container->get(LoggerInterface::class);
@@ -56,6 +62,20 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
         }
         return false;
     }
+
+    public function __invoke() : array
+    {
+        return [
+            'clockwork' => [
+                // TODO: figure it out how to be dynamically set
+                'api' => '/ondemo/__clockwork/',
+                'storage_files_path' => 'var/clockwork',
+                'register_helpers' => true,
+                'storage_expiration' => 2
+            ]
+        ];
+    }
+
     public function ready()
     {
         clock()->event('Booting')->end();

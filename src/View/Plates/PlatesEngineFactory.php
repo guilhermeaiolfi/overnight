@@ -6,13 +6,11 @@ namespace ON\View\Plates;
 
 use League\Plates\Engine as PlatesEngine;
 use League\Plates\Extension\ExtensionInterface;
-use Mezzio\Helper;
-use Mezzio\Plates\Exception\InvalidExtensionException;
-use Mezzio\Plates\Extension\EscaperExtension;
-use Mezzio\Plates\Extension\EscaperExtensionFactory;
-use Mezzio\Plates\Extension\UrlExtensio;
-use Mezzio\Plates\Extension\UrlExtension;
-use Mezzio\Plates\Extension\UrlExtensionFactory;
+use ON\Plates\Exception\InvalidExtensionException;
+
+use ON\View\Plates\Extension\EscaperExtension;
+use ON\View\Plates\Extension\EscaperExtensionFactory;
+use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
 
 
@@ -46,26 +44,25 @@ use const E_USER_WARNING;
  * and Extension\EscaperExtension to the engine. You can override
  * the functions that extension exposes by providing an extension
  * class in your extensions array, or providing an alternative
- * Mezzio\Plates\Extension\UrlExtension service.
+ * ON\Plates\Extension\UrlExtension service.
  */
 class PlatesEngineFactory
 {
     public function __invoke(ContainerInterface $container): PlatesEngine
     {
-        $config = $container->has('config') ? $container->get('config') : [];
+        $viewConfig = $container->get(ViewConfig::class);
 
-        $mezzioConfig = isset($config['templates']) && is_array($config['templates'])
-            ? $config['templates']
+        $templatesConfig = isset($viewConfig['templates']) && is_array($viewConfig['templates'])
+            ? $viewConfig['templates']
             : [];
-        $platesConfig = isset($config['plates']) && is_array($config['plates'])
-            ? $config['plates']
+        $platesConfig = isset($viewConfig['plates']) && is_array($viewConfig['plates'])
+            ? $viewConfig['plates']
             : [];
 
-        $config = array_replace_recursive($mezzioConfig, $platesConfig);
+        $config = array_replace_recursive($templatesConfig, $platesConfig);
         // Create the engine instance:
         $engine = new PlatesEngine();
 
-        $this->injectUrlExtension($container, $engine);
         $this->injectEscaperExtension($container, $engine);
 
         if (isset($config['extensions']) && is_array($config['extensions'])) {
@@ -78,6 +75,7 @@ class PlatesEngineFactory
         }
 
         // Add template paths
+
         $allPaths = isset($config['paths']) && is_array($config['paths']) ? $config['paths'] : [];
 
         foreach ($allPaths as $namespace => $paths) {
@@ -98,30 +96,6 @@ class PlatesEngineFactory
         return $engine;
     }
 
-    /**
-     * Inject the URL/ServerUrl extensions provided by this package.
-     *
-     * If a service by the name of the UrlExtension class exists, fetches
-     * and loads it.
-     *
-     * Otherwise, instantiates the UrlExtensionFactory, and invokes it with
-     * the container, loading the result into the engine.
-     */
-    private function injectUrlExtension(ContainerInterface $container, PlatesEngine $engine): void
-    {
-        if ($container->has(UrlExtension::class)) {
-            $engine->loadExtension($container->get(UrlExtension::class));
-            return;
-        }
-
-        // If the extension was not explicitly registered, load it only if both helpers were registered
-        if (! $container->has(Helper\UrlHelper::class) || ! $container->has(Helper\ServerUrlHelper::class)) {
-            return;
-        }
-
-        $extensionFactory = new UrlExtensionFactory();
-        $engine->loadExtension($extensionFactory($container));
-    }
 
     /**
      * Inject the Escaper extension provided by this package.

@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-namespace ON\Container;
+namespace ON;
 
 use ON\Router\ActionMiddlewareDecorator;
 
@@ -9,12 +9,10 @@ use Laminas\Stratigility\Middleware\CallableMiddlewareDecorator;
 use Laminas\Stratigility\Middleware\RequestHandlerMiddleware;
 use Laminas\Stratigility\MiddlewarePipe;
 
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-use Mezzio\MiddlewareFactoryInterface;
+use ON\Middleware\LazyLoadingMiddleware;
 
 use function array_shift;
 use function count;
@@ -55,7 +53,7 @@ use function is_string;
  */
 class MiddlewareFactory implements MiddlewareFactoryInterface
 {
-    public function __construct(private \Mezzio\MiddlewareContainer $container)
+    public function __construct(private \ON\MiddlewareContainer $container)
     {
     }
 
@@ -86,7 +84,7 @@ class MiddlewareFactory implements MiddlewareFactoryInterface
          * @psalm-suppress DocblockTypeContradiction Unless there are native types, we should not trust phpdoc
          */
         if (! is_string($middleware) || $middleware === '') {
-            throw \Mezzio\Exception\InvalidMiddlewareException::forMiddleware($middleware);
+            throw \ON\Exception\InvalidMiddlewareException::forMiddleware($middleware);
         }
 
         return $this->lazy($middleware);
@@ -105,9 +103,9 @@ class MiddlewareFactory implements MiddlewareFactoryInterface
     }
 
     /** @inheritDoc */
-    public function lazy(string $middleware): \Mezzio\Middleware\LazyLoadingMiddleware
+    public function lazy(string $middleware): LazyLoadingMiddleware
     {
-        return new \Mezzio\Middleware\LazyLoadingMiddleware($this->container, $middleware);
+        return new LazyLoadingMiddleware($this->container, $middleware);
     }
 
     /** @inheritDoc */

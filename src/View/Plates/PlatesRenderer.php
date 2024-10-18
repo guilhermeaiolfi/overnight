@@ -2,34 +2,23 @@
 namespace ON\View\Plates;
 
 use League\Plates\Engine;
-use Mezzio\Plates\PlatesRenderer as MezzioPlatesRenderer;
 
-use Laminas\Diactoros\Response;
-use Laminas\Diactoros\Request;
-use Laminas\Diactoros\Response\HtmlResponse;
-use ON\Container\MiddlewareFactory;
-use ON\Action;
 use ON\View\RendererInterface;
 use ON\Application;
+use ON\View\ViewConfig;
 use ON\Extension\PipelineExtension;
 
 class PlatesRenderer  implements RendererInterface
 {
     public function __construct(
-        protected $config, 
+        protected ViewConfig $config, 
         protected Engine $engine, 
         protected Application $app) 
     {
     }
 
     public function render ($layout, $template_name = null, $data = null, $params = []) {
-        $config = $this->config;
-
-        //$renderer = $this->renderer;
         $engine = $this->engine;
-        $app = $this->app;
-
-        $sections = array();
 
         $template = $engine->make($template_name);
 

@@ -8,7 +8,6 @@ use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\Diactoros\ServerRequestFilter\FilterServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use RequestStack;
 
 use function class_exists;
 use function sprintf;
@@ -31,7 +30,7 @@ class ServerRequestFactoryFactory
     public function __invoke(ContainerInterface $container): callable
     {
         if (! class_exists(ServerRequestFactory::class)) {
-            throw new \Mezzio\Container\Exception\InvalidServiceException(sprintf(
+            throw new Exception\InvalidServiceException(sprintf(
                 'The %1$s service must map to a factory capable of returning an'
                 . ' implementation instance. By default, we assume usage of'
                 . ' laminas-diactoros for PSR-7, but it does not appear to be'
@@ -41,8 +40,6 @@ class ServerRequestFactoryFactory
                 ServerRequestInterface::class
             ));
         }
-
-        $stack = $container->get(RequestStack::class);
 
         $filter = $container->has(FilterServerRequestInterface::class)
             ? $container->get(FilterServerRequestInterface::class)

@@ -4,7 +4,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
-use Mezzio\Router\RouteResult;
+use ON\Router\RouteResult;
 use ON\Action;
 
 class ActionMiddlewareDecorator implements MiddlewareInterface

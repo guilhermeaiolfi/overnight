@@ -7,16 +7,13 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
-use Mezzio\Helper\UrlHelper;
-use Laminas\Diactoros\Response\RedirectResponse;
+use ON\Router\RouterInterface;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Auth\AuthorizationServiceInterface;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Exception\SecurityException;
 use ON\Action;
-use ON\User\UserInterface;
+
 
 class AuthorizationMiddleware implements MiddlewareInterface
 {

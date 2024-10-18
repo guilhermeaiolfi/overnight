@@ -4,8 +4,7 @@ namespace ON\View\Latte;
 
 use Psr\Container\ContainerInterface;
 use Latte\Engine;
-use ON\Container\MiddlewareFactory;
-use Mezzio\Application;
+use ON\Application;
 
 
 

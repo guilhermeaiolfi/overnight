@@ -4,8 +4,6 @@ namespace ON\Router;
 
 use Psr\Container\ContainerInterface;
 use ON\Router\Router;
-use ON\Context;
-use Mezzio\Router\RouterInterface as MezzioRouterInterface;
 use ON\RequestStack;
 
 class RouterFactory {

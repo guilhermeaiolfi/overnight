@@ -11,15 +11,15 @@ use FastRoute\RouteCollector;
 use FastRoute\RouteParser\Std as RouteParser;
 use Fig\Http\Message\RequestMethodInterface as RequestMethod;
 use Laminas\Stdlib\ArrayUtils;
-use Mezzio\Router\Route;
-use Mezzio\Router\RouteResult;
-use Psr\Http\Message\ServerRequestInterface as Request;
+use ON\Router\Route;
+use ON\Router\RouteResult;
 
 
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\ServerRequestFactory;
-use Mezzio\Router\Exception;
 use ON\RequestStack;
+use Psr\Http\Message\RequestInterface;
+use Psr\Http\Message\ServerRequestInterface;
 
 use function array_keys;
 use function array_merge;
@@ -232,11 +232,10 @@ class Router implements RouterInterface
         $this->routesToInject[] = $route;
     }
 
-    public function match(Request $request): RouteResult
+    public function match(ServerRequestInterface $request): RouteResult
     {
         // Inject any pending routes
         $this->injectRoutes();
-
         $dispatchData = $this->getDispatchData();
 
         $path       = rawurldecode($request->getUri()->getPath());
@@ -271,7 +270,7 @@ class Router implements RouterInterface
      *     purposes of generating a URI; takes precedence over options present
      *     in route used to generate URI.
      * @return string URI path generated.
-     * @throws \Mezzio\Router\Exception\RuntimeException If the route name is not known
+     * @throws \ON\Router\Exception\RuntimeException If the route name is not known
      *     or a parameter value does not match its regex.
      */
     public function generateUri(string $name, array $substitutions = [], array $options = []): string
@@ -280,7 +279,7 @@ class Router implements RouterInterface
         $this->injectRoutes();
 
         if (! isset($this->routes[$name])) {
-            throw new \Mezzio\Router\Exception\RuntimeException(sprintf(
+            throw new \ON\Router\Exception\RuntimeException(sprintf(
                 'Cannot generate URI for route "%s"; route not found',
                 $name
             ));
@@ -321,7 +320,7 @@ class Router implements RouterInterface
 
                 // Check substitute value with regex
                 if (! preg_match('~^' . $part[1] . '$~', (string) $substitutions[$part[0]])) {
-                    throw new \Mezzio\Router\Exception\RuntimeException(sprintf(
+                    throw new \ON\Router\Exception\RuntimeException(sprintf(
                         'Parameter value for [%s] did not match the regex `%s`',
                         $part[0],
                         $part[1]
@@ -337,7 +336,7 @@ class Router implements RouterInterface
         }
 
         // No valid route was found: list minimal required parameters
-        throw new \Mezzio\Router\Exception\RuntimeException(sprintf(
+        throw new \ON\Router\Exception\RuntimeException(sprintf(
             'Route `%s` expects at least parameter values for [%s], but received [%s]',
             $name,
             implode(',', $missingParameters),
@@ -363,7 +362,7 @@ class Router implements RouterInterface
 
       $request = $this->stack->getMainRequest();
 
-      $result = $request->getAttribute(\Mezzio\Router\RouteResult::class);
+      $result = $request->getAttribute(\ON\Router\RouteResult::class);
 
       $uri = $request->getUri();
 
@@ -648,7 +647,7 @@ class Router implements RouterInterface
     /**
      * Load dispatch data from cache
      *
-     * @throws \Mezzio\Router\Exception\InvalidCacheException If the cache file contains
+     * @throws \ON\Router\Exception\InvalidCacheException If the cache file contains
      *     invalid data.
      */
     private function loadDispatchData(): void
@@ -664,7 +663,7 @@ class Router implements RouterInterface
         }
 
         if (! is_array($dispatchData)) {
-            throw new \Mezzio\Router\Exception\InvalidCacheException(sprintf(
+            throw new \ON\Router\Exception\InvalidCacheException(sprintf(
                 'Invalid cache file "%s"; cache file MUST return an array',
                 $this->cacheFile
             ));
@@ -678,11 +677,11 @@ class Router implements RouterInterface
      * Save dispatch data to cache
      *
      * @return int|false bytes written to file or false if error
-     * @throws \Mezzio\Router\Exception\InvalidCacheDirectoryException If the cache directory
+     * @throws \ON\Router\Exception\InvalidCacheDirectoryException If the cache directory
      *     does not exist.
-     * @throws \Mezzio\Router\Exception\InvalidCacheDirectoryException If the cache directory
+     * @throws \ON\Router\Exception\InvalidCacheDirectoryException If the cache directory
      *     is not writable.
-     * @throws \Mezzio\Router\Exception\InvalidCacheException If the cache file exists but is
+     * @throws \ON\Router\Exception\InvalidCacheException If the cache file exists but is
      *     not writable.
      */
     private function cacheDispatchData(array $dispatchData)
@@ -690,21 +689,21 @@ class Router implements RouterInterface
         $cacheDir = dirname($this->cacheFile);
 
         if (! is_dir($cacheDir)) {
-            throw new \Mezzio\Router\Exception\InvalidCacheDirectoryException(sprintf(
+            throw new \ON\Router\Exception\InvalidCacheDirectoryException(sprintf(
                 'The cache directory "%s" does not exist',
                 $cacheDir
             ));
         }
 
         if (! is_writable($cacheDir)) {
-            throw new \Mezzio\Router\Exception\InvalidCacheDirectoryException(sprintf(
+            throw new \ON\Router\Exception\InvalidCacheDirectoryException(sprintf(
                 'The cache directory "%s" is not writable',
                 $cacheDir
             ));
         }
 
         if (file_exists($this->cacheFile) && ! is_writable($this->cacheFile)) {
-            throw new \Mezzio\Router\Exception\InvalidCacheException(sprintf(
+            throw new \ON\Router\Exception\InvalidCacheException(sprintf(
                 'The cache file %s is not writable',
                 $this->cacheFile
             ));

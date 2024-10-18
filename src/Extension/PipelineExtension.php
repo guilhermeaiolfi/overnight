@@ -2,24 +2,36 @@
 
 namespace ON\Extension;
 
-use DI\Attribute\Inject;
 use Exception;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
 use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
 use Laminas\Stratigility\MiddlewarePipeInterface;
-use League\Event\ListenerPriority;
-use Mezzio\Router\Route;
-use Mezzio\Router\RouteResult;
+
+use ON\Router\Route;
+use ON\Router\RouteResult;
 use ON\Application;
-use ON\Container\MiddlewareFactory;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
+use ON\Config\AppConfig;
+use ON\Config\ContainerConfig;
 use Psr\Http\Server\RequestHandlerInterface;
-use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
 use ON\RequestStack;
+
+use ON\Response\ServerRequestErrorResponseGenerator;
+use ON\MiddlewareContainer;
+
+use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
+
+use Laminas\Stratigility\Middleware\ErrorHandler;
+use ON\MiddlewareFactoryInterface;
+use ON\Handler\NotFoundHandler;
+use ON\Middleware\ErrorResponseGenerator;
+use ON\MiddlewareFactory;
+use Psr\Http\Message\ResponseFactoryInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\StreamInterface;
 
 use function Laminas\Stratigility\path;
 
@@ -27,6 +39,8 @@ class PipelineExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
     protected RequestHandlerRunnerInterface $runner;
+
+    protected array $pendingTasks = [ "container:define", "pipeline:load" ];
 
     protected RequestStack $requestStack;
     
@@ -37,7 +51,6 @@ class PipelineExtension extends AbstractExtension
         protected Application $app,
 
     ) {
-
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
@@ -48,7 +61,44 @@ class PipelineExtension extends AbstractExtension
 
     public function setup(int $counter): bool
     {
-        if ($this->app->isExtensionReady('container')) {
+        if ($this->hasPendingTask("container:define")) {
+            $config = $this->app->ext('config');
+
+            if (!isset($config)) {
+                throw new Exception("Router Extension needs the config extension");
+            }
+            $containerConfig = $config->get(ContainerConfig::class);
+            $containerConfig->mergeRecursiveDistinct([
+                "definitions" => [
+                    "aliases" => [
+                        MiddlewarePipeInterface::class                      => \Laminas\Stratigility\MiddlewarePipe::class,
+                        MiddlewareFactoryInterface::class                   => \ON\MiddlewareFactory::class,
+                        ResponseFactoryInterface::class                     => \Laminas\Diactoros\ResponseFactory::class
+                    ],
+                    "factories" => [
+                        EmitterInterface::class                             => \ON\Container\EmitterFactory::class,
+                        ErrorHandler::class                                 => \ON\Container\ErrorHandlerFactory::class,
+                        MiddlewareContainer::class                          => \ON\Container\MiddlewareContainerFactory::class,
+                        
+                        // Change the following in development to the WhoopsErrorResponseGeneratorFactory:
+                        ErrorResponseGenerator::class                       => \ON\Container\ErrorResponseGeneratorFactory::class,
+                        //ErrorResponseGenerator::class                       => \ON\Container\WhoopsErrorResponseGeneratorFactory::class,
+                        'ON\Whoops'                                         => \ON\Container\WhoopsFactory::class,
+                        'ON\WhoopsPageHandler'                              => \ON\Container\WhoopsPageHandlerFactory::class,
+
+                        ResponseInterface::class                            => \ON\Container\ResponseFactoryFactory::class,
+                        RequestHandlerRunner::class                         => \ON\Container\RequestHandlerRunnerFactory::class,
+                        
+                        ServerRequestErrorResponseGenerator::class          => \ON\Container\ServerRequestErrorResponseGeneratorFactory::class,
+                        ServerRequestInterface::class                       => \ON\Container\ServerRequestFactoryFactory::class,
+                        StreamInterface::class                              => \ON\Container\StreamFactoryFactory::class,
+                        NotFoundHandler::class                              => \ON\Container\NotFoundHandlerFactory::class,
+
+                    ],
+                ]
+            ]);
+            $this->removePendingTask('container:define');
+        } else if ($this->hasPendingTask("pipeline:load") && $this->app->isExtensionReady('container')) {
 
             $this->app->requestStack = $this->requestStack = new RequestStack();
             
@@ -57,7 +107,7 @@ class PipelineExtension extends AbstractExtension
             $this->pipeline = $container->get(MiddlewarePipeInterface::class);
             $this->factory = $container->get(MiddlewareFactory::class);
 
-            $config = $container->get('config');
+            $config = $container->get(AppConfig::class);
             
             $this->app->registerMethod("pipe", [$this, "pipe"]);
             $this->app->registerMethod("runAction", [$this, "runAction"]);
@@ -66,9 +116,16 @@ class PipelineExtension extends AbstractExtension
             $this->app->registerMethod("run", [$this, "run"]);
 
             $this->runner = $container->get(RequestHandlerRunner::class);
-            $this->loadPipeline($config->get('app.pipeline_file'));
+            $this->loadPipeline($config->get('app.pipeline_file', 'config/pipeline.php'));
+
+            $this->removePendingTask('pipeline:load');
+            
+        }
+
+        if (empty($this->getPendingTasks())) {
             return true;
         }
+
         return false;
     }
 

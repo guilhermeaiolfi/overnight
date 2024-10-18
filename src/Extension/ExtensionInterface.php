@@ -10,7 +10,7 @@ interface ExtensionInterface {
     public function getType(): int;
     public function ready();
     public function setup(int $counter): bool;
-    public function getPendingTags(): array;
-    public function removePendingTag(mixed $tag): void;
-    public function hasPendingTag(mixed $tag): bool;
+    public function getPendingTasks(): array;
+    public function removePendingTask(mixed $task): void;
+    public function hasPendingTask(mixed $task): bool;
 }

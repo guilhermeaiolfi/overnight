@@ -8,7 +8,7 @@ use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
 use Laminas\Stratigility\MiddlewarePipeInterface;
-use Mezzio\Response\ServerRequestErrorResponseGenerator;
+use ON\Response\ServerRequestErrorResponseGenerator;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -19,14 +19,14 @@ use Psr\Http\Message\ServerRequestInterface;
  * names, but resolve to other artifacts) and two services provided within
  * this package:
  *
- * - Mezzio\ApplicationPipeline, which should resolve to a
+ * - ON\ApplicationPipeline, which should resolve to a
  *   Laminas\Stratigility\MiddlewarePipeInterface and/or
  *   Psr\Http\Server\RequestHandlerInterface instance.
  * - Laminas\HttpHandlerRunner\Emitter\EmitterInterface.
  * - Psr\Http\Message\ServerRequestInterface, which should resolve to a PHP
  *   callable that will return a Psr\Http\Message\ServerRequestInterface
  *   instance.
- * - Mezzio\Response\ServerRequestErrorResponseGeneratorFactory,
+ * - ON\Response\ServerRequestErrorResponseGeneratorFactory,
  */
 class RequestHandlerRunnerFactory
 {

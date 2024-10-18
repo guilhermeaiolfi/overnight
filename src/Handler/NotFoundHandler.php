@@ -4,15 +4,15 @@ declare(strict_types=1);
 namespace ON\Handler;
 
 use Fig\Http\Message\StatusCodeInterface;
-use Mezzio\Template\TemplateRendererInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\Route;
+use ON\Router\RouteResult;
+use ON\Router\Route;
 
 use ON\Application;
+use ON\Extension\PipelineExtension;
 use ON\Middleware\OutputTypeMiddleware;
 use Psr\Http\Message\ResponseFactoryInterface;
 
@@ -37,7 +37,7 @@ class NotFoundHandler implements RequestHandlerInterface
         }
 
         if (is_string($this->middleware)) { //middleware
-            $middleware = $this->app->factory->prepare($this->middleware);
+            $middleware = $this->app->ext(PipelineExtension::class)->factory->prepare($this->middleware);
         }
 
         $route = new Route("/404", $middleware, ["GET"], "NOT_FOUND");

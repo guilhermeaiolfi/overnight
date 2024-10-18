@@ -208,7 +208,7 @@ EOT;
      * @param array $a
      * @param array $b
      *
-     * @return $a
+     * @return array $a
      */
     private function mergeArray(array $a, array $b): array
     {
@@ -248,7 +248,7 @@ EOT;
         return $mergedConfig;
     }
 
-    public function loadConfigFromProvider($provider, $mergedConfig = null, bool $preProcess = true, bool $postProcess = true, bool $saveProvider = true) {
+    public function loadConfigFromProvider($provider, $mergedConfig = null, bool $preProcess = true, bool $postProcess = true, bool $saveProvider = true): array {
         if (null === $mergedConfig) {
             $mergedConfig = $this->config;
         }
@@ -380,7 +380,7 @@ EOT;
         $this->providers[] = $obj;
     }
 
-    public function save(bool $force = false) {
+    public function persist(bool $force = false) {
         if ($this->from == "cache") {
             $this->phase = "runtime";
             return;
@@ -392,6 +392,7 @@ EOT;
         $this->writeCache($this->config, $this->resources, $force);
         $this->phase = "runtime";
     }
+    
      /**
      * Attempt to cache discovered configuration.
      *

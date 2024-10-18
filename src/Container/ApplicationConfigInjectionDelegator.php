@@ -1,21 +1,13 @@
 <?php
 
-/**
- * @see       https://github.com/mezzio/mezzio for the canonical source repository
- * @copyright https://github.com/mezzio/mezzio/blob/master/COPYRIGHT.md
- * @license   https://github.com/mezzio/mezzio/blob/master/LICENSE.md New BSD License
- */
-
 declare(strict_types=1);
 
 namespace ON\Container;
 
 use ON\Application;
-use Mezzio\Exception\InvalidArgumentException;
-use Mezzio\Router\Route;
+use ON\Router\Route;
 use Psr\Container\ContainerInterface;
 use SplPriorityQueue;
-use Mezzio\Container\Exception\InvalidServiceException;
 
 use function array_key_exists;
 use function array_map;
@@ -35,7 +27,7 @@ class ApplicationConfigInjectionDelegator
      * Decorate an Application instance by injecting routes and/or middleware
      * from configuration.
      *
-     * @throws Exception\InvalidServiceException if the $callback produces
+     * @throws \Exception if the $callback produces
      *     something other than an `Application` instance, as the delegator cannot
      *     proceed with its operations.
      */
@@ -43,7 +35,7 @@ class ApplicationConfigInjectionDelegator
     {
         $application = $callback();
         if (! $application instanceof Application) {
-            throw new InvalidServiceException(sprintf(
+            throw new \Exception(sprintf(
                 'Delegator factory %s cannot operate on a %s; please map it only to the %s service',
                 __CLASS__,
                 is_object($application) ? get_class($application) . ' instance' : gettype($application),
@@ -79,9 +71,9 @@ class ApplicationConfigInjectionDelegator
      *     'middleware_pipeline' => [
      *         // An array of middleware to register with the pipeline.
      *         // entries to register prior to routing/dispatching...
-     *         // - entry for \Mezzio\Router\Middleware\PathBasedRoutingMiddleware::class
-     *         // - entry for \Mezzio\Router\Middleware\MethodNotAllowedMiddleware::class
-     *         // - entry for \Mezzio\Router\Middleware\DispatchMiddleware::class
+     *         // - entry for \ON\Router\Middleware\PathBasedRoutingMiddleware::class
+     *         // - entry for \ON\Router\Middleware\MethodNotAllowedMiddleware::class
+     *         // - entry for \ON\Router\Middleware\DispatchMiddleware::class
      *         // entries to register after routing/dispatching...
      *     ],
      * ];
@@ -163,14 +155,14 @@ class ApplicationConfigInjectionDelegator
      * Each route MUST have a path and middleware key at the minimum.
      *
      * The "allowed_methods" key may be omitted, can be either an array or the
-     * value of the Mezzio\Router\Route::HTTP_METHOD_ANY constant; any
+     * value of the ON\Router\Route::HTTP_METHOD_ANY constant; any
      * valid HTTP method token is allowed, which means you can specify custom HTTP
      * methods as well.
      *
      * The "options" key may also be omitted, and its interpretation will be
      * dependent on the underlying router used.
      *
-     * @throws InvalidArgumentException
+     * @throws \Exception
      */
     public static function injectRoutesFromConfig(Application $application, array $config) : void
     {
@@ -187,7 +179,7 @@ class ApplicationConfigInjectionDelegator
             if (isset($spec['allowed_methods'])) {
                 $methods = $spec['allowed_methods'];
                 if (! is_array($methods)) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new \Exception(sprintf(
                         'Allowed HTTP methods for a route must be in form of an array; received "%s"',
                         gettype($methods)
                     ));
@@ -205,7 +197,7 @@ class ApplicationConfigInjectionDelegator
             if (isset($spec['options'])) {
                 $options = $spec['options'];
                 if (! is_array($options)) {
-                    throw new InvalidArgumentException(sprintf(
+                    throw new \Exception(sprintf(
                         'Route options must be an array; received "%s"',
                         gettype($options)
                     ));
@@ -228,13 +220,13 @@ class ApplicationConfigInjectionDelegator
      * If the 'middleware' value is missing, or not viable as middleware, it
      * raises an exception, to ensure the pipeline is built correctly.
      *
-     * @throws InvalidArgumentException
+     * @throws \Exception
      */
     private static function createCollectionMapper() : callable
     {
         return function ($item) {
             if (! is_array($item) || ! array_key_exists('middleware', $item)) {
-                throw new InvalidArgumentException(sprintf(
+                throw new \Exception(sprintf(
                     'Invalid pipeline specification received; must be an array'
                     . ' containing a middleware key; received %s',
                     is_object($item) ? get_class($item) : gettype($item)

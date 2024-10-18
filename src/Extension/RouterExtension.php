@@ -3,11 +3,19 @@
 namespace ON\Extension;
 
 use Exception;
-use Mezzio\Router\DuplicateRouteDetector;
-use Mezzio\Router\Route;
+use ON\Router\DuplicateRouteDetector;
+use ON\Router\Route;
 use ON\Application;
+use ON\Config\ContainerConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Router\RouterInterface;
+
+
+use ON\Router\RouteCollector;
+use ON\Router\RouteCollectorInterface;
+use ON\Middleware\RouteMiddleware;
+
+use ON\Router\Router;
 
 class RouterExtension extends AbstractExtension implements EventSubscriberInterface
 {
@@ -17,11 +25,10 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 
     protected RouterInterface $router;
     
-    protected array $pendingTags = ['router:load', 'events:load'];
+    protected array $pendingTasks = [ 'container:define', 'router:load', 'events:load' ];
     public function __construct(
         protected Application $app
     ) {
-
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
@@ -52,20 +59,45 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
             return false;
         }
 
-        if ($this->app->isExtensionReady('container') && $this->hasPendingTag('router:load')) {
+        if ($this->hasPendingTask("container:define")) {
+            $config = $this->app->ext('config');
+
+            if (!isset($config)) {
+                throw new Exception("Router Extension needs the config extension");
+            }
+            $containerConfig = $config->get(ContainerConfig::class);
+            $containerConfig->mergeRecursiveDistinct([
+                "definitions" => [
+                    "aliases" => [
+                        RouteCollectorInterface::class                      => \ON\Router\RouteCollector::class,
+                        RouterInterface::class                              => \ON\Router\Router::class,
+                        
+                    ],
+                    "factories" => [
+                        Router::class                                       => \ON\Router\RouterFactory::class,
+                        RouteMiddleware::class                              => \ON\Container\RouteMiddlewareFactory::class,
+                        RouterInterface::class                              => \ON\Router\RouterFactory::class,
+                        RouteCollector::class                               => \ON\Router\RouteCollectorFactory::class,
+                    ]
+                ]
+            ]);
+            $this->removePendingTask('container:define');
+    
+        }
+        if ($this->app->isExtensionReady('container') && $this->hasPendingTask('router:load')) {
             $container = $this->app->getContainer();
             $this->router = $container->get(RouterInterface::class);
-            $this->loadRoutes($container->get('config')->get('app.routes_file'));
-            $this->removePendingTag('router:load');
+            $this->loadRoutes($container->get('config')->get('app.routes_file', 'config/routes.php'));
+            $this->removePendingTask('router:load');
         }
-        if ($this->app->isExtensionReady('events') && $this->hasPendingTag('events:load')) {
+        if ($this->app->isExtensionReady('events') && $this->hasPendingTask('events:load')) {
             /** @var EventsExtension $dispatcher */
             $dispatcher = $this->app->ext('events');
             $dispatcher->loadEventSubscriber($this);
-            $this->removePendingTag('events:load');
+            $this->removePendingTask('events:load');
         }
 
-        if (empty($this->getPendingTags())) {
+        if (empty($this->getPendingTasks())) {
             return true;
         }
         return false;
@@ -88,10 +120,11 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
     public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
     {
         $middleware = $this->app->getExtension(PipelineExtension::class)->factory->prepare($middleware);
-
         $methods = $methods ?? Route::HTTP_METHOD_ANY;
+        
         $route   = new Route($path, $middleware, $methods, $name);
         $this->detectDuplicateRoute($route);
+     
         $this->router->addRoute($route);
         return $route;
     }

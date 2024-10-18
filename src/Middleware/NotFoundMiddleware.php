@@ -8,7 +8,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Container\ContainerInterface;
 use ON\Container\ExecutorInterface;
 use ON\Exception\NotFoundException;
-use Mezzio\Handler\NotFoundHandler;
+use ON\Handler\NotFoundHandler;
 
 class NotFoundMiddleware implements MiddlewareInterface
 {

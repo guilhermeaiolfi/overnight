@@ -16,7 +16,7 @@ class Benchmark {
     }
 
     public static function ms($event): float {
-        return self::$benchmarks[$event] * 1000;
+        return self::$benchmarks[$event];
     }
 
     public static function all(): array {

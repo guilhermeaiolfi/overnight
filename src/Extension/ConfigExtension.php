@@ -11,11 +11,10 @@ use ON\Config\ConfigInterface;
 use ON\Config\OwnParameterPostProcessor;
 use ON\Config\Provider\ArrayProvider;
 use ON\Event\EventSubscriberInterface;
-use Symfony\Component\Config\Resource\ReflectionClassResource;
 
 // To enable or disable caching, set the `ConfigBuilder::ENABLE_CACHE` boolean in
 // `config/autoload/framework.global.php`.
-class ConfigExtension extends AbstractExtension implements EventSubscriberInterface
+class ConfigExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
     protected Dot $config;
@@ -62,24 +61,17 @@ class ConfigExtension extends AbstractExtension implements EventSubscriberInterf
             $this->config->setReference($this->builder->getMergedConfig());
         }
 
-        if (empty($this->app->getExtensionsByPendingTag('config:inject'))) {
+        // only set as ready after all extensions inject its content here
+        if (empty($this->app->getExtensionsByPendingTask('config:inject'))) {
             return true;
         }
         return false;
     }
 
     public function ready() {
-        // now we can save the cache file because nothing more is going to be inject
+        // now we can save the cache file because nothing more is going to be injected
         if (!$_ENV["APP_DEBUG"]) {
-            $this->save();
-        }
-
-        //$this->builder->loadConfigFromCache();
-
-        if ($container_ext = $this->app->ext('container')) {
-            /** @var ContainerExtension $container_ext */
-            $c = $this->app->getContainer();
-            $c->set(ConfigInterface::class, $this->getConfig());
+            $this->persist();
         }
     }
 
@@ -118,17 +110,7 @@ class ConfigExtension extends AbstractExtension implements EventSubscriberInterf
         return $this->has_cache;
     }
 
-    public function save(bool $force = false) {
-        $this->builder->save($force);
-    }
-
-    public function onReady($event) {
-    }
-
-    public static function getSubscribedEvents()
-    {
-        return [
-            "core.ready" => "onReady"
-        ];
+    public function persist(bool $force = false) {
+        $this->builder->persist($force);
     }
 }

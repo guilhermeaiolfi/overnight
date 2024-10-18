@@ -6,8 +6,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
+use ON\Router\RouteResult;
 use ON\Action;
 use ON\RequestStack;
 

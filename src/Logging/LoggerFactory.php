@@ -8,8 +8,7 @@ use Psr\Log\LoggerInterface;
 use Monolog\Level;
 use Monolog\Logger;
 use Monolog\Handler\StreamHandler;
-
-
+use ON\Logging\LoggingConfig;
 
 final class LoggerFactory
 {
@@ -18,8 +17,8 @@ final class LoggerFactory
         // create a log channel
         $logger = new Logger('name');
 
-        $config = $container->get("config");
-        $settings = $config["logging"]["default"];
+        $config = $container->get(LoggingConfig::class);
+        $settings = $config["default"];
         if (null === $settings) {
             throw new \Exception("The default configuration for logging was not found");
         }

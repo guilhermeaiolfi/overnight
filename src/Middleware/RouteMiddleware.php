@@ -6,8 +6,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Mezzio\Router\RouteResult;
-use Mezzio\Router\RouterInterface;
+use ON\Router\RouteResult;
+use ON\Router\RouterInterface;
 
 use ON\RequestStack;
 
@@ -39,9 +39,8 @@ class RouteMiddleware implements MiddlewareInterface
         if ($request->getAttribute(RouteResult::class)) {
             return $handler->handle($request);
         }
-
+        
         $result = $this->router->match($request);
-
         if ($result->isFailure()) {
             return $handler->handle($request);
         }

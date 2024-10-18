@@ -25,12 +25,14 @@
         "symfony/config": "^7.1",
         "laminas/laminas-config-aggregator-parameters": "^1.15",
         "adbario/php-dot-notation": "^3.3",
-        "symfony/finder": "^7.1"
+        "symfony/finder": "^7.1",
+        "roave/better-reflection": "^6.42"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
         "phpunit/phpunit": "11.x.x",
-        "kint-php/kint": "^5.1"
+        "kint-php/kint": "^5.1",
+        "filp/whoops": "^2.16"
     },
     "autoload": {
       "files": [
