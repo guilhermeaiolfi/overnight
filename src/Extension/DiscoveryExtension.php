@@ -7,10 +7,12 @@ use ON\Application;
 
 use ON\Config\ConfigBuilder;
 use Adbar\Dot;
+use ON\Config\AppConfig;
 use ON\Config\ConfigInterface;
 use ON\Config\OwnParameterPostProcessor;
 use ON\Config\Scanner\Scanner;
 use ON\Config\Scanner\TypeDefinition;
+use ON\Discovery\ClassFinder;
 use ON\Discovery\DiscoverClassInterface;
 use ON\Discovery\DiscoverFileInterface;
 use ON\Discovery\RouteDiscovery;
@@ -23,15 +25,16 @@ class DiscoveryExtension extends AbstractExtension
     protected array $discovers = [];
     protected array $pendingProcess = [];
 
-    protected array $pendingTasks = ['discovery:setup'];
+    protected array $pendingTasks = [ 'config:ready', 'discovery:setup' ];
 
+    public ClassFinder $classFinder;
     protected array $files;
+    protected AppConfig $appCfg;
     public function __construct(
         protected Application $app,
         protected array $options = []
     ) {
-        $this->discovers[] = new RouteDiscovery($app);
-        //$this->scanner->scanFinder($finder);
+        $this->classFinder = new ClassFinder();
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
@@ -41,43 +44,51 @@ class DiscoveryExtension extends AbstractExtension
 
     public function setup(int $counter): bool
     {
-        if ($this->hasPendingTask("discovery:setup")) {
+        if ($this->hasPendingTask("config:ready")) {
+            if ($this->app->isExtensionReady('config')) {
+                $this->appCfg = $this->app->ext('config')->get(AppConfig::class);
+                $this->removePendingTask('config:ready');
+            }
+        } else if ($this->hasPendingTask("discovery:setup")) {
+            $this->discovers[] = new RouteDiscovery($this->app);
+            $pattern = $this->appCfg->get('discovery.pattern');
+
             $discovers = $this->discovers;
 
+            $oldest = 0;
             foreach ($discovers as $discover) {
                 $timestamp = $discover->cachedTimestamp();
+                if ($oldest == 0 || $oldest > $timestamp) {
+                    $oldest = $timestamp;
+                }
                 if ($timestamp > 0) {
                     $discover->recover();
                 }
-
-                if ($this->app->isDebug()) {
-                    if ($discover instanceof DiscoverFileInterface) {
-                        $finder = new Finder();
-                        $finder->files()->in("src/")->date(">= " . date("d.m.Y H:i:s", $timestamp));
-                        $discover->updateFiles($finder);
-                    }
-
-                    if ($discover instanceof DiscoverClassInterface) {
-
-                        $scanner = new Scanner();
-                        $scanner->allowAutoloading(true);
-                        $finder = new Finder();
-                        $files = $finder->files()->in("src/")->name("*.php")->date(">= " . date("d.m.Y H:i:s", $timestamp));
-                        $scanner->scanFinder($files);
-                        $classes = $scanner->getClasses(TypeDefinition::TYPE_CLASS);
-                        $definitions = $scanner->getDefinitions($classes);
-
-                        $discover->updateClasses($definitions);
+            }
+            clock()->event('discovery:finder')->begin();
+            $finder = new Finder();
+            
+            $finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", $oldest));
+            foreach ($finder as $file) {
+                $timestamp = $discover->cachedTimestamp();
+                if ($timestamp == 0 || $this->app->isDebug()) {
+                    foreach ($discovers as $discover) {
+                        if ($file->getMTime() > $timestamp) {
+                            $discover->updateFile($file);
+                        }
                     }
                 }
             }
+            clock()->event('discovery:finder')->end();
 
+            clock()->event('discovery:save')->begin();
             foreach ($discovers as $discover) {
                 $discover->save();
                 if (!$discover->process()) {
                     $this->pendingProcess[] = $discover;
                 }
             }
+            clock()->event('discovery:save')->end();
             $this->removePendingTask("discovery:setup");
         } else {
             foreach ($this->pendingProcess as $discover) {
@@ -88,7 +99,7 @@ class DiscoveryExtension extends AbstractExtension
             }
         }
 
-        if (count($this->pendingProcess) == 0) {
+        if (!$this->hasPendingTasks() && count($this->pendingProcess) == 0) {
             return true;
         }
 

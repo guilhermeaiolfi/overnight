@@ -12,6 +12,10 @@ use ArrayAccess;
 use ArrayIterator;
 use JsonSerializable;
 use IteratorAggregate;
+use Laminas\Stdlib\ArrayUtils;
+use Laminas\Stdlib\ArrayUtils\MergeRemoveKey;
+use Laminas\Stdlib\ArrayUtils\MergeReplaceKeyInterface;
+use ON\Config\ContainerConfig;
 use Traversable;
 
 /**
@@ -53,6 +57,12 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
     {
         $items = $this->getArrayItems($items);
 
+        $defaults = static::getDefaults();
+
+        if (isset($defaults)) {
+            $items = ArrayUtils::merge($defaults, $items);
+        }
+
         $this->delimiter = $delimiter ?: ".";
 
         if ($parse) {
@@ -71,7 +81,8 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
         $defaults = static::getDefaults();
 
         $config = new static($defaults, $parse, $delimiter);
-        $config->mergeRecursive($items);
+        $config->mergeConfigArray($items);
+        //$config->setArray($merged);
         return $config;
     }
 
@@ -349,6 +360,25 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
         return $this;
     }
 
+
+        /**
+     * Perform a recursive merge of two multidimensional arrays.
+     *
+     * @codingStandardsIgnoreStart
+     * Copied from https://github.com/laminas/laminas-stdlib/blob/980ce463c29c1a66c33e0eb67961bba895d0e19e/src/ArrayUtils.php#L269
+     * @codingStandardsIgnoreEnd
+     *
+     * @param array $a
+     * @param array $b
+     *
+     * @return array $a
+     */
+    public function mergeConfigArray($obj): void
+    {
+        $values = $this->getArrayItems($obj);
+        $this->items = ArrayUtils::merge($this->items, $values);
+    }
+    
     /**
      * Recursively merge a given array or a Dot object with the given key
      * or with the whole Dot object.

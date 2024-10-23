@@ -15,11 +15,7 @@ class ServerRequestErrorResponseGeneratorFactory
 {
     public function __invoke(ContainerInterface $container): ServerRequestErrorResponseGenerator
     {
-        //dd(true);
-        $config = $container->has(AppConfig::class) ? $container->get(AppConfig::class) : [];
-        Assert::isArrayAccessible($config);
-
-        $debug = $config['debug'] ?? false;
+        $debug = !!$_ENV["APP_DEBUG"];
 
         $responseFactory = $container->get(ResponseFactoryInterface::class);
 

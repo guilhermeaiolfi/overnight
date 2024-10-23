@@ -122,8 +122,14 @@ class Application {
             $ext = $this->extensions[$ext_class];
             
             if ($ext) {
-                //echo "setup {$ext_class}";
+                if (function_exists('clock')) {
+                    clock()->event('setup:' . $ext_class)->begin();
+                }
                 $completed = $ext->setup($counter);
+
+                if (function_exists('clock')) {
+                    clock()->event('setup:' . $ext_class)->end();
+                }
                 if (!$completed) {
                     $this->setupExtensions[] = $ext_class;
                     if (!$completed && count($this->setupExtensions) == 1) {

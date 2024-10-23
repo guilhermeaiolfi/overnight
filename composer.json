@@ -26,7 +26,8 @@
         "laminas/laminas-config-aggregator-parameters": "^1.15",
         "adbario/php-dot-notation": "^3.3",
         "symfony/finder": "^7.1",
-        "roave/better-reflection": "^6.42"
+        "roave/better-reflection": "^6.42",
+        "symfony/cache": "^7.1"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
@@ -36,7 +37,7 @@
     },
     "autoload": {
       "files": [
-        "src/Common/actionMiddleware.php"
+
       ],
       "psr-4": {
         "ON\\": "src/"

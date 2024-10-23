@@ -8,11 +8,17 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use ON\Router\RouteResult;
 use ON\Action;
+use ON\Application;
+use ON\Extension\PipelineExtension;
 use ON\RequestStack;
 
 class ActionInjectionMiddleware implements MiddlewareInterface
 {
-    public function __construct(protected ContainerInterface $container, protected RequestStack $stack) {
+    public function __construct(
+        protected Application $app,
+        protected ContainerInterface $container,
+        protected RequestStack $stack
+    ) {
     }
 
     public function process (ServerRequestInterface $request,  RequestHandlerInterface $handler): ResponseInterface
@@ -24,6 +30,10 @@ class ActionInjectionMiddleware implements MiddlewareInterface
         }
 
         $middleware = $routeResult->getMatchedRoute()->getMiddleware();
+        if (is_string($middleware)) {
+            $middleware = $this->app->ext('pipeline')->prepareMiddleware($middleware);
+            $routeResult->getMatchedRoute()->setMiddleware($middleware);
+        }
 
         $action = null;
 
@@ -34,11 +44,13 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
             $action->setPageInstance($instance);
 
-            $old_request = $request;
+            /*$old_request = $request;
 
             $request = $request->withAttribute(Action::class, $action);
 
-            $this->stack->update($old_request, $request);
+            $this->stack->update($old_request, $request);*/
+
+            $routeResult->set(Action::class, $action);
         }
 
         return $handler->handle($request, $handler);

@@ -2,6 +2,8 @@
 
 namespace ON\Middleware;
 
+use ON\Action;
+use ON\Application;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -23,7 +25,8 @@ class RouteMiddleware implements MiddlewareInterface
     public function __construct(
         protected RouterInterface $router, 
         protected RequestStack $stack, 
-        protected $container)
+        protected Application $app
+    )
     {
     }
 
@@ -45,31 +48,7 @@ class RouteMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        // Inject the actual route result, as well as individual matched parameters.
-        $request = $request->withAttribute(RouteResult::class, $result);
-
-        foreach ($result->getMatchedParams() as $param => $value) {
-            $request = $request->withAttribute($param, $value);
-        }
-
-
-        $options = $result->getMatchedRoute()->getOptions();
-        if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
-            foreach ($options["callbacks"] as $callback) {
-                $callback = $this->container->get($callback);
-                $result = $callback->onMatched($result);
-            }
-        }
-
-        // We need to update the params again, since it may have entered callbacks that changed it
-        $request = $request->withAttribute(RouteResult::class, $result);
-
-        foreach ($result->getMatchedParams() as $param => $value) {
-            $request = $request->withAttribute($param, $value);
-        }
-
-
-        $this->stack->update($original_request, $request);
+        $request = $this->app->ext('pipeline')->prepareRequestFromRouteResult($result, $request);
 
         return $handler->handle($request);
     }

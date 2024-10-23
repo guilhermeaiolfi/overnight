@@ -7,6 +7,7 @@ namespace ON\Container;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
+use Laminas\Stratigility\MiddlewarePipe;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
 use Psr\Container\ContainerInterface;

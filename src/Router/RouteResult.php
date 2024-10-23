@@ -52,6 +52,8 @@ class RouteResult implements MiddlewareInterface
      */
     private $route;
 
+    protected array $values = [];
+
     /**
      * Only allow instantiation via factory methods.
      *
@@ -59,6 +61,17 @@ class RouteResult implements MiddlewareInterface
      */
     private function __construct(private bool $success)
     {
+    }
+
+
+    public function set(string $key, mixed $value): void
+    {
+        $this->values[$key] = $value;
+    }
+
+    public function get(string $key): mixed
+    {
+        return $this->values[$key]?? null;
     }
 
     /**

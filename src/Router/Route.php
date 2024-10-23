@@ -35,7 +35,7 @@ use function strtoupper;
  *
  * @final
  */
-class Route implements MiddlewareInterface
+class Route
 {
     public const HTTP_METHOD_ANY       = null;
     public const HTTP_METHOD_SEPARATOR = ':';
@@ -51,13 +51,13 @@ class Route implements MiddlewareInterface
 
     /**
      * @param non-empty-string    $path Path to match.
-     * @param MiddlewareInterface $middleware Middleware to use when this route is matched.
+     * @param MiddlewareInterface|string $middleware Middleware to use when this route is matched.
      * @param null|list<string>   $methods Allowed HTTP methods; defaults to HTTP_METHOD_ANY.
      * @param null|string         $name the route name
      */
     public function __construct(
         private string $path,
-        private MiddlewareInterface $middleware,
+        private mixed $middleware,
         ?array $methods = self::HTTP_METHOD_ANY,
         ?string $name = null
     ) {
@@ -69,14 +69,6 @@ class Route implements MiddlewareInterface
                 : $path . '^' . implode(self::HTTP_METHOD_SEPARATOR, $this->methods);
         }
         $this->name = $name;
-    }
-
-    /**
-     * Proxies to the middleware composed during instantiation.
-     */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
-    {
-        return $this->middleware->process($request, $handler);
     }
 
     /** @return non-empty-string */
@@ -101,9 +93,17 @@ class Route implements MiddlewareInterface
         return $this->name;
     }
 
-    public function getMiddleware(): MiddlewareInterface
+    /**
+     * @return MiddlewareInterface|string Returns the middleware
+     */
+    public function getMiddleware(): mixed
     {
         return $this->middleware;
+    }
+
+    public function setMiddleware(mixed $middleware): void
+    {
+        $this->middleware = $middleware;
     }
 
     /**

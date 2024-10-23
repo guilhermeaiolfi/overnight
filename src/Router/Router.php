@@ -17,6 +17,7 @@ use ON\Router\RouteResult;
 
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\ServerRequestFactory;
+use ON\Config\RouterConfig;
 use ON\RequestStack;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -77,20 +78,6 @@ class Router implements RouterInterface
         return %s;
         EOT;
 
-    /**
-     * @const string Configuration key used to enable/disable fastroute caching
-     */
-    public const CONFIG_CACHE_ENABLED = 'cache_enabled';
-
-    /**
-     * @const string Configuration key used to set the cache file path
-     */
-    public const CONFIG_CACHE_FILE = 'cache_file';
-
-    /**
-     * @const string Configuration key used to set the basepath
-     */
-    public const CONFIG_BASEPATH = 'basepath';
 
     /**
      * Standard HTTP methods against which to test HEAD/OPTIONS requests.
@@ -151,7 +138,7 @@ class Router implements RouterInterface
 
     const FRAGMENT_IDENTIFIER_REGEX = '/^([!$&\'()*+,;=._~:@\/?-]|%[0-9a-fA-F]{2}|[a-zA-Z0-9])+$/';
 
-    protected string $basepath = "";
+    protected ?string $basepath = null;
   
     protected ?RequestStack $stack = null;
    
@@ -177,7 +164,7 @@ class Router implements RouterInterface
     public function __construct(
         ?RouteCollector $collection = null,
         ?callable $dispatcherFactory = null,
-        ?array $config = null,
+        RouterConfig $config,
         RequestStack $stack
     ) {
         if (null === $collection) {
@@ -193,26 +180,24 @@ class Router implements RouterInterface
     /**
      * Load configuration parameters
      *
-     * @param null|array $config Array of custom configuration options.
+     * @param RouterConfig $config Array of custom configuration options.
      */
-    private function loadConfig(array $config = null): void
+    private function loadConfig(RouterConfig $config = null): void
     {
         if (null === $config) {
             return;
         }
 
-        if (isset($config["router"][self::CONFIG_CACHE_ENABLED])) {
-            $this->cacheEnabled = (bool) $config["router"][self::CONFIG_CACHE_ENABLED];
-        }
+        $this->cacheEnabled = $config->get("cache_enabled", false);
+        
+        $this->cacheFile = $config->get("cache_file", false);
 
-        if (isset($config["router"][self::CONFIG_CACHE_FILE])) {
-            $this->cacheFile = (string) $config["router"][self::CONFIG_CACHE_FILE];
-        }
+        $this->basepath = $config->get("baseHref", null);
 
-        if (isset($config["router"][self::CONFIG_BASEPATH])) {
-            $this->basepath = (string) $config["router"][self::CONFIG_BASEPATH];
+        if ($this->basepath !== null) {
+            $this->basepath = Router::normalizePath($this->basepath);
         } else {
-          $this->basepath = self::getBaseHref($config);
+            $this->basepath = Router::normalizePath(Router::detectBaseUrl());
         }
 
         if ($this->cacheEnabled) {
@@ -770,13 +755,6 @@ class Router implements RouterInterface
 
       //$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
       return "/" . ltrim($basePath, '/');
-    }
-
-    static public function getBaseHref ($config) {
-      if (isset($config["paths"]) && isset($config["paths"]["basepath"]) && $config["paths"]["basepath"] != null) {
-          return Router::normalizePath($config["paths"]["basepath"]);
-      }
-      return Router::normalizePath(Router::detectBaseUrl());
     }
 
     static public function normalizePath ($href) {

@@ -1,6 +1,7 @@
 <?php
 namespace ON\Container;
 
+use ON\Application;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use ON\Router\Exception\MissingDependencyException;
@@ -52,7 +53,7 @@ class RouteMiddlewareFactory
         return new RouteMiddleware(
             $container->get(RouterInterface::class), 
             $container->get(RequestStack::class), 
-            $container
+            $container->get(Application::class)
         );
     }
 }

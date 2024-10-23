@@ -31,7 +31,6 @@ trait ViewBuilderTrait {
           throw new \Exception("No method found(" . $absolute_view_method . ") in class " . $view_classname);
         }
       }
-
       return $view->{$absolute_view_method}($request, $delegate);
     }
     // in case it is something else, returns the object

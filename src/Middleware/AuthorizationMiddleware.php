@@ -13,7 +13,7 @@ use ON\Auth\AuthorizationServiceInterface;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Exception\SecurityException;
 use ON\Action;
-
+use ON\Router\RouteResult;
 
 class AuthorizationMiddleware implements MiddlewareInterface
 {
@@ -37,7 +37,12 @@ class AuthorizationMiddleware implements MiddlewareInterface
    */
   public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
   {
-    $action = $request->getAttribute(Action::class, false);
+    $routeResult = $request->getAttribute(RouteResult::class, false);
+    if (!$routeResult) {
+      return $handler->handle($request, $handler);
+    }
+    
+    $action = $routeResult->get(Action::class);
     if (!$action) {
       return $handler->handle($request, $handler);
     }

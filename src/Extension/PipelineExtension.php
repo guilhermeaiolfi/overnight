@@ -22,16 +22,19 @@ use ON\Response\ServerRequestErrorResponseGenerator;
 use ON\MiddlewareContainer;
 
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
-
 use Laminas\Stratigility\Middleware\ErrorHandler;
+use ON\Action;
+use ON\Cache\CacheInterface;
 use ON\MiddlewareFactoryInterface;
 use ON\Handler\NotFoundHandler;
 use ON\Middleware\ErrorResponseGenerator;
 use ON\MiddlewareFactory;
+use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
+use Psr\Http\Server\MiddlewareInterface;
 
 use function Laminas\Stratigility\path;
 
@@ -47,6 +50,8 @@ class PipelineExtension extends AbstractExtension
     protected MiddlewarePipeInterface $pipeline;
     public MiddlewareFactory $factory;
 
+    protected array $controllerCache = [];
+
     public function __construct(
         protected Application $app,
 
@@ -59,16 +64,20 @@ class PipelineExtension extends AbstractExtension
         return $extension;
     }
 
+    public function getController($class_name) {
+        return $this->controllerCache[$class_name];
+    }
+
     public function setup(int $counter): bool
     {
         if ($this->hasPendingTask("container:define")) {
             $config = $this->app->ext('config');
 
             if (!isset($config)) {
-                throw new Exception("Router Extension needs the config extension");
+                throw new Exception("Pipeline Extension needs the config extension");
             }
             $containerConfig = $config->get(ContainerConfig::class);
-            $containerConfig->mergeRecursiveDistinct([
+            $containerConfig->mergeConfigArray([
                 "definitions" => [
                     "aliases" => [
                         MiddlewarePipeInterface::class                      => \Laminas\Stratigility\MiddlewarePipe::class,
@@ -81,8 +90,8 @@ class PipelineExtension extends AbstractExtension
                         MiddlewareContainer::class                          => \ON\Container\MiddlewareContainerFactory::class,
                         
                         // Change the following in development to the WhoopsErrorResponseGeneratorFactory:
-                        ErrorResponseGenerator::class                       => \ON\Container\ErrorResponseGeneratorFactory::class,
-                        //ErrorResponseGenerator::class                       => \ON\Container\WhoopsErrorResponseGeneratorFactory::class,
+                        //ErrorResponseGenerator::class                       => \ON\Container\ErrorResponseGeneratorFactory::class,
+                        ErrorResponseGenerator::class                       => \ON\Container\WhoopsErrorResponseGeneratorFactory::class,
                         'ON\Whoops'                                         => \ON\Container\WhoopsFactory::class,
                         'ON\WhoopsPageHandler'                              => \ON\Container\WhoopsPageHandlerFactory::class,
 
@@ -115,9 +124,13 @@ class PipelineExtension extends AbstractExtension
             $this->app->registerMethod("handle", [$this, "handle"]);
             $this->app->registerMethod("run", [$this, "run"]);
 
-            $this->runner = $container->get(RequestHandlerRunner::class);
+            $cache = $container->get(CacheInterface::class);
+            $runner = $cache->resolve("runner", function() use($container) {
+                return $container->get(RequestHandlerRunner::class);
+            });
+            //dd($runner);
+            $this->runner = $runner;
             $this->loadPipeline($config->get('app.pipeline_file', 'config/pipeline.php'));
-
             $this->removePendingTask('pipeline:load');
             
         }
@@ -127,6 +140,11 @@ class PipelineExtension extends AbstractExtension
         }
 
         return false;
+    }
+
+    public function prepareMiddleware($middleware): MiddlewareInterface
+    {
+        return $this->factory->prepare($middleware);
     }
 
     protected function loadPipeline(string $file) {
@@ -159,8 +177,8 @@ class PipelineExtension extends AbstractExtension
         $path       = $middleware === $middlewareOrPath ? '/' : $middlewareOrPath;
 
         $middleware = $path !== '/'
-            ? path($path, $this->factory->prepare($middleware))
-            : $this->factory->prepare($middleware);
+            ? path($path, $this->prepareMiddleware($middleware))
+            : $this->prepareMiddleware($middleware);
 
         $this->pipeline->pipe($middleware);
     }
@@ -175,23 +193,57 @@ class PipelineExtension extends AbstractExtension
         return $this->pipeline->process($request, $handler);
     }
 
-    public function prepareRequest($path, $controller, $methods, $route_name) {
-        $request = ServerRequestFactory::fromGlobals();
-
-        if (is_string($controller)) { //middleware
-            $controller = $this->factory->prepare($controller);
-        }
-
+    public function prepareRequest($path, $controller, $methods, $route_name): RequestInterface {
         $route = new Route($path, $controller, $methods, $route_name);
         $route_result = RouteResult::fromRoute($route);
+        return $this->prepareRequestFromRouteResult($route_result);
+    }
 
-        $request = $request->withAttribute(RouteResult::class, $route_result);
+    public function prepareRequestFromRouteResult($result, $request = null): RequestInterface
+    {
+        if (!$request) {
+            $request = ServerRequestFactory::fromGlobals();
+        }
 
+        $original_request = $request;
+
+        // Inject the actual route result, as well as individual matched parameters.
+        $request = $request->withAttribute(RouteResult::class, $result);
+
+        foreach ($result->getMatchedParams() as $param => $value) {
+            $request = $request->withAttribute($param, $value);
+        }
+
+
+        $options = $result->getMatchedRoute()->getOptions();
+        if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
+            foreach ($options["callbacks"] as $callback) {
+                $callback = $this->app->getContainer()->get($callback);
+                $result = $callback->onMatched($result);
+            }
+        }
+
+        // We need to update the params again, since it may have entered callbacks that changed it
+        $request = $request->withAttribute(RouteResult::class, $result);
+
+        foreach ($result->getMatchedParams() as $param => $value) {
+            $request = $request->withAttribute($param, $value);
+        }
+
+
+        $middleware = $result->getMatchedRoute()->getMiddleware();
+        
+        if (is_string($middleware)) {
+            $middleware = $this->app->ext('pipeline')->prepareMiddleware($middleware);
+            $result->getMatchedRoute()->setMiddleware($middleware);
+        }
+        
+        $this->requestStack->update($original_request, $request);
         return $request;
     }
 
     public function runAction ($request, $response = null) {
-        $response = $response ?: new Response();
+        //$response = $response ?: new Response();
         return $this->handle($request);
     }
 

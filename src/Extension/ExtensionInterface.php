@@ -11,6 +11,6 @@ interface ExtensionInterface {
     public function ready();
     public function setup(int $counter): bool;
     public function getPendingTasks(): array;
-    public function removePendingTask(mixed $task): void;
+    public function removePendingTask(mixed $task): bool;
     public function hasPendingTask(mixed $task): bool;
 }

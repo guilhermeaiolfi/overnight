@@ -44,12 +44,14 @@ abstract class AbstractExtension implements ExtensionInterface
         return $this->pendingTasks;
     }
 
-    public function removePendingTask(mixed $task): void
+    public function removePendingTask(mixed $task): bool
     {
         $key = array_search($task, $this->pendingTasks);
         if ($key !== false) {
             unset($this->pendingTasks[$key]);
+            return true;
         }
+        return false;
     }
 
     public function hasPendingTask(mixed $task): bool

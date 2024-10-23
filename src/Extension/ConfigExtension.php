@@ -5,44 +5,27 @@ namespace ON\Extension;
 use Exception;
 use ON\Application;
 
-use ON\Config\ConfigBuilder;
-use Adbar\Dot;
-use ON\Config\ConfigInterface;
-use ON\Config\OwnParameterPostProcessor;
-use ON\Config\Provider\ArrayProvider;
-use ON\Event\EventSubscriberInterface;
+use Laminas\Stdlib\Glob;
+use ON\Config\ContainerConfig;
+use ON\Config\RouterConfig;
 
 // To enable or disable caching, set the `ConfigBuilder::ENABLE_CACHE` boolean in
 // `config/autoload/framework.global.php`.
 class ConfigExtension extends AbstractExtension
 {
     protected int $type = self::TYPE_EXTENSION;
-    protected Dot $config;
     protected Application $app;
     protected array $options;
-    protected ?bool $has_cache = null;
-    protected ConfigBuilder $builder;
+    protected array $configs = [];
     public function __construct(
         Application $app,
         array $options = []
     ) {
         $this->options = $options;
         $this->app = $app;
-        if (!isset($this->options["config_file"])) {
-            $this->options["config_file"] = 'config/config.php';
-        }
-        if (!isset($this->options['config_cache_path'])) {
-            $this->options['config_cache_path'] = 'var/cache/config-cache.php';
-        }
-        if (!isset($this->options["postProcessors"])) {
-            $this->options['postProcessors'] = [
-                new OwnParameterPostProcessor()
-            ];
-        }
         if (!isset($this->options['debug'])) {
             $this->options['debug'] = $_ENV["APP_ENV"] != "production";
         }
-        
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
@@ -51,66 +34,60 @@ class ConfigExtension extends AbstractExtension
         return $extension;
     }
 
-    public function setup(int $counter): bool
+    public function has(string $className): bool 
     {
-        if ($counter == 0) {
-            $this->config = new Dot([]);
+        return isset($this->configs[$className]);
+    }
 
-            $this->builder = $this->createBuilder($this->options);
-
-            $this->config->setReference($this->builder->getMergedConfig());
+    public function get(string $className = null): mixed {
+        if ($className === null) {
+            return $this->configs;
         }
 
-        // only set as ready after all extensions inject its content here
-        if (empty($this->app->getExtensionsByPendingTask('config:inject'))) {
+        if (!isset($this->configs[$className])) {
+            $this->configs[$className] = new $className();
+        }
+        return $this->configs[$className];
+    }
+
+    public function set(string $className, mixed $obj) {
+        $this->configs[$className] = $obj;
+    }
+
+    public function setup(int $counter): bool
+    {
+        // we need to give a chance to extensions to register configs before application code
+        if ($counter == 1) {
+            $files = Glob::glob("configuration/" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
+            foreach ($files as $file) {
+                $obj = include_once($file);
+                
+                //dd(get_class($obj));
+                if (!is_object($obj)) {
+                    throw new Exception(
+                        sprintf("Configuration file (%s) should return an object, return: %s.", $file, $obj)
+                    );
+                } else {
+                    $class_name = get_class($obj);
+                    
+                    if (isset($this->configs[$class_name])) {
+                        $cfg = $this->configs[$class_name];
+                        // TODO: better handling of this mergeArray function
+                        // Ideally it should pass just the array to be merged
+                        $cfg->mergeConfigArray($obj);
+                        //$cfg->setArray($merged);
+                    } else {
+                        $this->configs[$class_name] = $obj;
+                    }
+                }
+            }
+            //dd($this->configs);
             return true;
         }
         return false;
     }
 
     public function ready() {
-        // now we can save the cache file because nothing more is going to be injected
-        if (!$_ENV["APP_DEBUG"]) {
-            $this->persist();
-        }
-    }
-
-    public function createBuilder($options) {
-
-        $loaders = require $options["config_file"];
-        
-        return new ConfigBuilder(
-            $loaders,
-            $options['config_cache_path'], 
-            $options['postProcessors'],
-            [],
-            $options["debug"]
-        );
-    }
-
-    public function load(mixed $obj) {
-        if (!$this->builder->shouldLoad()) {
-            return;
-        }
-        if (is_callable($obj)) {
-            $values = $this->builder->loadConfigFromProvider($obj);
-            $this->config->setReference($values);
-        }
-    }
-
-    public function getConfig() {
-        return $this->config;
-    }
-
-
-    public function hasCache() {
-        if (!isset($this->has_cache)) {
-            $this->has_cache = file_exists($this->options['config_cache_path']);
-        }
-        return $this->has_cache;
-    }
-
-    public function persist(bool $force = false) {
-        $this->builder->persist($force);
+       
     }
 }

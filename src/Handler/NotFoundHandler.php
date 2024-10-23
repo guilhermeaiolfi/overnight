@@ -36,15 +36,11 @@ class NotFoundHandler implements RequestHandlerInterface
             return $this->generatePlainTextResponse($request);
         }
 
-        if (is_string($this->middleware)) { //middleware
-            $middleware = $this->app->ext(PipelineExtension::class)->factory->prepare($this->middleware);
-        }
-
-        $route = new Route("/404", $middleware, ["GET"], "NOT_FOUND");
+        $route = new Route("/404", $this->middleware, ["GET"], "NOT_FOUND");
 
         $route_result = RouteResult::fromRoute($route);
 
-        $request = $request->withAttribute(RouteResult::class, $route_result);
+        $request = $this->app->ext('pipeline')->prepareRequestFromRouteResult($route_result, $request);
 
         return $this->app->runAction($request);
     }

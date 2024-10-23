@@ -4,33 +4,35 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
-use ON\Config\Scanner\TypeDefinition;
+use ON\Extension\DiscoveryExtension;
 use ON\Extension\RouterExtension;
 use ON\Router\Attribute\Route;
 use ON\Router\RouterInterface;
 use ReflectionClass;
 
-class RouteDiscovery implements DiscoverInterface, DiscoverFileInterface, DiscoverClassInterface
+class RouteDiscovery implements DiscoverInterface
 {
     public AttributeReader $reader;
 
     protected $cachefile = "var/cache/discovery/route.cache.php";
     protected array $attributes = [];
-
+    protected ClassFinder $classFinder;
     protected bool $changed = false;
+
+    protected float $timestamp = 0;
     public function __construct(
-        protected Application $app
+        protected Application $app,
+
     ) {
         $this->reader = new AttributeReader();
+        $this->classFinder = $app->ext(DiscoveryExtension::class)->classFinder;
     }
     public function cachedTimestamp(): float
     {
-        return file_exists($this->cachefile)? filemtime($this->cachefile) : 0;
-    }
-
-    public function updateFiles($files): bool
-    {
-        return true;
+        return $this->timestamp > 0? 
+            $this->timestamp : 
+            (file_exists($this->cachefile)? 
+                filemtime($this->cachefile) : 0);
     }
 
     public function process(): bool
@@ -52,32 +54,26 @@ class RouteDiscovery implements DiscoverInterface, DiscoverFileInterface, Discov
         return false;
     }
 
-    public function updateClasses($definitions): bool
+    public function updateFile($file): bool
     {
-        foreach($definitions as $definition) {
-            if ($definition->getType() == TypeDefinition::TYPE_CLASS) {
-                if (preg_match('/(.*)Page$/', $definition->getName())) {
-                    $class = new ReflectionClass($definition->getName());
-                    $methods = $class->getMethods();
-                    foreach ($methods as $method) {
-                        foreach ($method->getAttributes() as $attr) {
-                            if ($attr->getName() == Route::class) {
-                                $this->attributes[$definition->getName()] = [];
-                                $this->attributes[$definition->getName()][$method->getName()] = [];
-                                $this->attributes[$definition->getName()][$method->getName()][] = $attr->newInstance();
-                                $this->changed = true;
-                            }
+        $classes = $this->classFinder->getClassesInFile($file->getRealPath());
+        foreach($classes as $className) {
+            if (preg_match('/(.*)Page$/', $className)) {
+                $class = new ReflectionClass($className);
+                $methods = $class->getMethods();
+                foreach ($methods as $method) {
+                    foreach ($method->getAttributes() as $attr) {
+                        if ($attr->getName() == Route::class) {
+                            $this->attributes[$className] = [];
+                            $this->attributes[$className][$method->getName()] = [];
+                            $this->attributes[$className][$method->getName()][] = $attr->newInstance();
+                            $this->changed = true;
                         }
                     }
                 }
             }
         }
         return true;
-    }
-
-    public function visitFile()
-    {
-
     }
 
     public function getAttributes(): array

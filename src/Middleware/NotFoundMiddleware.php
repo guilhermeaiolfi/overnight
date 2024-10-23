@@ -1,6 +1,7 @@
 <?php
 namespace ON\Middleware;
 
+use Laminas\Stratigility\Exception\EmptyPipelineException;
 use Psr\Http\Server\RequestHandlerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -27,7 +28,7 @@ class NotFoundMiddleware implements MiddlewareInterface
         try {
             $response = $handler->handle($request, $handler);
             return $response;
-        } catch (NotFoundException $e) {
+        } catch (EmptyPipelineException $e) {
             return $this->notFoundHandler->handle($request, $handler);
         }
     }

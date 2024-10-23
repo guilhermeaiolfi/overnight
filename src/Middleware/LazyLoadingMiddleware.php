@@ -6,6 +6,7 @@ namespace ON\Middleware;
 
 use ON\Exception\InvalidMiddlewareException;
 use ON\MiddlewareContainer;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -13,7 +14,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class LazyLoadingMiddleware implements MiddlewareInterface
 {
-    public function __construct(private MiddlewareContainer $container, public readonly string $middlewareName)
+    public function __construct(private ContainerInterface $container, public readonly string $middlewareName)
     {
     }
 

@@ -119,9 +119,9 @@ abstract class AbstractPage implements PageInterface {
     $app = $this->container->get(Application::class);
     $result = $request->getAttribute(RouteResult::class);
     $matched = $result->getMatchedRoute();
-    if (is_string($middleware)) {
+    /*if (is_string($middleware)) {
       $middleware = $app->factory->prepare($middleware);
-    }
+    }*/
     $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
     $request = $request->withAttribute(RouteResult::class, $result);
     return $app->runAction($request);

@@ -52,7 +52,7 @@ class Action {
   static public function runAction(Application $app, ServerRequestInterface $request = null, ResponseInterface $response = null)
     {
         $response = $response ?: new Response();
-        $request  = $request->withAttribute('originalResponse', $response);
+        //$request  = $request->withAttribute('originalResponse', $response);
         return $app->handle($request);
     }
 }

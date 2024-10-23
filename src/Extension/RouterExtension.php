@@ -7,12 +7,10 @@ use ON\Router\DuplicateRouteDetector;
 use ON\Router\Route;
 use ON\Application;
 use ON\Config\ContainerConfig;
+use ON\Config\RouterConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Router\RouterInterface;
 
-
-use ON\Router\RouteCollector;
-use ON\Router\RouteCollectorInterface;
 use ON\Middleware\RouteMiddleware;
 
 use ON\Router\Router;
@@ -66,10 +64,9 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
                 throw new Exception("Router Extension needs the config extension");
             }
             $containerConfig = $config->get(ContainerConfig::class);
-            $containerConfig->mergeRecursiveDistinct([
+            $containerConfig->mergeConfigArray([
                 "definitions" => [
                     "aliases" => [
-                        RouteCollectorInterface::class                      => \ON\Router\RouteCollector::class,
                         RouterInterface::class                              => \ON\Router\Router::class,
                         
                     ],
@@ -77,7 +74,6 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
                         Router::class                                       => \ON\Router\RouterFactory::class,
                         RouteMiddleware::class                              => \ON\Container\RouteMiddlewareFactory::class,
                         RouterInterface::class                              => \ON\Router\RouterFactory::class,
-                        RouteCollector::class                               => \ON\Router\RouteCollectorFactory::class,
                     ]
                 ]
             ]);
@@ -87,7 +83,10 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
         if ($this->app->isExtensionReady('container') && $this->hasPendingTask('router:load')) {
             $container = $this->app->getContainer();
             $this->router = $container->get(RouterInterface::class);
-            $this->loadRoutes($container->get('config')->get('app.routes_file', 'config/routes.php'));
+            $router_cfg = $container->get(RouterConfig::class);
+
+            $this->loadRoutesFromConfig($router_cfg);
+            //$this->loadRoutes($container->get('config')->get('app.routes_file', 'config/routes.php'));
             $this->removePendingTask('router:load');
         }
         if ($this->app->isExtensionReady('events') && $this->hasPendingTask('events:load')) {
@@ -97,10 +96,23 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
             $this->removePendingTask('events:load');
         }
 
-        if (empty($this->getPendingTasks())) {
+        if (!$this->hasPendingTasks()) {
             return true;
         }
         return false;
+    }
+
+    protected function loadRoutesFromConfig($cfg) {
+        $routes = $cfg->get('routes');
+        if (is_array($routes)) {
+            foreach ($routes as $route) {
+                if (is_array($route)) {
+                    $this->route(...$route);
+                } else {
+                    $this->router->addRoute($route);
+                }
+            }
+        }
     }
 
     protected function loadRoutes(string $file) {
@@ -119,7 +131,7 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
      */
     public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
     {
-        $middleware = $this->app->getExtension(PipelineExtension::class)->factory->prepare($middleware);
+        //$middleware = $this->app->getExtension(PipelineExtension::class)->factory->prepare($middleware);
         $methods = $methods ?? Route::HTTP_METHOD_ANY;
         
         $route   = new Route($path, $middleware, $methods, $name);

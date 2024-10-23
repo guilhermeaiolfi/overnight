@@ -13,6 +13,7 @@ use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 use ON\Middleware\LazyLoadingMiddleware;
+use Psr\Container\ContainerInterface;
 
 use function array_shift;
 use function count;
@@ -53,15 +54,14 @@ use function is_string;
  */
 class MiddlewareFactory implements MiddlewareFactoryInterface
 {
-    public function __construct(private \ON\MiddlewareContainer $container)
+    public function __construct(private ContainerInterface $container)
     {
     }
 
-    /** @inheritDoc */
     public function prepare($middleware): MiddlewareInterface
     {
 		if (is_string($middleware) && strpos($middleware, "::") !== FALSE) {
-			return new ActionMiddlewareDecorator($middleware);
+			return new ActionMiddlewareDecorator($this->container, $middleware);
 		}
 
         if ($middleware instanceof MiddlewareInterface) {

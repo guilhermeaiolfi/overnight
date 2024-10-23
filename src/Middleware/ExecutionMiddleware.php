@@ -27,18 +27,13 @@ class ExecutionMiddleware implements MiddlewareInterface
     public function process (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
     {
         $routeResult = $request->getAttribute(RouteResult::class, false);
-        $action = $request->getAttribute(Action::class);
-        if (!$routeResult || !$action) {
+        if (!$routeResult) {
+
             return $handler->handle($request);
         }
-        
-        $action = $request->getAttribute(Action::class);
-        $args = [
-            ServerRequestInterface::class => $request,
-            RequestHandlerInterface::class => $handler
-        ];
-        $action_response = $this->executor->execute($action->getExecutable(), $args);
+  
+        $middleware = $routeResult->getMatchedRoute()->getMiddleware();
 
-        return $this->buildView($action->getPageInstance(), $action->getActionName(), $action_response, $request, $handler);
+        return $middleware->process($request, $handler);
     }
 }
