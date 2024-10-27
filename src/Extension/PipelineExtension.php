@@ -23,8 +23,6 @@ use ON\MiddlewareContainer;
 
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
 use Laminas\Stratigility\Middleware\ErrorHandler;
-use ON\Action;
-use ON\Cache\CacheInterface;
 use ON\MiddlewareFactoryInterface;
 use ON\Handler\NotFoundHandler;
 use ON\Middleware\ErrorResponseGenerator;
@@ -61,6 +59,7 @@ class PipelineExtension extends AbstractExtension
     public static function install(Application $app, ?array $options = []): mixed {
         $extension = new self($app);
         $app->registerExtension('pipeline', $extension);
+        $app->pipeline = $extension;
         return $extension;
     }
 
@@ -68,14 +67,19 @@ class PipelineExtension extends AbstractExtension
         return $this->controllerCache[$class_name];
     }
 
+    public function requires(): array
+    {
+        return [
+            'container',
+            'config'
+        ];
+    }
+
     public function setup(int $counter): bool
     {
         if ($this->hasPendingTask("container:define")) {
-            $config = $this->app->ext('config');
+            $config = $this->app->config;
 
-            if (!isset($config)) {
-                throw new Exception("Pipeline Extension needs the config extension");
-            }
             $containerConfig = $config->get(ContainerConfig::class);
             $containerConfig->mergeConfigArray([
                 "definitions" => [
@@ -111,7 +115,7 @@ class PipelineExtension extends AbstractExtension
 
             $this->app->requestStack = $this->requestStack = new RequestStack();
             
-            $container = $this->app->getContainer();
+            $container = $this->app->container;
             
             $this->pipeline = $container->get(MiddlewarePipeInterface::class);
             $this->factory = $container->get(MiddlewareFactory::class);
@@ -124,12 +128,8 @@ class PipelineExtension extends AbstractExtension
             $this->app->registerMethod("handle", [$this, "handle"]);
             $this->app->registerMethod("run", [$this, "run"]);
 
-            $cache = $container->get(CacheInterface::class);
-            $runner = $cache->resolve("runner", function() use($container) {
-                return $container->get(RequestHandlerRunner::class);
-            });
+            $this->runner = $container->get(RequestHandlerRunner::class);
             //dd($runner);
-            $this->runner = $runner;
             $this->loadPipeline($config->get('app.pipeline_file', 'config/pipeline.php'));
             $this->removePendingTask('pipeline:load');
             
@@ -218,7 +218,7 @@ class PipelineExtension extends AbstractExtension
         $options = $result->getMatchedRoute()->getOptions();
         if (!empty($options) && !empty($options["callbacks"]) && is_array($options["callbacks"])) {
             foreach ($options["callbacks"] as $callback) {
-                $callback = $this->app->getContainer()->get($callback);
+                $callback = $this->app->container->get($callback);
                 $result = $callback->onMatched($result);
             }
         }
@@ -234,7 +234,7 @@ class PipelineExtension extends AbstractExtension
         $middleware = $result->getMatchedRoute()->getMiddleware();
         
         if (is_string($middleware)) {
-            $middleware = $this->app->ext('pipeline')->prepareMiddleware($middleware);
+            $middleware = $this->prepareMiddleware($middleware);
             $result->getMatchedRoute()->setMiddleware($middleware);
         }
         

@@ -21,23 +21,26 @@ class ViewExtension extends AbstractExtension
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
-        // we can't use the container since it may not be started yet
+        if (php_sapi_name() == 'cli') {
+            return false;
+        }
         $class = self::class;
-        $extension = new $class($app);
+        $extension = new $class($app, $options);
         $app->registerExtension('view', $extension); // register shortcut
         return $extension;
     }
     
     public function setup(int $counter): bool
     {
-
-        if ($this->hasPendingTask("container:define")) {
-            $config = $this->app->ext('config');
+        if ($this->removePendingTask("container:define")) {
+            $config = $this->app->config;
 
             if (!isset($config)) {
                 throw new Exception("Router Extension needs the config extension");
             }
             $containerConfig = $config->get(ContainerConfig::class);
+
+            // TODO: plates and lattes should be an extension by its own
             $containerConfig->mergeRecursiveDistinct([
                 "definitions" => [
                     "factories" => [
@@ -47,7 +50,6 @@ class ViewExtension extends AbstractExtension
                     ]
                 ]
             ]);
-            $this->removePendingTask('container:define');
             return true;
         }
 

@@ -46,7 +46,7 @@ class DiscoveryExtension extends AbstractExtension
     {
         if ($this->hasPendingTask("config:ready")) {
             if ($this->app->isExtensionReady('config')) {
-                $this->appCfg = $this->app->ext('config')->get(AppConfig::class);
+                $this->appCfg = $this->app->config->get(AppConfig::class);
                 $this->removePendingTask('config:ready');
             }
         } else if ($this->hasPendingTask("discovery:setup")) {
@@ -65,7 +65,7 @@ class DiscoveryExtension extends AbstractExtension
                     $discover->recover();
                 }
             }
-            clock()->event('discovery:finder')->begin();
+            //clock()->event('discovery:finder')->begin();
             $finder = new Finder();
             
             $finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", $oldest));
@@ -79,16 +79,14 @@ class DiscoveryExtension extends AbstractExtension
                     }
                 }
             }
-            clock()->event('discovery:finder')->end();
+            //clock()->event('discovery:finder')->end();
 
-            clock()->event('discovery:save')->begin();
             foreach ($discovers as $discover) {
                 $discover->save();
                 if (!$discover->process()) {
                     $this->pendingProcess[] = $discover;
                 }
             }
-            clock()->event('discovery:save')->end();
             $this->removePendingTask("discovery:setup");
         } else {
             foreach ($this->pendingProcess as $discover) {

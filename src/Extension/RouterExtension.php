@@ -30,6 +30,9 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
+        if (php_sapi_name() == 'cli') {
+            return false;
+        }
         $class = self::class;
         $extension = new $class($app);
 
@@ -45,8 +48,15 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
         $app->registerMethod("route", [$extension, 'route']);
 
         $app->registerExtension('router', $extension);
-        
+      
         return $extension;
+    }
+
+    public function requires(): array
+    {
+        return [
+            'container'
+        ];
     }
 
     public function setup(int $counter): bool
@@ -58,7 +68,7 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
         }
 
         if ($this->hasPendingTask("container:define")) {
-            $config = $this->app->ext('config');
+            $config = $this->app->config;
 
             if (!isset($config)) {
                 throw new Exception("Router Extension needs the config extension");
@@ -81,8 +91,8 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
     
         }
         if ($this->app->isExtensionReady('container') && $this->hasPendingTask('router:load')) {
-            $container = $this->app->getContainer();
-            $this->router = $container->get(RouterInterface::class);
+            $container = $this->app->container;
+            $this->app->router = $this->router = $container->get(RouterInterface::class);
             $router_cfg = $container->get(RouterConfig::class);
 
             $this->loadRoutesFromConfig($router_cfg);
@@ -131,7 +141,6 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
      */
     public function route(string $path, $middleware, ?array $methods = null, ?string $name = null): Route
     {
-        //$middleware = $this->app->getExtension(PipelineExtension::class)->factory->prepare($middleware);
         $methods = $methods ?? Route::HTTP_METHOD_ANY;
         
         $route   = new Route($path, $middleware, $methods, $name);

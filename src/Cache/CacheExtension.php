@@ -26,7 +26,7 @@ class CacheExtension extends AbstractExtension
 
     public function setup($counter): bool {
         if ($this->removePendingTask("container:define")) {
-            $config = $this->app->ext('config');
+            $config = $this->app->config;
 
             if (!isset($config)) {
                 throw new Exception("Cache Extension needs the config extension");

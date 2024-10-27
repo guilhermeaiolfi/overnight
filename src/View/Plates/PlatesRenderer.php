@@ -49,7 +49,7 @@ class PlatesRenderer  implements RendererInterface
         $section_config example: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
         */
     public function runSection ($section_path, $controller, $methods, $route_name) {
-        $request = $this->app->getExtension(PipelineExtension::class)->prepareRequest($section_path, $controller, $methods, $route_name);
+        $request = $this->app->pipeline->prepareRequest($section_path, $controller, $methods, $route_name);
         return $this->app->handle($request);
     }
 }

@@ -24,27 +24,31 @@ class EventsExtension extends AbstractExtension
     protected array $pendingTasks = [ "container:define" ];
 
     public function __construct(
-        protected Application $app
+        protected Application $app,
+        protected array $options = []
     ) {
     }
 
     public static function install(Application $app, ?array $options = []): mixed {
         // we can't use the container since it may not be started yet
-        $class = self::class;
-        $extension = new $class($app);
+        $extension = new self($app, $options);
         $app->registerExtension('events', $extension); // register shortcut
+        $app->events = $extension;
         return $extension;
+    }
+
+    public function requires(): array
+    {
+        return [
+            'config'
+        ];
     }
     
     public function setup(int $counter): bool
     {
-
         if ($this->hasPendingTask("container:define")) {
-            $config = $this->app->ext('config');
+            $config = $this->app->config;
 
-            if (!isset($config)) {
-                throw new Exception("Router Extension needs the config extension");
-            }
             $containerConfig = $config->get(ContainerConfig::class);
             $containerConfig->mergeRecursiveDistinct([
                 "definitions" => [
@@ -58,8 +62,7 @@ class EventsExtension extends AbstractExtension
         
 
         if ($this->app->isExtensionReady('container')) {
-            $container = $this->app->getContainer();
-            $this->eventDispatcher = $container->get(EventDispatcherInterface::class);
+            $this->eventDispatcher = $this->app->container->get(EventDispatcherInterface::class);
             $this->dispatch(new NamedEvent("core.init"));
             return true;
         }
@@ -138,7 +141,7 @@ class EventsExtension extends AbstractExtension
                         $callback = $callback[0];
                     }
                     if (is_string($callback)) {
-                        $instance = $this->app->getContainer()->get($callback);
+                        $instance = $this->app->container->get($callback);
                         if (!is_callable($instance)) {
                             throw new Exception("Event manager can't handle class of type {$callback}");
                             return;
@@ -160,7 +163,7 @@ class EventsExtension extends AbstractExtension
             if (!class_exists($class)) {
                 throw new Exception("Class {$class} doesn't exist when trying to register events");
             }
-            $instance = $this->app->getContainer()->get($class);
+            $instance = $this->app->container->get($class);
         }
 
         if ($instance instanceof EventSubscriberInterface) {

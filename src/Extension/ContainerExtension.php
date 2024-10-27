@@ -9,6 +9,7 @@ use ON\Application;
 use ON\Config\ConfigInterface;
 use ON\Config\ContainerConfig;
 use ON\Container\ConfigDefinitionSource;
+use ON\Container\Executor\ExecutorInterface;
 use Psr\Container\ContainerInterface;
 
 use function DI\autowire;
@@ -36,7 +37,7 @@ class ContainerExtension extends AbstractExtension
 
     public function __construct(
         protected Application $app,
-        protected $options = []
+        protected array $options = []
     ) {
 
     }
@@ -54,18 +55,17 @@ class ContainerExtension extends AbstractExtension
             // because it may be used in the setup method by other extensions
             
             /** @var \ON\Extension\ConfigExtension $config_ext */
-            $config_ext = $this->app->getExtension('config');
+            $config_ext = $this->app->config;
                         
             $configs = $config_ext->get();
 
-            $this->container = $container = $this->createContainer($configs[ContainerConfig::class]);
+            $this->app->container = $this->container = $container = $this->createContainer($configs[ContainerConfig::class]);
             
-            Application::setContainer($container);
             foreach ($configs as $class => $config) {
                 $container->set($class, $config);
             }
             /*
-            $container->set(ConfigInterface::class, $this->app->ext('config')->getConfig());*/
+            $container->set(ConfigInterface::class, $this->app->config->getConfig());*/
 
             //echo VarExporter::export($container, VarExporter::ADD_RETURN | VarExporter::CLOSURE_SNAPSHOT_USES);exit;
             // we need to set it to the container in case other places need the instance of Application
@@ -106,7 +106,9 @@ class ContainerExtension extends AbstractExtension
         if (!$this->hasCache())
         {
             // lets build the container
-            //$this->dependencies = $config->get("dependencies", []);
+
+            // default dependencies
+            $this->definitions[ExecutorInterface::class] = factory(\ON\Container\Executor\ExecutorFactory::class); 
 
             foreach ($config->get('definitions.services', []) as $name => $service) {
                 $this->definitions[$name] = is_object($service) ? $service : create($service);
@@ -115,6 +117,7 @@ class ContainerExtension extends AbstractExtension
             foreach ($config->get('definitions.factories', []) as $name => $factory) {
                 $this->definitions[$name] = factory($factory);
             }
+
 
             foreach ($config->get('definitions.invokables', []) as $key => $object) {
                 $name = is_numeric($key) ? $object : $key;

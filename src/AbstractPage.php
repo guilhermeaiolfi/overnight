@@ -16,9 +16,9 @@ abstract class AbstractPage implements PageInterface {
   protected $container = null;
   
   public function __construct (
-    ContainerInterface $c
+    protected Application $app
   ) {
-    $this->container = $c;
+    $this->container = $this->app->container;
   }
 
   public function isSecure () {
@@ -72,6 +72,11 @@ abstract class AbstractPage implements PageInterface {
 
   public function render($layout_name = null, $template_name = null, $data = null, $params = []) {
 
+    if (!$this->app->hasExtension('view')) {
+      throw new \Exception("You are trying to render something but has not installed any view extension.", 1);
+      return;
+      
+    }
     $config = $this->container->get(ViewConfig::class);
 
     // if nothing is passed, use the attributes of the page instance
@@ -128,6 +133,6 @@ abstract class AbstractPage implements PageInterface {
   }
 
   public function getContainer() {
-    return $this->container;
+    return $this->app->container;
   }
 }

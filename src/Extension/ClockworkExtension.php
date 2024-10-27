@@ -6,6 +6,7 @@ use Exception;
 use ON\Application;
 use ON\Benchmark;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
+use ON\Config\DatabaseConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use Psr\Log\LoggerInterface;
@@ -46,14 +47,21 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
         clock()->event("Booting")->begin();
     }
 
+    public function requires(): array
+    {
+        return [
+            'container'
+        ];
+    }
+
     public function setup(int $counter): bool
     {
         if ($counter > 0 && $this->app->hasExtension('config') && $this->hasPendingTask("config:inject")) {
-            //$this->app->ext('config')->load($this);
+            //$this->app->config->load($this);
             $this->removePendingTask('config:inject');
         }
         else if ($this->app->isExtensionReady('container')) {
-            $container = Application::getContainer();
+            $container = $this->app->container;
             $container->set(Clockwork::class, $this->clockwork);
             $logger = $container->get(LoggerInterface::class);
             $loggerDataSource = new PsrLoggerDatasource($logger);
@@ -104,13 +112,12 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
     public function onManagerCreate($event)
     {
-        $container = Application::getContainer();
         $database = $event->getSubject();
 
-        $config = $container->get('config');
-        
-        if ($database->getName() == $config["db"]["default"]) {
-            $database->getConnection()->setEventDispatcher($container->get(\Psr\EventDispatcher\EventDispatcherInterface::class));
+        $config = $this->app->config->get(DatabaseConfig::class);
+
+        if ($database->getName() == $config->get("default")) {
+            $database->getConnection()->setEventDispatcher($this->app->container->get(\Psr\EventDispatcher\EventDispatcherInterface::class));
         }
     }
 

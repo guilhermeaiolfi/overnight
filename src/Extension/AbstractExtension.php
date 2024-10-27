@@ -63,4 +63,14 @@ abstract class AbstractExtension implements ExtensionInterface
     {
         return count($this->pendingTasks) > 0;
     }
+
+    public function requires(): array
+    {
+        return [];
+    }
+
+    public function getVersion(): string
+    {
+        return "Unversioned";
+    }
 }

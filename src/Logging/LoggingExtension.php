@@ -30,7 +30,7 @@ class LoggingExtension extends AbstractExtension
 
     public function setup(int $counter): bool
     {
-        $config = $this->app->ext('config');
+        $config = $this->app->config;
 
         if (!isset($config)) {
             return false;

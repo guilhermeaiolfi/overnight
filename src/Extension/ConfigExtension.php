@@ -31,6 +31,7 @@ class ConfigExtension extends AbstractExtension
     public static function install(Application $app, ?array $options = []): mixed {
         $extension = new self($app, $options);
         $app->registerExtension('config', $extension);
+        $app->config = $extension;
         return $extension;
     }
 
@@ -56,35 +57,30 @@ class ConfigExtension extends AbstractExtension
 
     public function setup(int $counter): bool
     {
-        // we need to give a chance to extensions to register configs before application code
-        if ($counter == 1) {
-            $files = Glob::glob("configuration/" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
-            foreach ($files as $file) {
-                $obj = include_once($file);
+        if ($counter == 0) {
+            // we need to give a chance to extensions to register configs before application code
+            return false;
+        }
+        $files = Glob::glob("configuration" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
+        foreach ($files as $file) {
+            $obj = include_once($file);
+            
+            if (!is_object($obj)) {
+                throw new Exception(
+                    sprintf("Configuration file (%s) should return an object, return: %s.", $file, $obj)
+                );
+            } else {
+                $class_name = get_class($obj);
                 
-                //dd(get_class($obj));
-                if (!is_object($obj)) {
-                    throw new Exception(
-                        sprintf("Configuration file (%s) should return an object, return: %s.", $file, $obj)
-                    );
+                if ($this->has($class_name)) {
+                    $this->get($class_name)
+                         ->mergeConfigArray($obj);
                 } else {
-                    $class_name = get_class($obj);
-                    
-                    if (isset($this->configs[$class_name])) {
-                        $cfg = $this->configs[$class_name];
-                        // TODO: better handling of this mergeArray function
-                        // Ideally it should pass just the array to be merged
-                        $cfg->mergeConfigArray($obj);
-                        //$cfg->setArray($merged);
-                    } else {
-                        $this->configs[$class_name] = $obj;
-                    }
+                    $this->set($class_name, $obj);
                 }
             }
-            //dd($this->configs);
-            return true;
         }
-        return false;
+        return true;
     }
 
     public function ready() {

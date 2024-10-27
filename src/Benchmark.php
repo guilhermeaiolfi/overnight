@@ -7,19 +7,23 @@ class Benchmark {
 
     public static function start(string $event): void
     {
-        self::$benchmarks[$event] = microtime(true);
+        static::$benchmarks[$event] = microtime(true);
     }
 
     public static function end(string $event): void
     {
-        self::$benchmarks[$event] = (microtime(true) - self::$benchmarks[$event]) * 1000;
+        static::$benchmarks[$event] = (microtime(true) - static::$benchmarks[$event]) * 1000;
     }
 
     public static function ms($event): float {
-        return self::$benchmarks[$event];
+        return static::$benchmarks[$event];
+    }
+
+    public static function has($event): bool {
+        return isset(static::$benchmarks[$event]);
     }
 
     public static function all(): array {
-        return self::$benchmarks;
+        return static::$benchmarks;
     }
 }

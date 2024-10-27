@@ -8,14 +8,11 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use ON\Router\RouteResult;
-use ON\Action;
 use ON\Common\ViewBuilderTrait;
 use ON\Container\Executor\ExecutorInterface;
 
 class ExecutionMiddleware implements MiddlewareInterface
 {
-    use ViewBuilderTrait;
-
     protected $container = null;
     protected $executor = null;
 

@@ -37,6 +37,9 @@ class RouteDiscovery implements DiscoverInterface
 
     public function process(): bool
     {
+        if (!$this->app->hasExtension('router')) {
+            return true;
+        }
         if ($this->app->isExtensionReady('router')) {
             /** @var RouterExtension $router */
             $router = $this->app->ext('router');

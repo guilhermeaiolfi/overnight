@@ -40,7 +40,7 @@ class NotFoundHandler implements RequestHandlerInterface
 
         $route_result = RouteResult::fromRoute($route);
 
-        $request = $this->app->ext('pipeline')->prepareRequestFromRouteResult($route_result, $request);
+        $request = $this->app->pipeline->prepareRequestFromRouteResult($route_result, $request);
 
         return $this->app->runAction($request);
     }

@@ -5,13 +5,15 @@ trait ViewBuilderTrait {
   public function buildView($page, $action_name, $response, $request, $delegate) {
     // if it is a string, it's just a reference to the view to render
     if (is_string($response)) {
-
-
       $view_method = $response;
       $view = $page;
       if (strpos($response, ":") !== FALSE) {
         $view_method = explode(":", $response);
-        $view = $this->container->get($view_method[0] . 'Page');
+        $page_class = $view_method[0] . 'Page';
+        $view = $this;
+        if ($page_class != get_class($page)) {
+          $view = $this->container->get($view_method[0] . 'Page');
+        }
         $view->setAttributesByRef($page->getAttributes());
         $view_method = $view_method[1];
       } else {

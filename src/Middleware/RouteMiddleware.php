@@ -48,7 +48,7 @@ class RouteMiddleware implements MiddlewareInterface
             return $handler->handle($request);
         }
 
-        $request = $this->app->ext('pipeline')->prepareRequestFromRouteResult($result, $request);
+        $request = $this->app->pipeline->prepareRequestFromRouteResult($result, $request);
 
         return $handler->handle($request);
     }

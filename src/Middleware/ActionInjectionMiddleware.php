@@ -31,7 +31,7 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
         $middleware = $routeResult->getMatchedRoute()->getMiddleware();
         if (is_string($middleware)) {
-            $middleware = $this->app->ext('pipeline')->prepareMiddleware($middleware);
+            $middleware = $this->app->pipeline->prepareMiddleware($middleware);
             $routeResult->getMatchedRoute()->setMiddleware($middleware);
         }
 

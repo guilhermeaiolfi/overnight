@@ -10,6 +10,9 @@ use ON\Router\Route;
 class ImageExtension extends AbstractExtension
 {
     public static function install(Application $app, ?array $options = []): mixed {
+        if (php_sapi_name() == 'cli') {
+            return false;
+        }
         $extension = new self($app, $options);
         return $extension;
     }
@@ -22,8 +25,8 @@ class ImageExtension extends AbstractExtension
     }
 
     public function setup($counter): bool {
-        $image_cfg = $this->app->ext('config')->get(ImageConfig::class);
-        $router_cfg = $this->app->ext('config')->get(RouterConfig::class);
+        $image_cfg = $this->app->config->get(ImageConfig::class);
+        $router_cfg = $this->app->config->get(RouterConfig::class);
         $router_cfg->addRoute(new Route(
             "/teste",
             "App\\Page\\FooPage::index",
