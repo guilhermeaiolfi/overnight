@@ -1,138 +1,152 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON;
 
-use Psr\Container\ContainerInterface;
-use ON\Router\RouteResult;
-use ON\Router\Route;
-use ON\Application;
+use Exception;
 use ON\Common\AttributesTrait;
+use ON\Router\Route;
+use ON\Router\RouteResult;
 use ON\View\ViewConfig;
 
-abstract class AbstractPage implements PageInterface {
-  use AttributesTrait;
+abstract class AbstractPage implements PageInterface
+{
+	use AttributesTrait;
 
-  protected $default_template_name;
+	protected $default_template_name;
 
-  protected $container = null;
-  
-  public function __construct (
-    protected Application $app
-  ) {
-    $this->container = $this->app->container;
-  }
+	protected $container = null;
 
-  public function isSecure () {
-    return false;
-  }
+	public function __construct(
+		protected Application $app
+	) {
+		$this->container = $this->app->container;
+	}
 
-  /*
-  public function checkPermissions () {
-    return true;
-  }
+	public function isSecure()
+	{
+		return false;
+	}
 
-  public function index () {
-    return 'Success';
-  }
+	/*
+	public function checkPermissions () {
+	  return true;
+	}
 
-  public function handleError () {
-    return 'Error';
-  }
+	public function index () {
+	  return 'Success';
+	}
 
-  public function validate () {
-    return true;
-  }*/
+	public function handleError () {
+	  return 'Error';
+	}
 
-  public function defaultIndex () {
-    return 'Success';
-  }
+	public function validate () {
+	  return true;
+	}*/
 
-  public function defaultHandleError () {
-    return 'Error';
-  }
+	public function defaultIndex()
+	{
+		return 'Success';
+	}
 
-  public function defaultValidate () {
-    return true;
-  }
+	public function defaultHandleError()
+	{
+		return 'Error';
+	}
 
-  public function defaultCheckPermissions () {
-    return true;
-  }
+	public function defaultValidate()
+	{
+		return true;
+	}
 
-  public function defaultIsSecure () {
-    return false;
-  }
+	public function defaultCheckPermissions()
+	{
+		return true;
+	}
 
-  public function getDefaultTemplateName () {
-    return $this->default_template_name;
-  }
+	public function defaultIsSecure()
+	{
+		return false;
+	}
 
-  public function setDefaultTemplateName ($template_name) {
-    $this->default_template_name = $template_name;
-  }
+	public function getDefaultTemplateName()
+	{
+		return $this->default_template_name;
+	}
 
-  public function render($layout_name = null, $template_name = null, $data = null, $params = []) {
+	public function setDefaultTemplateName($template_name)
+	{
+		$this->default_template_name = $template_name;
+	}
 
-    if (!$this->app->hasExtension('view')) {
-      throw new \Exception("You are trying to render something but has not installed any view extension.", 1);
-      return;
-      
-    }
-    $config = $this->container->get(ViewConfig::class);
+	public function render($layout_name = null, $template_name = null, $data = null, $params = [])
+	{
 
-    // if nothing is passed, use the attributes of the page instance
-    if (!isset($data)) {
-      $data = $this->getAttributes();
-    }
+		if (! $this->app->hasExtension('view')) {
+			throw new Exception("You are trying to render something but has not installed any view extension.", 1);
 
-    // get the page method executed to determine the template name
-    if (!isset($template_name)) {
-      $template_name = $this->getDefaultTemplateName();
-      if (!isset($template_name)) {
-        throw new \Exception("No template name set.");
-      }
-    }
-    
-    if (!isset($layout_name)) {
-      $layout_name = $config["formats"]["html"]["default"]?? 'default';
-    }
-    if (!isset($config["formats"]['html']['layouts'][$layout_name])) {
-      throw new \Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
-    }
-    $layout_config = $config["formats"]['html']['layouts'][$layout_name];
+			return;
 
-    $renderer_name = $params['renderer']?? $layout_config['renderer'];
-    $renderer_config = $config["formats"]['html']['renderers'][$renderer_name];
+		}
+		$config = $this->container->get(ViewConfig::class);
 
-    $renderer_class = $renderer_config['class']?? '\ON\Renderer';
+		// if nothing is passed, use the attributes of the page instance
+		if (! isset($data)) {
+			$data = $this->getAttributes();
+		}
 
-    $renderer = $this->container->get($renderer_class);
+		// get the page method executed to determine the template name
+		if (! isset($template_name)) {
+			$template_name = $this->getDefaultTemplateName();
+			if (! isset($template_name)) {
+				throw new Exception("No default template name set.");
+			}
+		}
 
-    if ($assigns = $renderer_config['inject']) {
-      foreach($assigns as $key => $class) {
-        $data[$key] = $this->container->get($class);
-      }
-    }
-    // get the page method executed to determine the template name
-    if (!isset($template_name)) {
-      throw new \Exception("No template name set.");
-    }
-    $layout_config["name"] = $layout_name;
-    return $renderer->render($layout_config, $template_name, $data);
-  }
+		if (! isset($layout_name)) {
+			$layout_name = $config["formats"]["html"]["default"] ?? 'default';
+		}
+		if (! isset($config["formats"]['html']['layouts'][$layout_name])) {
+			throw new Exception("There is no configuration for layout name: \"" . $layout_name . " \"");
+		}
+		$layout_config = $config["formats"]['html']['layouts'][$layout_name];
 
-  public function processForward($middleware, $request) {
-    $app = $this->container->get(Application::class);
-    $result = $request->getAttribute(RouteResult::class);
-    $matched = $result->getMatchedRoute();
-    /*if (is_string($middleware)) {
-      $middleware = $app->factory->prepare($middleware);
-    }*/
-    $result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
-    $request = $request->withAttribute(RouteResult::class, $result);
-    return $app->runAction($request);
-  }
+		$renderer_name = $params['renderer'] ?? $layout_config['renderer'];
+		$renderer_config = $config["formats"]['html']['renderers'][$renderer_name];
 
-  public function getContainer() {
-    return $this->app->container;
-  }
+		$renderer_class = $renderer_config['class'] ?? '\ON\Renderer';
+
+		$renderer = $this->container->get($renderer_class);
+
+		if ($assigns = $renderer_config['inject']) {
+			foreach ($assigns as $key => $class) {
+				$data[$key] = $this->container->get($class);
+			}
+		}
+		// get the page method executed to determine the template name
+		if (! isset($template_name)) {
+			throw new Exception("It was impossible to figure it out the layout to use to render this page.");
+		}
+		$layout_config["name"] = $layout_name;
+
+		return $renderer->render($layout_config, $template_name, $data);
+	}
+
+	public function processForward($middleware, $request)
+	{
+		$app = $this->container->get(Application::class);
+		$result = $request->getAttribute(RouteResult::class);
+		$matched = $result->getMatchedRoute();
+		$result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
+		$request = $request->withAttribute(RouteResult::class, $result);
+
+		return $app->runAction($request);
+	}
+
+	public function getContainer()
+	{
+		return $this->app->container;
+	}
 }

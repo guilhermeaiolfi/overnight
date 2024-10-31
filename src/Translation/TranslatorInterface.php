@@ -1,11 +1,12 @@
 <?php
-namespace ON\Translation;
 
-use ON\Translation\TranslationManagerInterface;
+declare(strict_types=1);
+
+namespace ON\Translation;
 
 interface TranslatorInterface
 {
-  public function __construct(TranslationManagerInterface $tm, array $parameters = array());
+	public function __construct(TranslationManagerInterface $tm, array $parameters = []);
 
-  public function translate($message, $domain, $locale = null);
+	public function translate($message, $domain, $locale = null);
 }

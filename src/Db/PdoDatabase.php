@@ -1,78 +1,91 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Db;
 
-use ON\Db\DatabaseInterface;
+use Exception;
+use PDO;
 
-class PdoDatabase implements DatabaseInterface {
-  protected $resource;
-  protected $connection;
-  protected $parameters;
-  protected $container;
-  protected string $name;
+class PdoDatabase implements DatabaseInterface
+{
+	protected $resource;
+	protected $connection;
+	protected $parameters;
+	protected $container;
+	protected string $name;
 
-  public function __construct ($name, $parameters, $container) {
-    $this->name = $name;
-    $this->parameters = $parameters;
-    $this->container = $container;
-    $dsn = !empty($parameters["dsn"])? $parameters["dsn"] : null;
-    $username = !empty($parameters["username"])? $parameters["username"] : null;
-    $password = !empty($parameters["password"])? $parameters["password"] : null;
-    $options = !empty($parameters["options"])? $parameters["options"] : null;
-    $config = $container->get('config');
-    try {
-      $this->connection = $this->resource = new \PDO($dsn, $username, $password, $options);
+	public function __construct($name, $parameters, $container)
+	{
+		$this->name = $name;
+		$this->parameters = $parameters;
+		$this->container = $container;
+		$dsn = ! empty($parameters["dsn"]) ? $parameters["dsn"] : null;
+		$username = ! empty($parameters["username"]) ? $parameters["username"] : null;
+		$password = ! empty($parameters["password"]) ? $parameters["password"] : null;
+		$options = ! empty($parameters["options"]) ? $parameters["options"] : null;
+		$config = $container->get('config');
 
-      if ($parameters["wrapper_class"] && class_exists($parameters["wrapper_class"])) {
-        $this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
-      }
+		try {
+			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
 
-      // default connection attributes
-      $attributes = array(
-        // lets generate exceptions instead of silent failures
-        \PDO::ATTR_ERRMODE => \PDO::ERRMODE_EXCEPTION
-      );
+			if ($parameters["wrapper_class"] && class_exists($parameters["wrapper_class"])) {
+				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
+			}
 
-      if(is_array($parameters['attributes'])) {
-        foreach((array)$parameters['attributes'] as $key => $value) {
-          $attributes[is_string($key) && strpos($key, '::') ? constant($key) : $key] = is_string($value) && strpos($value, '::') ? constant($value) : $value;
-        }
-      }
+			// default connection attributes
+			$attributes = [
+				// lets generate exceptions instead of silent failures
+				PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+			];
 
-      foreach($attributes as $key => $value) {
-        $this->connection->setAttribute($key, $value);
-      }
+			if (is_array($parameters['attributes'])) {
+				foreach ((array)$parameters['attributes'] as $key => $value) {
+					$attributes[is_string($key) && strpos($key, '::') ? constant($key) : $key] = is_string($value) && strpos($value, '::') ? constant($value) : $value;
+				}
+			}
 
-      if (isset($parameters["init_queries"]) && is_array($parameters["init_queries"])) {
-        foreach((array)$parameters['init_queries'] as $query) {
-          $this->connection->exec($query);
-        }
-      }
-    } catch (\Exception $e) {
-      throw new \Exception($e->getMessage(), 0, $e);
-    }
-  }
+			foreach ($attributes as $key => $value) {
+				$this->connection->setAttribute($key, $value);
+			}
 
-  public function getConnection() {
-    return $this->connection;
-  }
+			if (isset($parameters["init_queries"]) && is_array($parameters["init_queries"])) {
+				foreach ((array)$parameters['init_queries'] as $query) {
+					$this->connection->exec($query);
+				}
+			}
+		} catch (Exception $e) {
+			throw new Exception($e->getMessage(), 0, $e);
+		}
+	}
 
-  public function getResource() {
-    return $this->resource;
-  }
+	public function getConnection()
+	{
+		return $this->connection;
+	}
 
-  public function setConnection($connection) {
-    $this->connection = $connection;
-  }
+	public function getResource()
+	{
+		return $this->resource;
+	}
 
-  public function setResource ($resource) {
-    $this->resource = $resource;
-  }
+	public function setConnection($connection)
+	{
+		$this->connection = $connection;
+	}
 
-  public function getName(): string {
-    return $this->name;
-  }
+	public function setResource($resource)
+	{
+		$this->resource = $resource;
+	}
 
-  public function setName(string $name): void {
-    $this->name = $name;
-  }
+	public function getName(): string
+	{
+		return $this->name;
+	}
+
+	public function setName(string $name): void
+	{
+		$this->name = $name;
+	}
 }

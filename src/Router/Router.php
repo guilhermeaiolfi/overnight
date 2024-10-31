@@ -4,24 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Router;
 
-use FastRoute\DataGenerator\GroupCountBased as RouteGenerator;
-use FastRoute\Dispatcher;
-use FastRoute\Dispatcher\GroupCountBased;
-use FastRoute\RouteCollector;
-use FastRoute\RouteParser\Std as RouteParser;
-use Fig\Http\Message\RequestMethodInterface as RequestMethod;
-use Laminas\Stdlib\ArrayUtils;
-use ON\Router\Route;
-use ON\Router\RouteResult;
-
-
-use Laminas\Diactoros\ServerRequest;
-use Laminas\Diactoros\ServerRequestFactory;
-use ON\Config\RouterConfig;
-use ON\RequestStack;
-use Psr\Http\Message\RequestInterface;
-use Psr\Http\Message\ServerRequestInterface;
-
 use function array_keys;
 use function array_merge;
 use function array_reduce;
@@ -30,21 +12,37 @@ use function array_unique;
 use function array_values;
 use function assert;
 use function dirname;
+use const E_WARNING;
+use Exception;
+use FastRoute\DataGenerator\GroupCountBased as RouteGenerator;
+use FastRoute\Dispatcher;
+use FastRoute\Dispatcher\GroupCountBased;
+use FastRoute\RouteCollector;
+use FastRoute\RouteParser\Std as RouteParser;
+use Fig\Http\Message\RequestMethodInterface as RequestMethod;
 use function file_exists;
 use function file_put_contents;
 use function implode;
+use InvalidArgumentException;
 use function is_array;
 use function is_dir;
 use function is_string;
 use function is_writable;
+use Laminas\Diactoros\ServerRequest;
+use Laminas\Diactoros\ServerRequestFactory;
+use Laminas\Stdlib\ArrayUtils;
+use ON\Config\RouterConfig;
+use ON\RequestStack;
+use ON\Router\Exception\InvalidCacheDirectoryException;
+use ON\Router\Exception\InvalidCacheException;
+use ON\Router\Exception\RuntimeException;
 use function preg_match;
+use Psr\Http\Message\ServerRequestInterface;
 use function rawurldecode;
 use function restore_error_handler;
 use function set_error_handler;
 use function sprintf;
 use function var_export;
-
-use const E_WARNING;
 
 /**
  * Router implementation bridging nikic/fast-route.
@@ -70,711 +68,724 @@ use const E_WARNING;
  */
 class Router implements RouterInterface
 {
-    /**
-     * Template used when generating the cache file.
-     */
-    public const CACHE_TEMPLATE = <<<EOT
+	/**
+	 * Template used when generating the cache file.
+	 */
+	public const CACHE_TEMPLATE = <<<EOT
         <?php
         return %s;
         EOT;
 
 
-    /**
-     * Standard HTTP methods against which to test HEAD/OPTIONS requests.
-     */
-    public const HTTP_METHODS_STANDARD = [
-        RequestMethod::METHOD_HEAD,
-        RequestMethod::METHOD_GET,
-        RequestMethod::METHOD_POST,
-        RequestMethod::METHOD_PUT,
-        RequestMethod::METHOD_PATCH,
-        RequestMethod::METHOD_DELETE,
-        RequestMethod::METHOD_OPTIONS,
-        RequestMethod::METHOD_TRACE,
-    ];
-
-    /**
-     * Cache generated route data?
-     */
-    private bool $cacheEnabled = false;
-
-    /**
-     * Cache file path relative to the project directory.
-     */
-    private string $cacheFile = 'data/cache/fastroute.php.cache';
-
-    /** @var callable(array|object): Dispatcher|null A factory callback that can return a dispatcher. */
-    private $dispatcherCallback;
-
-    /**
-     * Cached data used by the dispatcher.
-     */
-    private array $dispatchData = [];
-
-    /**
-     * True if cache is enabled and valid dispatch data has been loaded from
-     * cache.
-     */
-    private bool $hasCache = false;
-
-    /**
-     * FastRoute router
-     */
-    private ?RouteCollector $collection = null;
-
-    /**
-     * All attached routes as Route instances
-     *
-     * @var array<non-empty-string, Route>
-     */
-    private array $routes = [];
-
-    /**
-     * Routes to inject into the underlying RouteCollector.
-     *
-     * @var list<Route>
-     */
-    private array $routesToInject = [];
-
-    const FRAGMENT_IDENTIFIER_REGEX = '/^([!$&\'()*+,;=._~:@\/?-]|%[0-9a-fA-F]{2}|[a-zA-Z0-9])+$/';
-
-    protected ?string $basepath = null;
-  
-    protected ?RequestStack $stack = null;
-   
-    /**
-     * Constructor
-     *
-     * Accepts optionally a FastRoute RouteCollector and a callable factory
-     * that can return a FastRoute dispatcher.
-     *
-     * If either is not provided defaults will be used:
-     *
-     * - A RouteCollector instance will be created composing a RouteParser and
-     *   RouteGenerator.
-     * - A callable that returns a GroupCountBased dispatcher will be created.
-     *
-     * @param null|RouteCollector $router If not provided, a default
-     *     implementation will be used.
-     * @param null|callable(array|object): Dispatcher $dispatcherFactory Callable that will return a
-     *     FastRoute dispatcher.
-     * @param array<string, mixed> $config Array of custom configuration options.
-     * @psalm-param FastRouteConfig $config
-     */
-    public function __construct(
-        ?RouteCollector $collection = null,
-        ?callable $dispatcherFactory = null,
-        RouterConfig $config,
-        RequestStack $stack
-    ) {
-        if (null === $collection) {
-            $collection = $this->createCollection();
-        }
-
-        $this->stack              = $stack;
-        $this->collection         = $collection;
-        $this->dispatcherCallback = $dispatcherFactory;
-        $this->loadConfig($config);
-    }
-
-    /**
-     * Load configuration parameters
-     *
-     * @param RouterConfig $config Array of custom configuration options.
-     */
-    private function loadConfig(RouterConfig $config = null): void
-    {
-        if (null === $config) {
-            return;
-        }
-
-        $this->cacheEnabled = $config->get("cache_enabled", false);
-        
-        $this->cacheFile = $config->get("cache_file", false);
-
-        $this->basepath = $config->get("baseHref", null);
-
-        if ($this->basepath !== null) {
-            $this->basepath = Router::normalizePath($this->basepath);
-        } else {
-            $this->basepath = Router::normalizePath(Router::detectBaseUrl());
-        }
-
-        if ($this->cacheEnabled) {
-            $this->loadDispatchData();
-        }
-    }
-
-    /**
-     * Add a route to the collection.
-     *
-     * Uses the HTTP methods associated (creating sane defaults for an empty
-     * list or Route::HTTP_METHOD_ANY) and the path, and uses the path as
-     * the name (to allow later lookup of the middleware).
-     */
-    public function addRoute(Route $route): void
-    {
-        $this->routesToInject[] = $route;
-    }
-
-    public function match(ServerRequestInterface $request): RouteResult
-    {
-        // Inject any pending routes
-        $this->injectRoutes();
-        $dispatchData = $this->getDispatchData();
-
-        $path       = rawurldecode($request->getUri()->getPath());
-
-        $path = str_replace($this->basepath, "", $path);
-
-        $method     = $request->getMethod();
-        $dispatcher = $this->getDispatcher($dispatchData);
-        $result     = $dispatcher->dispatch($method, $path);
-
-        if ($result[0] !== Dispatcher::FOUND) {
-            /** @psalm-var FastRouteNotFoundResult|FastRouteBadMethodResult $result */
-
-            return $this->marshalFailedRoute($result);
-        }
-
-        /** @psalm-var FastRouteFoundResult $result */
-        return $this->marshalMatchedRoute($result, $method);
-    }
-
-    /**
-     * Generate a URI based on a given route.
-     *
-     * Replacements in FastRoute are written as `{name}` or `{name:<pattern>}`;
-     * this method uses `FastRoute\RouteParser\Std` to search for the best route
-     * match based on the available substitutions and generates a uri.
-     *
-     * @param string $name Route name.
-     * @param array $substitutions Key/value pairs to substitute into the route
-     *     pattern.
-     * @param array $options Key/value option pairs to pass to the router for
-     *     purposes of generating a URI; takes precedence over options present
-     *     in route used to generate URI.
-     * @return string URI path generated.
-     * @throws \ON\Router\Exception\RuntimeException If the route name is not known
-     *     or a parameter value does not match its regex.
-     */
-    public function generateUri(string $name, array $substitutions = [], array $options = []): string
-    {
-        // Inject any pending routes
-        $this->injectRoutes();
-
-        if (! isset($this->routes[$name])) {
-            throw new \ON\Router\Exception\RuntimeException(sprintf(
-                'Cannot generate URI for route "%s"; route not found',
-                $name
-            ));
-        }
-
-        $route   = $this->routes[$name];
-        $options = ArrayUtils::merge($route->getOptions(), $options);
-
-        /** @psalm-var mixed $defaults */
-        $defaults = $options['defaults'] ?? [];
-
-        if (is_array($defaults) && $defaults !== []) {
-            $substitutions = array_merge($defaults, $substitutions);
-        }
-
-        $routeParser       = new RouteParser();
-        $routes            = array_reverse($routeParser->parse($route->getPath()));
-        $missingParameters = [];
-
-        // One route pattern can correspond to multiple routes if it has optional parts
-        foreach ($routes as $parts) {
-            // Check if all parameters can be substituted
-            $missingParameters = $this->missingParameters($parts, $substitutions);
-
-            // If not all parameters can be substituted, try the next route
-            if (! empty($missingParameters)) {
-                continue;
-            }
-
-            // Generate the path
-            $path = '';
-            foreach ($parts as $part) {
-                if (is_string($part)) {
-                    // Append the string
-                    $path .= $part;
-                    continue;
-                }
-
-                // Check substitute value with regex
-                if (! preg_match('~^' . $part[1] . '$~', (string) $substitutions[$part[0]])) {
-                    throw new \ON\Router\Exception\RuntimeException(sprintf(
-                        'Parameter value for [%s] did not match the regex `%s`',
-                        $part[0],
-                        $part[1]
-                    ));
-                }
-
-                // Append the substituted value
-                $path .= $substitutions[$part[0]];
-            }
-
-            // Return generated path
-            return $path;
-        }
-
-        // No valid route was found: list minimal required parameters
-        throw new \ON\Router\Exception\RuntimeException(sprintf(
-            'Route `%s` expects at least parameter values for [%s], but received [%s]',
-            $name,
-            implode(',', $missingParameters),
-            implode(',', array_keys($substitutions))
-        ));
-    }
-
-    /* 
-    gen uses generateUri internally but adds extra functionalitties
-    */
-    public function gen($routeName = null, $routeParams = [], $options = []) {
-      $default_opts = [
-        "relative" => true,
-        "fragment" => null,
-        "absolute" => false,
-        "port"    =>  80,
-        "scheme"  => "http"
-      ];
-
-      $basepath = $this->getBasePath();
-
-      $options = array_merge($default_opts, $options);
-
-      $request = $this->stack->getMainRequest();
-
-      $result = $request->getAttribute(\ON\Router\RouteResult::class);
-
-      $uri = $request->getUri();
-
-      if ($routeName === null) {
-        if ($result->isFailure()) {
-          throw new Exception\RuntimeException(
-            'Attempting to use matched result when routing failed; aborting'
-          );
-        }
-
-        $name   = $result->getMatchedRouteName();
-
-        $params = $result->getMatchedParams();
-
-        $queryParams = array_diff_key($routeParams, $params);
-
-        $params = array_merge($request->getQueryParams(), $params, $routeParams);
-
-        return $this->gen($name, $params, $options);
-      }
-
-      if ($routeName === null && $result === null) {
-          // get current URL
-          throw new Exception\RuntimeException(
-              'Attempting to use matched result when none was injected; aborting'
-          );
-      }
-
-      // Get the options to be passed to the router
-      $routerOptions = array_key_exists('router', $options) ? $options['router'] : [];
-
-      $reuseResultParams = ! isset($options['reuse_result_params']) || (bool) $options['reuse_result_params'];
-
-      $params = [];
-      if ($result && $reuseResultParams) {
-        // Merge RouteResult with the route parameters
-        $params = $this->mergeParams($routeName, $result, $routeParams);
-      }
-
-      try {
-        // Generate the route
-        $path = $this->generateUri($routeName, $routeParams, $routerOptions);
-        $result = $this->match(new ServerRequest([], [], $path));
-        $params = $result->getMatchedParams();
-      } catch (\Exception $e) {
-        $path = $this->getBasePath() . "/" . $routeName;
-        $params = [];
-      }
-
-      $uri = $request->getUri()->withPath($path);
-
-      $queryParams = array_diff_key($routeParams, $params);
-
-      // Append query parameters if there are any
-      if (count($queryParams) > 0) {
-        //$path .= '?' . http_build_query($queryParams);
-        $uri = $uri->withQuery(http_build_query($queryParams));
-      } else {
-        $uri = $uri->withQuery('');
-      }
-
-      // Append the fragment identifier
-      if ($options["fragment"] !== null) {
-        if (! preg_match(self::FRAGMENT_IDENTIFIER_REGEX, $options["fragment"])) {
-          throw new \InvalidArgumentException('Fragment identifier must conform to RFC 3986', 400);
-        }
-        //$path .= '#' . $options["fragment"];
-        $uri = $uri->withFragment($options["fragment"]);
-      }
-
-
-      if (!$options["absolute"]) {
-        $uri = $uri->withHost("");
-      }
-      if ($options["scheme"] != "http") {
-        $uri = $uri->withScheme($options["scheme"]);
-      } else {
-        if ($options["absolute"]) {
-          $uri = $uri->withScheme('http');
-        } else {
-          $uri = $uri->withScheme('');
-        }
-      }
-      if ($options["port"] != 80) {
-        $uri = $uri->withPort($options["port"]);
-      } else {
-        $uri = $uri->withPort(80);
-      }
-
-      $uri = (string) $uri;
-
-      return $uri;
-    }
-
-    /**
-     * Checks for any missing route parameters
-     *
-     * @return array with minimum required parameters if any are missing or an empty array if none are missing
-     * @psalm-return list<mixed>
-     */
-    private function missingParameters(array $parts, array $substitutions): array
-    {
-        $missingParameters = [];
-
-        // Gather required parameters
-        foreach ($parts as $part) {
-            if (is_string($part)) {
-                continue;
-            }
-
-            $missingParameters[] = $part[0];
-        }
-
-        // Check if all parameters exist
-        foreach ($missingParameters as $param) {
-            if (! isset($substitutions[$param])) {
-                // Return the parameters so they can be used in an
-                // exception if needed
-                return $missingParameters;
-            }
-        }
-
-        // All required parameters are available
-        return [];
-    }
-
-    /**
-     * Create a default FastRoute Collector instance
-     */
-    private function createCollection(): RouteCollector
-    {
-        return new RouteCollector(new RouteParser(), new RouteGenerator());
-    }
-
-    /**
-     * Retrieve the dispatcher instance.
-     *
-     * Uses the callable factory in $dispatcherCallback, passing it $data
-     * (which should be derived from the router's getData() method); this
-     * approach is done to allow testing against the dispatcher.
-     *
-     * @param array|object $data Data from RouteCollection::getData()
-     */
-    private function getDispatcher($data): Dispatcher
-    {
-        if ($this->dispatcherCallback === null) {
-            $this->dispatcherCallback = $this->createDispatcherCallback();
-        }
-
-        $factory = $this->dispatcherCallback;
-
-        return $factory($data);
-    }
-
-    /**
-     * Return a default implementation of a callback that can return a Dispatcher.
-     *
-     * @return callable(array|object): GroupCountBased
-     */
-    private function createDispatcherCallback(): callable
-    {
-        return static fn($data): GroupCountBased => new GroupCountBased($data);
-    }
-
-    /**
-     * Marshal a routing failure result.
-     *
-     * If the failure was due to the HTTP method, passes the allowed HTTP
-     * methods to the factory.
-     *
-     * @param FastRouteNotFoundResult|FastRouteBadMethodResult $result
-     */
-    private function marshalFailedRoute(array $result): RouteResult
-    {
-        if ($result[0] === Dispatcher::METHOD_NOT_ALLOWED) {
-            return RouteResult::fromRouteFailure($result[1]);
-        }
-
-        return RouteResult::fromRouteFailure(Route::HTTP_METHOD_ANY);
-    }
-
-    /**
-     * Marshals a route result based on the results of matching and the current HTTP method.
-     *
-     * @param FastRouteFoundResult $result
-     */
-    private function marshalMatchedRoute(array $result, string $method): RouteResult
-    {
-        $path  = $result[1];
-        $route = array_reduce(
-            $this->routes,
-            static function (Route|false $matched, Route $route) use ($path, $method): Route|false {
-                if ($matched) {
-                    return $matched;
-                }
-
-                if ($path !== $route->getPath()) {
-                    return $matched;
-                }
-
-                if (! $route->allowsMethod($method)) {
-                    return $matched;
-                }
-
-                return $route;
-            },
-            false
-        );
-
-        if (false === $route) {
-            return $this->marshalMethodNotAllowedResult($result);
-        }
-
-        $params = $result[2];
-
-        $options = $route->getOptions();
-        if (isset($options['defaults']) && is_array($options['defaults'])) {
-            $params = array_merge($options['defaults'], $params);
-        }
-
-        return RouteResult::fromRoute($route, $params);
-    }
-
-    /**
-     * Inject queued Route instances into the underlying router.
-     */
-    private function injectRoutes(): void
-    {
-        foreach ($this->routesToInject as $index => $route) {
-            $this->injectRoute($route);
-            unset($this->routesToInject[$index]);
-        }
-    }
-
-    /**
-     * Inject a Route instance into the underlying router.
-     */
-    private function injectRoute(Route $route): void
-    {
-        // Filling the routes' hash-map is required by the `generateUri` method
-        $this->routes[$route->getName()] = $route;
-
-        // Skip feeding FastRoute collector if valid cached data was already loaded
-        if ($this->hasCache) {
-            return;
-        }
-
-        $methods = $route->getAllowedMethods();
-
-        if ($methods === Route::HTTP_METHOD_ANY) {
-            $methods = self::HTTP_METHODS_STANDARD;
-        }
-
-        assert($this->collection instanceof RouteCollector);
-
-        $this->collection->addRoute($methods, $route->getPath(), $route->getPath());
-    }
-
-    /**
-     * Get the dispatch data either from cache or freshly generated by the
-     * FastRoute data generator.
-     *
-     * If caching is enabled, store the freshly generated data to file.
-     */
-    private function getDispatchData(): array
-    {
-        if ($this->hasCache) {
-            return $this->dispatchData;
-        }
-
-        assert($this->collection instanceof RouteCollector);
-
-        $dispatchData = (array) $this->collection->getData();
-
-        if ($this->cacheEnabled) {
-            $this->cacheDispatchData($dispatchData);
-        }
-
-        return $dispatchData;
-    }
-
-    /**
-     * Load dispatch data from cache
-     *
-     * @throws \ON\Router\Exception\InvalidCacheException If the cache file contains
-     *     invalid data.
-     */
-    private function loadDispatchData(): void
-    {
-        set_error_handler(static function (): void {
-        }, E_WARNING); // suppress php warnings
-        $dispatchData = include $this->cacheFile;
-        restore_error_handler();
-
-        // Cache file does not exist
-        if (false === $dispatchData) {
-            return;
-        }
-
-        if (! is_array($dispatchData)) {
-            throw new \ON\Router\Exception\InvalidCacheException(sprintf(
-                'Invalid cache file "%s"; cache file MUST return an array',
-                $this->cacheFile
-            ));
-        }
-
-        $this->hasCache     = true;
-        $this->dispatchData = $dispatchData;
-    }
-
-    /**
-     * Save dispatch data to cache
-     *
-     * @return int|false bytes written to file or false if error
-     * @throws \ON\Router\Exception\InvalidCacheDirectoryException If the cache directory
-     *     does not exist.
-     * @throws \ON\Router\Exception\InvalidCacheDirectoryException If the cache directory
-     *     is not writable.
-     * @throws \ON\Router\Exception\InvalidCacheException If the cache file exists but is
-     *     not writable.
-     */
-    private function cacheDispatchData(array $dispatchData)
-    {
-        $cacheDir = dirname($this->cacheFile);
-
-        if (! is_dir($cacheDir)) {
-            throw new \ON\Router\Exception\InvalidCacheDirectoryException(sprintf(
-                'The cache directory "%s" does not exist',
-                $cacheDir
-            ));
-        }
-
-        if (! is_writable($cacheDir)) {
-            throw new \ON\Router\Exception\InvalidCacheDirectoryException(sprintf(
-                'The cache directory "%s" is not writable',
-                $cacheDir
-            ));
-        }
-
-        if (file_exists($this->cacheFile) && ! is_writable($this->cacheFile)) {
-            throw new \ON\Router\Exception\InvalidCacheException(sprintf(
-                'The cache file %s is not writable',
-                $this->cacheFile
-            ));
-        }
-
-        return file_put_contents(
-            $this->cacheFile,
-            sprintf(self::CACHE_TEMPLATE, var_export($dispatchData, true))
-        );
-    }
-
-    /** @param FastRouteFoundResult $result */
-    private function marshalMethodNotAllowedResult(array $result): RouteResult
-    {
-        $path           = $result[1];
-        $allowedMethods = array_reduce(
-            $this->routes,
-            /**
-             * @param list<string> $allowedMethods
-             * @return list<string>
-             */
-            static function (array $allowedMethods, Route $route) use ($path): array {
-                if ($path !== $route->getPath()) {
-                    return $allowedMethods;
-                }
-
-                return array_merge($allowedMethods, (array) $route->getAllowedMethods());
-            },
-            []
-        );
-
-        $allowedMethods = array_values(array_unique($allowedMethods));
-
-        return RouteResult::fromRouteFailure($allowedMethods);
-    }
-
-    static public function detectBaseUrl ($request = null) {
-      if ($request == null) {
-        $request = ServerRequestFactory::fromGlobals();
-      }
-      $server = $request->getServerParams();
-
-      // Path
-      $requestScriptName = parse_url($server['SCRIPT_NAME'], PHP_URL_PATH);
-      $requestScriptDir = dirname($requestScriptName);
-
-      // parse_url() requires a full URL. As we don't extract the domain name or scheme,
-      // we use a stand-in.
-      $requestUri = parse_url('http://example.com' . (isset($server['REQUEST_URI'])?$server['REQUEST_URI']: null), PHP_URL_PATH);
-
-      $requestRootDir = dirname($requestScriptDir); // remove /public from it
-
-      $basePath = '';
-      $virtualPath = $requestUri;
-
-      if (stripos($requestUri, $requestRootDir) === 0) {
-          $basePath = $requestRootDir;
-      } elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
-          $basePath = $requestScriptDir;
-      }
-      if ($basePath) {
-          $virtualPath = ltrim(substr($requestUri, strlen($basePath)), '/');
-      }
-
-      //$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
-      return "/" . ltrim($basePath, '/');
-    }
-
-    static public function normalizePath ($href) {
-        return rtrim($href,"/");
-    }
-
-    protected function mergeParams($route, RouteResult $result, array $params)
-    {
-      if ($result->isFailure()) {
-        return $params;
-      }
-
-      if ($result->getMatchedRouteName() !== $route) {
-        return $params;
-      }
-
-      return array_merge($result->getMatchedParams(), $params);
-    }
-
-    public function getBasePath() {
-      return $this->basepath;
-    }
+	/**
+	 * Standard HTTP methods against which to test HEAD/OPTIONS requests.
+	 */
+	public const HTTP_METHODS_STANDARD = [
+		RequestMethod::METHOD_HEAD,
+		RequestMethod::METHOD_GET,
+		RequestMethod::METHOD_POST,
+		RequestMethod::METHOD_PUT,
+		RequestMethod::METHOD_PATCH,
+		RequestMethod::METHOD_DELETE,
+		RequestMethod::METHOD_OPTIONS,
+		RequestMethod::METHOD_TRACE,
+	];
+
+	/**
+	 * Cache generated route data?
+	 */
+	private bool $cacheEnabled = false;
+
+	/**
+	 * Cache file path relative to the project directory.
+	 */
+	private string $cacheFile = 'data/cache/fastroute.php.cache';
+
+	/** @var callable(array|object): Dispatcher|null A factory callback that can return a dispatcher. */
+	private $dispatcherCallback;
+
+	/**
+	 * Cached data used by the dispatcher.
+	 */
+	private array $dispatchData = [];
+
+	/**
+	 * True if cache is enabled and valid dispatch data has been loaded from
+	 * cache.
+	 */
+	private bool $hasCache = false;
+
+	/**
+	 * FastRoute router
+	 */
+	private ?RouteCollector $collection = null;
+
+	/**
+	 * All attached routes as Route instances
+	 *
+	 * @var array<non-empty-string, Route>
+	 */
+	private array $routes = [];
+
+	/**
+	 * Routes to inject into the underlying RouteCollector.
+	 *
+	 * @var list<Route>
+	 */
+	private array $routesToInject = [];
+
+	public const FRAGMENT_IDENTIFIER_REGEX = '/^([!$&\'()*+,;=._~:@\/?-]|%[0-9a-fA-F]{2}|[a-zA-Z0-9])+$/';
+
+	protected ?string $basepath = null;
+
+	protected ?RequestStack $stack = null;
+
+	/**
+	 * Constructor
+	 *
+	 * Accepts optionally a FastRoute RouteCollector and a callable factory
+	 * that can return a FastRoute dispatcher.
+	 *
+	 * If either is not provided defaults will be used:
+	 *
+	 * - A RouteCollector instance will be created composing a RouteParser and
+	 *   RouteGenerator.
+	 * - A callable that returns a GroupCountBased dispatcher will be created.
+	 *
+	 * @param null|RouteCollector $router If not provided, a default
+	 *     implementation will be used.
+	 * @param null|callable(array|object): Dispatcher $dispatcherFactory Callable that will return a
+	 *     FastRoute dispatcher.
+	 * @param RouterConfig $config Array of custom configuration options.
+	 * @psalm-param FastRouteConfig $config
+	 */
+	public function __construct(
+		?RouteCollector $collection = null,
+		?callable $dispatcherFactory = null,
+		RouterConfig $config,
+		RequestStack $stack
+	) {
+		if (null === $collection) {
+			$collection = $this->createCollection();
+		}
+
+		$this->stack = $stack;
+		$this->collection = $collection;
+		$this->dispatcherCallback = $dispatcherFactory;
+		$this->loadConfig($config);
+	}
+
+	public function getRoutes(): array
+	{
+		return $this->routesToInject;
+	}
+
+	/**
+	 * Load configuration parameters
+	 *
+	 * @param RouterConfig $config Array of custom configuration options.
+	 */
+	private function loadConfig(RouterConfig $config = null): void
+	{
+		if (null === $config) {
+			return;
+		}
+
+		$this->cacheEnabled = $config->get("cache_enabled", false);
+
+		$this->cacheFile = $config->get("cache_file", false);
+
+		$this->basepath = $config->get("baseHref", null);
+
+		if ($this->basepath !== null) {
+			$this->basepath = Router::normalizePath($this->basepath);
+		} else {
+			$this->basepath = Router::normalizePath(Router::detectBaseUrl());
+		}
+
+		if ($this->cacheEnabled) {
+			$this->loadDispatchData();
+		}
+	}
+
+	/**
+	 * Add a route to the collection.
+	 *
+	 * Uses the HTTP methods associated (creating sane defaults for an empty
+	 * list or Route::HTTP_METHOD_ANY) and the path, and uses the path as
+	 * the name (to allow later lookup of the middleware).
+	 */
+	public function addRoute(Route $route): void
+	{
+		$this->routesToInject[] = $route;
+	}
+
+	public function match(ServerRequestInterface $request): RouteResult
+	{
+		// Inject any pending routes
+		$this->injectRoutes();
+		$dispatchData = $this->getDispatchData();
+
+		$path = rawurldecode($request->getUri()->getPath());
+
+		$path = str_replace($this->basepath, "", $path);
+
+		$method = $request->getMethod();
+		$dispatcher = $this->getDispatcher($dispatchData);
+		$result = $dispatcher->dispatch($method, $path);
+
+		if ($result[0] !== Dispatcher::FOUND) {
+			/** @psalm-var FastRouteNotFoundResult|FastRouteBadMethodResult $result */
+
+			return $this->marshalFailedRoute($result);
+		}
+
+		/** @psalm-var FastRouteFoundResult $result */
+		return $this->marshalMatchedRoute($result, $method);
+	}
+
+	/**
+	 * Generate a URI based on a given route.
+	 *
+	 * Replacements in FastRoute are written as `{name}` or `{name:<pattern>}`;
+	 * this method uses `FastRoute\RouteParser\Std` to search for the best route
+	 * match based on the available substitutions and generates a uri.
+	 *
+	 * @param string $name Route name.
+	 * @param array $substitutions Key/value pairs to substitute into the route
+	 *     pattern.
+	 * @param array $options Key/value option pairs to pass to the router for
+	 *     purposes of generating a URI; takes precedence over options present
+	 *     in route used to generate URI.
+	 * @return string URI path generated.
+	 * @throws RuntimeException If the route name is not known
+	 *     or a parameter value does not match its regex.
+	 */
+	public function generateUri(string $name, array $substitutions = [], array $options = []): string
+	{
+		// Inject any pending routes
+		$this->injectRoutes();
+
+		if (! isset($this->routes[$name])) {
+			throw new RuntimeException(sprintf(
+				'Cannot generate URI for route "%s"; route not found',
+				$name
+			));
+		}
+
+		$route = $this->routes[$name];
+		$options = ArrayUtils::merge($route->getOptions(), $options);
+
+		/** @psalm-var mixed $defaults */
+		$defaults = $options['defaults'] ?? [];
+
+		if (is_array($defaults) && $defaults !== []) {
+			$substitutions = array_merge($defaults, $substitutions);
+		}
+
+		$routeParser = new RouteParser();
+		$routes = array_reverse($routeParser->parse($route->getPath()));
+		$missingParameters = [];
+
+		// One route pattern can correspond to multiple routes if it has optional parts
+		foreach ($routes as $parts) {
+			// Check if all parameters can be substituted
+			$missingParameters = $this->missingParameters($parts, $substitutions);
+
+			// If not all parameters can be substituted, try the next route
+			if (! empty($missingParameters)) {
+				continue;
+			}
+
+			// Generate the path
+			$path = '';
+			foreach ($parts as $part) {
+				if (is_string($part)) {
+					// Append the string
+					$path .= $part;
+
+					continue;
+				}
+
+				// Check substitute value with regex
+				if (! preg_match('~^' . $part[1] . '$~', (string) $substitutions[$part[0]])) {
+					throw new RuntimeException(sprintf(
+						'Parameter value for [%s] did not match the regex `%s`',
+						$part[0],
+						$part[1]
+					));
+				}
+
+				// Append the substituted value
+				$path .= $substitutions[$part[0]];
+			}
+
+			// Return generated path
+			return $path;
+		}
+
+		// No valid route was found: list minimal required parameters
+		throw new RuntimeException(sprintf(
+			'Route `%s` expects at least parameter values for [%s], but received [%s]',
+			$name,
+			implode(',', $missingParameters),
+			implode(',', array_keys($substitutions))
+		));
+	}
+
+	/*
+	gen uses generateUri internally but adds extra functionalitties
+	*/
+	public function gen($routeName = null, $routeParams = [], $options = [])
+	{
+		$default_opts = [
+			"relative" => true,
+			"fragment" => null,
+			"absolute" => false,
+			"port" => 80,
+			"scheme" => "http",
+		];
+
+		$basepath = $this->getBasePath();
+
+		$options = array_merge($default_opts, $options);
+
+		$request = $this->stack->getMainRequest();
+
+		$result = $request->getAttribute(RouteResult::class);
+
+		$uri = $request->getUri();
+
+		if ($routeName === null) {
+			if ($result->isFailure()) {
+				throw new RuntimeException(
+					'Attempting to use matched result when routing failed; aborting'
+				);
+			}
+
+			$name = $result->getMatchedRouteName();
+
+			$params = $result->getMatchedParams();
+
+			$queryParams = array_diff_key($routeParams, $params);
+
+			$params = array_merge($request->getQueryParams(), $params, $routeParams);
+
+			return $this->gen($name, $params, $options);
+		}
+
+		if ($routeName === null && $result === null) {
+			// get current URL
+			throw new RuntimeException(
+				'Attempting to use matched result when none was injected; aborting'
+			);
+		}
+
+		// Get the options to be passed to the router
+		$routerOptions = array_key_exists('router', $options) ? $options['router'] : [];
+
+		$reuseResultParams = ! isset($options['reuse_result_params']) || (bool) $options['reuse_result_params'];
+
+		$params = [];
+		if ($result && $reuseResultParams) {
+			// Merge RouteResult with the route parameters
+			$params = $this->mergeParams($routeName, $result, $routeParams);
+		}
+
+		try {
+			// Generate the route
+			$path = $this->generateUri($routeName, $routeParams, $routerOptions);
+			$result = $this->match(new ServerRequest([], [], $path));
+			$params = $result->getMatchedParams();
+		} catch (Exception $e) {
+			$path = $this->getBasePath() . "/" . $routeName;
+			$params = [];
+		}
+
+		$uri = $request->getUri()->withPath($path);
+
+		$queryParams = array_diff_key($routeParams, $params);
+
+		// Append query parameters if there are any
+		if (count($queryParams) > 0) {
+			//$path .= '?' . http_build_query($queryParams);
+			$uri = $uri->withQuery(http_build_query($queryParams));
+		} else {
+			$uri = $uri->withQuery('');
+		}
+
+		// Append the fragment identifier
+		if ($options["fragment"] !== null) {
+			if (! preg_match(self::FRAGMENT_IDENTIFIER_REGEX, $options["fragment"])) {
+				throw new InvalidArgumentException('Fragment identifier must conform to RFC 3986', 400);
+			}
+			//$path .= '#' . $options["fragment"];
+			$uri = $uri->withFragment($options["fragment"]);
+		}
+
+
+		if (! $options["absolute"]) {
+			$uri = $uri->withHost("");
+		}
+		if ($options["scheme"] != "http") {
+			$uri = $uri->withScheme($options["scheme"]);
+		} else {
+			if ($options["absolute"]) {
+				$uri = $uri->withScheme('http');
+			} else {
+				$uri = $uri->withScheme('');
+			}
+		}
+		if ($options["port"] != 80) {
+			$uri = $uri->withPort($options["port"]);
+		} else {
+			$uri = $uri->withPort(80);
+		}
+
+		$uri = (string) $uri;
+
+		return $uri;
+	}
+
+	/**
+	 * Checks for any missing route parameters
+	 *
+	 * @return array with minimum required parameters if any are missing or an empty array if none are missing
+	 * @psalm-return list<mixed>
+	 */
+	private function missingParameters(array $parts, array $substitutions): array
+	{
+		$missingParameters = [];
+
+		// Gather required parameters
+		foreach ($parts as $part) {
+			if (is_string($part)) {
+				continue;
+			}
+
+			$missingParameters[] = $part[0];
+		}
+
+		// Check if all parameters exist
+		foreach ($missingParameters as $param) {
+			if (! isset($substitutions[$param])) {
+				// Return the parameters so they can be used in an
+				// exception if needed
+				return $missingParameters;
+			}
+		}
+
+		// All required parameters are available
+		return [];
+	}
+
+	/**
+	 * Create a default FastRoute Collector instance
+	 */
+	private function createCollection(): RouteCollector
+	{
+		return new RouteCollector(new RouteParser(), new RouteGenerator());
+	}
+
+	/**
+	 * Retrieve the dispatcher instance.
+	 *
+	 * Uses the callable factory in $dispatcherCallback, passing it $data
+	 * (which should be derived from the router's getData() method); this
+	 * approach is done to allow testing against the dispatcher.
+	 *
+	 * @param array|object $data Data from RouteCollection::getData()
+	 */
+	private function getDispatcher($data): Dispatcher
+	{
+		if ($this->dispatcherCallback === null) {
+			$this->dispatcherCallback = $this->createDispatcherCallback();
+		}
+
+		$factory = $this->dispatcherCallback;
+
+		return $factory($data);
+	}
+
+	/**
+	 * Return a default implementation of a callback that can return a Dispatcher.
+	 *
+	 * @return callable(array|object): GroupCountBased
+	 */
+	private function createDispatcherCallback(): callable
+	{
+		return static fn ($data): GroupCountBased => new GroupCountBased($data);
+	}
+
+	/**
+	 * Marshal a routing failure result.
+	 *
+	 * If the failure was due to the HTTP method, passes the allowed HTTP
+	 * methods to the factory.
+	 *
+	 * @param FastRouteNotFoundResult|FastRouteBadMethodResult $result
+	 */
+	private function marshalFailedRoute(array $result): RouteResult
+	{
+		if ($result[0] === Dispatcher::METHOD_NOT_ALLOWED) {
+			return RouteResult::fromRouteFailure($result[1]);
+		}
+
+		return RouteResult::fromRouteFailure(Route::HTTP_METHOD_ANY);
+	}
+
+	/**
+	 * Marshals a route result based on the results of matching and the current HTTP method.
+	 *
+	 * @param FastRouteFoundResult $result
+	 */
+	private function marshalMatchedRoute(array $result, string $method): RouteResult
+	{
+		$path = $result[1];
+		$route = array_reduce(
+			$this->routes,
+			static function (Route|false $matched, Route $route) use ($path, $method): Route|false {
+				if ($matched) {
+					return $matched;
+				}
+
+				if ($path !== $route->getPath()) {
+					return $matched;
+				}
+
+				if (! $route->allowsMethod($method)) {
+					return $matched;
+				}
+
+				return $route;
+			},
+			false
+		);
+
+		if (false === $route) {
+			return $this->marshalMethodNotAllowedResult($result);
+		}
+
+		$params = $result[2];
+
+		$options = $route->getOptions();
+		if (isset($options['defaults']) && is_array($options['defaults'])) {
+			$params = array_merge($options['defaults'], $params);
+		}
+
+		return RouteResult::fromRoute($route, $params);
+	}
+
+	/**
+	 * Inject queued Route instances into the underlying router.
+	 */
+	private function injectRoutes(): void
+	{
+		foreach ($this->routesToInject as $index => $route) {
+			$this->injectRoute($route);
+			unset($this->routesToInject[$index]);
+		}
+	}
+
+	/**
+	 * Inject a Route instance into the underlying router.
+	 */
+	private function injectRoute(Route $route): void
+	{
+		// Filling the routes' hash-map is required by the `generateUri` method
+		$this->routes[$route->getName()] = $route;
+
+		// Skip feeding FastRoute collector if valid cached data was already loaded
+		if ($this->hasCache) {
+			return;
+		}
+
+		$methods = $route->getAllowedMethods();
+
+		if ($methods === Route::HTTP_METHOD_ANY) {
+			$methods = self::HTTP_METHODS_STANDARD;
+		}
+
+		assert($this->collection instanceof RouteCollector);
+
+		$this->collection->addRoute($methods, $route->getPath(), $route->getPath());
+	}
+
+	/**
+	 * Get the dispatch data either from cache or freshly generated by the
+	 * FastRoute data generator.
+	 *
+	 * If caching is enabled, store the freshly generated data to file.
+	 */
+	private function getDispatchData(): array
+	{
+		if ($this->hasCache) {
+			return $this->dispatchData;
+		}
+
+		assert($this->collection instanceof RouteCollector);
+
+		$dispatchData = (array) $this->collection->getData();
+
+		if ($this->cacheEnabled) {
+			$this->cacheDispatchData($dispatchData);
+		}
+
+		return $dispatchData;
+	}
+
+	/**
+	 * Load dispatch data from cache
+	 *
+	 * @throws InvalidCacheException If the cache file contains
+	 *     invalid data.
+	 */
+	private function loadDispatchData(): void
+	{
+		set_error_handler(static function (): void {
+		}, E_WARNING); // suppress php warnings
+		$dispatchData = include $this->cacheFile;
+		restore_error_handler();
+
+		// Cache file does not exist
+		if (false === $dispatchData) {
+			return;
+		}
+
+		if (! is_array($dispatchData)) {
+			throw new InvalidCacheException(sprintf(
+				'Invalid cache file "%s"; cache file MUST return an array',
+				$this->cacheFile
+			));
+		}
+
+		$this->hasCache = true;
+		$this->dispatchData = $dispatchData;
+	}
+
+	/**
+	 * Save dispatch data to cache
+	 *
+	 * @return int|false bytes written to file or false if error
+	 * @throws InvalidCacheDirectoryException If the cache directory
+	 *     does not exist.
+	 * @throws InvalidCacheDirectoryException If the cache directory
+	 *     is not writable.
+	 * @throws InvalidCacheException If the cache file exists but is
+	 *     not writable.
+	 */
+	private function cacheDispatchData(array $dispatchData)
+	{
+		$cacheDir = dirname($this->cacheFile);
+
+		if (! is_dir($cacheDir)) {
+			throw new InvalidCacheDirectoryException(sprintf(
+				'The cache directory "%s" does not exist',
+				$cacheDir
+			));
+		}
+
+		if (! is_writable($cacheDir)) {
+			throw new InvalidCacheDirectoryException(sprintf(
+				'The cache directory "%s" is not writable',
+				$cacheDir
+			));
+		}
+
+		if (file_exists($this->cacheFile) && ! is_writable($this->cacheFile)) {
+			throw new InvalidCacheException(sprintf(
+				'The cache file %s is not writable',
+				$this->cacheFile
+			));
+		}
+
+		return file_put_contents(
+			$this->cacheFile,
+			sprintf(self::CACHE_TEMPLATE, var_export($dispatchData, true))
+		);
+	}
+
+	/** @param FastRouteFoundResult $result */
+	private function marshalMethodNotAllowedResult(array $result): RouteResult
+	{
+		$path = $result[1];
+		$allowedMethods = array_reduce(
+			$this->routes,
+			/**
+			 * @param list<string> $allowedMethods
+			 * @return list<string>
+			 */
+			static function (array $allowedMethods, Route $route) use ($path): array {
+				if ($path !== $route->getPath()) {
+					return $allowedMethods;
+				}
+
+				return array_merge($allowedMethods, (array) $route->getAllowedMethods());
+			},
+			[]
+		);
+
+		$allowedMethods = array_values(array_unique($allowedMethods));
+
+		return RouteResult::fromRouteFailure($allowedMethods);
+	}
+
+	public static function detectBaseUrl($request = null)
+	{
+		if (php_sapi_name() == 'cli') {
+			return "/";
+		}
+		if ($request == null) {
+			$request = ServerRequestFactory::fromGlobals();
+		}
+		$server = $request->getServerParams();
+
+		// Path
+		$requestScriptName = parse_url($server['SCRIPT_NAME'], PHP_URL_PATH);
+		$requestScriptDir = dirname($requestScriptName);
+
+		// parse_url() requires a full URL. As we don't extract the domain name or scheme,
+		// we use a stand-in.
+		$requestUri = parse_url('http://example.com' . (isset($server['REQUEST_URI']) ? $server['REQUEST_URI'] : null), PHP_URL_PATH);
+
+		$requestRootDir = dirname($requestScriptDir); // remove /public from it
+
+		$basePath = '';
+		$virtualPath = $requestUri;
+
+		if (stripos($requestUri, $requestRootDir) === 0) {
+			$basePath = $requestRootDir;
+		} elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
+			$basePath = $requestScriptDir;
+		}
+		if ($basePath) {
+			$virtualPath = ltrim(substr($requestUri, strlen($basePath)), '/');
+		}
+
+		//$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
+		return "/" . ltrim($basePath, '/');
+	}
+
+	public static function normalizePath($href)
+	{
+		return rtrim($href, "/");
+	}
+
+	protected function mergeParams($route, RouteResult $result, array $params)
+	{
+		if ($result->isFailure()) {
+			return $params;
+		}
+
+		if ($result->getMatchedRouteName() !== $route) {
+			return $params;
+		}
+
+		return array_merge($result->getMatchedParams(), $params);
+	}
+
+	public function getBasePath()
+	{
+		return $this->basepath;
+	}
 }

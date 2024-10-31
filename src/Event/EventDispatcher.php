@@ -8,5 +8,4 @@ use League\Event\EventDispatcher as LeagueEventDispatcher;
 
 class EventDispatcher extends LeagueEventDispatcher
 {
-   
 }

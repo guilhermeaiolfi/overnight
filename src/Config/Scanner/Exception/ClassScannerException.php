@@ -1,5 +1,10 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Config\Scanner\Exception;
+
+use Throwable;
 
 /**
  * ClassScannerException.
@@ -7,6 +12,6 @@ namespace ON\Config\Scanner\Exception;
  * @copyright Copyright (c) 2019 Riikka Kalliomäki
  * @license http://opensource.org/licenses/mit-license.php MIT License
  */
-interface ClassScannerException extends \Throwable
+interface ClassScannerException extends Throwable
 {
 }

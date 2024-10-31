@@ -1,111 +1,103 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Extension;
 
-use Exception;
 use ON\Application;
-
-use ON\Config\ConfigBuilder;
-use Adbar\Dot;
 use ON\Config\AppConfig;
-use ON\Config\ConfigInterface;
-use ON\Config\OwnParameterPostProcessor;
-use ON\Config\Scanner\Scanner;
-use ON\Config\Scanner\TypeDefinition;
 use ON\Discovery\ClassFinder;
-use ON\Discovery\DiscoverClassInterface;
-use ON\Discovery\DiscoverFileInterface;
-use ON\Discovery\RouteDiscovery;
+use ON\Discovery\AttributesDiscovery;
 use Symfony\Component\Finder\Finder;
 
 class DiscoveryExtension extends AbstractExtension
 {
-    protected int $type = self::TYPE_EXTENSION;
-    
-    protected array $discovers = [];
-    protected array $pendingProcess = [];
+	protected int $type = self::TYPE_EXTENSION;
 
-    protected array $pendingTasks = [ 'config:ready', 'discovery:setup' ];
+	protected array $discovers = [];
+	protected array $pendingProcess = [];
 
-    public ClassFinder $classFinder;
-    protected array $files;
-    protected AppConfig $appCfg;
-    public function __construct(
-        protected Application $app,
-        protected array $options = []
-    ) {
-        $this->classFinder = new ClassFinder();
-    }
+	protected array $pendingTasks = [ 'config:ready', 'discovery:setup' ];
 
-    public static function install(Application $app, ?array $options = []): mixed {
-        $extension = new self($app, $options);
-        return $extension;
-    }
+	public ClassFinder $classFinder;
+	protected array $files;
+	protected AppConfig $appCfg;
 
-    public function setup(int $counter): bool
-    {
-        if ($this->hasPendingTask("config:ready")) {
-            if ($this->app->isExtensionReady('config')) {
-                $this->appCfg = $this->app->config->get(AppConfig::class);
-                $this->removePendingTask('config:ready');
-            }
-        } else if ($this->hasPendingTask("discovery:setup")) {
-            $this->discovers[] = new RouteDiscovery($this->app);
-            $pattern = $this->appCfg->get('discovery.pattern');
+	public function __construct(
+		protected Application $app,
+		protected array $options = []
+	) {
+		$this->classFinder = new ClassFinder();
+	}
 
-            $discovers = $this->discovers;
+	public static function install(Application $app, ?array $options = []): mixed
+	{
+		$extension = new self($app, $options);
 
-            $oldest = 0;
-            foreach ($discovers as $discover) {
-                $timestamp = $discover->cachedTimestamp();
-                if ($oldest == 0 || $oldest > $timestamp) {
-                    $oldest = $timestamp;
-                }
-                if ($timestamp > 0) {
-                    $discover->recover();
-                }
-            }
-            //clock()->event('discovery:finder')->begin();
-            $finder = new Finder();
-            
-            $finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", $oldest));
-            foreach ($finder as $file) {
-                $timestamp = $discover->cachedTimestamp();
-                if ($timestamp == 0 || $this->app->isDebug()) {
-                    foreach ($discovers as $discover) {
-                        if ($file->getMTime() > $timestamp) {
-                            $discover->updateFile($file);
-                        }
-                    }
-                }
-            }
-            //clock()->event('discovery:finder')->end();
+		return $extension;
+	}
 
-            foreach ($discovers as $discover) {
-                $discover->save();
-                if (!$discover->process()) {
-                    $this->pendingProcess[] = $discover;
-                }
-            }
-            $this->removePendingTask("discovery:setup");
-        } else {
-            foreach ($this->pendingProcess as $discover) {
-                if ($discover->process()) {
-                    $index = array_search($discover, $this->pendingProcess);
-                    array_splice($this->pendingProcess, $index, 1);
-                }
-            }
-        }
+	public function setup(int $counter): bool
+	{
+		if ($this->hasPendingTask("config:ready")) {
+			if ($this->app->isExtensionReady('config')) {
+				$this->appCfg = $this->app->config->get(AppConfig::class);
+				$this->removePendingTask('config:ready');
+			}
+		}
 
-        if (!$this->hasPendingTasks() && count($this->pendingProcess) == 0) {
-            return true;
-        }
+		if ($this->app->isExtensionReady('config') && $this->removePendingTask("discovery:setup")) {
+			$discovers = array_keys($this->appCfg->get('discovery.discoverers', []));
+
+			foreach ($discovers as $className) {
+				$this->discovers[] = new $className($this->app);
+			}
+			$pattern = $this->appCfg->get('discovery.pattern');
+
+			$discovers = $this->discovers;
+
+			$oldest = 0;
+			foreach ($discovers as $discover) {
+				$timestamp = $discover->cachedTimestamp();
+				if ($oldest == 0 || $oldest > $timestamp) {
+					$oldest = $timestamp;
+				}
+				if ($timestamp > 0) {
+					$discover->recover();
+				}
+			}
+			//clock()->event('discovery:finder')->begin();
+			$finder = new Finder();
+
+			$finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", (int) $oldest));
+			foreach ($finder as $file) {
+				$timestamp = $discover->cachedTimestamp();
+				if ($timestamp == 0 || $this->app->isDebug()) {
+					foreach ($discovers as $discover) {
+						if ($file->getMTime() > $timestamp) {
+							$discover->updateFile($file);
+						}
+					}
+				}
+			}
+			//clock()->event('discovery:finder')->end();
+
+			foreach ($discovers as $discover) {
+				$discover->save();
+				$discover->process();
+			}
+		}
+
+		if (! $this->hasPendingTasks()) {
+			return true;
+		}
 
 
-        return false;
-    }
+		return false;
+	}
 
-    public function ready() {
-       
-    }
+	public function ready()
+	{
+
+	}
 }

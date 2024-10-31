@@ -11,17 +11,18 @@ use Psr\Log\LoggerInterface;
 
 class ClockworkFactory
 {
-    public function __invoke(ContainerInterface $container) : Clockwork
-    {
-        $config   = $container->has('config') ? $container->get('config') : [];
+	public function __invoke(ContainerInterface $container): Clockwork
+	{
+		$config = $container->has('config') ? $container->get('config') : [];
 
-        $settings = $config["clockwork"];
+		$settings = $config["clockwork"];
 
-        $clockwork = Clockwork::init($settings);
+		$clockwork = Clockwork::init($settings);
 
-        $logger = $container->get(LoggerInterface::class);
-        $loggerDataSource = new PsrLoggerDatasource($logger);
-        $clockwork->addDataSource($loggerDataSource);
-        return $clockwork;
-    }
+		$logger = $container->get(LoggerInterface::class);
+		$loggerDataSource = new PsrLoggerDatasource($logger);
+		$clockwork->addDataSource($loggerDataSource);
+
+		return $clockwork;
+	}
 }

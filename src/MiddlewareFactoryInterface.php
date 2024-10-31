@@ -40,43 +40,43 @@ use Psr\Http\Server\RequestHandlerInterface;
  */
 interface MiddlewareFactoryInterface
 {
-    /**
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
-     * @psalm-param MiddlewareParam $middleware
-     * @throws Exception\InvalidMiddlewareException If argument is not one of
-     *    the specified types.
-     */
-    public function prepare($middleware): MiddlewareInterface;
+	/**
+	 * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
+	 * @psalm-param MiddlewareParam $middleware
+	 * @throws Exception\InvalidMiddlewareException If argument is not one of
+	 *    the specified types.
+	 */
+	public function prepare($middleware): MiddlewareInterface;
 
-    /**
-     * Decorate callable standards-signature middleware via a CallableMiddlewareDecorator.
-     */
-    public function callable(callable $middleware): MiddlewareInterface;
+	/**
+	 * Decorate callable standards-signature middleware via a CallableMiddlewareDecorator.
+	 */
+	public function callable(callable $middleware): MiddlewareInterface;
 
-    /**
-     * Decorate a RequestHandlerInterface as middleware via RequestHandlerMiddleware.
-     */
-    public function handler(RequestHandlerInterface $handler): MiddlewareInterface;
+	/**
+	 * Decorate a RequestHandlerInterface as middleware via RequestHandlerMiddleware.
+	 */
+	public function handler(RequestHandlerInterface $handler): MiddlewareInterface;
 
-    /**
-     * Create lazy loading middleware based on a service name.
-     */
-    public function lazy(string $middleware): MiddlewareInterface;
+	/**
+	 * Create lazy loading middleware based on a service name.
+	 */
+	public function lazy(string $middleware): MiddlewareInterface;
 
-    /**
-     * Create a middleware pipeline from an array of middleware.
-     *
-     * This method allows passing an array of middleware as either:
-     *
-     * - discrete arguments
-     * - an array of middleware, using the splat operator: pipeline(...$array)
-     * - an array of middleware as the sole argument: pipeline($array)
-     *
-     * Each item is passed to prepare() before being passed to the
-     * MiddlewarePipe instance the method returns.
-     *
-     * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface ...$middleware
-     * @psalm-param MiddlewareParam ...$middleware
-     */
-    public function pipeline(...$middleware): MiddlewarePipeInterface;
+	/**
+	 * Create a middleware pipeline from an array of middleware.
+	 *
+	 * This method allows passing an array of middleware as either:
+	 *
+	 * - discrete arguments
+	 * - an array of middleware, using the splat operator: pipeline(...$array)
+	 * - an array of middleware as the sole argument: pipeline($array)
+	 *
+	 * Each item is passed to prepare() before being passed to the
+	 * MiddlewarePipe instance the method returns.
+	 *
+	 * @param string|array|callable|MiddlewareInterface|RequestHandlerInterface ...$middleware
+	 * @psalm-param MiddlewareParam ...$middleware
+	 */
+	public function pipeline(...$middleware): MiddlewarePipeInterface;
 }

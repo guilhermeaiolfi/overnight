@@ -1,16 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Config\Scanner;
 
+use function array_slice;
+use function count;
+use DirectoryIterator;
 use Exception;
+use ON\Config\Scanner\Exception\FileNotFoundException;
+use ON\Config\Scanner\Exception\ParsingException;
 use ON\Config\Scanner\NodeCollector\ClassCollector;
 use PhpParser\NodeTraverser;
 use PhpParser\Parser;
 use PhpParser\ParserFactory;
-use ON\Config\Scanner\Exception\FileNotFoundException;
-use ON\Config\Scanner\Exception\ParsingException;
-use ON\Config\Scanner\TypeDefinition;
-use ReflectionClass;
+use SplFileInfo;
 use Symfony\Component\Finder\Finder;
 
 /**
@@ -21,187 +25,192 @@ use Symfony\Component\Finder\Finder;
  */
 class Scanner
 {
-    /** @var Parser */
-    private $parser;
+	/** @var Parser */
+	private $parser;
 
-    /** @var NodeTraverser */
-    private $traverser;
+	/** @var NodeTraverser */
+	private $traverser;
 
-    /** @var ClassCollector */
-    private $collector;
+	/** @var ClassCollector */
+	private $collector;
 
-    /** @var bool */
-    private $ignore;
+	/** @var bool */
+	private $ignore;
 
-    /** @var bool */
-    private $autoload;
+	/** @var bool */
+	private $autoload;
 
-    /** @var bool[] */
-    private $scannedFiles;
+	/** @var bool[] */
+	private $scannedFiles;
 
-    protected $reflectCache;
+	protected $reflectCache;
 
-    public function __construct()
-    {
-        $this->ignore = false;
-        $this->autoload = false;
-        $this->collector = new ClassCollector();
-        $this->parser = (new ParserFactory())->createForNewestSupportedVersion();
-        $this->traverser = new NodeTraverser();
-        $this->traverser->addVisitor($this->collector);
-        $this->scannedFiles = [];
-        //$this->reflectCache = new ReflectionCache();
-    }
+	public function __construct()
+	{
+		$this->ignore = false;
+		$this->autoload = false;
+		$this->collector = new ClassCollector();
+		$this->parser = (new ParserFactory())->createForNewestSupportedVersion();
+		$this->traverser = new NodeTraverser();
+		$this->traverser->addVisitor($this->collector);
+		$this->scannedFiles = [];
+		//$this->reflectCache = new ReflectionCache();
+	}
 
-    public function allowAutoloading(bool $allow = true): self
-    {
-        $this->autoload = $allow;
-        return $this;
-    }
+	public function allowAutoloading(bool $allow = true): self
+	{
+		$this->autoload = $allow;
 
-    public function ignoreMissing(bool $ignore = true): self
-    {
-        $this->ignore = $ignore;
-        return $this;
-    }
+		return $this;
+	}
 
-    public function getClasses(int $filter = TypeDefinition::TYPE_ANY): array
-    {
-        $map = $this->collector->getMap();
-        $types = $this->collector->getTypes();
-        
-        if ($filter === TypeDefinition::TYPE_ANY) {
-            return array_values(array_intersect_key($map, $types));
-        }
+	public function ignoreMissing(bool $ignore = true): self
+	{
+		$this->ignore = $ignore;
 
-        $classes = [];
+		return $this;
+	}
 
-        foreach ($types as $name => $type) {
-            if ($type & $filter) {
-                $classes[] = $map[$name];
-            }
-        }
+	public function getClasses(int $filter = TypeDefinition::TYPE_ANY): array
+	{
+		$map = $this->collector->getMap();
+		$types = $this->collector->getTypes();
 
-        return $classes;
-    }
+		if ($filter === TypeDefinition::TYPE_ANY) {
+			return array_values(array_intersect_key($map, $types));
+		}
 
-    public function getSubClasses(string $class, int $filter = TypeDefinition::TYPE_CLASS): array
-    {
-        $this->collector->loadMissing($this->autoload, $this->ignore);
+		$classes = [];
 
-        $map = $this->collector->getMap();
-        $children = $this->collector->getChildren();
-        $types = $this->collector->getTypes();
-        $traverse = array_flip($children[strtolower($class)] ?? []);
-        $count = \count($traverse);
-        $classes = [];
+		foreach ($types as $name => $type) {
+			if ($type & $filter) {
+				$classes[] = $map[$name];
+			}
+		}
 
-        for ($i = 0; $i < $count; $i++) {
-            $name = key(\array_slice($traverse, $i, 1));
+		return $classes;
+	}
 
-            if (isset($types[$name]) && $types[$name] & $filter) {
-                $classes[] = $map[$name];
-            }
+	public function getSubClasses(string $class, int $filter = TypeDefinition::TYPE_CLASS): array
+	{
+		$this->collector->loadMissing($this->autoload, $this->ignore);
 
-            if (isset($children[$name])) {
-                $traverse += array_flip($children[$name]);
-                $count = \count($traverse);
-            }
-        }
+		$map = $this->collector->getMap();
+		$children = $this->collector->getChildren();
+		$types = $this->collector->getTypes();
+		$traverse = array_flip($children[strtolower($class)] ?? []);
+		$count = count($traverse);
+		$classes = [];
 
-        return $classes;
-    }
+		for ($i = 0; $i < $count; $i++) {
+			$name = key(array_slice($traverse, $i, 1));
 
-    /**
-     * @param string[] $classes
-     * @return TypeDefinition[]
-     */
-    public function getDefinitions(array $classes): array
-    {
-        $definitions = $this->collector->getDefinitions();
-        $results = [];
+			if (isset($types[$name]) && $types[$name] & $filter) {
+				$classes[] = $map[$name];
+			}
 
-        foreach ($classes as $class) {
-            $class = strtolower($class);
+			if (isset($children[$name])) {
+				$traverse += array_flip($children[$name]);
+				$count = count($traverse);
+			}
+		}
 
-            if (isset($definitions[$class])) {
-                array_push($results, ... $definitions[$class]);
-            }
-        }
+		return $classes;
+	}
 
-        return $results;
-    }
+	/**
+	 * @param string[] $classes
+	 * @return TypeDefinition[]
+	 */
+	public function getDefinitions(array $classes): array
+	{
+		$definitions = $this->collector->getDefinitions();
+		$results = [];
 
-    public function scanFile(string $filename): self
-    {
-        return $this->scan([$filename]);
-    }
+		foreach ($classes as $class) {
+			$class = strtolower($class);
 
-    public function scanDirectory(string $directory): self
-    {
-        return $this->scan(new \DirectoryIterator($directory));
-    }
+			if (isset($definitions[$class])) {
+				array_push($results, ...$definitions[$class]);
+			}
+		}
 
-    public function scanFinder(Finder $finder): self
-    {
-        return $this->scan($finder);
-        return $this;
-    }
-    /**
-     * @param iterable<string|\SplFileInfo> $files
-     * @return Scanner
-     * @throws FileNotFoundException
-     * @throws ParsingException
-     */
-    public function scan(iterable $files): self
-    {
-        foreach ($files as $file) {
-            if (!$file instanceof \SplFileInfo) {
-                $file = new \SplFileInfo((string) $file);
-            }
+		return $results;
+	}
 
-            if ($file->isFile()) {
-                $real = $file->getRealPath();
+	public function scanFile(string $filename): self
+	{
+		return $this->scan([$filename]);
+	}
 
-                if (isset($this->scannedFiles[$real])) {
-                    continue;
-                }
+	public function scanDirectory(string $directory): self
+	{
+		return $this->scan(new DirectoryIterator($directory));
+	}
 
-                $this->collector->setCurrentFile($real);
+	public function scanFinder(Finder $finder): self
+	{
+		return $this->scan($finder);
 
-                try {
-                    $this->parse(file_get_contents($real));
-                    $this->scannedFiles[$real] = true;
-                } finally {
-                    $this->collector->setCurrentFile(null);
-                }
-            } elseif (! $file->isDir() && ! $file->isLink()) {
-                throw new FileNotFoundException("The file path '$file' does not exist");
-            }
-        }
+		return $this;
+	}
 
-        return $this;
-    }
+	/**
+	 * @param iterable<string|SplFileInfo> $files
+	 * @return Scanner
+	 * @throws FileNotFoundException
+	 * @throws ParsingException
+	 */
+	public function scan(iterable $files): self
+	{
+		foreach ($files as $file) {
+			if (! $file instanceof SplFileInfo) {
+				$file = new SplFileInfo((string) $file);
+			}
 
-    /**
-     * @param string $code
-     * @return TypeDefinition[]
-     * @throws ParsingException
-     */
-    public function parse(string $code): array
-    {
-        try {
-            $ast = $this->parser->parse($code);
-        } catch (\Exception $exception) {
-            $currentFile = $this->collector->getCurrentFile();
-            $message = $currentFile === null
-                ? sprintf('Error parsing: %s', $exception->getMessage())
-                : sprintf("Error parsing '%s': %s", $currentFile, $exception->getMessage());
-            throw new ParsingException($message, 0, $exception);
-        }
+			if ($file->isFile()) {
+				$real = $file->getRealPath();
 
-        $this->traverser->traverse($ast);
+				if (isset($this->scannedFiles[$real])) {
+					continue;
+				}
 
-        return $this->collector->getCollected();
-    }
+				$this->collector->setCurrentFile($real);
+
+				try {
+					$this->parse(file_get_contents($real));
+					$this->scannedFiles[$real] = true;
+				} finally {
+					$this->collector->setCurrentFile(null);
+				}
+			} elseif (! $file->isDir() && ! $file->isLink()) {
+				throw new FileNotFoundException("The file path '$file' does not exist");
+			}
+		}
+
+		return $this;
+	}
+
+	/**
+	 * @param string $code
+	 * @return TypeDefinition[]
+	 * @throws ParsingException
+	 */
+	public function parse(string $code): array
+	{
+		try {
+			$ast = $this->parser->parse($code);
+		} catch (Exception $exception) {
+			$currentFile = $this->collector->getCurrentFile();
+			$message = $currentFile === null
+				? sprintf('Error parsing: %s', $exception->getMessage())
+				: sprintf("Error parsing '%s': %s", $currentFile, $exception->getMessage());
+
+			throw new ParsingException($message, 0, $exception);
+		}
+
+		$this->traverser->traverse($ast);
+
+		return $this->collector->getCollected();
+	}
 }

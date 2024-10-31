@@ -6,19 +6,18 @@ namespace ON\Exception;
 
 use Psr\Container\ContainerExceptionInterface;
 use RuntimeException;
-
 use function sprintf;
 
 class MissingDependencyException extends RuntimeException implements
-    ContainerExceptionInterface,
-    ExceptionInterface
+	ContainerExceptionInterface,
+	ExceptionInterface
 {
-    public static function forMiddlewareService(string $service): self
-    {
-        return new self(sprintf(
-            'Cannot fetch middleware service "%s"; service not registered,'
-            . ' or does not resolve to an autoloadable class name',
-            $service
-        ));
-    }
+	public static function forMiddlewareService(string $service): self
+	{
+		return new self(sprintf(
+			'Cannot fetch middleware service "%s"; service not registered,'
+			. ' or does not resolve to an autoloadable class name',
+			$service
+		));
+	}
 }

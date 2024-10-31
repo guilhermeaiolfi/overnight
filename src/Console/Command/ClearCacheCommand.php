@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 /*
  * This file is part of the Symfony package.
  *
@@ -25,47 +27,46 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 class ClearCacheCommand extends Command
 {
+	public function __construct(
+		protected CacheInterface $cache
+	) {
+		parent::__construct();
+	}
 
-    public function __construct(
-        protected CacheInterface $cache
-    )
-    {
-        parent::__construct();
-    }
+	protected function configure(): void
+	{
+		$this->ignoreValidationErrors();
 
-    protected function configure(): void
-    {
-        $this->ignoreValidationErrors();
+		$this
+			->setName('cache:clear')
+			->setDefinition([
+				new InputArgument('command_name', InputArgument::OPTIONAL, 'The command name', 'help', fn () => array_keys((new ApplicationDescription($this->getApplication()))->getCommands())),
+				new InputOption('format', null, InputOption::VALUE_REQUIRED, 'The output format (txt, xml, json, or md)', 'txt', fn () => (new DescriptorHelper())->getFormats()),
+				new InputOption('raw', null, InputOption::VALUE_NONE, 'To output raw command help'),
+			])
+			->setDescription('Clear Cache');
+		;
+	}
 
-        $this
-            ->setName('cache:clear')
-            ->setDefinition([
-                new InputArgument('command_name', InputArgument::OPTIONAL, 'The command name', 'help', fn () => array_keys((new ApplicationDescription($this->getApplication()))->getCommands())),
-                new InputOption('format', null, InputOption::VALUE_REQUIRED, 'The output format (txt, xml, json, or md)', 'txt', fn () => (new DescriptorHelper())->getFormats()),
-                new InputOption('raw', null, InputOption::VALUE_NONE, 'To output raw command help'),
-            ])
-            ->setDescription('Clear Cache');
-        ;
-    }
+	protected function execute(InputInterface $input, OutputInterface $output): int
+	{
+		//$helper = $this->getHelper('question');
 
-    protected function execute(InputInterface $input, OutputInterface $output): int
-    {
-        //$helper = $this->getHelper('question');
+		//$question = new ConfirmationQuestion('Are you sure?', false);
 
-        //$question = new ConfirmationQuestion('Are you sure?', false);
+		$io = new SymfonyStyle($input, $output);
+		$formatter = new FormatterHelper();
 
-        $io = new SymfonyStyle($input, $output);
-        $formatter = new FormatterHelper();
+		//$choices = $io->choice("Which ones?", [ "One", "Two" ], null, true);
+		if ($io->confirm("Are you sure?", false)) {
+			$this->cache->clear();
 
-        //$choices = $io->choice("Which ones?", [ "One", "Two" ], null, true);
-        if ($io->confirm($input, false)) {
-            $this->cache->clear();
+			//$output->write($formatter->formatBlock("OK", "Cache cleared!"));
+			$io->success("Cache cleared!");
 
-            $output->write($formatter->formatBlock("OK", "Cache cleared!"));
-            $io->success("Cache cleared!");
-            return Command::SUCCESS;
-        }
+			return Command::SUCCESS;
+		}
 
-        return 0;
-    }
+		return 0;
+	}
 }

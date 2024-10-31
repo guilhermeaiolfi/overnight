@@ -1,75 +1,77 @@
 <?php
-namespace ON\Config;
 
-use Laminas\ConfigAggregatorParameters\ParameterNotFoundException;
-use Symfony\Component\DependencyInjection\Exception\ParameterNotFoundException as SymfonyParameterNotFoundException;
-use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
+declare(strict_types=1);
+
+namespace ON\Config;
 
 use function array_walk_recursive;
 use function is_array;
 use function is_numeric;
+use Laminas\ConfigAggregatorParameters\ParameterNotFoundException;
+use Symfony\Component\DependencyInjection\Exception\ParameterNotFoundException as SymfonyParameterNotFoundException;
+use Symfony\Component\DependencyInjection\ParameterBag\ParameterBag;
 
 class OwnParameterPostProcessor
 {
-    private array $parameters;
+	private array $parameters;
 
-    public function __invoke(array $current, array $chunk = null): array
-    {
-        $second_pass = isset($chunk);
-        if (!$second_pass) {
-            $chunk = $current;
-        }
-        try {
+	public function __invoke(array $current, array $chunk = null): array
+	{
+		$second_pass = isset($chunk);
+		if (! $second_pass) {
+			$chunk = $current;
+		}
 
-            // parameters to be resolved, in this case, all config values could be used
-            $parameters = $this->getResolvedParameters($current, $second_pass);
-            //$parameters = $this->getResolvedParameters([ "app" => $config["app"] ]);
+		try {
 
-            //here is where we go to every and each index in the array and resolve the value
-            // using the parameters defined earlier
-            array_walk_recursive($chunk, static function (mixed &$value) use ($parameters): void {
-                $value = $parameters->unescapeValue($parameters->resolveValue($value));
-            });
-        } catch (SymfonyParameterNotFoundException $exception) {
-            throw ParameterNotFoundException::fromException($exception);
-        }
+			// parameters to be resolved, in this case, all config values could be used
+			$parameters = $this->getResolvedParameters($current, $second_pass);
+			//$parameters = $this->getResolvedParameters([ "app" => $config["app"] ]);
 
-        $allParameters        = $parameters->all();
-        $config['parameters'] = $allParameters;
+			//here is where we go to every and each index in the array and resolve the value
+			// using the parameters defined earlier
+			array_walk_recursive($chunk, static function (mixed &$value) use ($parameters): void {
+				$value = $parameters->unescapeValue($parameters->resolveValue($value));
+			});
+		} catch (SymfonyParameterNotFoundException $exception) {
+			throw ParameterNotFoundException::fromException($exception);
+		}
 
-        return $chunk;
-    }
+		$allParameters = $parameters->all();
+		$config['parameters'] = $allParameters;
 
-    
-    private function resolveNestedParameters(array $values, string $prefix = ''): array
-    {
-        $convertedValues = [];
-        /** @psalm-suppress MixedAssignment */
-        foreach ($values as $key => $value) {
-            // Do not provide numeric keys as single parameter
-            if (is_numeric($key)) {
-                continue;
-            }
+		return $chunk;
+	}
 
-            /** @psalm-suppress MixedAssignment */
-            $convertedValues[$prefix . $key] = $value;
-            if (is_array($value)) {
-                $convertedValues += $this->resolveNestedParameters($value, $prefix . $key . '.');
-            }
-        }
+	private function resolveNestedParameters(array $values, string $prefix = ''): array
+	{
+		$convertedValues = [];
+		/** @psalm-suppress MixedAssignment */
+		foreach ($values as $key => $value) {
+			// Do not provide numeric keys as single parameter
+			if (is_numeric($key)) {
+				continue;
+			}
 
-        return $convertedValues;
-    }
+			/** @psalm-suppress MixedAssignment */
+			$convertedValues[$prefix . $key] = $value;
+			if (is_array($value)) {
+				$convertedValues += $this->resolveNestedParameters($value, $prefix . $key . '.');
+			}
+		}
 
-    private function getResolvedParameters($config, $second_pass = false): ParameterBag
-    {
-        $resolved = $this->resolveNestedParameters($config);
-        $bag      = new ParameterBag($resolved);
+		return $convertedValues;
+	}
 
-        if (!$second_pass) {
-            $bag->resolve();
-        }
+	private function getResolvedParameters($config, $second_pass = false): ParameterBag
+	{
+		$resolved = $this->resolveNestedParameters($config);
+		$bag = new ParameterBag($resolved);
 
-        return $bag;
-    }
+		if (! $second_pass) {
+			$bag->resolve();
+		}
+
+		return $bag;
+	}
 }

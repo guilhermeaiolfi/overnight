@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Db\Cycle\Contrain;
 
 use Cycle\ORM\Select\ConstrainInterface;
@@ -6,8 +9,8 @@ use Cycle\ORM\Select\QueryBuilder;
 
 class SortByWhenConstrain implements ConstrainInterface
 {
-    public function apply(QueryBuilder $query): void
-    {
-        $query->groupBy('id');
-    }
+	public function apply(QueryBuilder $query): void
+	{
+		$query->groupBy('id');
+	}
 }

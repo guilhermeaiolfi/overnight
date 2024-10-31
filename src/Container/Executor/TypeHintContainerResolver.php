@@ -1,4 +1,6 @@
-<?php declare(strict_types=1);
+<?php
+
+declare(strict_types=1);
 
 namespace ON\Container\Executor;
 
@@ -12,56 +14,56 @@ use ReflectionNamedType;
  */
 class TypeHintContainerResolver implements ParameterResolver
 {
-    /** @var ContainerInterface */
-    private $container;
+	/** @var ContainerInterface */
+	private $container;
 
-    /**
-     * @param ContainerInterface $container The container to get entries from.
-     */
-    public function __construct(ContainerInterface $container)
-    {
-        $this->container = $container;
-    }
+	/**
+	 * @param ContainerInterface $container The container to get entries from.
+	 */
+	public function __construct(ContainerInterface $container)
+	{
+		$this->container = $container;
+	}
 
-    public function getParameters(
-        ReflectionFunctionAbstract $reflection,
-        array $providedParameters,
-        array $resolvedParameters
-    ): array {
-        $parameters = $reflection->getParameters();
+	public function getParameters(
+		ReflectionFunctionAbstract $reflection,
+		array $providedParameters,
+		array $resolvedParameters
+	): array {
+		$parameters = $reflection->getParameters();
 
-        // Skip parameters already resolved
-        if (! empty($resolvedParameters)) {
-            $parameters = array_diff_key($parameters, $resolvedParameters);
-        }
+		// Skip parameters already resolved
+		if (! empty($resolvedParameters)) {
+			$parameters = array_diff_key($parameters, $resolvedParameters);
+		}
 
-        foreach ($parameters as $index => $parameter) {
-            $parameterType = $parameter->getType();
-            if (! $parameterType) {
-                // No type
-                continue;
-            }
-            if (! $parameterType instanceof ReflectionNamedType) {
-                // Union types are not supported
-                continue;
-            }
-            if ($parameterType->isBuiltin()) {
-                // Primitive types are not supported
-                continue;
-            }
+		foreach ($parameters as $index => $parameter) {
+			$parameterType = $parameter->getType();
+			if (! $parameterType) {
+				// No type
+				continue;
+			}
+			if (! $parameterType instanceof ReflectionNamedType) {
+				// Union types are not supported
+				continue;
+			}
+			if ($parameterType->isBuiltin()) {
+				// Primitive types are not supported
+				continue;
+			}
 
-            $parameterClass = $parameterType->getName();
-            if ($parameterClass === 'self') {
-                $parameterClass = $parameter->getDeclaringClass()->getName();
-            }
+			$parameterClass = $parameterType->getName();
+			if ($parameterClass === 'self') {
+				$parameterClass = $parameter->getDeclaringClass()->getName();
+			}
 
-            if (array_key_exists($parameterClass, $providedParameters)) {
-                $resolvedParameters[$index] = $providedParameters[$parameterClass];
-            } else if ($this->container->has($parameterClass)) {
-                $resolvedParameters[$index] = $this->container->get($parameterClass);
-            }
-        }
+			if (array_key_exists($parameterClass, $providedParameters)) {
+				$resolvedParameters[$index] = $providedParameters[$parameterClass];
+			} elseif ($this->container->has($parameterClass)) {
+				$resolvedParameters[$index] = $this->container->get($parameterClass);
+			}
+		}
 
-        return $resolvedParameters;
-    }
+		return $resolvedParameters;
+	}
 }

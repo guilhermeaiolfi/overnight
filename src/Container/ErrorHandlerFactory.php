@@ -11,12 +11,12 @@ use Psr\Http\Message\ResponseInterface;
 
 class ErrorHandlerFactory
 {
-    public function __invoke(ContainerInterface $container): ErrorHandler
-    {
-        $generator = $container->has(ErrorResponseGenerator::class)
-            ? $container->get(ErrorResponseGenerator::class)
-            : null;
+	public function __invoke(ContainerInterface $container): ErrorHandler
+	{
+		$generator = $container->has(ErrorResponseGenerator::class)
+			? $container->get(ErrorResponseGenerator::class)
+			: null;
 
-        return new ErrorHandler($container->get(ResponseInterface::class), $generator);
-    }
+		return new ErrorHandler($container->get(ResponseInterface::class), $generator);
+	}
 }

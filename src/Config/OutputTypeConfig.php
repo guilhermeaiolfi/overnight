@@ -1,18 +1,19 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Config;
 
-use ON\View\Plates\PlatesRenderer;
+class OutputTypeConfig
+{
+	protected ?OutputTypeConfig $default = null;
 
-class OutputTypeConfig {
+	protected array $types = [];
 
-    protected ?OutputTypeConfig $default = null;
+	public function __construct(
+		public ?array $renderers = [],
+		public ?array $layouts = []
+	) {
 
-    protected array $types = [];
-    public function __construct(
-        public ?array $renderers = [],
-        public ?array $layouts = []
-    )
-    {
-
-    }
+	}
 }

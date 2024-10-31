@@ -1,7 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Exception;
 
-class NotFoundException extends \Exception {
+use Exception;
 
+class NotFoundException extends Exception
+{
 }

@@ -1,55 +1,74 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\View\Plates;
 
 use League\Plates\Engine;
-
-use ON\View\RendererInterface;
 use ON\Application;
+use ON\Router\Route;
+use ON\View\RendererInterface;
 use ON\View\ViewConfig;
-use ON\Extension\PipelineExtension;
+use Psr\Http\Message\ResponseInterface;
 
-class PlatesRenderer  implements RendererInterface
+class PlatesRenderer implements RendererInterface
 {
-    public function __construct(
-        protected ViewConfig $config, 
-        protected Engine $engine, 
-        protected Application $app) 
-    {
-    }
+	public function __construct(
+		protected ViewConfig $config,
+		protected Engine $engine,
+		protected Application $app
+	) {
+	}
 
-    public function render ($layout, $template_name = null, $data = null, $params = []) {
-        $engine = $this->engine;
+	public function render($layout, $template_name = null, $data = null, $params = [])
+	{
+		$engine = $this->engine;
 
-        $template = $engine->make($template_name);
+		$template = $engine->make($template_name);
 
-        if (isset($layout["sections"])) {
-            foreach($layout["sections"] as $section_name => $section_config) {
-                if (is_array($section_config)) {
-                    $response = $this->runSection(...$section_config);
+		if (isset($layout["sections"])) {
+			foreach ($layout["sections"] as $section_name => $section_config) {
+				if ($section_config instanceof Route) {
+					$response = $this->runSectionFromRoute($section_config);
 
-                    // create section
-                    $template->start($section_name);
-                        echo $response->getBody();
-                    $template->end();
-                }
-                else {
-                    // create section
-                    $template->start($section_name);
-                        include $section_config;
-                    $template->end();
-                }
-            }
-        }
-        $template->layout($layout["name"], $data);
+					// create section
+					$template->start($section_name);
+					echo $response->getBody();
+					$template->end();
+				} elseif (is_array($section_config)) {
+					$response = $this->runSection(...$section_config);
 
-        return $template->render($data);
-    }
+					// create section
+					$template->start($section_name);
+					echo $response->getBody();
+					$template->end();
+				} else {
+					// create section
+					$template->start($section_name);
+					include $section_config;
+					$template->end();
+				}
+			}
+		}
+		$template->layout($layout["name"], $data);
 
-    /*
-        $section_config example: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
-        */
-    public function runSection ($section_path, $controller, $methods, $route_name) {
-        $request = $this->app->pipeline->prepareRequest($section_path, $controller, $methods, $route_name);
-        return $this->app->handle($request);
-    }
+		return $template->render($data);
+	}
+
+	/*
+		$section_config example: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
+		*/
+	public function runSection($section_path, $controller, $methods, $route_name): ResponseInterface
+	{
+		$request = $this->app->pipeline->prepareRequest($section_path, $controller, $methods, $route_name);
+
+		return $this->app->handle($request);
+	}
+
+	public function runSectionFromRoute(Route $route): ResponseInterface
+	{
+		$request = $this->app->pipeline->prepareRequestFromRoute($route);
+
+		return $this->app->handle($request);
+	}
 }

@@ -1,4 +1,7 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Translation;
 
 /**
@@ -6,45 +9,43 @@ namespace ON\Translation;
 **/
 interface TranslationManagerInterface
 {
+	public function __construct($config = []);
 
-  public function __construct($config = array());
+	public function getAvailableLocales();
 
-  public function getAvailableLocales();
+	public function setLocale($identifier);
 
-  public function setLocale($identifier);
+	public function getCurrentLocale();
 
-  public function getCurrentLocale();
+	public function getCurrentLocaleIdentifier();
 
-  public function getCurrentLocaleIdentifier();
+	public function getDefaultLocale();
 
-  public function getDefaultLocale();
+	public function getDefaultLocaleIdentifier();
 
-  public function getDefaultLocaleIdentifier();
+	public function setDefaultDomain($domain);
 
-  public function setDefaultDomain($domain);
+	public function getDefaultDomain();
 
-  public function getDefaultDomain();
+	public function _d($date, $domain = null, $locale = null);
 
-  public function _d($date, $domain = null, $locale = null);
+	public function _c($number, $domain = null, $locale = null);
 
-  public function _c($number, $domain = null, $locale = null);
+	public function _n($number, $domain = null, $locale = null);
 
-  public function _n($number, $domain = null, $locale = null);
+	public function _($message, $domain = null, $locale = null, array $parameters = null);
 
-  public function _($message, $domain = null, $locale = null, array $parameters = null);
+	public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, array $parameters = null);
 
-  public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, array $parameters = null);
+	public function getDomainTranslator($domain, $type);
 
+	public function getLocaleIdentifier($identifier);
 
-  public function getDomainTranslator($domain, $type);
+	public function getLocale($identifier, $forceNew = false);
 
-  public function getLocaleIdentifier($identifier);
+	public function setDefaultTimeZone($id);
 
-  public function getLocale($identifier, $forceNew = false);
+	public function getCurrentTimeZone();
 
-  public function setDefaultTimeZone($id);
-
-  public function getCurrentTimeZone();
-
-  public function getDefaultTimeZone();
+	public function getDefaultTimeZone();
 }

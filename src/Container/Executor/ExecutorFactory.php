@@ -1,21 +1,23 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Container\Executor;
 
 use Psr\Container\ContainerInterface;
-use ON\Container\Executor\TypeHintContainerResolver;
 
 class ExecutorFactory
 {
-    public function __invoke(ContainerInterface $container)
-    {
-        $executor = new Executor(null, $container);
+	public function __invoke(ContainerInterface $container)
+	{
+		$executor = new Executor(null, $container);
 
-        $containerResolver = new TypeHintContainerResolver($container);
-        // or
-        //$containerResolver = new \Invoker\ParameterResolver\Container\ParameterNameContainerResolver($container);
+		$containerResolver = new TypeHintContainerResolver($container);
+		// or
+		//$containerResolver = new \Invoker\ParameterResolver\Container\ParameterNameContainerResolver($container);
 
-        $executor->getParameterResolver()->prependResolver($containerResolver);
+		$executor->getParameterResolver()->prependResolver($containerResolver);
 
-        return $executor;
-    }
+		return $executor;
+	}
 }

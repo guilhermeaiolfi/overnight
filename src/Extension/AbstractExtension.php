@@ -1,76 +1,77 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Extension;
 
 abstract class AbstractExtension implements ExtensionInterface
 {
-    public const TYPE_MODULE = 1;
-    public const TYPE_EXTENSION = 2;
-    public const TYPE_AGGREGATION = 3;
+	public const TYPE_MODULE = 1;
+	public const TYPE_EXTENSION = 2;
+	public const TYPE_AGGREGATION = 3;
 
-    protected int $type = self::TYPE_MODULE;
+	public const VERSION = "UNVERSIONED";
 
-    protected array $pendingTasks = [];
+	protected int $type = self::TYPE_MODULE;
 
-    protected bool $__ready = false;
+	protected array $pendingTasks = [];
 
-    public function getType(): int 
-    {
-        return $this->type;
-    }
+	protected bool $__ready = false;
 
-    public function isReady(): bool
-    {
-        return $this->__ready;
-    }
+	public function getType(): int
+	{
+		return $this->type;
+	}
 
-    public function setReady(bool $ready): void
-    {
-        $this->__ready = $ready;
-    }
+	public function isReady(): bool
+	{
+		return $this->__ready;
+	}
 
-    public function ready()
-    {
-        return;
-    }
+	public function setReady(bool $ready): void
+	{
+		$this->__ready = $ready;
+	}
 
-    public function setup(int $counter): bool
-    {
-        return true;
-    }
+	public function ready()
+	{
+		return;
+	}
 
-    public function getPendingTasks(): array
-    {
-        return $this->pendingTasks;
-    }
+	public function setup(int $counter): bool
+	{
+		return true;
+	}
 
-    public function removePendingTask(mixed $task): bool
-    {
-        $key = array_search($task, $this->pendingTasks);
-        if ($key !== false) {
-            unset($this->pendingTasks[$key]);
-            return true;
-        }
-        return false;
-    }
+	public function getPendingTasks(): array
+	{
+		return $this->pendingTasks;
+	}
 
-    public function hasPendingTask(mixed $task): bool
-    {
-        return in_array($task, $this->pendingTasks);
-    }
+	public function removePendingTask(mixed $task): bool
+	{
+		$key = array_search($task, $this->pendingTasks);
+		if ($key !== false) {
+			unset($this->pendingTasks[$key]);
 
-    public function hasPendingTasks(): bool
-    {
-        return count($this->pendingTasks) > 0;
-    }
+			return true;
+		}
 
-    public function requires(): array
-    {
-        return [];
-    }
+		return false;
+	}
 
-    public function getVersion(): string
-    {
-        return "Unversioned";
-    }
+	public function hasPendingTask(mixed $task): bool
+	{
+		return in_array($task, $this->pendingTasks);
+	}
+
+	public function hasPendingTasks(): bool
+	{
+		return count($this->pendingTasks) > 0;
+	}
+
+	public function requires(): array
+	{
+		return [];
+	}
 }

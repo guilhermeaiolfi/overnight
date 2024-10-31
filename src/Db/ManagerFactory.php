@@ -9,16 +9,16 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 class ManagerFactory
 {
-    public function __invoke(ContainerInterface $container) : Manager
-    {
-        $config   = $container->has('config') ? $container->get('config') : [];
+	public function __invoke(ContainerInterface $container): Manager
+	{
+		$config = $container->has('config') ? $container->get('config') : [];
 
-        $settings = $config["db"];
+		$settings = $config["db"];
 
-        $manager = new Manager($settings, $container);
+		$manager = new Manager($settings, $container);
 
-        $manager->setEventDispatcher($container->get(EventDispatcherInterface::class));        
+		$manager->setEventDispatcher($container->get(EventDispatcherInterface::class));
 
-        return $manager;
-    }
+		return $manager;
+	}
 }

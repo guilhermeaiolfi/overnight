@@ -1,6 +1,10 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Config\Scanner\Exception;
+
+use Exception;
 
 /**
  * FileNotFoundException.
@@ -8,6 +12,6 @@ namespace ON\Config\Scanner\Exception;
  * @copyright Copyright (c) 2019 Riikka Kalliomäki
  * @license http://opensource.org/licenses/mit-license.php MIT License
  */
-class FileNotFoundException extends \Exception implements ClassScannerException
+class FileNotFoundException extends Exception implements ClassScannerException
 {
 }

@@ -8,7 +8,7 @@ use Psr\Container\ContainerExceptionInterface;
 use RuntimeException;
 
 class MissingHelperException extends RuntimeException implements
-    ExceptionInterface,
-    ContainerExceptionInterface
+	ExceptionInterface,
+	ContainerExceptionInterface
 {
 }

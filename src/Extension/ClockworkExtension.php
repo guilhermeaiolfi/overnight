@@ -1,176 +1,173 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\Extension;
 
+use function clock;
+use Clockwork\Helpers\Serializer;
+use Clockwork\Helpers\StackFilter;
+use Clockwork\Helpers\StackTrace;
 use Clockwork\Support\Vanilla\Clockwork;
-use Exception;
+use Laminas\Stdlib\ArrayUtils;
 use ON\Application;
 use ON\Benchmark;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use ON\Config\DatabaseConfig;
 use ON\Event\EventSubscriberInterface;
-use ON\Extension\AbstractExtension;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 
-use function clock;
+class ClockworkExtension extends AbstractExtension implements EventSubscriberInterface
+{
+	protected Clockwork $clockwork;
 
-class ClockworkExtension extends AbstractExtension implements EventSubscriberInterface {
+	protected array $pendingTasks = [ 'config:inject' ];
 
-    protected Clockwork $clockwork;
+	public static function install(Application $app, ?array $options = []): mixed
+	{
+		$extension = new self($app, $options);
 
-    protected array $pendingTasks = [ 'config:inject' ];
+		return $extension;
+	}
 
-    public static function install(Application $app, ?array $options = []): mixed {
-        $extension = new self($app, $options);
-        return $extension;
-    }
+	public function __construct(
+		protected Application $app,
+		protected array $options = []
+	) {
+		if (! function_exists('clock')) {
+			$settings = ArrayUtils::merge($this->getOptions(), $options);
+			$this->clockwork = Clockwork::init($settings);
+		}
 
-    public function __construct (
-        protected Application $app, 
-        protected array $options
-    )
-    {
-        if (!function_exists('clock'))
-        {
-            $file = $options["config_file"];
-            if (!file_exists($file)) {
-                $class= self::class;
-                throw new Exception("File ({$file}) doesn't exist for {$class}.");
-            }
+		clock()->event("Booting")->begin();
+	}
 
-            $config = require_once($file);
+	public function requires(): array
+	{
+		return [
+			'container',
+		];
+	}
 
-            $settings = $config["clockwork"];
-    
-            $this->clockwork = Clockwork::init($settings);
-        }
+	public function setup(int $counter): bool
+	{
+		if ($counter > 0 && $this->app->hasExtension('config') && $this->hasPendingTask("config:inject")) {
+			//$this->app->config->load($this);
+			$this->removePendingTask('config:inject');
+		} elseif ($this->app->isExtensionReady('container')) {
+			$container = $this->app->container;
+			$container->set(Clockwork::class, $this->clockwork);
+			$logger = $container->get(LoggerInterface::class);
+			$loggerDataSource = new PsrLoggerDatasource($logger);
+			$this->clockwork->addDataSource($loggerDataSource);
 
-        clock()->event("Booting")->begin();
-    }
+			return true;
+		}
 
-    public function requires(): array
-    {
-        return [
-            'container'
-        ];
-    }
+		return false;
+	}
 
-    public function setup(int $counter): bool
-    {
-        if ($counter > 0 && $this->app->hasExtension('config') && $this->hasPendingTask("config:inject")) {
-            //$this->app->config->load($this);
-            $this->removePendingTask('config:inject');
-        }
-        else if ($this->app->isExtensionReady('container')) {
-            $container = $this->app->container;
-            $container->set(Clockwork::class, $this->clockwork);
-            $logger = $container->get(LoggerInterface::class);
-            $loggerDataSource = new PsrLoggerDatasource($logger);
-            $this->clockwork->addDataSource($loggerDataSource);
-            return true;
-        }
-        return false;
-    }
+	public function getOptions(): array
+	{
+		return [
+			// TODO: figure it out how to be dynamically set
+			'api' => '/ondemo/__clockwork/',
+			'storage_files_path' => 'var/clockwork',
+			'register_helpers' => true,
+			'storage_expiration' => 2,
+		];
+	}
 
-    public function __invoke() : array
-    {
-        return [
-            'clockwork' => [
-                // TODO: figure it out how to be dynamically set
-                'api' => '/ondemo/__clockwork/',
-                'storage_files_path' => 'var/clockwork',
-                'register_helpers' => true,
-                'storage_expiration' => 2
-            ]
-        ];
-    }
+	public function ready()
+	{
+		clock()->event('Booting')->end();
 
-    public function ready()
-    {
-        clock()->event('Booting')->end();
+	}
 
-    }
-    public function onQuery($event)
-    {
-        $query = $event->getQuery();
+	public function onQuery($event)
+	{
+		$query = $event->getQuery();
 
-        $filter = \Clockwork\Helpers\StackFilter::make()
-            ->isNotVendor([ 'itsgoingd', 'guilhermeaiolfi', 'league' ])
-			      ->isNotNamespace([ 'Clockwork', 'League', 'Invoker' ])
-            ->isNotFunction([ 'profileCall', 'emitEvent' ]);
+		$filter = StackFilter::make()
+			->isNotVendor([ 'itsgoingd', 'guilhermeaiolfi', 'league' ])
+				  ->isNotNamespace([ 'Clockwork', 'League', 'Invoker' ])
+			->isNotFunction([ 'profileCall', 'emitEvent' ]);
 
-        $trace = \Clockwork\Helpers\StackTrace::get()->resolveViewName()->skip($filter);
+		$trace = StackTrace::get()->resolveViewName()->skip($filter);
 
-        clock()->addDatabaseQuery(
-            $query->getSql(), 
-            $query->getParameters(), 
-            floor($query->getDuration() * 1000),
-            [
-                "trace" => (new \Clockwork\Helpers\Serializer)->trace($trace)
-            ]
-        );
-    }
+		clock()->addDatabaseQuery(
+			$query->getSql(),
+			$query->getParameters(),
+			floor($query->getDuration() * 1000),
+			[
+				"trace" => (new Serializer())->trace($trace),
+			]
+		);
+	}
 
-    public function onManagerCreate($event)
-    {
-        $database = $event->getSubject();
+	public function onManagerCreate($event)
+	{
+		$database = $event->getSubject();
 
-        $config = $this->app->config->get(DatabaseConfig::class);
+		$config = $this->app->config->get(DatabaseConfig::class);
 
-        if ($database->getName() == $config->get("default")) {
-            $database->getConnection()->setEventDispatcher($this->app->container->get(\Psr\EventDispatcher\EventDispatcherInterface::class));
-        }
-    }
+		if ($database->getName() == $config->get("default")) {
+			$database->getConnection()->setEventDispatcher($this->app->container->get(EventDispatcherInterface::class));
+		}
+	}
 
-    /*public function onInit($event)
-    {
-        clock()->info("Booting:start");
-        clock()->event('Booting')->begin();
-    }*/
+	/*public function onInit($event)
+	{
+		clock()->info("Booting:start");
+		clock()->event('Booting')->begin();
+	}*/
 
-    public function onRun($event)
-    {
-        clock()->event('Run')->begin();
-        $this->showBenchmarkTable();
-    }
-    
-    public function onEnd($event)
-    {
-        clock()->event('Run')->end();
+	public function onRun($event)
+	{
+		clock()->event('Run')->begin();
+		$this->showBenchmarkTable();
+	}
 
-    }
+	public function onEnd($event)
+	{
+		clock()->event('Run')->end();
 
-    public static function getSubscribedEvents(): array {
-        return [
-            "pdo.query" => 'onQuery',
-            "core.db.manager.create" => 'onManagerCreate',
-            //"core.init" => "onInit", // it was already emmited
-            "core.run" => "onRun",
-            "core.end" => "onEnd"
-        ];
-    }
+	}
 
-    public function showBenchmarkTable()
-    {
-        $benchmark = clock()->userData('benchmark')
-        ->title('Benchmark');
-    
-        $values = [];
-        $all = Benchmark::all();
+	public static function getSubscribedEvents(): array
+	{
+		return [
+			"pdo.query" => 'onQuery',
+			"core.db.manager.create" => 'onManagerCreate',
+			//"core.init" => "onInit", // it was already emmited
+			"core.run" => "onRun",
+			"core.end" => "onEnd",
+		];
+	}
 
-        $totalTime = 0.0;
-        foreach ($all as $title => $time) {
-            $values[] = [ 
-                "Title" => $title,
-                "Time(ms)" => number_format($time, 2)
-            ];
-            $totalTime += $time;
-        }
+	public function showBenchmarkTable()
+	{
+		$benchmark = clock()->userData('benchmark')
+		->title('Benchmark');
 
-        $benchmark->counters([
-            'Benchmarks' => count($values),
-            //'Total(ms)' => number_format($totalTime, 2)
-        ]);
-        
-        $benchmark->table('Benchmark', $values);
-    }
+		$values = [];
+		$all = Benchmark::all();
+
+		$totalTime = 0.0;
+		foreach ($all as $title => $time) {
+			$values[] = [
+				"Title" => $title,
+				"Time(ms)" => number_format($time, 2),
+			];
+			$totalTime += $time;
+		}
+
+		$benchmark->counters([
+			'Benchmarks' => count($values),
+			//'Total(ms)' => number_format($totalTime, 2)
+		]);
+
+		$benchmark->table('Benchmark', $values);
+	}
 }

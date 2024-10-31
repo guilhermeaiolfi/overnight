@@ -21,15 +21,15 @@ use Psr\Container\ContainerInterface;
  */
 class EscaperExtensionFactory
 {
-    /**
-     * @throws InvalidArgumentException
-     */
-    public function __invoke(ContainerInterface $container): EscaperExtension
-    {
-        $config = $container->has('config') ? $container->get('config') : [];
-        $config = $config['plates'] ?? [];
+	/**
+	 * @throws InvalidArgumentException
+	 */
+	public function __invoke(ContainerInterface $container): EscaperExtension
+	{
+		$config = $container->has('config') ? $container->get('config') : [];
+		$config = $config['plates'] ?? [];
 
-        // Create new EscaperExtension instance
-        return new EscaperExtension($config['encoding'] ?? null);
-    }
+		// Create new EscaperExtension instance
+		return new EscaperExtension($config['encoding'] ?? null);
+	}
 }

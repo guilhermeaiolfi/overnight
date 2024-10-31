@@ -1,34 +1,34 @@
 <?php
+
 declare (strict_types=1);
 
 namespace ON\PhpDebugBar;
 
 use DebugBar\StandardDebugBar;
 use Psr\Container\ContainerInterface;
-use PhpMiddleware\PhpDebugBar\ConfigProvider;
 
 final class StandardDebugBarFactory
 {
-    public function __invoke(ContainerInterface $container): StandardDebugBar
-    {
-        $debugBar = new StandardDebugBar();
+	public function __invoke(ContainerInterface $container): StandardDebugBar
+	{
+		$debugBar = new StandardDebugBar();
 
-        $config = $container->get('config');
+		$config = $container->get('config');
 
-        $collectors = $config['phpmiddleware']['phpdebugbar']['collectors'];
-        foreach ($collectors as $collectorName) {
-            $collector = $container->get($collectorName);
-            $debugBar->addCollector($collector);
-        }
+		$collectors = $config['phpmiddleware']['phpdebugbar']['collectors'];
+		foreach ($collectors as $collectorName) {
+			$collector = $container->get($collectorName);
+			$debugBar->addCollector($collector);
+		}
 
-        $storage = $config['phpmiddleware']['phpdebugbar']['storage'];
+		$storage = $config['phpmiddleware']['phpdebugbar']['storage'];
 
-        if (is_string($storage)) {
-            $debugBar->setStorage(
-                $container->get($storage)
-            );
-        }
+		if (is_string($storage)) {
+			$debugBar->setStorage(
+				$container->get($storage)
+			);
+		}
 
-        return $debugBar;
-    }
+		return $debugBar;
+	}
 }

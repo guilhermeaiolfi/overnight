@@ -8,7 +8,7 @@ use Psr\Container\ContainerExceptionInterface;
 use RuntimeException;
 
 class InvalidExtensionException extends RuntimeException implements
-    ExceptionInterface,
-    ContainerExceptionInterface
+	ExceptionInterface,
+	ContainerExceptionInterface
 {
 }

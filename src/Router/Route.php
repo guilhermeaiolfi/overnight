@@ -4,11 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Router;
 
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
-use Psr\Http\Server\RequestHandlerInterface;
-
 use function array_map;
 use function array_reduce;
 use function implode;
@@ -16,6 +11,7 @@ use function in_array;
 use function is_array;
 use function is_string;
 use function preg_match;
+use Psr\Http\Server\MiddlewareInterface;
 use function strtoupper;
 
 /**
@@ -37,149 +33,150 @@ use function strtoupper;
  */
 class Route
 {
-    public const HTTP_METHOD_ANY       = null;
-    public const HTTP_METHOD_SEPARATOR = ':';
+	public const HTTP_METHOD_ANY = null;
+	public const HTTP_METHOD_SEPARATOR = ':';
 
-    /** @var null|list<string> HTTP methods allowed with this route. */
-    private ?array $methods;
+	/** @var null|list<string> HTTP methods allowed with this route. */
+	private ?array $methods;
 
-    /** @var array Options related to this route to pass to the routing implementation. */
-    private array $options = [];
+	/** @var array Options related to this route to pass to the routing implementation. */
+	private array $options = [];
 
-    /** @var non-empty-string */
-    private string $name;
+	/** @var non-empty-string */
+	private string $name;
 
-    /**
-     * @param non-empty-string    $path Path to match.
-     * @param MiddlewareInterface|string $middleware Middleware to use when this route is matched.
-     * @param null|list<string>   $methods Allowed HTTP methods; defaults to HTTP_METHOD_ANY.
-     * @param null|string         $name the route name
-     */
-    public function __construct(
-        private string $path,
-        private mixed $middleware,
-        ?array $methods = self::HTTP_METHOD_ANY,
-        ?string $name = null
-    ) {
-        $this->methods = is_array($methods) ? $this->validateHttpMethods($methods) : $methods;
+	/**
+	 * @param non-empty-string    $path Path to match.
+	 * @param MiddlewareInterface|string $middleware Middleware to use when this route is matched.
+	 * @param null|list<string>   $methods Allowed HTTP methods; defaults to HTTP_METHOD_ANY.
+	 * @param null|string         $name the route name
+	 */
+	public function __construct(
+		private string $path,
+		private mixed $middleware,
+		?array $methods = self::HTTP_METHOD_ANY,
+		?string $name = null
+	) {
+		$this->methods = is_array($methods) ? $this->validateHttpMethods($methods) : $methods;
 
-        if ($name === null || $name === '') {
-            $name = $this->methods === self::HTTP_METHOD_ANY
-                ? $path
-                : $path . '^' . implode(self::HTTP_METHOD_SEPARATOR, $this->methods);
-        }
-        $this->name = $name;
-    }
+		if ($name === null || $name === '') {
+			$name = $this->methods === self::HTTP_METHOD_ANY
+				? $path
+				: $path . '^' . implode(self::HTTP_METHOD_SEPARATOR, $this->methods);
+		}
+		$this->name = $name;
+	}
 
-    /** @return non-empty-string */
-    public function getPath(): string
-    {
-        return $this->path;
-    }
+	/** @return non-empty-string */
+	public function getPath(): string
+	{
+		return $this->path;
+	}
 
-    /**
-     * Set the route name.
-     *
-     * @param non-empty-string $name
-     */
-    public function setName(string $name): void
-    {
-        $this->name = $name;
-    }
+	/**
+	 * Set the route name.
+	 *
+	 * @param non-empty-string $name
+	 */
+	public function setName(string $name): void
+	{
+		$this->name = $name;
+	}
 
-    /** @return non-empty-string */
-    public function getName(): string
-    {
-        return $this->name;
-    }
+	/** @return non-empty-string */
+	public function getName(): string
+	{
+		return $this->name;
+	}
 
-    /**
-     * @return MiddlewareInterface|string Returns the middleware
-     */
-    public function getMiddleware(): mixed
-    {
-        return $this->middleware;
-    }
+	/**
+	 * @return MiddlewareInterface|string Returns the middleware
+	 */
+	public function getMiddleware(): mixed
+	{
+		return $this->middleware;
+	}
 
-    public function setMiddleware(mixed $middleware): void
-    {
-        $this->middleware = $middleware;
-    }
+	public function setMiddleware(mixed $middleware): void
+	{
+		$this->middleware = $middleware;
+	}
 
-    /**
-     * @return null|list<string> Returns HTTP_METHOD_ANY or array of allowed methods.
-     */
-    public function getAllowedMethods(): ?array
-    {
-        return $this->methods;
-    }
+	/**
+	 * @return null|list<string> Returns HTTP_METHOD_ANY or array of allowed methods.
+	 */
+	public function getAllowedMethods(): ?array
+	{
+		return $this->methods;
+	}
 
-    /**
-     * Indicate whether the specified method is allowed by the route.
-     *
-     * @param string $method HTTP method to test.
-     */
-    public function allowsMethod(string $method): bool
-    {
-        $method = strtoupper($method);
-        return $this->allowsAnyMethod() || in_array($method, $this->methods ?? [], true);
-    }
+	/**
+	 * Indicate whether the specified method is allowed by the route.
+	 *
+	 * @param string $method HTTP method to test.
+	 */
+	public function allowsMethod(string $method): bool
+	{
+		$method = strtoupper($method);
 
-    /**
-     * Indicate whether any method is allowed by the route.
-     */
-    public function allowsAnyMethod(): bool
-    {
-        return $this->methods === self::HTTP_METHOD_ANY;
-    }
+		return $this->allowsAnyMethod() || in_array($method, $this->methods ?? [], true);
+	}
 
-    public function setOptions(array $options): void
-    {
-        $this->options = $options;
-    }
+	/**
+	 * Indicate whether any method is allowed by the route.
+	 */
+	public function allowsAnyMethod(): bool
+	{
+		return $this->methods === self::HTTP_METHOD_ANY;
+	}
 
-    public function getOptions(): array
-    {
-        return $this->options;
-    }
+	public function setOptions(array $options): void
+	{
+		$this->options = $options;
+	}
 
-    /**
-     * Validate the provided HTTP method names.
-     *
-     * Validates, and then normalizes to upper case.
-     *
-     * @param list<string> $methods An array of HTTP method names.
-     * @return list<string>
-     * @throws Exception\InvalidArgumentException For any invalid method names.
-     */
-    private function validateHttpMethods(array $methods): array
-    {
-        if (empty($methods)) {
-            throw new Exception\InvalidArgumentException(
-                'HTTP methods argument was empty; must contain at least one method'
-            );
-        }
+	public function getOptions(): array
+	{
+		return $this->options;
+	}
 
-        if (
-            false === array_reduce($methods, function ($valid, $method) {
-                if (false === $valid) {
-                    return false;
-                }
+	/**
+	 * Validate the provided HTTP method names.
+	 *
+	 * Validates, and then normalizes to upper case.
+	 *
+	 * @param list<string> $methods An array of HTTP method names.
+	 * @return list<string>
+	 * @throws Exception\InvalidArgumentException For any invalid method names.
+	 */
+	private function validateHttpMethods(array $methods): array
+	{
+		if (empty($methods)) {
+			throw new Exception\InvalidArgumentException(
+				'HTTP methods argument was empty; must contain at least one method'
+			);
+		}
 
-                if (! is_string($method)) {
-                    return false;
-                }
+		if (
+			false === array_reduce($methods, function ($valid, $method) {
+				if (false === $valid) {
+					return false;
+				}
 
-                if (! preg_match('/^[!#$%&\'*+.^_`\|~0-9a-z-]+$/i', $method)) {
-                    return false;
-                }
+				if (! is_string($method)) {
+					return false;
+				}
 
-                return $valid;
-            }, true)
-        ) {
-            throw new Exception\InvalidArgumentException('One or more HTTP methods were invalid');
-        }
+				if (! preg_match('/^[!#$%&\'*+.^_`\|~0-9a-z-]+$/i', $method)) {
+					return false;
+				}
 
-        return array_map('strtoupper', $methods);
-    }
+				return $valid;
+			}, true)
+		) {
+			throw new Exception\InvalidArgumentException('One or more HTTP methods were invalid');
+		}
+
+		return array_map('strtoupper', $methods);
+	}
 }

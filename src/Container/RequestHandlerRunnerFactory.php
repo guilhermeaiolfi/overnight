@@ -7,7 +7,6 @@ namespace ON\Container;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
-use Laminas\Stratigility\MiddlewarePipe;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
 use Psr\Container\ContainerInterface;
@@ -31,16 +30,16 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 class RequestHandlerRunnerFactory
 {
-    public function __invoke(ContainerInterface $container): RequestHandlerRunner
-    {
-        return new RequestHandlerRunner(
-            $container->get(MiddlewarePipeInterface::class),
-            $container->get(EmitterInterface::class),
-            $container->get(ServerRequestInterface::class),
-            /* static function () {
-                return ServerRequestFactory::fromGlobals();
-            }, */
-            $container->get(ServerRequestErrorResponseGenerator::class)
-        );
-    }
+	public function __invoke(ContainerInterface $container): RequestHandlerRunner
+	{
+		return new RequestHandlerRunner(
+			$container->get(MiddlewarePipeInterface::class),
+			$container->get(EmitterInterface::class),
+			$container->get(ServerRequestInterface::class),
+			/* static function () {
+				return ServerRequestFactory::fromGlobals();
+			}, */
+			$container->get(ServerRequestErrorResponseGenerator::class)
+		);
+	}
 }

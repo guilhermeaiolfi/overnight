@@ -1,11 +1,14 @@
-<?php namespace ON\Clockwork\DataSource;
+<?php
+
+declare(strict_types=1);
+
+namespace ON\Clockwork\DataSource;
 
 use Clockwork\DataSource\DataSource;
 use Clockwork\Request\Log;
 use Clockwork\Request\Request;
-use ON\Clockwork\Handler\MonologHandler;
-use Psr\Log\LoggerInterface;
 use Monolog\Logger;
+use ON\Clockwork\Handler\MonologHandler;
 
 // Data source for Monolog, provides application log
 class PsrLoggerDatasource extends DataSource
@@ -16,7 +19,7 @@ class PsrLoggerDatasource extends DataSource
 	// Create a new data source, takes Monolog instance as an argument
 	public function __construct(Logger $logger)
 	{
-		$this->log = new Log;
+		$this->log = new Log();
 
 		$logger->pushHandler(new MonologHandler($this->log));
 	}
@@ -32,6 +35,6 @@ class PsrLoggerDatasource extends DataSource
 	// Reset the data source to an empty state, clearing any collected data
 	public function reset()
 	{
-		$this->log = new Log;
+		$this->log = new Log();
 	}
 }

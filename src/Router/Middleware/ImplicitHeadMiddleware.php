@@ -14,8 +14,6 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-use function is_callable;
-
 /**
  * Handle implicit HEAD requests.
  *
@@ -45,60 +43,60 @@ use function is_callable;
  */
 class ImplicitHeadMiddleware implements MiddlewareInterface
 {
-    public const FORWARDED_HTTP_METHOD_ATTRIBUTE = 'forwarded_http_method';
+	public const FORWARDED_HTTP_METHOD_ATTRIBUTE = 'forwarded_http_method';
 
-    private StreamFactoryInterface $streamFactory;
+	private StreamFactoryInterface $streamFactory;
 
-    /**
-     * @param (callable(): StreamInterface)|StreamFactoryInterface $streamFactory A factory capable of returning
-     *                                                                            an empty StreamInterface instance to
-     *                                                                            inject in a response.
-     */
-    public function __construct(private RouterInterface $router, callable|StreamFactoryInterface $streamFactory)
-    {
-        $this->streamFactory = $streamFactory;
-    }
+	/**
+	 * @param (callable(): StreamInterface)|StreamFactoryInterface $streamFactory A factory capable of returning
+	 *                                                                            an empty StreamInterface instance to
+	 *                                                                            inject in a response.
+	 */
+	public function __construct(private RouterInterface $router, callable|StreamFactoryInterface $streamFactory)
+	{
+		$this->streamFactory = $streamFactory;
+	}
 
-    /**
-     * Handle an implicit HEAD request.
-     *
-     * If the route allows GET requests, dispatches as a GET request and
-     * resets the response body to be empty; otherwise, creates a new empty
-     * response.
-     */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
-    {
-        if ($request->getMethod() !== RequestMethod::METHOD_HEAD) {
-            return $handler->handle($request);
-        }
+	/**
+	 * Handle an implicit HEAD request.
+	 *
+	 * If the route allows GET requests, dispatches as a GET request and
+	 * resets the response body to be empty; otherwise, creates a new empty
+	 * response.
+	 */
+	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+	{
+		if ($request->getMethod() !== RequestMethod::METHOD_HEAD) {
+			return $handler->handle($request);
+		}
 
-        $result = $request->getAttribute(RouteResult::class);
-        if (! $result instanceof RouteResult) {
-            return $handler->handle($request);
-        }
+		$result = $request->getAttribute(RouteResult::class);
+		if (! $result instanceof RouteResult) {
+			return $handler->handle($request);
+		}
 
-        if ($result->getMatchedRoute()) {
-            return $handler->handle($request);
-        }
+		if ($result->getMatchedRoute()) {
+			return $handler->handle($request);
+		}
 
-        $routeResult = $this->router->match($request->withMethod(RequestMethod::METHOD_GET));
-        if ($routeResult->isFailure()) {
-            return $handler->handle($request);
-        }
+		$routeResult = $this->router->match($request->withMethod(RequestMethod::METHOD_GET));
+		if ($routeResult->isFailure()) {
+			return $handler->handle($request);
+		}
 
-        // Copy matched parameters like RouteMiddleware does
-        /** @var mixed $value */
-        foreach ($routeResult->getMatchedParams() as $param => $value) {
-            $request = $request->withAttribute($param, $value);
-        }
+		// Copy matched parameters like RouteMiddleware does
+		/** @var mixed $value */
+		foreach ($routeResult->getMatchedParams() as $param => $value) {
+			$request = $request->withAttribute($param, $value);
+		}
 
-        $response = $handler->handle(
-            $request
-                ->withAttribute(RouteResult::class, $routeResult)
-                ->withAttribute(self::FORWARDED_HTTP_METHOD_ATTRIBUTE, RequestMethod::METHOD_HEAD)
-                ->withMethod(RequestMethod::METHOD_GET)
-        );
+		$response = $handler->handle(
+			$request
+				->withAttribute(RouteResult::class, $routeResult)
+				->withAttribute(self::FORWARDED_HTTP_METHOD_ATTRIBUTE, RequestMethod::METHOD_HEAD)
+				->withMethod(RequestMethod::METHOD_GET)
+		);
 
-        return $response->withBody($this->streamFactory->createStream());
-    }
+		return $response->withBody($this->streamFactory->createStream());
+	}
 }

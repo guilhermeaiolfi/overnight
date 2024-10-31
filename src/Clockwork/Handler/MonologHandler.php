@@ -1,15 +1,15 @@
-<?php 
+<?php
+
+declare(strict_types=1);
 
 namespace ON\Clockwork\Handler;
 
 use Clockwork\Request\Log as ClockworkLog;
-
-use Monolog\Logger;
 use Monolog\Handler\AbstractProcessingHandler;
 use Monolog\LogRecord;
 
 // Stores messages in a Clockwork log instance (compatible with Monolog 2.x)
-class MonologHandler extends AbstractProcessingHandler 
+class MonologHandler extends AbstractProcessingHandler
 {
 	protected $clockworkLog;
 

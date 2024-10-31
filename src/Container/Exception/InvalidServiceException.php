@@ -11,7 +11,7 @@ use RuntimeException;
  * Exception indicating a service type is invalid or un-fetchable.
  */
 class InvalidServiceException extends RuntimeException implements
-    ContainerExceptionInterface,
-    ExceptionInterface
+	ContainerExceptionInterface,
+	ExceptionInterface
 {
 }

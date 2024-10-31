@@ -5,15 +5,14 @@ declare(strict_types=1);
 namespace ON\Container;
 
 use ArrayAccess;
-use ON\Config\AppConfig;
-use Psr\Container\ContainerInterface;
-use Whoops\Handler\PrettyPageHandler;
-
 use function gettype;
 use function is_callable;
 use function is_object;
 use function is_string;
+use ON\Config\AppConfig;
+use Psr\Container\ContainerInterface;
 use function sprintf;
+use Whoops\Handler\PrettyPageHandler;
 
 /**
  * Create and return an instance of the whoops PrettyPageHandler.
@@ -36,50 +35,51 @@ use function sprintf;
  */
 class WhoopsPageHandlerFactory
 {
-    public function __invoke(ContainerInterface $container): PrettyPageHandler
-    {
-        $config = $container->has(AppConfig::class) ? $container->get(AppConfig::class) : [];
-        $config = $config->get('whoops') ?? [];
+	public function __invoke(ContainerInterface $container): PrettyPageHandler
+	{
+		$config = $container->has(AppConfig::class) ? $container->get(AppConfig::class) : [];
+		$config = $config->get('whoops') ?? [];
 
-        $pageHandler = new PrettyPageHandler();
+		$pageHandler = new PrettyPageHandler();
 
-        $this->injectEditor($pageHandler, $config, $container);
+		$this->injectEditor($pageHandler, $config, $container);
 
-        return $pageHandler;
-    }
+		return $pageHandler;
+	}
 
-    /**
-     * Inject an editor into the whoops configuration.
-     *
-     * @see https://github.com/filp/whoops/blob/master/docs/Open%20Files%20In%20An%20Editor.md
-     *
-     * @param array|ArrayAccess $config
-     * @throws Exception\InvalidServiceException For an invalid editor definition.
-     */
-    private function injectEditor(PrettyPageHandler $handler, $config, ContainerInterface $container): void
-    {
-        if (! isset($config['editor'])) {
-            return;
-        }
+	/**
+	 * Inject an editor into the whoops configuration.
+	 *
+	 * @see https://github.com/filp/whoops/blob/master/docs/Open%20Files%20In%20An%20Editor.md
+	 *
+	 * @param array|ArrayAccess $config
+	 * @throws Exception\InvalidServiceException For an invalid editor definition.
+	 */
+	private function injectEditor(PrettyPageHandler $handler, $config, ContainerInterface $container): void
+	{
+		if (! isset($config['editor'])) {
+			return;
+		}
 
-        $editor = $config['editor'];
+		$editor = $config['editor'];
 
-        if (is_callable($editor)) {
-            $handler->setEditor($editor);
-            return;
-        }
+		if (is_callable($editor)) {
+			$handler->setEditor($editor);
 
-        if (! is_string($editor)) {
-            throw new Exception\InvalidServiceException(sprintf(
-                'Whoops editor must be a string editor name, string service name, or callable; received "%s"',
-                is_object($editor) ? $editor::class : gettype($editor)
-            ));
-        }
+			return;
+		}
 
-        if ($container->has($editor)) {
-            $editor = $container->get($editor);
-        }
+		if (! is_string($editor)) {
+			throw new Exception\InvalidServiceException(sprintf(
+				'Whoops editor must be a string editor name, string service name, or callable; received "%s"',
+				is_object($editor) ? $editor::class : gettype($editor)
+			));
+		}
 
-        $handler->setEditor($editor);
-    }
+		if ($container->has($editor)) {
+			$editor = $container->get($editor);
+		}
+
+		$handler->setEditor($editor);
+	}
 }

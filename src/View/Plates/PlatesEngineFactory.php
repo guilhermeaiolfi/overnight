@@ -4,25 +4,21 @@ declare(strict_types=1);
 
 namespace ON\View\Plates;
 
+use function array_replace_recursive;
+use function class_exists;
+use const E_USER_WARNING;
+use function get_debug_type;
+use function is_array;
+use function is_numeric;
 use League\Plates\Engine as PlatesEngine;
 use League\Plates\Extension\ExtensionInterface;
 use ON\Plates\Exception\InvalidExtensionException;
-
 use ON\View\Plates\Extension\EscaperExtension;
 use ON\View\Plates\Extension\EscaperExtensionFactory;
 use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
-
-
-use function array_replace_recursive;
-use function class_exists;
-use function get_debug_type;
-use function is_array;
-use function is_numeric;
 use function sprintf;
 use function trigger_error;
-
-use const E_USER_WARNING;
 
 /**
  * Create and return a Plates engine instance.
@@ -48,134 +44,138 @@ use const E_USER_WARNING;
  */
 class PlatesEngineFactory
 {
-    public function __invoke(ContainerInterface $container): PlatesEngine
-    {
-        $viewConfig = $container->get(ViewConfig::class);
+	public function __invoke(ContainerInterface $container): PlatesEngine
+	{
+		$viewConfig = $container->get(ViewConfig::class);
 
-        $templatesConfig = isset($viewConfig['templates']) && is_array($viewConfig['templates'])
-            ? $viewConfig['templates']
-            : [];
-        $platesConfig = isset($viewConfig['plates']) && is_array($viewConfig['plates'])
-            ? $viewConfig['plates']
-            : [];
+		$templatesConfig = isset($viewConfig['templates']) && is_array($viewConfig['templates'])
+			? $viewConfig['templates']
+			: [];
+		$platesConfig = isset($viewConfig['plates']) && is_array($viewConfig['plates'])
+			? $viewConfig['plates']
+			: [];
 
-        $config = array_replace_recursive($templatesConfig, $platesConfig);
-        // Create the engine instance:
-        $engine = new PlatesEngine();
+		$config = array_replace_recursive($templatesConfig, $platesConfig);
+		// Create the engine instance:
+		$engine = new PlatesEngine();
 
-        $this->injectEscaperExtension($container, $engine);
+		$this->injectEscaperExtension($container, $engine);
 
-        if (isset($config['extensions']) && is_array($config['extensions'])) {
-            $this->injectExtensions($container, $engine, $config['extensions']);
-        }
+		if (isset($config['extensions']) && is_array($config['extensions'])) {
+			$this->injectExtensions($container, $engine, $config['extensions']);
+		}
 
-        // Set file extension
-        if (isset($config['extension'])) {
-            $engine->setFileExtension($config['extension']);
-        }
+		// Set file extension
+		if (isset($config['extension'])) {
+			$engine->setFileExtension($config['extension']);
+		}
 
-        // Add template paths
+		// Add template paths
 
-        $allPaths = isset($config['paths']) && is_array($config['paths']) ? $config['paths'] : [];
+		$allPaths = isset($config['paths']) && is_array($config['paths']) ? $config['paths'] : [];
 
-        foreach ($allPaths as $namespace => $paths) {
-            $namespace = is_numeric($namespace) ? null : $namespace;
-            foreach ((array) $paths as $path) {
-                if (! $namespace && ! $engine->getDirectory()) {
-                    $engine->setDirectory($path);
-                    continue;
-                }
+		foreach ($allPaths as $namespace => $paths) {
+			$namespace = is_numeric($namespace) ? null : $namespace;
+			foreach ((array) $paths as $path) {
+				if (! $namespace && ! $engine->getDirectory()) {
+					$engine->setDirectory($path);
 
-                if (! $namespace) {
-                    trigger_error('Cannot add duplicate un-namespaced path in Plates template adapter', E_USER_WARNING);
-                    continue;
-                }
-                $engine->addFolder($namespace, $path, true);
-            }
-        }
-        return $engine;
-    }
+					continue;
+				}
 
+				if (! $namespace) {
+					trigger_error('Cannot add duplicate un-namespaced path in Plates template adapter', E_USER_WARNING);
 
-    /**
-     * Inject the Escaper extension provided by this package.
-     *
-     * If a service by the name of the EscaperExtension class exists, fetches
-     * and loads it.
-     *
-     * Otherwise, instantiates the EscaperExtensionFactory, and invokes it with
-     * the container, loading the result into the engine.
-     */
-    private function injectEscaperExtension(ContainerInterface $container, PlatesEngine $engine): void
-    {
-        if ($container->has(EscaperExtension::class)) {
-            $engine->loadExtension($container->get(EscaperExtension::class));
-            return;
-        }
+					continue;
+				}
+				$engine->addFolder($namespace, $path, true);
+			}
+		}
 
-        $extensionFactory = new EscaperExtensionFactory();
-        $engine->loadExtension($extensionFactory($container));
-    }
+		return $engine;
+	}
 
-    /**
-     * Inject all configured extensions into the engine.
-     *
-     * @param array<ExtensionInterface|string> $extensions
-     */
-    private function injectExtensions(ContainerInterface $container, PlatesEngine $engine, array $extensions): void
-    {
-        foreach ($extensions as $extension) {
-            $this->injectExtension($container, $engine, $extension);
-        }
-    }
+	/**
+	 * Inject the Escaper extension provided by this package.
+	 *
+	 * If a service by the name of the EscaperExtension class exists, fetches
+	 * and loads it.
+	 *
+	 * Otherwise, instantiates the EscaperExtensionFactory, and invokes it with
+	 * the container, loading the result into the engine.
+	 */
+	private function injectEscaperExtension(ContainerInterface $container, PlatesEngine $engine): void
+	{
+		if ($container->has(EscaperExtension::class)) {
+			$engine->loadExtension($container->get(EscaperExtension::class));
 
-    /**
-     * Inject an extension into the engine.
-     *
-     * Valid extension specifications include:
-     *
-     * - ExtensionInterface instances
-     * - String service names that resolve to ExtensionInterface instances
-     * - String class names that resolve to ExtensionInterface instances
-     *
-     * If anything else is provided, an exception is raised.
-     *
-     * @throws Exception\InvalidExtensionException For non-string,
-     *     non-extension $extension values.
-     * @throws Exception\InvalidExtensionException For string $extension values
-     *     that do not resolve to an extension instance.
-     */
-    private function injectExtension(
-        ContainerInterface $container,
-        PlatesEngine $engine,
-        ExtensionInterface|string $extension
-    ): void {
-        if ($extension instanceof ExtensionInterface) {
-            $engine->loadExtension($extension);
-            return;
-        }
+			return;
+		}
 
-        if (! $container->has($extension) && ! class_exists($extension)) {
-            throw new InvalidExtensionException(sprintf(
-                '%s expects extension service names or class names; "%s" does not resolve to either',
-                self::class,
-                $extension
-            ));
-        }
+		$extensionFactory = new EscaperExtensionFactory();
+		$engine->loadExtension($extensionFactory($container));
+	}
 
-        $extension = $container->has($extension)
-            ? $container->get($extension)
-            : new $extension();
+	/**
+	 * Inject all configured extensions into the engine.
+	 *
+	 * @param array<ExtensionInterface|string> $extensions
+	 */
+	private function injectExtensions(ContainerInterface $container, PlatesEngine $engine, array $extensions): void
+	{
+		foreach ($extensions as $extension) {
+			$this->injectExtension($container, $engine, $extension);
+		}
+	}
 
-        if (! $extension instanceof ExtensionInterface) {
-            throw new InvalidExtensionException(sprintf(
-                '%s expects extension services to implement %s ; received %s',
-                self::class,
-                ExtensionInterface::class,
-                get_debug_type($extension)
-            ));
-        }
+	/**
+	 * Inject an extension into the engine.
+	 *
+	 * Valid extension specifications include:
+	 *
+	 * - ExtensionInterface instances
+	 * - String service names that resolve to ExtensionInterface instances
+	 * - String class names that resolve to ExtensionInterface instances
+	 *
+	 * If anything else is provided, an exception is raised.
+	 *
+	 * @throws Exception\InvalidExtensionException For non-string,
+	 *     non-extension $extension values.
+	 * @throws Exception\InvalidExtensionException For string $extension values
+	 *     that do not resolve to an extension instance.
+	 */
+	private function injectExtension(
+		ContainerInterface $container,
+		PlatesEngine $engine,
+		ExtensionInterface|string $extension
+	): void {
+		if ($extension instanceof ExtensionInterface) {
+			$engine->loadExtension($extension);
 
-        $engine->loadExtension($extension);
-    }
+			return;
+		}
+
+		if (! $container->has($extension) && ! class_exists($extension)) {
+			throw new InvalidExtensionException(sprintf(
+				'%s expects extension service names or class names; "%s" does not resolve to either',
+				self::class,
+				$extension
+			));
+		}
+
+		$extension = $container->has($extension)
+			? $container->get($extension)
+			: new $extension();
+
+		if (! $extension instanceof ExtensionInterface) {
+			throw new InvalidExtensionException(sprintf(
+				'%s expects extension services to implement %s ; received %s',
+				self::class,
+				ExtensionInterface::class,
+				get_debug_type($extension)
+			));
+		}
+
+		$engine->loadExtension($extension);
+	}
 }

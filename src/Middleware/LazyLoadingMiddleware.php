@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Exception\InvalidMiddlewareException;
-use ON\MiddlewareContainer;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -14,16 +13,16 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class LazyLoadingMiddleware implements MiddlewareInterface
 {
-    public function __construct(private ContainerInterface $container, public readonly string $middlewareName)
-    {
-    }
+	public function __construct(private ContainerInterface $container, public readonly string $middlewareName)
+	{
+	}
 
-    /**
-     * @throws InvalidMiddlewareException For invalid middleware types pulled
-     *     from the container.
-     */
-    public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
-    {
-        return $this->container->get($this->middlewareName)->process($request, $handler);
-    }
+	/**
+	 * @throws InvalidMiddlewareException For invalid middleware types pulled
+	 *     from the container.
+	 */
+	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+	{
+		return $this->container->get($this->middlewareName)->process($request, $handler);
+	}
 }

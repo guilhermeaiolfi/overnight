@@ -1,34 +1,37 @@
 <?php
+
+declare(strict_types=1);
+
 namespace ON\View\Plates;
 
 use League\Plates\Engine;
 
 class ConfigProvider
 {
-    /**
-     * @return array
-     */
-    public function __invoke()
-    {
-        return [
-            'dependencies' => $this->getDependencies(),
-        ];
-    }
+	/**
+	 * @return array
+	 */
+	public function __invoke()
+	{
+		return [
+			'dependencies' => $this->getDependencies(),
+		];
+	}
 
-    /**
-     * @return array
-     */
-    public function getDependencies()
-    {
-         return [
-            'aliases' =>[
+	/**
+	 * @return array
+	 */
+	public function getDependencies()
+	{
+		return [
+			'aliases' => [
 
 
-            ],
-            'factories' => [
-                Engine::class         => PlatesEngineFactory::class,
-                PlatesRenderer::class => PlatesRendererFactory::class
-            ]
-        ];
-     }
+			],
+			'factories' => [
+				Engine::class => PlatesEngineFactory::class,
+				PlatesRenderer::class => PlatesRendererFactory::class,
+			],
+		];
+	}
 }

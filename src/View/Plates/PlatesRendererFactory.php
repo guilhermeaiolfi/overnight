@@ -1,16 +1,20 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\View\Plates;
 
 use Psr\Container\ContainerInterface;
 
-class PlatesRendererFactory {
+class PlatesRendererFactory
+{
+	public function __invoke(ContainerInterface $c)
+	{
+		// Attention! engine folders are added in the EngineFactory
 
-  public function __invoke (ContainerInterface $c) {
-    // Attention! engine folders are added in the EngineFactory
-    
-    $renderer = $c->get(\ON\View\Plates\PlatesRenderer::class);
-    return $renderer;
+		$renderer = $c->get(PlatesRenderer::class);
 
-  }
+		return $renderer;
+
+	}
 }

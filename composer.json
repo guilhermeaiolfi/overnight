@@ -34,7 +34,8 @@
         "itsgoingd/clockwork": "^5.2",
         "phpunit/phpunit": "11.x.x",
         "kint-php/kint": "^5.1",
-        "filp/whoops": "^2.16"
+        "filp/whoops": "^2.16",
+        "friendsofphp/php-cs-fixer": "^3.64"
     },
     "autoload": {
       "files": [

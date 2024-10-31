@@ -16,25 +16,25 @@ use Symfony\Component\Config\Resource\ResourceInterface;
  */
 class ArrayProvider implements ResourceProviderInterface
 {
-    /**
-     * @param array<TKey, TValue> $config
-     */
-    public function __construct(
-        private array $config, 
-        protected ?ResourceInterface $resource = null)
-    {
-    }
+	/**
+	 * @param array<TKey, TValue> $config
+	 */
+	public function __construct(
+		private array $config,
+		protected ?ResourceInterface $resource = null
+	) {
+	}
 
-    /**
-     * @return array<TKey, TValue>
-     */
-    public function __invoke()
-    {
-        return $this->config;
-    }
+	/**
+	 * @return array<TKey, TValue>
+	 */
+	public function __invoke()
+	{
+		return $this->config;
+	}
 
-    public function getResource(): ResourceInterface
-    {
-        return $this->resource;
-    }
+	public function getResource(): ResourceInterface
+	{
+		return $this->resource;
+	}
 }
