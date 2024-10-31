@@ -12,6 +12,8 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	public const VERSION = "UNVERSIONED";
 
+	public const NAMESPACE = "core.extensions.abstract";
+
 	protected int $type = self::TYPE_MODULE;
 
 	protected array $pendingTasks = [];
@@ -28,6 +30,11 @@ abstract class AbstractExtension implements ExtensionInterface
 		return $this->__ready;
 	}
 
+	public function getNamespace(): string
+	{
+		return static::NAMESPACE;
+	}
+	
 	public function setReady(bool $ready): void
 	{
 		$this->__ready = $ready;
@@ -40,7 +47,11 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	public function setup(int $counter): bool
 	{
-		return true;
+		if (!$this->hasPendingTasks()) {
+			return true;
+		}
+
+		return false;
 	}
 
 	public function getPendingTasks(): array

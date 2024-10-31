@@ -20,9 +20,11 @@ use Psr\Log\LoggerInterface;
 
 class ClockworkExtension extends AbstractExtension implements EventSubscriberInterface
 {
+	public const NAMESPACE = "core.extensions.clockwork";
+
 	protected Clockwork $clockwork;
 
-	protected array $pendingTasks = [ 'config:inject' ];
+	protected array $pendingTasks = [ 'container:setup' ];
 
 	public static function install(Application $app, ?array $options = []): mixed
 	{
@@ -50,24 +52,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		];
 	}
 
-	public function setup(int $counter): bool
-	{
-		if ($counter > 0 && $this->app->hasExtension('config') && $this->hasPendingTask("config:inject")) {
-			//$this->app->config->load($this);
-			$this->removePendingTask('config:inject');
-		} elseif ($this->app->isExtensionReady('container')) {
-			$container = $this->app->container;
-			$container->set(Clockwork::class, $this->clockwork);
-			$logger = $container->get(LoggerInterface::class);
-			$loggerDataSource = new PsrLoggerDatasource($logger);
-			$this->clockwork->addDataSource($loggerDataSource);
-
-			return true;
-		}
-
-		return false;
-	}
-
 	public function getOptions(): array
 	{
 		return [
@@ -81,8 +65,8 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function ready()
 	{
+		$this->app->events->dispatch("core.extensions.clockwork.ready", $this);
 		clock()->event('Booting')->end();
-
 	}
 
 	public function onQuery($event)
@@ -135,6 +119,22 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	}
 
+	public function onContainerReady(): void
+	{
+		$container = $this->app->container;
+		$container->set(Clockwork::class, $this->clockwork);
+		$logger = $container->get(LoggerInterface::class);
+		$loggerDataSource = new PsrLoggerDatasource($logger);
+		$this->clockwork->addDataSource($loggerDataSource);
+
+		$this->removePendingTask('container:setup');
+	}
+
+	public function onConfigSetup(): void
+	{
+
+	}
+
 	public static function getSubscribedEvents(): array
 	{
 		return [
@@ -143,6 +143,9 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 			//"core.init" => "onInit", // it was already emmited
 			"core.run" => "onRun",
 			"core.end" => "onEnd",
+
+			"core.extensions.container.ready" => 'onContainerReady',
+			"core.extensions.config.setup" => 'onConfigSetup',
 		];
 	}
 

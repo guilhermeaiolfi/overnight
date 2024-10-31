@@ -10,6 +10,7 @@ use ON\Application;
 
 class ConfigExtension extends AbstractExtension
 {
+	public const NAMESPACE = "core.extensions.config";
 	protected int $type = self::TYPE_EXTENSION;
 	protected Application $app;
 	protected array $options;
@@ -62,6 +63,7 @@ class ConfigExtension extends AbstractExtension
 	{
 		if ($counter == 0) {
 			// we need to give a chance to extensions to register configs before application code
+			$this->app->events->dispatch("core.extensions.config.setup", $this);
 			return false;
 		}
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
@@ -89,6 +91,6 @@ class ConfigExtension extends AbstractExtension
 
 	public function ready()
 	{
-
+		$this->app->events->dispatch("core.extensions.config.ready", $this);
 	}
 }

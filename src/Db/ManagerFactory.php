@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Db;
 
+use ON\Config\DatabaseConfig;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -11,9 +12,12 @@ class ManagerFactory
 {
 	public function __invoke(ContainerInterface $container): Manager
 	{
-		$config = $container->has('config') ? $container->get('config') : [];
+		if (!$container->has(DatabaseConfig::class)) {
+			throw new \Exception("There is no DatabaseConfig set");
+		}
+		$config = $container->get(DatabaseConfig::class);
 
-		$settings = $config["db"];
+		$settings = $config;
 
 		$manager = new Manager($settings, $container);
 

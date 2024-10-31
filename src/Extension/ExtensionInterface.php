@@ -23,4 +23,6 @@ interface ExtensionInterface
 	public function hasPendingTask(mixed $task): bool;
 
 	public function requires(): array;
+
+	public function getNamespace(): string;
 }

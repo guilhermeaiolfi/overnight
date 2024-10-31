@@ -14,6 +14,8 @@ class Application
 
 	protected array $extensionsToInstall = [];
 
+	protected array $aliases = [];
+
 	protected array $extensions = [];
 
 	protected array $setupingExtensions = [];
@@ -56,7 +58,6 @@ class Application
 		if (is_string($extensions)) {
 			$extensions = require_once($extensions);
 		}
-		//var_dump($extensions);exit;
 
 		// load .env file vars
 		$dotenv = new Dotenv();
@@ -79,10 +80,7 @@ class Application
 			}
 		}
 
-
-		Benchmark::start("LoadExtensions");
 		$this->loadExtensions();
-		Benchmark::end("LoadExtensions");
 	}
 
 	public function isDebug(): bool
@@ -112,13 +110,14 @@ class Application
 
 	public function isExtensionReady(string $ext_name_or_class): bool
 	{
-		return $this->extensions[$ext_name_or_class]->isReady();
+		$ext = $this->getExtension($ext_name_or_class);
+		return $ext->isReady();
 	}
 
 	public function getExtensionsByPendingTask(mixed $task): array
 	{
 		$result = [];
-		foreach ($this->extenions as $ext_class => $ext_instance) {
+		foreach ($this->extensions as $ext_class => $ext_instance) {
 			$tasks = $ext_instance->getPendingTasks();
 			if (in_array($task, $tasks)) {
 				$result[] = $ext_class;
@@ -140,7 +139,7 @@ class Application
 		foreach ($this->extensions as $ext_class => $ext_instance) {
 			$deps = $ext_instance->requires();
 			foreach ($deps as $dep) {
-				if (! isset($this->extensions[$dep])) {
+				if (! $this->hasExtension($dep)) {
 					throw new Exception("Extension {$ext_class} depends on: \'{$dep}\' that is not installed.");
 
 					return;
@@ -148,21 +147,13 @@ class Application
 			}
 		}
 
-		Benchmark::start("Setupping");
 		$counter = 0;
 		$pointer = $this->setupingExtensions[array_key_last($this->setupingExtensions)];
 		while ($ext_class = array_shift($this->setupingExtensions)) {
 			$ext_instance = $this->extensions[$ext_class];
 
 			if ($ext_instance) {
-				if (function_exists('clock')) {
-					clock()->event('setup:' . $ext_class)->begin();
-				}
 				$completed = $ext_instance->setup($counter);
-
-				if (function_exists('clock')) {
-					clock()->event('setup:' . $ext_class)->end();
-				}
 				if (! $completed) {
 					$this->setupingExtensions[] = $ext_class;
 					if (! $completed && count($this->setupingExtensions) == 1) {
@@ -170,6 +161,7 @@ class Application
 					}
 				} else {
 					$ext_instance->setReady(true);
+					$ext_instance->ready();
 				}
 
 				if ($pointer == $ext_class) {
@@ -180,15 +172,6 @@ class Application
 				}
 			}
 		}
-		Benchmark::end("Setupping");
-
-		Benchmark::start("Readying");
-		foreach ($this->extensions as $ext_class => $ext_instance) {
-			if (isset($ext_instance)) {
-				$ext_instance->ready();
-			}
-		}
-		Benchmark::end("Readying");
 	}
 
 	public function install(string $extension_class, array $extension_options): mixed
@@ -215,12 +198,12 @@ class Application
 
 	public function registerExtension(string $name_or_class, ExtensionInterface $instance): void
 	{
-		$this->extensions[$name_or_class] = $instance;
+		$this->aliases[$name_or_class] = $instance;
 	}
 
 	public function hasExtension(string $name_or_class): bool
 	{
-		return array_key_exists($name_or_class, $this->extensions);
+		return array_key_exists($name_or_class, $this->extensions) || array_key_exists($name_or_class, $this->aliases);
 	}
 
 	/**
@@ -234,7 +217,7 @@ class Application
 			throw new Exception("Extension {$className} is not installed.");
 		}
 
-		return $this->extensions[$className];
+		return $this->extensions[$className]??$this->aliases[$className];
 	}
 
 	public function __get($name)

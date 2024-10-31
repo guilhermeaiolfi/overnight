@@ -14,28 +14,28 @@ use Exception;
 use function is_file;
 use function is_numeric;
 use function is_object;
-use Laminas\Stratigility\Middleware\ErrorHandler;
 use ON\Application;
-use ON\Config\ConfigInterface;
 use ON\Config\ContainerConfig;
 use ON\Container\ConfigDefinitionSource;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
+use ON\Event\EventSubscriberInterface;
+use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
 use function rtrim;
 
-class ContainerExtension extends AbstractExtension
+class ContainerExtension extends AbstractExtension implements EventSubscriberInterface
 {
+	public const NAMESPACE = "core.extensions.container";
 	protected int $type = self::TYPE_EXTENSION;
 	protected $container;
 
 	protected string $cache_path;
 	protected array $definitions;
 
-	/**
-	 * Make overridden delegator idempotent
-	 */
 	private int $delegatorCounter = 0;
+
+	protected array $pendingTasks = [ 'container:create' ];
 
 	public function __construct(
 		protected Application $app,
@@ -52,41 +52,17 @@ class ContainerExtension extends AbstractExtension
 		return $extension;
 	}
 
+	public function ready(): void
+	{
+		$this->app->events->dispatch('core.extensions.container.ready');
+	}
+
 	public function setup(int $counter): bool
 	{
-		if ($this->app->isExtensionReady('config')) {
-			// we need to get the container working here (and not in the setup()),
-			// because it may be used in the setup method by other extensions
-
-			/** @var ConfigExtension $config_ext */
-			$config_ext = $this->app->config;
-
-			$configs = $config_ext->get();
-
-			$this->app->container = $this->container = $container = $this->createContainer($configs[ContainerConfig::class]);
-
-			foreach ($configs as $class => $config) {
-				$container->set($class, $config);
-			}
-			/*
-			$container->set(ConfigInterface::class, $this->app->config->getConfig());*/
-
-			//echo VarExporter::export($container, VarExporter::ADD_RETURN | VarExporter::CLOSURE_SNAPSHOT_USES);exit;
-			// we need to set it to the container in case other places need the instance of Application
-			$container->set(get_class($this->app), $this->app);
-
-			/*if ($config->get("errors") && $this->container->has(ErrorHandler::class)) {
-				//creates the error handler early on so anything gets handled
-				$this->container->get(ErrorHandler::class);
-
-				//var_dump($config->get('templates.paths'));
-				return true;
-			}*/
-			//throw new Exception("ON doesn't know how create ErrorHandler class. Configure it in the DI config.");
-			return true;
+		if ($this->hasPendingTasks()) {
+			return false;
 		}
-
-		return false;
+		return true;
 	}
 
 	public function hasCache()
@@ -172,8 +148,6 @@ class ContainerExtension extends AbstractExtension
 
 		$container = $builder->build();
 
-		$container->set('config', $config);
-
 		return $container;
 	}
 
@@ -194,5 +168,34 @@ class ContainerExtension extends AbstractExtension
 		})->parameter('delegator', $delegator)
 		  ->parameter('previous', $previous)
 		  ->parameter('name', $name);
+	}
+
+	public function onConfigReady($event): void
+	{
+		// we need to get the container working here (and not in the setup()),
+		// because it may be used in the setup method by other extensions
+
+		/** @var ConfigExtension $config_ext */
+		$config_ext = $this->app->config;
+
+		$configs = $config_ext->get();
+
+		$this->app->container = $this->container = $this->createContainer($configs[ContainerConfig::class]);
+
+		foreach ($configs as $class => $config) {
+			$this->container->set($class, $config);
+		}
+
+		// we need to set it to the container in case other places need the instance of Application
+		$this->container->set(get_class($this->app), $this->app);
+
+		$this->removePendingTask("container:create");
+	}
+
+	public static function getSubscribedEvents()
+	{
+		return [
+			'core.extensions.config.ready' => 'onConfigReady',
+		];
 	}
 }

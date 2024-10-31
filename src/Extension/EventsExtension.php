@@ -7,14 +7,14 @@ namespace ON\Extension;
 use Exception;
 use League\Event\ListenerPriority;
 use ON\Application;
-use ON\Config\ContainerConfig;
 use ON\Event\EventDispatcher;
 use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
-class EventsExtension extends AbstractExtension
+class EventsExtension extends AbstractExtension implements EventSubscriberInterface
 {
+	public const NAMESPACE = "core.extensions.events";
 	protected int $type = self::TYPE_EXTENSION;
 
 	/** @var EventDispatcher */
@@ -42,36 +42,17 @@ class EventsExtension extends AbstractExtension
 
 	public function requires(): array
 	{
-		return [
-			'config',
-		];
+		return [];
 	}
 
 	public function setup(int $counter): bool
 	{
-		if ($this->hasPendingTask("container:define")) {
-			$config = $this->app->config;
+		$this->eventDispatcher = new EventDispatcher();
 
-			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->mergeRecursiveDistinct([
-				"definitions" => [
-					"aliases" => [
-						EventDispatcherInterface::class => EventDispatcher::class,
-					],
-				],
-			]);
-			$this->removePendingTask('container:define');
-		}
+		// register events for extensions
+		$this->registerEventSubscribersForExtensions();
 
-
-		if ($this->app->isExtensionReady('container')) {
-			$this->eventDispatcher = $this->app->container->get(EventDispatcherInterface::class);
-			$this->dispatch(new NamedEvent("core.init"));
-
-			return true;
-		}
-
-		return false;
+		return true;
 	}
 
 	public function registerEventSubscribersForExtensions()
@@ -86,20 +67,14 @@ class EventsExtension extends AbstractExtension
 			if ($obj) {
 				$this->loadEventSubscriber($obj);
 			}
-			$this->dispatch(new NamedEvent("core.extension.ready", $obj ?? $class));
+			$this->dispatch(new NamedEvent("core.ready", $obj ?? $class));
 		}
 	}
 
 	public function ready()
 	{
-		// register events for extensions
-		$this->registerEventSubscribersForExtensions();
-
 		// clear the queue of events to dispatch
 		$this->flush();
-
-		// tell the world we are ready
-		$this->dispatch(new NamedEvent("core.ready"));
 	}
 
 	protected function flush()
@@ -109,8 +84,11 @@ class EventsExtension extends AbstractExtension
 		}
 	}
 
-	public function dispatch($event)
+	public function dispatch($event, $data = null)
 	{
+		if (is_string($event)) {
+			$event = new NamedEvent($event, $data);
+		}
 		if (isset($this->eventDispatcher)) {
 			return $this->eventDispatcher->dispatch($event);
 		}
@@ -199,5 +177,17 @@ class EventsExtension extends AbstractExtension
 			throw new Exception("Event name (" . $event . ") is not valid for listener: " . get_class($listener));
 		}
 		$this->eventDispatcher->subscribeTo($event, $listener, $priority);
+	}
+
+	public function onContainerReady($event): void
+	{
+		$this->app->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
+	}
+
+	public static function getSubscribedEvents()
+	{
+		return [
+			'core.extensions.container.ready' => 'onContainerReady',
+		];
 	}
 }

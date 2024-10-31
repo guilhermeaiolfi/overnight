@@ -29,6 +29,7 @@ use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
+use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
 use ON\Handler\NotFoundHandler;
 use ON\Middleware\ErrorResponseGenerator;
@@ -47,8 +48,9 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-class PipelineExtension extends AbstractExtension
+class PipelineExtension extends AbstractExtension implements EventSubscriberInterface
 {
+	public const NAMESPACE = "core.extensions.pipeline";
 	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
 
@@ -88,27 +90,6 @@ class PipelineExtension extends AbstractExtension
 		];
 	}
 
-	public function setup(int $counter): bool
-	{
-		if ($this->removePendingTask("container:define")) {
-			$this->defineDefaultDependencies();
-		}
-		if ($this->hasPendingTask("pipeline:load") && $this->app->isExtensionReady('container')) {
-			$this->setupPipeline();
-
-			$appCfg = $this->app->config->get(AppConfig::class);
-
-			$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
-			$this->removePendingTask('pipeline:load');
-		}
-
-		if (!$this->hasPendingTasks()) {
-			return true;
-		}
-
-		return false;
-	}
-
 	protected function setupPipeline(): void {
 		$this->app->requestStack = $this->requestStack = new RequestStack();
 
@@ -121,46 +102,12 @@ class PipelineExtension extends AbstractExtension
 		$this->app->registerMethod("runAction", [$this, "runAction"]);
 		$this->app->registerMethod("process", [$this, "process"]);
 		$this->app->registerMethod("handle", [$this, "handle"]);
+
 		if (!$this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
 		$this->runner = $container->get(RequestHandlerRunner::class);
-	}
-
-	protected function defineDefaultDependencies(): void {
-		$config = $this->app->config;
-
-		$containerConfig = $config->get(ContainerConfig::class);
-		$containerConfig->mergeConfigArray([
-			"definitions" => [
-				"aliases" => [
-					MiddlewarePipeInterface::class => MiddlewarePipe::class,
-					MiddlewareFactoryInterface::class => MiddlewareFactory::class,
-					ResponseFactoryInterface::class => ResponseFactory::class,
-				],
-				"factories" => [
-					EmitterInterface::class => EmitterFactory::class,
-					ErrorHandler::class => ErrorHandlerFactory::class,
-					MiddlewareContainer::class => MiddlewareContainerFactory::class,
-
-					// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
-					ErrorResponseGenerator::class                       => \ON\Container\ErrorResponseGeneratorFactory::class,
-					//ErrorResponseGenerator::class => WhoopsErrorResponseGeneratorFactory::class,
-					'ON\Whoops' => WhoopsFactory::class,
-					'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,
-
-					ResponseInterface::class => ResponseFactoryFactory::class,
-					RequestHandlerRunner::class => RequestHandlerRunnerFactory::class,
-
-					ServerRequestErrorResponseGenerator::class => ServerRequestErrorResponseGeneratorFactory::class,
-					ServerRequestInterface::class => ServerRequestFactoryFactory::class,
-					StreamInterface::class => StreamFactoryFactory::class,
-					NotFoundHandler::class => NotFoundHandlerFactory::class,
-
-				],
-			],
-		]);
 	}
 
 	public function prepareMiddleware($middleware): MiddlewareInterface
@@ -301,4 +248,60 @@ class PipelineExtension extends AbstractExtension
 			$dispatcher->dispatch(new NamedEvent("core.end"));
 		}
 	}
+
+	public function onConfigSetup(): void
+	{
+		$config = $this->app->config;
+
+		$containerConfig = $config->get(ContainerConfig::class);
+		$containerConfig->mergeConfigArray([
+			"definitions" => [
+				"aliases" => [
+					MiddlewarePipeInterface::class => MiddlewarePipe::class,
+					MiddlewareFactoryInterface::class => MiddlewareFactory::class,
+					ResponseFactoryInterface::class => ResponseFactory::class,
+				],
+				"factories" => [
+					EmitterInterface::class => EmitterFactory::class,
+					ErrorHandler::class => ErrorHandlerFactory::class,
+					MiddlewareContainer::class => MiddlewareContainerFactory::class,
+
+					// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
+					ErrorResponseGenerator::class                       => \ON\Container\ErrorResponseGeneratorFactory::class,
+					//ErrorResponseGenerator::class => WhoopsErrorResponseGeneratorFactory::class,
+					'ON\Whoops' => WhoopsFactory::class,
+					'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,
+
+					ResponseInterface::class => ResponseFactoryFactory::class,
+					RequestHandlerRunner::class => RequestHandlerRunnerFactory::class,
+
+					ServerRequestErrorResponseGenerator::class => ServerRequestErrorResponseGeneratorFactory::class,
+					ServerRequestInterface::class => ServerRequestFactoryFactory::class,
+					StreamInterface::class => StreamFactoryFactory::class,
+					NotFoundHandler::class => NotFoundHandlerFactory::class,
+
+				],
+			],
+		]);
+		$this->removePendingTask('container:define');
+	}
+
+	public function onContainerReady(): void
+	{
+		$this->setupPipeline();
+		
+		
+		$appCfg = $this->app->config->get(AppConfig::class);
+		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
+		$this->removePendingTask('pipeline:load');
+	}
+
+	public static function getSubscribedEvents()
+	{
+		return [
+			'core.extensions.config.setup' => 'onConfigSetup',
+			'core.extensions.container.ready' => 'onContainerReady'
+		];
+	}
+	
 }
