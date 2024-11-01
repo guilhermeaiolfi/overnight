@@ -1,31 +1,34 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Router\Attribute;
 
 use ON\Application;
 use ON\Config\RouterConfig;
+use ON\Config\Scanner\AttributeReader;
 
 class RouteAttributeProcessor
 {
-    protected RouterConfig $config;
-    public function __construct(
-        protected Application $app
-    )
-    {
-        $this->config = $app->config->get(RouterConfig::class);
-    }
-    
-    public function __invoke($attributes): void
-    {
-        $attributes = $attributes[Route::class];
-        foreach ($attributes as $className => $methods) {
-			foreach ($methods as $methodName => $attributes) {
-				foreach ($attributes as $attr) {
-					/** @var Route $attr */
-					//$this->app->router->route($attr->getPath(), $className . "::" . $methodName, empty($attr->getMethods()) ? null : $attr->getMethods(), $attr->getName());
-					$this->config->addRoute($attr->getPath(), $className . "::" . $methodName, empty($attr->getMethods()) ? null : $attr->getMethods(), $attr->getName());
-				}
-			}
+	protected RouterConfig $config;
+
+	public function __construct(
+		protected Application $app
+	) {
+		$this->config = $app->config->get(RouterConfig::class);
+	}
+
+	public function __invoke(AttributeReader $reader): void
+	{
+		$attributes = $reader->getAttributes([], [Route::class]);
+		foreach ($attributes as $attribute) {
+			/** @var Route $attr */
+			$this->config->addRoute(
+				$attribute->instance->getPath(),
+				$attribute->className . "::" . $attribute->targetName,
+				empty($attribute->instance->getMethods()) ? null : $attribute->instance->getMethods(),
+				$attribute->instance->getName()
+			);
 		}
-    }
+	}
 }

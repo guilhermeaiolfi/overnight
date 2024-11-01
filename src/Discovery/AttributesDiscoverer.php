@@ -15,7 +15,6 @@ class AttributesDiscoverer implements DiscoverInterface
 	public AttributeReader $reader;
 
 	protected $cachefile = "var/cache/discovery/attributes.cache.php";
-	protected array $attributes = [];
 	protected ClassFinder $classFinder;
 	protected bool $changed = false;
 	protected AppConfig $config;
@@ -44,8 +43,9 @@ class AttributesDiscoverer implements DiscoverInterface
 	{
 		foreach ($this->processors as $processor) {
 			$processor = new $processor($this->app);
-			$processor($this->attributes);
+			$processor($this->reader);
 		}
+
 		return true;
 	}
 
@@ -55,36 +55,24 @@ class AttributesDiscoverer implements DiscoverInterface
 		foreach ($classes as $className) {
 			if (preg_match('/(.*)Page$/', $className)) {
 				$class = new ReflectionClass($className);
-				$methods = $class->getMethods();
-				foreach ($methods as $method) {
-					foreach ($method->getAttributes() as $attr) {
-						if (!isset($this->attributes[$attr->getName()])) {
-							$this->attributes[$attr->getName()] = [];
-						}
-						$this->attributes[$attr->getName()][$className] = [];
-
-						$this->attributes[$attr->getName()][$className][$method->getName()] = [];
-
-						$this->attributes[$attr->getName()][$className][$method->getName()][] = $attr->newInstance();
-						$this->changed = true;
-					}
-				}
+				$this->reader->load($class);
+				$this->changed = true;
 			}
 		}
 
 		return true;
 	}
 
-	public function getAttributes(): array
+	public function getAttributes(): AttributeReader
 	{
-		return $this->attributes;
+		return $this->reader;
 	}
 
 	public function recover(): bool
 	{
 
 		$data = file_get_contents($this->cachefile);
-		$this->attributes = unserialize($data);
+		$this->reader = unserialize($data);
 
 		return true;
 	}
@@ -93,7 +81,7 @@ class AttributesDiscoverer implements DiscoverInterface
 	{
 		if ($this->changed) {
 			@mkdir(dirname($this->cachefile), 0777, true);
-			file_put_contents($this->cachefile, serialize($this->attributes));
+			file_put_contents($this->cachefile, serialize($this->reader));
 
 			return true;
 		}

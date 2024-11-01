@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Config\Scanner;
 
 use Adbar\Dot;
+use Attribute;
 use Exception;
 use ReflectionAttribute;
 use ReflectionClass;
@@ -16,6 +17,13 @@ use Reflector;
 class AttributeReader
 {
 	protected Dot $data;
+
+	protected array $map = [
+		Attribute::TARGET_CLASS => "c",
+		Attribute::TARGET_METHOD => "m",
+		Attribute::TARGET_PROPERTY => "p",
+		Attribute::TARGET_CLASS_CONSTANT => "cc",
+	];
 
 	public function __construct(protected array $ignoreAttributes = [])
 	{
@@ -42,12 +50,10 @@ class AttributeReader
 		$this->data->set($class . ".p." . $property . "." . $attr->getName(), $attr->newInstance());
 	}
 
-	public function getAttributes(ReflectionClass $class): array
+	public function load(ReflectionClass $class): void
 	{
 		$className = $class->getName();
-		if ($this->data->has($className)) {
-			return $this->data->get($className);
-		}
+
 		// Parse class attributes
 		foreach ($this->getAttributesFrom($class) as $classAttribute) {
 			$this->cacheAttribute($className, $classAttribute);
@@ -70,8 +76,45 @@ class AttributeReader
 				$this->cacheClassConstantAttribute($className, $classConstant->getName(), $constantAttribute);
 			}
 		}
+	}
 
-		return $this->data->get($className) ?? [];
+	public function getAttributes(array $classNames = [], array $attrClassNames = [], int $target = Attribute::TARGET_METHOD): array
+	{
+		$data = $this->data->all();
+		$result = [];
+		if ($target > 32) {
+			return $data;
+		}
+
+		if (! isset($this->map[$target])) {
+			throw new Exception("You can only filter by one target attribute");
+		}
+		$targetIndex = $this->map[$target];
+
+
+		foreach ($this->data as $className => $places) {
+			if (! empty($classNames) && ! in_array($className, $classNames)) {
+				continue;
+			}
+
+			if ($target == "c") {
+				foreach ($places[$target] as $attrClassName => $attrInstance) {
+					if (empty($attrClassNames) || in_array($attrClassName, $attrClassNames)) {
+						$result[] = [ $className, $attrInstance ];
+					}
+				}
+			} else {
+				foreach ($places[$targetIndex] as $targetName => $attributes) {
+					foreach ($attributes as $attrClassName => $attrInstance) {
+						if (empty($attrClassNames) || in_array($attrClassName, $attrClassNames)) {
+							$result[] = new AttributeHolder($className, $targetName, $target, $attrInstance);
+						}
+					}
+				}
+			}
+		}
+
+		return $result;
 	}
 
 	public function getAttributesFrom(Reflector $reflection, $filter = []): array

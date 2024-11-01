@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Console;
 
+use Exception;
 use ON\Application;
 use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\OvernightCommand;
@@ -11,6 +12,7 @@ use ON\Console\Command\RoutesCommand;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
 use Symfony\Component\Console\Application as ConsoleApplication;
+use Symfony\Component\Console\Command\Command;
 
 class ConsoleExtension extends AbstractExtension
 {
@@ -18,9 +20,16 @@ class ConsoleExtension extends AbstractExtension
 
 	protected ?ConsoleApplication $consoleApp = null;
 
+	protected array $q = [
+		ClearCacheCommand::class,
+		RoutesCommand::class,
+	];
+
 	public static function install(Application $app, ?array $options = []): mixed
 	{
 		$extension = new self($app, $options);
+
+		$app->console = $extension;
 
 		return $extension;
 	}
@@ -41,11 +50,10 @@ class ConsoleExtension extends AbstractExtension
 		if ($this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
-		$this->app->console = $this;
-		$this->consoleApp = new ConsoleApplication();
+
 
 		if ($this->removePendingTask('init')) {
-
+			$this->consoleApp = new ConsoleApplication();
 		}
 
 
@@ -56,20 +64,49 @@ class ConsoleExtension extends AbstractExtension
 		return true;
 	}
 
-	public function run()
+	public function addCommand(string $name, string $action, ?string $description = null): void
 	{
-		$this->consoleApp->add($this->app->container->get(ClearCacheCommand::class));
-		$this->consoleApp->add($this->app->container->get(RoutesCommand::class));
-
 		$command = new OvernightCommand();
 
-		$executor = $this->app->container->get(ExecutorInterface::class);
+
 		$command
-			->setName("on:test")
-			->setAction("App\\Page\\FooPage::command")
-			->setDescription("To test running an overnight command")
-			->setExecutor($executor);
-		$this->consoleApp->add($command);
+		->setName($name)
+		->setAction($action);
+
+		if (isset($description)) {
+			$command->setDescription($description);
+		}
+
+		if ($this->app->isExtensionReady('container')) {
+			$executor = $this->app->container->get(ExecutorInterface::class);
+			$command->setExecutor($executor);
+			$this->consoleApp->add($command);
+		} else {
+			$this->q[] = $command;
+		}
+	}
+
+	public function flush(): void
+	{
+		$executor = $this->app->container->get(ExecutorInterface::class);
+		foreach ($this->q as $command) {
+			if ($command instanceof OvernightCommand) {
+				$command->setExecutor($executor);
+				$this->consoleApp->add($command);
+			} elseif ($command instanceof Command) {
+				$this->consoleApp->add($command);
+			} elseif (is_string($command)) {
+				$this->consoleApp->add($this->app->container->get($command));
+			} else {
+				throw new Exception("Unrecognized command type: {$command}");
+			}
+		}
+	}
+
+	public function run()
+	{
+		$this->flush();
+
 		$this->consoleApp->run();
 	}
 }
