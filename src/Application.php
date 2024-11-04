@@ -24,6 +24,10 @@ class Application
 
 	protected array $__properties = [];
 
+	protected bool $debug = true;
+
+	protected string $environment = "development";
+
 	/**
 	 * @param array {
 	 *   debug?: ?bool,
@@ -64,7 +68,9 @@ class Application
 		$dotenv->load('.env');
 
 
-		$this->options["debug"] = $_ENV["APP_DEBUG"] = $options["debug"] ?? "true" === $_ENV["APP_DEBUG"];
+		$this->debug = $_ENV["APP_DEBUG"] = $options["debug"] ?? "true" === $_ENV["APP_DEBUG"];
+
+		$this->environment = $_ENV["APP_ENV"] ?? "development";
 
 		foreach ($extensions as $ext_class => $ext_options) {
 			if (isset($ext_options["enabled"])) {
@@ -85,7 +91,12 @@ class Application
 
 	public function isDebug(): bool
 	{
-		return $this->options["debug"];
+		return $this->debug;
+	}
+
+	public function getEnvironment(): string
+	{
+		return $this->environment;
 	}
 
 	public function isCli(): bool
@@ -111,6 +122,7 @@ class Application
 	public function isExtensionReady(string $ext_name_or_class): bool
 	{
 		$ext = $this->getExtension($ext_name_or_class);
+
 		return $ext->isReady();
 	}
 
@@ -217,7 +229,7 @@ class Application
 			throw new Exception("Extension {$className} is not installed.");
 		}
 
-		return $this->extensions[$className]??$this->aliases[$className];
+		return $this->extensions[$className] ?? $this->aliases[$className];
 	}
 
 	public function __get($name)

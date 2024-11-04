@@ -85,7 +85,6 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
 		$config = new static($defaults, $parse, $delimiter);
 		$config->mergeConfigArray($items);
 
-		//$config->setArray($merged);
 		return $config;
 	}
 

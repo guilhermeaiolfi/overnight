@@ -7,6 +7,7 @@ namespace ON\Container;
 use function class_exists;
 use Laminas\Diactoros\Response;
 use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use function sprintf;
 
@@ -16,7 +17,7 @@ use function sprintf;
  */
 class ResponseFactoryFactory
 {
-	public function __invoke(ContainerInterface $container): callable
+	public function __invoke(ContainerInterface $container): ResponseFactoryInterface
 	{
 		if (! class_exists(Response::class)) {
 			throw new Exception\InvalidServiceException(sprintf(
@@ -30,6 +31,6 @@ class ResponseFactoryFactory
 			));
 		}
 
-		return static fn (): Response => new Response();
+		return new ResponseFactory();
 	}
 }

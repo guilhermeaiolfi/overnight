@@ -10,7 +10,6 @@ use function DI\create;
 use DI\Definition\Helper\DefinitionHelper;
 use function DI\factory;
 use function DI\get;
-use Exception;
 use function is_file;
 use function is_numeric;
 use function is_object;
@@ -20,7 +19,6 @@ use ON\Container\ConfigDefinitionSource;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Event\EventSubscriberInterface;
-use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
 use function rtrim;
 
@@ -62,6 +60,7 @@ class ContainerExtension extends AbstractExtension implements EventSubscriberInt
 		if ($this->hasPendingTasks()) {
 			return false;
 		}
+
 		return true;
 	}
 
@@ -179,6 +178,8 @@ class ContainerExtension extends AbstractExtension implements EventSubscriberInt
 		$config_ext = $this->app->config;
 
 		$configs = $config_ext->get();
+
+		$this->app->events->dispatch("core.extensions.container.config", $configs[ContainerConfig::class]);
 
 		$this->app->container = $this->container = $this->createContainer($configs[ContainerConfig::class]);
 

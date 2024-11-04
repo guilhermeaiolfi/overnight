@@ -47,7 +47,7 @@ class NotFoundHandler implements RequestHandlerInterface
 	 */
 	private function generatePlainTextResponse(ServerRequestInterface $request): ResponseInterface
 	{
-		$response = ($this->responseFactory)()->withStatus(StatusCodeInterface::STATUS_NOT_FOUND);
+		$response = $this->responseFactory->createResponse(StatusCodeInterface::STATUS_NOT_FOUND);
 		$response->getBody()
 			->write(sprintf(
 				'Cannot %s %s',

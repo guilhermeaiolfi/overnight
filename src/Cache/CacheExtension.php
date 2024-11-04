@@ -38,16 +38,9 @@ class CacheExtension extends AbstractExtension
 				throw new Exception("Cache Extension needs the config extension");
 			}
 			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->mergeConfigArray([
-				"definitions" => [
-					"aliases" => [
-						//CacheInterface::class                      => \Symfony\Contracts\Cache\CacheInterface::class
-					],
-					"factories" => [
-						CacheInterface::class => CacheFactory::class,
-						FilesystemAdapter::class => FilesystemAdapterFactory::class,
-					],
-				],
+			$containerConfig->addFactories([
+				CacheInterface::class => CacheFactory::class,
+				FilesystemAdapter::class => FilesystemAdapterFactory::class,
 			]);
 		}
 

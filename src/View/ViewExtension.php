@@ -9,13 +9,14 @@ use League\Plates\Engine;
 use ON\Application;
 use ON\Config\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
 
 class ViewExtension extends AbstractExtension
 {
 	protected int $type = self::TYPE_EXTENSION;
 
-	protected array $pendingTasks = [ "container:define" ];
+	protected array $pendingTasks = [ "container:define", "pipeline:inject" ];
 
 	public function __construct(
 		protected Application $app
@@ -37,6 +38,11 @@ class ViewExtension extends AbstractExtension
 
 	public function setup(int $counter): bool
 	{
+		if ($this->app->isExtensionReady("pipeline")) {
+			$this->injectMiddleware();
+			$this->removePendingTask("pipeline:inject");
+		}
+
 		if ($this->removePendingTask("container:define")) {
 			$config = $this->app->config;
 
@@ -55,11 +61,18 @@ class ViewExtension extends AbstractExtension
 					],
 				],
 			]);
-
-			return true;
 		}
 
-		return false;
+		if ($this->hasPendingTasks()) {
+			return false;
+		}
+
+		return true;
+	}
+
+	public function injectMiddleware(): void
+	{
+		$this->app->pipe(OutputTypeMiddleware::class);
 	}
 
 	public function ready()

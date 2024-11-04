@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Extension;
 
-use Exception;
 use ON\Application;
-use ON\Config\ContainerConfig;
 use ON\Config\RouterConfig;
 use ON\Container\RouteMiddlewareFactory;
 use ON\Event\EventSubscriberInterface;
@@ -68,6 +66,7 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 		if (! $this->hasPendingTasks()) {
 			return true;
 		}
+
 		return false;
 	}
 
@@ -206,23 +205,14 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 		return $this->route($path, $middleware, null, $name);
 	}
 
-	public function onConfigSetup(): void
+	public function onContainerConfig($event): void
 	{
-		$config = $this->app->config;
-
-		$containerConfig = $config->get(ContainerConfig::class);
-		$containerConfig->mergeConfigArray([
-			"definitions" => [
-				"aliases" => [
-					RouterInterface::class => Router::class,
-
-				],
-				"factories" => [
-					Router::class => RouterFactory::class,
-					RouteMiddleware::class => RouteMiddlewareFactory::class,
-					RouterInterface::class => RouterFactory::class,
-				],
-			],
+		$containerConfig = $event->getSubject();
+		$containerConfig->addAlias(RouterInterface::class, Router::class);
+		$containerConfig->addFactories([
+			Router::class => RouterFactory::class,
+			RouteMiddleware::class => RouteMiddlewareFactory::class,
+			RouterInterface::class => RouterFactory::class,
 		]);
 		$this->removePendingTask('container:define');
 	}
@@ -237,11 +227,17 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 		$this->removePendingTask('router:load');
 	}
 
+	public function onPipelineReady(): void
+	{
+		$this->app->pipe("/", RouteMiddleware::class, 100);
+	}
+
 	public static function getSubscribedEvents()
 	{
 		return [
-			'core.extensions.config.setup' => 'onConfigSetup',
+			'core.extensions.container.config' => 'onContainerConfig',
 			'core.extensions.container.ready' => 'onContainerReady',
+			'core.extensions.pipeline.ready' => 'onPipelineReady',
 		];
 	}
 }

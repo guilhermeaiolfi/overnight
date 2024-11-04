@@ -23,7 +23,7 @@ class ConfigExtension extends AbstractExtension
 		$this->options = $options;
 		$this->app = $app;
 		if (! isset($this->options['debug'])) {
-			$this->options['debug'] = $_ENV["APP_ENV"] != "production";
+			$this->options['debug'] = $app->isDebug();
 		}
 	}
 
@@ -64,6 +64,7 @@ class ConfigExtension extends AbstractExtension
 		if ($counter == 0) {
 			// we need to give a chance to extensions to register configs before application code
 			$this->app->events->dispatch("core.extensions.config.setup", $this);
+
 			return false;
 		}
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);

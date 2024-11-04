@@ -40,7 +40,7 @@ class RouteMiddlewareFactory
 			);
 		}
 
-		if (! $container->has(ResponseInterface::class)) {
+		/*if (! $container->has(ResponseInterface::class)) {
 			throw MissingDependencyException::dependencyForService(
 				ResponseInterface::class,
 				ImplicitHeadMiddleware::class
@@ -52,7 +52,7 @@ class RouteMiddlewareFactory
 		$response = $container->get(ResponseInterface::class);
 		if (! $response instanceof ResponseInterface && is_callable($response)) {
 			$response = $response();
-		}
+		}*/
 
 		return new RouteMiddleware(
 			$container->get(RouterInterface::class),

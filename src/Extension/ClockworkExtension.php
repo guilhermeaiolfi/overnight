@@ -15,6 +15,7 @@ use ON\Benchmark;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use ON\Config\DatabaseConfig;
 use ON\Event\EventSubscriberInterface;
+use ON\Middleware\ClockworkMiddleware;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 
@@ -49,6 +50,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	{
 		return [
 			'container',
+			'pipeline',
 		];
 	}
 
@@ -135,6 +137,11 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	}
 
+	public function onPipelineReady(): void
+	{
+		$this->app->pipe("/", ClockworkMiddleware::class, 900);
+	}
+
 	public static function getSubscribedEvents(): array
 	{
 		return [
@@ -146,6 +153,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 			"core.extensions.container.ready" => 'onContainerReady',
 			"core.extensions.config.setup" => 'onConfigSetup',
+			"core.extensions.pipeline.ready" => 'onPipelineReady',
 		];
 	}
 

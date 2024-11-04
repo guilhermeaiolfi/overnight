@@ -6,10 +6,11 @@ namespace ON\Image;
 
 use ON\Application;
 use ON\Config\RouterConfig;
+use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use ON\Router\Route;
 
-class ImageExtension extends AbstractExtension
+class ImageExtension extends AbstractExtension implements EventSubscriberInterface
 {
 	public static function install(Application $app, ?array $options = []): mixed
 	{
@@ -36,5 +37,19 @@ class ImageExtension extends AbstractExtension
 		));
 
 		return true;
+	}
+
+	public function onContainerConfig($event): void
+	{
+		$containerConfig = $event->getSubject();
+
+		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
+	}
+
+	public static function getSubscribedEvents(): array
+	{
+		return [
+			"core.extensions.container.config" => 'onContainerConfig',
+		];
 	}
 }
