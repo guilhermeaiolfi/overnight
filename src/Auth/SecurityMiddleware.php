@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Middleware;
+namespace ON\Auth;
 
 use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
@@ -11,19 +11,21 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-class AuthorizationMiddleware implements MiddlewareInterface
+class SecurityMiddleware implements MiddlewareInterface
 {
 	/**
-	* @param ServerRequestInterface $request
-	* @param RequestHandlerInterface $handler
-	* @return ResponseInterface
-	*/
+	 * @param ServerRequestInterface $request
+	 * @param RequestHandlerInterface $handler
+	 * @return ResponseInterface
+	 */
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
 		$routeResult = $request->getAttribute(RouteResult::class, false);
+
 		if (! $routeResult) {
-			return $handler->handle($request, $handler);
+			return $handler->handle($request);
 		}
+
 
 		$route = $routeResult->getMatchedRoute();
 		$middleware = $route->getMiddleware();
@@ -32,6 +34,6 @@ class AuthorizationMiddleware implements MiddlewareInterface
 			return $middleware->loggedCheck($request, $handler);
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 }

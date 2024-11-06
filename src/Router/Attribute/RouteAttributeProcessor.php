@@ -24,10 +24,10 @@ class RouteAttributeProcessor
 		foreach ($attributes as $attribute) {
 			/** @var Route $attr */
 			$this->config->addRoute(
-				$attribute->instance->getPath(),
-				$attribute->className . "::" . $attribute->targetName,
-				empty($attribute->instance->getMethods()) ? null : $attribute->instance->getMethods(),
-				$attribute->instance->getName()
+				$attribute->getPath(),
+				$attribute->__declaringClass . "::" . $attribute->__methodName,
+				empty($attribute->getMethods()) ? null : $attribute->getMethods(),
+				$attribute->getName()
 			);
 		}
 	}

@@ -18,11 +18,10 @@ use ON\Config\ContainerConfig;
 use ON\Container\ConfigDefinitionSource;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
-use ON\Event\EventSubscriberInterface;
 use Psr\Container\ContainerInterface;
 use function rtrim;
 
-class ContainerExtension extends AbstractExtension implements EventSubscriberInterface
+class ContainerExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.container";
 	protected int $type = self::TYPE_EXTENSION;
@@ -33,13 +32,10 @@ class ContainerExtension extends AbstractExtension implements EventSubscriberInt
 
 	private int $delegatorCounter = 0;
 
-	protected array $pendingTasks = [ 'container:create' ];
-
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
-
 	}
 
 	public static function install(Application $app, ?array $options = []): mixed
@@ -50,18 +46,34 @@ class ContainerExtension extends AbstractExtension implements EventSubscriberInt
 		return $extension;
 	}
 
-	public function ready(): void
+	public function boot(): void
 	{
-		$this->app->events->dispatch('core.extensions.container.ready');
+		//$this->app->ext('config')->when('ready', [$this, 'onConfigReady']);
 	}
 
-	public function setup(int $counter): bool
+	public function setup(): void
 	{
-		if ($this->hasPendingTasks()) {
-			return false;
+		if (! $this->app->ext('config')->isReady()) {
+			$this->nextTick([$this, 'setup']);
+
+			return;
 		}
 
-		return true;
+		/** @var ConfigExtension $config_ext */
+		$config_ext = $this->app->config;
+
+		$configs = $config_ext->get();
+
+		$this->app->container = $this->container = $this->createContainer($configs[ContainerConfig::class]);
+
+		foreach ($configs as $class => $config) {
+			$this->container->set($class, $config);
+		}
+
+		// we need to set it to the container in case other places need the instance of Application
+		$this->container->set(get_class($this->app), $this->app);
+
+		$this->setState('ready');
 	}
 
 	public function hasCache()
@@ -167,36 +179,5 @@ class ContainerExtension extends AbstractExtension implements EventSubscriberInt
 		})->parameter('delegator', $delegator)
 		  ->parameter('previous', $previous)
 		  ->parameter('name', $name);
-	}
-
-	public function onConfigReady($event): void
-	{
-		// we need to get the container working here (and not in the setup()),
-		// because it may be used in the setup method by other extensions
-
-		/** @var ConfigExtension $config_ext */
-		$config_ext = $this->app->config;
-
-		$configs = $config_ext->get();
-
-		$this->app->events->dispatch("core.extensions.container.config", $configs[ContainerConfig::class]);
-
-		$this->app->container = $this->container = $this->createContainer($configs[ContainerConfig::class]);
-
-		foreach ($configs as $class => $config) {
-			$this->container->set($class, $config);
-		}
-
-		// we need to set it to the container in case other places need the instance of Application
-		$this->container->set(get_class($this->app), $this->app);
-
-		$this->removePendingTask("container:create");
-	}
-
-	public static function getSubscribedEvents()
-	{
-		return [
-			'core.extensions.config.ready' => 'onConfigReady',
-		];
 	}
 }

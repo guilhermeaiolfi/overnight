@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Image;
 
 use ON\Application;
+use ON\Config\ContainerConfig;
 use ON\Config\RouterConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
@@ -25,7 +26,25 @@ class ImageExtension extends AbstractExtension implements EventSubscriberInterfa
 	) {
 	}
 
-	public function setup($counter): bool
+	public function boot(): void
+	{
+		$this->app->ext('container')->when('setup', [$this, 'onContainerConfig']);
+		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
+	}
+
+	public function setup(): void
+	{
+		$this->setState('ready');
+	}
+
+	public function onContainerConfig(): void
+	{
+		$containerConfig = $this->app->config->get(ContainerConfig::class);
+
+		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
+	}
+
+	public function onConfigSetup(): void
 	{
 		$image_cfg = $this->app->config->get(ImageConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);
@@ -35,21 +54,12 @@ class ImageExtension extends AbstractExtension implements EventSubscriberInterfa
 			['GET'],
 			"imagemanager",
 		));
-
-		return true;
-	}
-
-	public function onContainerConfig($event): void
-	{
-		$containerConfig = $event->getSubject();
-
-		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
 	}
 
 	public static function getSubscribedEvents(): array
 	{
 		return [
-			"core.extensions.container.config" => 'onContainerConfig',
+			//"core.extensions.container.config" => 'onContainerConfig',
 		];
 	}
 }

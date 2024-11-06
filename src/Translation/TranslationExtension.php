@@ -31,83 +31,82 @@ class TranslationExtension extends AbstractExtension
 		return $extension;
 	}
 
-	public function setup(int $counter): bool
+	public function boot(): void
 	{
-		$config = $this->app->config;
+		$this->app->ext('container')->when('setup', function () {
+			$config = $this->app->config;
 
-		if (! isset($config)) {
-			return false;
-		}
+			$containerConfig = $config->get(ContainerConfig::class);
+			$containerConfig->addAliases([
+				TranslationManagerInterface::class => TranslationManagerFactory::class,
+			]);
 
-		$containerConfig = $config->get(ContainerConfig::class);
-		$containerConfig->mergeRecursiveDistinct("definitions.aliases", [
-			TranslationManagerInterface::class => TranslationManagerFactory::class,
-		]);
+			$translationConfig = $config->get(TranslationConfig::class);
+			$translationConfig->mergeConfigArray([
+				'default_locale' => 'en_US@currency=USD',
+				"default_domain" => 'default',
+				'default_timezone' => null,
+				'locales' => [
+					'pt_BR' => 'Português',
+					'en_US' => 'English',
+				],
+				'translators' => [
+					'short_date' => [
+						'date' => [
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%d/%m/%y',
+						],
+					],
+					'event_date' => [
+						'date' => [
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%d/%m/%y às %H:%M:%S',
+						],
+					],
+					'short_month' => [
+						'date' => [
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%b',
+						],
+					],
+					'long_date' => [
+						'date' => [
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%d de %B de %Y',
+						],
+					],
+					'full_month' => [
+						'date' => [
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%B',
+						],
+					],
+					'default' => [
+						'date' => [
+							'name' => 'full',
+							'class' => 'ON\Translation\DateFormatter',
+							'format' => '%A, %%d de %B de %Y',
+						],
+						'cur' => [
+							'name' => 'Currency Formatter',
+							'class' => 'ON\Translation\CurrencyFormatter',
+						],
+					],
+					'default.errors' => [
+						'msg' => [
+							'class' => 'ON\Translation\SimpleTranslator',
+						],
+					],
+				],
+			]);
 
-		$translationConfig = $config->get(TranslationConfig::class);
-		$translationConfig->mergeRecursiveDistinct([
-			'default_locale' => 'en_US@currency=USD',
-			"default_domain" => 'default',
-			'default_timezone' => null,
-			'locales' => [
-				'pt_BR' => 'Português',
-				'en_US' => 'English',
-			],
-			'translators' => [
-				'short_date' => [
-					'date' => [
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%d/%m/%y',
-					],
-				],
-				'event_date' => [
-					'date' => [
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%d/%m/%y às %H:%M:%S',
-					],
-				],
-				'short_month' => [
-					'date' => [
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%b',
-					],
-				],
-				'long_date' => [
-					'date' => [
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%d de %B de %Y',
-					],
-				],
-				'full_month' => [
-					'date' => [
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%B',
-					],
-				],
-				'default' => [
-					'date' => [
-						'name' => 'full',
-						'class' => 'ON\Translation\DateFormatter',
-						'format' => '%A, %%d de %B de %Y',
-					],
-					'cur' => [
-						'name' => 'Currency Formatter',
-						'class' => 'ON\Translation\CurrencyFormatter',
-					],
-				],
-				'default.errors' => [
-					'msg' => [
-						'class' => 'ON\Translation\SimpleTranslator',
-					],
-				],
-			],
-		]);
-
-		return true;
+			$this->setState('ready');
+		});
 	}
 
-	public function ready()
+	public function setup(): void
 	{
+
 
 	}
 }

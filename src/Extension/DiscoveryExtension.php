@@ -18,7 +18,7 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 	protected array $discovers = [];
 	protected array $pendingProcess = [];
 
-	protected array $pendingTasks = [ 'discovery:create' ];
+	protected array $pendingTasks = [ ];
 
 	public ClassFinder $classFinder;
 	protected array $files;
@@ -38,22 +38,14 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 		return $extension;
 	}
 
-	public function setup(int $counter): bool
+	public function setup(): void
 	{
-		if (! $this->hasPendingTasks()) {
-			return true;
+		if (! $this->app->ext('config')->isReady()) {
+			$this->nextTick([$this, 'setup']);
+
+			return;
 		}
 
-		return false;
-	}
-
-	public function ready()
-	{
-
-	}
-
-	public function onConfigReady(): void
-	{
 		$this->appCfg = $this->app->config->get(AppConfig::class);
 
 		$discovers = array_keys($this->appCfg->get('discovery.discoverers', []));
@@ -94,13 +86,13 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 			$discover->process();
 		}
 
-		$this->removePendingTask('discovery:create');
+		$this->setState('ready');
 	}
 
 	public static function getSubscribedEvents()
 	{
 		return [
-			'core.extensions.config.ready' => 'onConfigReady',
+			//'core.extensions.config.ready' => 'onConfigReady',
 		];
 	}
 }

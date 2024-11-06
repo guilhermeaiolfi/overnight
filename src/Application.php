@@ -28,6 +28,8 @@ class Application
 
 	protected string $environment = "development";
 
+	public ?Dotenv $env = null;
+
 	/**
 	 * @param array {
 	 *   debug?: ?bool,
@@ -64,8 +66,8 @@ class Application
 		}
 
 		// load .env file vars
-		$dotenv = new Dotenv();
-		$dotenv->load('.env');
+		$this->env = new Dotenv();
+		$this->env->load('.env');
 
 
 		$this->debug = $_ENV["APP_DEBUG"] = $options["debug"] ?? "true" === $_ENV["APP_DEBUG"];
@@ -126,19 +128,6 @@ class Application
 		return $ext->isReady();
 	}
 
-	public function getExtensionsByPendingTask(mixed $task): array
-	{
-		$result = [];
-		foreach ($this->extensions as $ext_class => $ext_instance) {
-			$tasks = $ext_instance->getPendingTasks();
-			if (in_array($task, $tasks)) {
-				$result[] = $ext_class;
-			}
-		}
-
-		return $result;
-	}
-
 	protected function loadExtensions()
 	{
 		$this->setupingExtensions = [];
@@ -149,38 +138,41 @@ class Application
 		}
 
 		foreach ($this->extensions as $ext_class => $ext_instance) {
-			$deps = $ext_instance->requires();
-			foreach ($deps as $dep) {
-				if (! $this->hasExtension($dep)) {
-					throw new Exception("Extension {$ext_class} depends on: \'{$dep}\' that is not installed.");
+			if ($this->isDebug()) {
+				$deps = $ext_instance->requires();
+				foreach ($deps as $dep) {
+					if (! $this->hasExtension($dep)) {
+						throw new Exception("Extension {$ext_class} depends on: \'{$dep}\' that is not installed.");
 
-					return;
+						return;
+					}
 				}
 			}
+			$ext_instance->boot();
 		}
 
-		$counter = 0;
-		$pointer = $this->setupingExtensions[array_key_last($this->setupingExtensions)];
+		$nextTickQueue = [];
 		while ($ext_class = array_shift($this->setupingExtensions)) {
 			$ext_instance = $this->extensions[$ext_class];
 
 			if ($ext_instance) {
-				$completed = $ext_instance->setup($counter);
-				if (! $completed) {
-					$this->setupingExtensions[] = $ext_class;
-					if (! $completed && count($this->setupingExtensions) == 1) {
-						throw new Exception("There is a deadlock booting " . $ext_class . " extension.");
-					}
-				} else {
-					$ext_instance->setReady(true);
-					$ext_instance->ready();
+				$ext_instance->setState('setup');
+				$ext_instance->setup();
+				if ($ext_instance->getNextTick()) {
+					$nextTickQueue[] = $ext_class;
 				}
+			}
+		}
 
-				if ($pointer == $ext_class) {
-					$counter++;
-					if ($completed) {
-						$pointer = count($this->setupingExtensions) > 0 ? $this->setupingExtensions[array_key_last($this->setupingExtensions)] : null;
-					}
+		while ($ext_class = array_shift($nextTickQueue)) {
+			$ext_instance = $this->extensions[$ext_class];
+
+			if ($ext_instance) {
+				$nextTick = $ext_instance->getNextTick();
+				$ext_instance->clearNextTick();
+				$nextTick();
+				if ($ext_instance->getNextTick()) {
+					$nextTickQueue[] = $ext_class;
 				}
 			}
 		}

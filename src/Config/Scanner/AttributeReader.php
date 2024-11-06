@@ -30,24 +30,24 @@ class AttributeReader
 		$this->data = new Dot();
 	}
 
-	public function cacheAttribute($class, ReflectionAttribute $attr)
+	public function cacheAttribute($class, ReflectionAttribute $attr, mixed $instance)
 	{
-		$this->data->set($class . ".c." . $attr->getName(), $attr->newInstance());
+		$this->data->set($class . ".c." . $attr->getName(), $instance);
 	}
 
-	public function cacheMethodAttribute($class, string $method, ReflectionAttribute $attr): void
+	public function cacheMethodAttribute($class, string $method, ReflectionAttribute $attr, mixed $instance): void
 	{
-		$this->data->set($class . ".m." . $method . "." . $attr->getName(), $attr->newInstance());
+		$this->data->set($class . ".m." . $method . "." . $attr->getName(), $instance);
 	}
 
-	public function cacheClassConstantAttribute($class, string $classConst, ReflectionAttribute $attr)
+	public function cacheClassConstantAttribute($class, string $classConst, ReflectionAttribute $attr, mixed $instance)
 	{
-		$this->data->set($class . ".cc." . $classConst . "." . $attr->getName(), $attr->newInstance());
+		$this->data->set($class . ".cc." . $classConst . "." . $attr->getName(), $instance);
 	}
 
-	public function cachePropertyAttribute($class, string $property, ReflectionAttribute $attr)
+	public function cachePropertyAttribute($class, string $property, ReflectionAttribute $attr, mixed $instance)
 	{
-		$this->data->set($class . ".p." . $property . "." . $attr->getName(), $attr->newInstance());
+		$this->data->set($class . ".p." . $property . "." . $attr->getName(), $instance);
 	}
 
 	public function load(ReflectionClass $class): void
@@ -55,25 +55,41 @@ class AttributeReader
 		$className = $class->getName();
 
 		// Parse class attributes
-		foreach ($this->getAttributesFrom($class) as $classAttribute) {
-			$this->cacheAttribute($className, $classAttribute);
+		foreach ($this->getAttributesFrom($class) as $attr) {
+			$instance = $attr->newInstance();
+			if ($instance instanceof ReflectionAnalyzableInterface) {
+				$instance->__analyzeReflection([$class, $attr]);
+			}
+			$this->cacheAttribute($className, $attr, $instance);
 		}
 		// Parse properties annotations
 		foreach ($class->getProperties() as $property) {
-			foreach ($this->getAttributesFrom($property) as $propertyAttribute) {
-				$this->cachePropertyAttribute($className, $property->getName(), $propertyAttribute);
+			foreach ($this->getAttributesFrom($property) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $property, $attr]);
+				}
+				$this->cachePropertyAttribute($className, $property->getName(), $attr, $instance);
 			}
 		}
 		// Parse methods annotations
 		foreach ($class->getMethods() as $method) {
-			foreach ($this->getAttributesFrom($method) as $methodAttribute) {
-				$this->cacheMethodAttribute($className, $method->getName(), $methodAttribute);
+			foreach ($this->getAttributesFrom($method) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $method, $attr]);
+				}
+				$this->cacheMethodAttribute($className, $method->getName(), $attr, $instance);
 			}
 		}
 		// Parse class constants annotations
 		foreach ($class->getReflectionConstants() as $classConstant) {
-			foreach ($this->getAttributesFrom($classConstant) as $constantAttribute) {
-				$this->cacheClassConstantAttribute($className, $classConstant->getName(), $constantAttribute);
+			foreach ($this->getAttributesFrom($classConstant) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $classConstant, $attr]);
+				}
+				$this->cacheClassConstantAttribute($className, $classConstant->getName(), $attr, $instance);
 			}
 		}
 	}
@@ -107,7 +123,7 @@ class AttributeReader
 				foreach ($places[$targetIndex] as $targetName => $attributes) {
 					foreach ($attributes as $attrClassName => $attrInstance) {
 						if (empty($attrClassNames) || in_array($attrClassName, $attrClassNames)) {
-							$result[] = new AttributeHolder($className, $targetName, $target, $attrInstance);
+							$result[] = $attrInstance;
 						}
 					}
 				}

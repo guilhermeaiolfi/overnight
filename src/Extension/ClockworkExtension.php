@@ -25,8 +25,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	protected Clockwork $clockwork;
 
-	protected array $pendingTasks = [ 'container:setup' ];
-
 	public static function install(Application $app, ?array $options = []): mixed
 	{
 		$extension = new self($app, $options);
@@ -65,10 +63,33 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		];
 	}
 
-	public function ready()
+	public function boot(): void
 	{
-		$this->app->events->dispatch("core.extensions.clockwork.ready", $this);
+		// that's the order they happen
+		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+		$this->when('ready', [$this, 'ready']);
+	}
+
+	public function ready(): void
+	{
 		clock()->event('Booting')->end();
+	}
+
+	public function onContainerReady(): void
+	{
+		$container = $this->app->container;
+		$container->set(Clockwork::class, $this->clockwork);
+		$logger = $container->get(LoggerInterface::class);
+		$loggerDataSource = new PsrLoggerDatasource($logger);
+		$this->clockwork->addDataSource($loggerDataSource);
+	}
+
+	public function onPipelineReady(): void
+	{
+		$this->app->pipe("/", ClockworkMiddleware::class, 900);
+
+		$this->setState('ready');
 	}
 
 	public function onQuery($event)
@@ -121,27 +142,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	}
 
-	public function onContainerReady(): void
-	{
-		$container = $this->app->container;
-		$container->set(Clockwork::class, $this->clockwork);
-		$logger = $container->get(LoggerInterface::class);
-		$loggerDataSource = new PsrLoggerDatasource($logger);
-		$this->clockwork->addDataSource($loggerDataSource);
-
-		$this->removePendingTask('container:setup');
-	}
-
-	public function onConfigSetup(): void
-	{
-
-	}
-
-	public function onPipelineReady(): void
-	{
-		$this->app->pipe("/", ClockworkMiddleware::class, 900);
-	}
-
 	public static function getSubscribedEvents(): array
 	{
 		return [
@@ -151,9 +151,9 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 			"core.run" => "onRun",
 			"core.end" => "onEnd",
 
-			"core.extensions.container.ready" => 'onContainerReady',
+			/*"core.extensions.container.ready" => 'onContainerReady',
 			"core.extensions.config.setup" => 'onConfigSetup',
-			"core.extensions.pipeline.ready" => 'onPipelineReady',
+			"core.extensions.pipeline.ready" => 'onPipelineReady',*/
 		];
 	}
 

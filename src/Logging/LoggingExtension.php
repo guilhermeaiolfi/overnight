@@ -32,33 +32,30 @@ class LoggingExtension extends AbstractExtension
 		return $extension;
 	}
 
-	public function setup(int $counter): bool
+	public function boot(): void
 	{
-		$config = $this->app->config;
+		$this->app->ext('container')->when('setup', function () {
+			$containerConfig = $this->app->config->get(ContainerConfig::class);
+			$containerConfig->addFactories([
+				LoggerInterface::class => LoggerFactory::class,
+			]);
 
-		if (! isset($config)) {
-			return false;
-		}
+			$this->setState('ready');
+		});
 
-		$containerConfig = $config->get(ContainerConfig::class);
-		$containerConfig->mergeRecursiveDistinct("definitions.factories", [
-			LoggerInterface::class => LoggerFactory::class,
-		]);
-
-		$translationConfig = $config->get(LoggingConfig::class);
-		$translationConfig->mergeRecursiveDistinct([
-			"default" => [
-				"type" => "rotating_file",
-				"path" => "var/log/app.%date%.log",
-				"date_format" => "Ymd",
-			],
-		]);
-
-		return true;
+		$this->app->ext('config')->when('setup', function () {
+			$translationConfig = $this->app->config->get(LoggingConfig::class);
+			$translationConfig->mergeConfigArray([
+				"default" => [
+					"type" => "rotating_file",
+					"path" => "var/log/app.%date%.log",
+					"date_format" => "Ymd",
+				],
+			]);
+		});
 	}
 
-	public function ready()
+	public function setup(): void
 	{
-
 	}
 }

@@ -16,8 +16,6 @@ use Symfony\Component\Console\Command\Command;
 
 class ConsoleExtension extends AbstractExtension
 {
-	protected array $pendingTasks = [ 'init' ];
-
 	protected ?ConsoleApplication $consoleApp = null;
 
 	protected array $q = [
@@ -28,6 +26,8 @@ class ConsoleExtension extends AbstractExtension
 	public static function install(Application $app, ?array $options = []): mixed
 	{
 		$extension = new self($app, $options);
+
+		$app->registerExtension("console", $extension);
 
 		$app->console = $extension;
 
@@ -40,34 +40,21 @@ class ConsoleExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return [];
-	}
-
-	public function setup($counter): bool
+	public function setup(): void
 	{
 		if ($this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
 
-		if ($this->removePendingTask('init')) {
-			$this->consoleApp = new ConsoleApplication();
-		}
+		$this->consoleApp = new ConsoleApplication();
 
-
-		if ($this->hasPendingTasks()) {
-			return false;
-		}
-
-		return true;
+		$this->setState('ready');
 	}
 
-	public function addCommand(string $name, string $action, ?string $description = null): void
+	protected function addOvernightCommand(string $name, string $action, ?string $description = null): void
 	{
 		$command = new OvernightCommand();
-
 
 		$command
 		->setName($name)
@@ -83,6 +70,23 @@ class ConsoleExtension extends AbstractExtension
 			$this->consoleApp->add($command);
 		} else {
 			$this->q[] = $command;
+		}
+	}
+
+	public function addCommand(...$args): void
+	{
+		if (count($args) > 1) {
+			$name = $args[0];
+			$action = $args[1];
+			$description = null;
+			if (isset($args[2])) {
+				$description = $args[2];
+			}
+			$this->addOvernightCommand($name, $action, $description);
+		} elseif (count($args) == 1) {
+			$this->q[] = $args[0];
+		} else {
+			throw new Exception("You need to pass at least one param when adding commands.");
 		}
 	}
 

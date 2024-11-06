@@ -10,6 +10,7 @@ use ON\Router\Route;
 class RouterConfig extends Config
 {
 	public bool $done = false;
+
 	public static function getDefaults(): array
 	{
 		return [

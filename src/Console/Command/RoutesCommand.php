@@ -18,13 +18,11 @@ use ON\Router\RouterInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
 use Symfony\Component\Console\Helper\DescriptorHelper;
-use Symfony\Component\Console\Helper\FormatterHelper;
 use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 class RoutesCommand extends Command
 {
@@ -53,7 +51,7 @@ class RoutesCommand extends Command
 	{
 
 		$table = new Table($output);
-		
+
 		$router = $this->app->container->get(RouterInterface::class);
 		$collection = $router->getRoutes();
 		$routes = [];
@@ -61,16 +59,16 @@ class RoutesCommand extends Command
 			$routes[] = [
 				$route->getPath(),
 				$route->getMiddleware(),
-				$route->getName()
+				$route->getName(),
 			];
 		}
-		
+
 		$table
 			->setHeaders(['Path', 'Middleware', 'Name'])
 			->setRows($routes)
 		;
 		$table->render();
-		
+
 		return Command::SUCCESS;
 	}
 }

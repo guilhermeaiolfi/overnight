@@ -24,9 +24,9 @@ class ConsoleAttributeProcessor
 		$attributes = $reader->getAttributes(attrClassNames: [ ConsoleCommand::class ], target: Attribute::TARGET_METHOD);
 		foreach ($attributes as $attr) {
 			$this->app->console->addCommand(
-				$attr->instance->name,
-				$attr->className . "::" . $attr->targetName,
-				$attr->instance->description
+				$attr->name,
+				$attr->__declaringClass . "::" . $attr->__methodName,
+				$attr->description
 			);
 		}
 	}

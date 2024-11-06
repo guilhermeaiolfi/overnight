@@ -31,6 +31,7 @@ class ConfigExtension extends AbstractExtension
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('config', $extension);
+
 		$app->config = $extension;
 
 		return $extension;
@@ -59,14 +60,8 @@ class ConfigExtension extends AbstractExtension
 		$this->configs[$className] = $obj;
 	}
 
-	public function setup(int $counter): bool
+	public function setup(): void
 	{
-		if ($counter == 0) {
-			// we need to give a chance to extensions to register configs before application code
-			$this->app->events->dispatch("core.extensions.config.setup", $this);
-
-			return false;
-		}
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
 		foreach ($files as $file) {
 			$obj = include_once($file);
@@ -87,11 +82,6 @@ class ConfigExtension extends AbstractExtension
 			}
 		}
 
-		return true;
-	}
-
-	public function ready()
-	{
-		$this->app->events->dispatch("core.extensions.config.ready", $this);
+		$this->setState('ready');
 	}
 }

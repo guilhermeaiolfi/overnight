@@ -14,11 +14,17 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	public const NAMESPACE = "core.extensions.abstract";
 
+	protected string $__currentState = "start";
+
+	protected array $__stateHistory = [];
+
+	protected array $__states = [];
+
+	protected array $__when = [];
+
+	protected mixed $__nextTick = null;
+
 	protected int $type = self::TYPE_MODULE;
-
-	protected array $pendingTasks = [];
-
-	protected bool $__ready = false;
 
 	public function getType(): int
 	{
@@ -27,62 +33,67 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	public function isReady(): bool
 	{
-		return $this->__ready;
+		return $this->__currentState == "ready";
 	}
 
 	public function getNamespace(): string
 	{
 		return static::NAMESPACE;
 	}
-	
-	public function setReady(bool $ready): void
-	{
-		$this->__ready = $ready;
-	}
 
-	public function ready()
+	public function setState(string $state): self
 	{
-		return;
-	}
-
-	public function setup(int $counter): bool
-	{
-		if (!$this->hasPendingTasks()) {
-			return true;
+		$this->__stateHistory[] = $this->__currentState;
+		$this->__currentState = $state;
+		if (isset($this->__when[$state])) {
+			foreach ($this->__when[$state] as $callback) {
+				$callback($this);
+			}
 		}
 
-		return false;
+		return $this;
 	}
 
-	public function getPendingTasks(): array
+	public function clearNextTick(): void
 	{
-		return $this->pendingTasks;
+		$this->__nextTick = null;
 	}
 
-	public function removePendingTask(mixed $task): bool
+	public function nextTick(callable $callback): self
 	{
-		$key = array_search($task, $this->pendingTasks);
-		if ($key !== false) {
-			unset($this->pendingTasks[$key]);
+		$this->__nextTick = $callback;
 
-			return true;
+		return $this;
+	}
+
+	public function getNextTick(): ?callable
+	{
+		return $this->__nextTick;
+	}
+
+	public function when(string $state, callable $callback): self
+	{
+		$this->__when[$state] = isset($this->__when[$state]) ? $this->__when[$state] : [];
+		$this->__when[$state][] = $callback;
+
+		if ($this->__currentState == $state || in_array($state, $this->__stateHistory)) {
+			$callback($this);
 		}
 
-		return false;
+		return $this;
 	}
 
-	public function hasPendingTask(mixed $task): bool
+	public function setup(): void
 	{
-		return in_array($task, $this->pendingTasks);
-	}
-
-	public function hasPendingTasks(): bool
-	{
-		return count($this->pendingTasks) > 0;
 	}
 
 	public function requires(): array
 	{
 		return [];
+	}
+
+	public function boot(): void
+	{
+
 	}
 }

@@ -17,6 +17,7 @@ use function Laminas\Stratigility\path;
 use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Config\ContainerConfig;
 use ON\Container\EmitterFactory;
 use ON\Container\ErrorHandlerFactory;
 use ON\Container\ErrorResponseGeneratorFactory;
@@ -30,16 +31,13 @@ use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
-use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
 use ON\Handler\NotFoundHandler;
-use ON\Middleware\AuthorizationMiddleware;
 use ON\Middleware\ErrorResponseGenerator;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\MiddlewarePriorityPipe;
 use ON\Middleware\NotFoundMiddleware;
 use ON\Middleware\RegisterRequestMiddleware;
-use ON\Middleware\SecurityMiddleware;
 use ON\Middleware\ValidationMiddleware;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
@@ -56,13 +54,11 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
-class PipelineExtension extends AbstractExtension implements EventSubscriberInterface
+class PipelineExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.pipeline";
 	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
-
-	protected array $pendingTasks = [ "container:define", "pipeline:load" ];
 
 	protected RequestStack $requestStack;
 
@@ -73,6 +69,7 @@ class PipelineExtension extends AbstractExtension implements EventSubscriberInte
 
 	public function __construct(
 		protected Application $app,
+		protected ?array $options = []
 	) {
 	}
 
@@ -98,15 +95,8 @@ class PipelineExtension extends AbstractExtension implements EventSubscriberInte
 		];
 	}
 
-	protected function setupPipeline(): void
+	public function boot(): void
 	{
-		$this->app->requestStack = $this->requestStack = new RequestStack();
-
-		$container = $this->app->container;
-
-		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
-		$this->factory = $container->get(MiddlewareFactory::class);
-
 		$this->app->registerMethod("pipe", [$this, "pipe"]);
 		$this->app->registerMethod("runAction", [$this, "runAction"]);
 		$this->app->registerMethod("process", [$this, "process"]);
@@ -115,6 +105,92 @@ class PipelineExtension extends AbstractExtension implements EventSubscriberInte
 		if (! $this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
+
+		$this->app->ext('container')->when('setup', [$this, 'onContainerConfig']);
+		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+	}
+
+	public function setup(): void
+	{
+
+	}
+
+	public function onContainerConfig(): void
+	{
+		$containerConfig = $this->app->config->get(ContainerConfig::class);
+
+		$containerConfig->addFactories([
+			EmitterInterface::class => EmitterFactory::class,
+			ErrorHandler::class => ErrorHandlerFactory::class,
+			MiddlewareContainer::class => MiddlewareContainerFactory::class,
+
+			// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
+			ErrorResponseGenerator::class => ErrorResponseGeneratorFactory::class,
+			//ErrorResponseGenerator::class => WhoopsErrorResponseGeneratorFactory::class,
+			'ON\Whoops' => WhoopsFactory::class,
+			'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,
+
+			ResponseInterface::class => ResponseFactoryFactory::class,
+			RequestHandlerRunner::class => RequestHandlerRunnerFactory::class,
+
+			ServerRequestErrorResponseGenerator::class => ServerRequestErrorResponseGeneratorFactory::class,
+			ServerRequestInterface::class => ServerRequestFactoryFactory::class,
+			StreamInterface::class => StreamFactoryFactory::class,
+			NotFoundHandler::class => NotFoundHandlerFactory::class,
+		]);
+
+		$containerConfig->addAliases([
+			//MiddlewarePipeInterface::class => MiddlewarePipe::class,
+			MiddlewarePipeInterface::class => MiddlewarePriorityPipe::class,
+			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
+			ResponseFactoryInterface::class => ResponseFactory::class,
+		]);
+	}
+
+	public function onContainerReady(): void
+	{
+		$this->setupPipeline();
+
+		$this->registerMiddlewares();
+
+		$appCfg = $this->app->config->get(AppConfig::class);
+
+		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
+
+		$this->setState('ready');
+	}
+
+	public function registerMiddlewares(): void
+	{
+		// The error handler should be the first (most outer) middleware to catch
+		// all Exceptions.
+		$this->pipe("/", ErrorHandler::class, 1000);
+
+		$this->pipe("/", RegisterRequestMiddleware::class, 900);
+
+		$this->pipe("/", BodyParamsMiddleware::class, 900);
+
+		// Register the validation middleware in the middleware pipeline
+		$this->pipe("/", ValidationMiddleware::class, 1);
+
+		// This middleware is responsible for calling the controller/page method
+		$this->pipe("/", ExecutionMiddleware::class, 0);
+
+		// At this point, if no Response is returned by any middleware, the
+		// NotFoundHandler kicks in; alternately, you can provide other fallback
+		// middleware to execute.
+		$this->pipe("/", NotFoundMiddleware::class, -1);
+	}
+
+	protected function setupPipeline(): void
+	{
+		$this->app->requestStack = $this->requestStack = new RequestStack();
+
+		$container = $this->app->container;
+
+		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
+
+		$this->factory = $container->get(MiddlewareFactory::class);
 
 		$this->runner = $container->get(RequestHandlerRunner::class);
 	}
@@ -256,90 +332,5 @@ class PipelineExtension extends AbstractExtension implements EventSubscriberInte
 			/** @var EventsExtension $dispatcher */
 			$dispatcher->dispatch(new NamedEvent("core.end"));
 		}
-	}
-
-	public function onContainerConfig($event): void
-	{
-		$containerConfig = $event->getSubject();
-		$containerConfig->addFactories([
-			EmitterInterface::class => EmitterFactory::class,
-			ErrorHandler::class => ErrorHandlerFactory::class,
-			MiddlewareContainer::class => MiddlewareContainerFactory::class,
-
-			// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
-			ErrorResponseGenerator::class => ErrorResponseGeneratorFactory::class,
-			//ErrorResponseGenerator::class => WhoopsErrorResponseGeneratorFactory::class,
-			'ON\Whoops' => WhoopsFactory::class,
-			'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,
-
-			ResponseInterface::class => ResponseFactoryFactory::class,
-			RequestHandlerRunner::class => RequestHandlerRunnerFactory::class,
-
-			ServerRequestErrorResponseGenerator::class => ServerRequestErrorResponseGeneratorFactory::class,
-			ServerRequestInterface::class => ServerRequestFactoryFactory::class,
-			StreamInterface::class => StreamFactoryFactory::class,
-			NotFoundHandler::class => NotFoundHandlerFactory::class,
-		]);
-
-		$containerConfig->addAliases([
-			//MiddlewarePipeInterface::class => MiddlewarePipe::class,
-			MiddlewarePipeInterface::class => MiddlewarePriorityPipe::class,
-			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
-			ResponseFactoryInterface::class => ResponseFactory::class,
-		]);
-		$this->removePendingTask('container:define');
-	}
-
-	public function ready(): void
-	{
-		$this->app->events->dispatch("core.extensions.pipeline.ready");
-	}
-
-	public function onContainerReady(): void
-	{
-		$this->setupPipeline();
-
-		$this->registerMiddlewares();
-
-		$appCfg = $this->app->config->get(AppConfig::class);
-
-		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
-		$this->removePendingTask('pipeline:load');
-	}
-
-	public function registerMiddlewares(): void
-	{
-		// The error handler should be the first (most outer) middleware to catch
-		// all Exceptions.
-		$this->pipe("/", ErrorHandler::class, 1000);
-
-		$this->pipe("/", RegisterRequestMiddleware::class, 900);
-
-		$this->pipe("/", BodyParamsMiddleware::class, 900);
-
-
-		$this->pipe("/", SecurityMiddleware::class, 1);
-
-
-		$this->pipe("/", AuthorizationMiddleware::class, 1);
-
-		// Register the validation middleware in the middleware pipeline
-		$this->pipe("/", ValidationMiddleware::class, 1);
-
-		// This middleware is responsible for calling the controller/page method
-		$this->pipe("/", ExecutionMiddleware::class, 0);
-
-		// At this point, if no Response is returned by any middleware, the
-		// NotFoundHandler kicks in; alternately, you can provide other fallback
-		// middleware to execute.
-		$this->pipe("/", NotFoundMiddleware::class, -1);
-	}
-
-	public static function getSubscribedEvents()
-	{
-		return [
-			'core.extensions.container.config' => 'onContainerConfig',
-			'core.extensions.container.ready' => 'onContainerReady',
-		];
 	}
 }

@@ -82,7 +82,7 @@ class ClockworkMiddleware implements MiddlewareInterface
 			return $this->clockwork->usePsrMessage($request, $response)->requestProcessed();
 		}
 		$this->clockwork->event('Controller')->end();
-		
+
 		return $response;
 	}
 

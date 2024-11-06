@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace ON\Router\Attribute;
 
 use Attribute;
+use Exception;
 use function is_array;
+use ON\Config\Scanner\ReflectionAnalyzableInterface;
+use ReflectionMethod;
 use Stringable;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
-class Route
+class Route implements ReflectionAnalyzableInterface
 {
 	private ?string $path = null;
 	private array $localizedPaths = [];
 	private array $methods;
 	private array $schemes;
+
+	public string $__declaringClass = "";
+	public string $__methodName = "";
 
 	/**
 	 * @param string|array<string,string>|null $path         The route path (i.e. "/user/login")
@@ -193,5 +199,22 @@ class Route
 	public function getEnv(): ?string
 	{
 		return $this->env;
+	}
+
+	public function __analyzeReflection(array $reflectors): void
+	{
+		$count = count($reflectors);
+		if ($count < 3) {
+			throw new Exception("Is it possible yet to use Route attributes in a class?");
+		}
+
+		$methodReflector = $reflectors[$count - 2];
+
+		if (! ($methodReflector instanceof ReflectionMethod)) {
+			throw new Exception("It is only possible to use the Route attribute in methods.");
+		}
+		/** @var ReflectionMethod $reflector */
+		$this->__declaringClass = $methodReflector->getDeclaringClass()->getName();
+		$this->__methodName = $methodReflector->getName();
 	}
 }

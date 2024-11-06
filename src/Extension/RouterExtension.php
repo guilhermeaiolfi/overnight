@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\Extension;
 
 use ON\Application;
+use ON\Config\ContainerConfig;
 use ON\Config\RouterConfig;
 use ON\Container\RouteMiddlewareFactory;
-use ON\Event\EventSubscriberInterface;
 use ON\Middleware\RouteMiddleware;
 use ON\Router\DuplicateRouteDetector;
 use ON\Router\Route;
@@ -15,7 +15,7 @@ use ON\Router\Router;
 use ON\Router\RouterFactory;
 use ON\Router\RouterInterface;
 
-class RouterExtension extends AbstractExtension implements EventSubscriberInterface
+class RouterExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.router";
 	protected int $type = self::TYPE_EXTENSION;
@@ -24,24 +24,17 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 
 	protected RouterInterface $router;
 
-	protected array $pendingTasks = [ 'container:define', 'router:load' ];
+	protected array $pendingTasks = [ ];
 
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected ?array $options = []
 	) {
 	}
 
 	public static function install(Application $app, ?array $options = []): mixed
 	{
-		$class = self::class;
-		$extension = new $class($app);
-
-		$app->registerMethod("get", [$extension, 'get']);
-		$app->registerMethod("put", [$extension, 'put']);
-		$app->registerMethod("patch", [$extension, 'patch']);
-		$app->registerMethod("any", [$extension, 'any']);
-		$app->registerMethod("post", [$extension, 'post']);
-		$app->registerMethod("route", [$extension, 'route']);
+		$extension = new self($app, $options);
 
 		$app->registerExtension('router', $extension);
 
@@ -56,18 +49,47 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 		];
 	}
 
-	public function ready(): void
+	public function boot(): void
 	{
-		$this->app->events->dispatch('core.extensions.router.ready', $this);
+		$this->app->ext('container')->when('setup', [$this, 'onContainerSetup']);
+		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
 	}
 
-	public function setup(int $counter): bool
+	public function setup(): void
 	{
-		if (! $this->hasPendingTasks()) {
-			return true;
-		}
+		$this->app->registerMethod("get", [$this, 'get']);
+		$this->app->registerMethod("put", [$this, 'put']);
+		$this->app->registerMethod("patch", [$this, 'patch']);
+		$this->app->registerMethod("any", [$this, 'any']);
+		$this->app->registerMethod("post", [$this, 'post']);
+		$this->app->registerMethod("route", [$this, 'route']);
+	}
 
-		return false;
+	public function onContainerSetup(): void
+	{
+		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig->addAlias(RouterInterface::class, Router::class);
+		$containerConfig->addFactories([
+			Router::class => RouterFactory::class,
+			RouteMiddleware::class => RouteMiddlewareFactory::class,
+			RouterInterface::class => RouterFactory::class,
+		]);
+	}
+
+	public function onContainerReady(): void
+	{
+		$container = $this->app->container;
+		$this->router = $container->get(RouterInterface::class);
+		$this->app->router = $this;
+		$routerCfg = $container->get(RouterConfig::class);
+		$this->loadRoutesFromConfig($routerCfg);
+	}
+
+	public function onPipelineReady(): void
+	{
+		$this->app->pipe("/", RouteMiddleware::class, 100);
+		$this->setState('ready');
 	}
 
 	protected function loadRoutesFromConfig($cfg)
@@ -203,41 +225,5 @@ class RouterExtension extends AbstractExtension implements EventSubscriberInterf
 	public function any(string $path, $middleware, ?string $name = null): Route
 	{
 		return $this->route($path, $middleware, null, $name);
-	}
-
-	public function onContainerConfig($event): void
-	{
-		$containerConfig = $event->getSubject();
-		$containerConfig->addAlias(RouterInterface::class, Router::class);
-		$containerConfig->addFactories([
-			Router::class => RouterFactory::class,
-			RouteMiddleware::class => RouteMiddlewareFactory::class,
-			RouterInterface::class => RouterFactory::class,
-		]);
-		$this->removePendingTask('container:define');
-	}
-
-	public function onContainerReady(): void
-	{
-		$container = $this->app->container;
-		$this->router = $container->get(RouterInterface::class);
-		$this->app->router = $this;
-		$routerCfg = $container->get(RouterConfig::class);
-		$this->loadRoutesFromConfig($routerCfg);
-		$this->removePendingTask('router:load');
-	}
-
-	public function onPipelineReady(): void
-	{
-		$this->app->pipe("/", RouteMiddleware::class, 100);
-	}
-
-	public static function getSubscribedEvents()
-	{
-		return [
-			'core.extensions.container.config' => 'onContainerConfig',
-			'core.extensions.container.ready' => 'onContainerReady',
-			'core.extensions.pipeline.ready' => 'onPipelineReady',
-		];
 	}
 }

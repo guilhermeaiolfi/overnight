@@ -12,7 +12,7 @@ use ON\Event\EventSubscriberInterface;
 use ON\Event\NamedEvent;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
-class EventsExtension extends AbstractExtension implements EventSubscriberInterface
+class EventsExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.events";
 	protected int $type = self::TYPE_EXTENSION;
@@ -22,7 +22,7 @@ class EventsExtension extends AbstractExtension implements EventSubscriberInterf
 
 	protected array $q = [];
 
-	protected array $pendingTasks = [ "container:define" ];
+	protected array $__states = [ ];
 
 	public function __construct(
 		protected Application $app,
@@ -40,19 +40,27 @@ class EventsExtension extends AbstractExtension implements EventSubscriberInterf
 		return $extension;
 	}
 
-	public function requires(): array
+	public function boot(): void
 	{
-		return [];
+		if ($this->app->hasExtension('container')) {
+			$this->app->ext('container')->when("ready", [ $this, 'onContainerReady' ]);
+		}
+		$this->when('ready', [$this, 'flush']);
 	}
 
-	public function setup(int $counter): bool
+	public function setup(): void
 	{
 		$this->eventDispatcher = new EventDispatcher();
 
 		// register events for extensions
 		$this->registerEventSubscribersForExtensions();
 
-		return true;
+		$this->setState('ready');
+	}
+
+	public function onContainerReady(): void
+	{
+		$this->app->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
 	}
 
 	public function registerEventSubscribersForExtensions()
@@ -69,12 +77,6 @@ class EventsExtension extends AbstractExtension implements EventSubscriberInterf
 			}
 			$this->dispatch(new NamedEvent("core.ready", $obj ?? $class));
 		}
-	}
-
-	public function ready()
-	{
-		// clear the queue of events to dispatch
-		$this->flush();
 	}
 
 	protected function flush()
@@ -177,17 +179,5 @@ class EventsExtension extends AbstractExtension implements EventSubscriberInterf
 			throw new Exception("Event name (" . $event . ") is not valid for listener: " . get_class($listener));
 		}
 		$this->eventDispatcher->subscribeTo($event, $listener, $priority);
-	}
-
-	public function onContainerReady($event): void
-	{
-		$this->app->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
-	}
-
-	public static function getSubscribedEvents()
-	{
-		return [
-			'core.extensions.container.ready' => 'onContainerReady',
-		];
 	}
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\View;
 
-use Exception;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Config\ContainerConfig;
@@ -36,47 +35,29 @@ class ViewExtension extends AbstractExtension
 		return $extension;
 	}
 
-	public function setup(int $counter): bool
+	public function boot(): void
 	{
-		if ($this->app->isExtensionReady("pipeline")) {
+		$this->app->ext('pipeline')->when('ready', function () {
 			$this->injectMiddleware();
-			$this->removePendingTask("pipeline:inject");
-		}
+		});
 
-		if ($this->removePendingTask("container:define")) {
-			$config = $this->app->config;
-
-			if (! isset($config)) {
-				throw new Exception("Router Extension needs the config extension");
-			}
-			$containerConfig = $config->get(ContainerConfig::class);
+		$this->app->ext('container')->when('setup', function () {
+			$containerConfig = $this->app->config->get(ContainerConfig::class);
 
 			// TODO: plates and lattes should be an extension by its own
-			$containerConfig->mergeRecursiveDistinct([
-				"definitions" => [
-					"factories" => [
-						Engine::class => PlatesEngineFactory::class,
-					],
-					"aliases" => [
-					],
-				],
+			$containerConfig->addFactories([
+				Engine::class => PlatesEngineFactory::class,
 			]);
-		}
+		});
+	}
 
-		if ($this->hasPendingTasks()) {
-			return false;
-		}
-
-		return true;
+	public function setup(): void
+	{
+		$this->setState('ready');
 	}
 
 	public function injectMiddleware(): void
 	{
 		$this->app->pipe(OutputTypeMiddleware::class);
-	}
-
-	public function ready()
-	{
-
 	}
 }

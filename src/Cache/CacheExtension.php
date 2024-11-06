@@ -14,8 +14,6 @@ use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 
 class CacheExtension extends AbstractExtension
 {
-	protected array $pendingTasks = [ "container:define" ];
-
 	public static function install(Application $app, ?array $options = []): mixed
 	{
 		$extension = new self($app, $options);
@@ -29,9 +27,9 @@ class CacheExtension extends AbstractExtension
 	) {
 	}
 
-	public function setup($counter): bool
+	public function boot(): void
 	{
-		if ($this->removePendingTask("container:define")) {
+		$this->app->ext('container')->when('setup', function () {
 			$config = $this->app->config;
 
 			if (! isset($config)) {
@@ -42,12 +40,13 @@ class CacheExtension extends AbstractExtension
 				CacheInterface::class => CacheFactory::class,
 				FilesystemAdapter::class => FilesystemAdapterFactory::class,
 			]);
-		}
 
-		if (empty($this->getPendingTasks())) {
-			return true;
-		}
+			$this->setState('ready');
+		});
+	}
 
-		return false;
+	public function setup(): void
+	{
+
 	}
 }

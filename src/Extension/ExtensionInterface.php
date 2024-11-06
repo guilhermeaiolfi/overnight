@@ -12,15 +12,9 @@ interface ExtensionInterface
 
 	public function getType(): int;
 
-	public function ready();
+	public function setup(): void;
 
-	public function setup(int $counter): bool;
-
-	public function getPendingTasks(): array;
-
-	public function removePendingTask(mixed $task): bool;
-
-	public function hasPendingTask(mixed $task): bool;
+	public function boot(): void;
 
 	public function requires(): array;
 
