@@ -41,7 +41,6 @@ class MaintenanceExtension extends AbstractExtension
 
 		$this->app->ext("pipeline")->when('ready', function () {
 			$this->injectMiddleware();
-			$this->setState('ready');
 		});
 
 		if ($this->app->isCli()) {
@@ -59,6 +58,7 @@ class MaintenanceExtension extends AbstractExtension
 	public function setup(): void
 	{
 		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
+		$this->setState('ready');
 	}
 
 	public function injectMiddleware(): void

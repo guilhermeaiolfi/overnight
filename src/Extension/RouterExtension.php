@@ -53,7 +53,7 @@ class RouterExtension extends AbstractExtension
 	{
 		$this->app->ext('container')->when('setup', [$this, 'onContainerSetup']);
 		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
-		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+		//$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
 	}
 
 	public function setup(): void
@@ -64,6 +64,8 @@ class RouterExtension extends AbstractExtension
 		$this->app->registerMethod("any", [$this, 'any']);
 		$this->app->registerMethod("post", [$this, 'post']);
 		$this->app->registerMethod("route", [$this, 'route']);
+
+		$this->app->pipe("/", RouteMiddleware::class, 100);
 	}
 
 	public function onContainerSetup(): void
@@ -84,11 +86,7 @@ class RouterExtension extends AbstractExtension
 		$this->app->router = $this;
 		$routerCfg = $container->get(RouterConfig::class);
 		$this->loadRoutesFromConfig($routerCfg);
-	}
 
-	public function onPipelineReady(): void
-	{
-		$this->app->pipe("/", RouteMiddleware::class, 100);
 		$this->setState('ready');
 	}
 

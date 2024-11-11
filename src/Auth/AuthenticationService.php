@@ -11,7 +11,7 @@ class AuthenticationService extends LaminasAuthenticationService implements Auth
 	/*
 	*  Just alias to ->clearIdentity();
 	*/
-	public function logout()
+	public function logout(): void
 	{
 		$this->getStorage()->clear();
 	}

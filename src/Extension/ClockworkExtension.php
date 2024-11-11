@@ -39,9 +39,12 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		if (! function_exists('clock')) {
 			$settings = ArrayUtils::merge($this->getOptions(), $options);
 			$this->clockwork = Clockwork::init($settings);
+			clock()->event("Booting")->begin();
+		}
+		else {
+			$this->clockwork = clock();
 		}
 
-		clock()->event("Booting")->begin();
 	}
 
 	public function requires(): array
@@ -66,14 +69,20 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	public function boot(): void
 	{
 		// that's the order they happen
-		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+		//$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
 		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
-		$this->when('ready', [$this, 'ready']);
-	}
 
-	public function ready(): void
+		foreach ($this->app->getInstalledExtensions() as $extClassName) {
+			clock()->event($extClassName)->begin();
+			$this->app->ext($extClassName)->when('ready', function() use ($extClassName) {
+				clock()->event($extClassName)->end();	
+			});
+		}
+	}
+	public function setup(): void
 	{
-		clock()->event('Booting')->end();
+		$this->app->pipe("/", ClockworkMiddleware::class, 900);
+		$this->setState("ready");
 	}
 
 	public function onContainerReady(): void
@@ -83,13 +92,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$logger = $container->get(LoggerInterface::class);
 		$loggerDataSource = new PsrLoggerDatasource($logger);
 		$this->clockwork->addDataSource($loggerDataSource);
-	}
-
-	public function onPipelineReady(): void
-	{
-		$this->app->pipe("/", ClockworkMiddleware::class, 900);
-
-		$this->setState('ready');
 	}
 
 	public function onQuery($event)
@@ -132,6 +134,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function onRun($event)
 	{
+		clock()->event('Booting')->end();
 		clock()->event('Run')->begin();
 		$this->showBenchmarkTable();
 	}

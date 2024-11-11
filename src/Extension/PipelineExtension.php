@@ -33,6 +33,7 @@ use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
 use ON\Event\NamedEvent;
 use ON\Handler\NotFoundHandler;
+use ON\Middleware\ClockworkMiddleware;
 use ON\Middleware\ErrorResponseGenerator;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\MiddlewarePriorityPipe;
@@ -66,6 +67,8 @@ class PipelineExtension extends AbstractExtension
 	public MiddlewareFactory $factory;
 
 	protected array $controllerCache = [];
+
+	protected array $q = [];
 
 	public function __construct(
 		protected Application $app,
@@ -150,8 +153,10 @@ class PipelineExtension extends AbstractExtension
 	public function onContainerReady(): void
 	{
 		$this->setupPipeline();
-
+		
 		$this->registerMiddlewares();
+		
+		$this->flush();
 
 		$appCfg = $this->app->config->get(AppConfig::class);
 
@@ -165,17 +170,17 @@ class PipelineExtension extends AbstractExtension
 		// The error handler should be the first (most outer) middleware to catch
 		// all Exceptions.
 		$this->pipe("/", ErrorHandler::class, 1000);
-
+		
 		$this->pipe("/", RegisterRequestMiddleware::class, 900);
-
+		
 		$this->pipe("/", BodyParamsMiddleware::class, 900);
-
+		
 		// Register the validation middleware in the middleware pipeline
 		$this->pipe("/", ValidationMiddleware::class, 1);
 
 		// This middleware is responsible for calling the controller/page method
 		$this->pipe("/", ExecutionMiddleware::class, 0);
-
+		
 		// At this point, if no Response is returned by any middleware, the
 		// NotFoundHandler kicks in; alternately, you can provide other fallback
 		// middleware to execute.
@@ -205,6 +210,14 @@ class PipelineExtension extends AbstractExtension
 		(require_once $file)($this->app);
 	}
 
+	public function flush(): void
+	{
+		while ($item = array_shift($this->q)) {
+			//dd(...$item);
+			$this->pipe($item[0], $item[1], $item[2]);
+		}
+	}
+
 	/**
 	 * Pipe middleware to the pipeline.
 	 *
@@ -227,6 +240,12 @@ class PipelineExtension extends AbstractExtension
 	 */
 	public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
 	{
+		if (!isset($this->pipeline)) {
+			//var_dump($middleware);
+			$this->q[] = [$middlewareOrPath, $middleware, $priority];
+			return;
+		}
+		
 		$middleware = $middleware ?? $middlewareOrPath;
 		$path = $middleware === $middlewareOrPath ? '/' : $middlewareOrPath;
 

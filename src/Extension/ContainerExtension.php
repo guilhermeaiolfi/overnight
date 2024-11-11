@@ -46,14 +46,10 @@ class ContainerExtension extends AbstractExtension
 		return $extension;
 	}
 
-	public function boot(): void
-	{
-		//$this->app->ext('config')->when('ready', [$this, 'onConfigReady']);
-	}
-
 	public function setup(): void
 	{
 		if (! $this->app->ext('config')->isReady()) {
+			// that way we don't need to rely on any event.
 			$this->nextTick([$this, 'setup']);
 
 			return;

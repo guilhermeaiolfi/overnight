@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\User;
+namespace ON\Auth\User;
 
 class StandardUser implements UserInterface
 {

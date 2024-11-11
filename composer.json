@@ -11,7 +11,6 @@
         "laminas/laminas-diactoros": "3.x",
         "php-di/php-di": "^7.0",
         "laminas/laminas-stratigility": "^4.0",
-        "laminas/laminas-authentication": "^2.17",
         "php-di/invoker": "^2.3",
         "psr/log": "^3.0",
         "monolog/monolog": "^3.7",
@@ -26,9 +25,9 @@
         "laminas/laminas-httphandlerrunner": "^2.11",
         "nikic/fast-route": "^1.3",
         "league/plates": "^3.6",
-        "laminas/laminas-cache-storage-adapter-filesystem": "^3.0",
-        "laminas/laminas-cache": "^4.0",
-        "mezzio/mezzio-helpers": "^5.17"
+        "mezzio/mezzio-helpers": "^5.17",
+        "laminas/laminas-authentication": "^2.18",
+        "laminas/laminas-session": "^2.21"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
