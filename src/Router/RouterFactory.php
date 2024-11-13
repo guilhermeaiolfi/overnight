@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Router;
 
-use ON\Config\RouterConfig;
 use ON\RequestStack;
 use Psr\Container\ContainerInterface;
 

@@ -6,8 +6,6 @@ namespace ON;
 
 use Exception;
 use ON\Common\AttributesTrait;
-use ON\Router\Route;
-use ON\Router\RouteResult;
 use ON\View\ViewConfig;
 
 abstract class AbstractPage implements PageInterface
@@ -136,13 +134,7 @@ abstract class AbstractPage implements PageInterface
 
 	public function processForward($middleware, $request)
 	{
-		$app = $this->container->get(Application::class);
-		$result = $request->getAttribute(RouteResult::class);
-		$matched = $result->getMatchedRoute();
-		$result = RouteResult::fromRoute(new Route($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName()));
-		$request = $request->withAttribute(RouteResult::class, $result);
-
-		return $app->runAction($request);
+		$this->app->processForward($middleware, $request);
 	}
 
 	public function getContainer()

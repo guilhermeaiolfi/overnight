@@ -8,6 +8,7 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Extension\AbstractExtension;
+use ON\Maintenance\Middleware\MaintenanceMiddleware;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;

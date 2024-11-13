@@ -8,7 +8,7 @@ use Laminas\Authentication\Storage\Session;
 use Laminas\Authentication\Storage\StorageInterface;
 use Laminas\Session\ManagerInterface;
 use ON\Application;
-use ON\Config\ContainerConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Session\SessionManagerFactory;
 
@@ -46,7 +46,7 @@ class AuthExtension extends AbstractExtension
 			$containerConfig->addAliases([
 				StorageInterface::class => Session::class,
 				AuthenticatorInterface::class => Authenticator::class,
-				AuthorizationServiceInterface::class => AuthorizationService::class
+				AuthorizationServiceInterface::class => AuthorizationService::class,
 			]);
 			$containerConfig->addFactories([
 				AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,

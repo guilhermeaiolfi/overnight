@@ -32,7 +32,7 @@ trait AttributesTrait
 	public function setAttributeByRef($name, &$value)
 	{
 		if (! isset($this->attributes)) {
-			$this->attributes[$ns] = [];
+			$this->attributes = [];
 		}
 
 		$this->attributes[$name] = &$value;

@@ -27,7 +27,8 @@
         "league/plates": "^3.6",
         "mezzio/mezzio-helpers": "^5.17",
         "laminas/laminas-authentication": "^2.18",
-        "laminas/laminas-session": "^2.21"
+        "laminas/laminas-session": "^2.21",
+        "spatie/php-structure-discoverer": "^2.2"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",

@@ -8,7 +8,7 @@ use Exception;
 use ON\Application;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
-use ON\Config\ContainerConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 

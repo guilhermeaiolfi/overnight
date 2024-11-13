@@ -8,10 +8,9 @@ use Exception;
 use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Application;
 use ON\Auth\AuthenticationServiceInterface;
-use ON\Common\ViewBuilderTrait;
 use ON\Config\AppConfig;
 use ON\Container\Executor\ExecutorInterface;
-use ON\Extension\PipelineExtension;
+use ON\View\ViewBuilderTrait;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -28,6 +27,8 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 	protected ?string $className = null;
 	protected string $method = "index";
 
+	protected Application $app;
+
 	public function __construct(
 		protected ContainerInterface $container,
 		public readonly string $middlewareName,
@@ -41,6 +42,8 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 
 			$this->instance = $this->container->get($className);
 		}
+
+		$this->app = $this->container->get(Application::class);
 
 		$this->executor = $this->container->get(ExecutorInterface::class);
 	}
@@ -118,26 +121,11 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			$config = $this->container->get(AppConfig::class);
 
 			//throw new Exception('User has no permittion!');
-			return $this->processForward($config->get('controllers.login'), $request);
+			return $this->app->processForward($config->get('controllers.login'), $request);
 			//return new RedirectResponse($this->router->gen("login"));
 		}
 
 		return $handler->handle($request, $handler);
-	}
-
-	public function processForward($middleware, $request): ResponseInterface
-	{
-		$result = $request->getAttribute(RouteResult::class);
-		$matched = $result->getMatchedRoute();
-
-		$app = $this->container->get(Application::class);
-
-		/** @var PipelineExtension $pipeline */
-		$pipeline = $app->pipeline;
-
-		$request = $pipeline->prepareRequest($matched->getPath(), $middleware, $matched->getAllowedMethods(), $matched->getName());
-
-		return $app->runAction($request);
 	}
 
 	public function checkPermissions(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -167,7 +155,7 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 					return new EmptyResponse(403);
 				}
 
-				return $this->processForward($middleware, $request);
+				return $this->app->processForward($middleware, $request);
 			}
 		}
 

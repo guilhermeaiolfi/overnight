@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace ON\Image;
 
 use ON\Application;
-use ON\Config\ContainerConfig;
-use ON\Config\RouterConfig;
+use ON\Container\ContainerConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
+use ON\Image\Container\ImageManagerFactory;
 use ON\Router\Route;
+use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension implements EventSubscriberInterface
 {

@@ -12,5 +12,9 @@ interface DiscoverInterface
 
 	public function recover(): bool;
 
+	public function forget(): void;
+
+	public function handle($file): bool;
+
 	public function process(): bool;
 }

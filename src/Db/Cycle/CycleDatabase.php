@@ -8,7 +8,6 @@ use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
 use Cycle\ORM\Schema;
 use ON\Db\DatabaseInterface;
-use Spiral\Database\Config\DatabaseConfig;
 use Spiral\Database\DatabaseManager;
 
 class CycleDatabase implements DatabaseInterface

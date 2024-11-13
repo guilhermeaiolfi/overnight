@@ -2,17 +2,9 @@
 
 declare(strict_types=1);
 
-/*
- * This file is part of the Symfony package.
- *
- * (c) Fabien Potencier <fabien@symfony.com>
- *
- * For the full copyright and license information, please view the LICENSE
- * file that was distributed with this source code.
- */
-
 namespace ON\Console\Command;
 
+use ON\Application;
 use ON\Cache\CacheInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
@@ -22,13 +14,15 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 class ClearCacheCommand extends Command
 {
 	public function __construct(
-		protected CacheInterface $cache
+		protected CacheInterface $cache,
+		protected Application $app
 	) {
 		parent::__construct();
 	}
@@ -57,16 +51,39 @@ class ClearCacheCommand extends Command
 		$io = new SymfonyStyle($input, $output);
 		$formatter = new FormatterHelper();
 
-		//$choices = $io->choice("Which ones?", [ "One", "Two" ], null, true);
-		if ($io->confirm("Are you sure?", false)) {
+		$helper = $this->getHelper('question');
+		$question = new ChoiceQuestion(
+			'Please select the cache you want to remove',
+			[
+				'1' => 'Cache (from CacheInterface)',
+				'2' => 'Discovery',
+
+				'a' => 'All',
+			],
+			'a'
+		);
+		$question->setMultiselect(true);
+
+		$selection = $helper->ask($input, $output, $question);
+
+		if (in_array('a', $selection) || in_array('1', $selection)) {
 			$this->cache->clear();
-
-			//$output->write($formatter->formatBlock("OK", "Cache cleared!"));
-			$io->success("Cache cleared!");
-
-			return Command::SUCCESS;
+			$output->writeln($formatter->formatSection("OK", "CacheInterface cleared!"));
 		}
 
-		return 0;
+		if (in_array('a', $selection) || in_array('2', $selection)) {
+			$this->cache->clear();
+			if ($this->app->hasExtension('discovery')) {
+				$this->app->discovery->forget();
+			}
+			$output->writeln($formatter->formatSection("OK", "Discovery Cache cleared!"));
+		}
+
+
+
+
+
+
+		return Command::SUCCESS;
 	}
 }

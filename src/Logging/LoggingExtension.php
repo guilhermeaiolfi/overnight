@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace ON\Logging;
 
 use ON\Application;
-use ON\Config\ContainerConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Logging\Command\MonitorLogsCommand;
+use ON\Logging\Container\LoggerFactory;
 use Psr\Log\LoggerInterface;
 
 class LoggingExtension extends AbstractExtension
@@ -45,7 +47,7 @@ class LoggingExtension extends AbstractExtension
 
 		$this->app->ext('config')->when('setup', function () {
 			$translationConfig = $this->app->config->get(LoggingConfig::class);
-			$translationConfig->mergeConfigArray([
+			$translationConfig->mergeConfig([
 				"default" => [
 					"type" => "rotating_file",
 					"path" => "var/log/app.%date%.log",
@@ -53,6 +55,12 @@ class LoggingExtension extends AbstractExtension
 				],
 			]);
 		});
+
+		if ($this->app->hasExtension('console')) {
+			$this->app->ext('console')->when('ready', function () {
+				$this->app->console->addCommand(MonitorLogsCommand::class);
+			});
+		}
 	}
 
 	public function setup(): void

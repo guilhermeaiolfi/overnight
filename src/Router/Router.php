@@ -31,7 +31,6 @@ use function is_writable;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\Stdlib\ArrayUtils;
-use ON\Config\RouterConfig;
 use ON\RequestStack;
 use ON\Router\Exception\InvalidCacheDirectoryException;
 use ON\Router\Exception\InvalidCacheException;

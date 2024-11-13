@@ -7,7 +7,6 @@ namespace ON\Discovery;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Scanner\AttributeReader;
-use ON\Extension\DiscoveryExtension;
 use ReflectionClass;
 
 class AttributesDiscoverer implements DiscoverInterface
@@ -16,7 +15,7 @@ class AttributesDiscoverer implements DiscoverInterface
 
 	protected $cachefile = "var/cache/discovery/attributes.cache.php";
 	protected ClassFinder $classFinder;
-	protected bool $changed = false;
+	protected bool $dirty = false;
 	protected AppConfig $config;
 
 	protected array $processors = [ ];
@@ -26,9 +25,9 @@ class AttributesDiscoverer implements DiscoverInterface
 		protected Application $app,
 	) {
 		$this->reader = new AttributeReader();
-		$this->classFinder = $app->ext(DiscoveryExtension::class)->classFinder;
+		$this->classFinder = $app->discovery->classFinder;
 		$this->config = $app->config->get(AppConfig::class);
-		$this->processors = array_keys($this->config->get('discovery.discoverers.' . self::class . '.processors', []));
+		$this->processors = $this->config->get('discovery.discoverers.' . self::class . '.processors', []);
 	}
 
 	public function cachedTimestamp(): float
@@ -41,22 +40,27 @@ class AttributesDiscoverer implements DiscoverInterface
 
 	public function process(): bool
 	{
-		foreach ($this->processors as $processor) {
-			$processor = new $processor($this->app);
+		foreach ($this->processors as $className => $options) {
+			$processor = new $className($this->app, $options);
 			$processor($this->reader);
 		}
 
 		return true;
 	}
 
-	public function updateFile($file): bool
+	public function addProcessor(string $className, array $options = []): void
+	{
+		$this->processors[$className] = $options;
+	}
+
+	public function handle($file): bool
 	{
 		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
 		foreach ($classes as $className) {
 			if (preg_match('/(.*)Page$/', $className)) {
 				$class = new ReflectionClass($className);
 				$this->reader->load($class);
-				$this->changed = true;
+				$this->dirty = true;
 			}
 		}
 
@@ -77,9 +81,14 @@ class AttributesDiscoverer implements DiscoverInterface
 		return true;
 	}
 
+	public function isDirty(): bool
+	{
+		return $this->dirty;
+	}
+
 	public function save(): bool
 	{
-		if ($this->changed) {
+		if ($this->isDirty()) {
 			@mkdir(dirname($this->cachefile), 0777, true);
 			file_put_contents($this->cachefile, serialize($this->reader));
 
@@ -87,5 +96,12 @@ class AttributesDiscoverer implements DiscoverInterface
 		}
 
 		return false;
+	}
+
+	public function forget(): void
+	{
+		if (file_exists($this->cachefile)) {
+			unlink($this->cachefile);
+		}
 	}
 }

@@ -9,6 +9,7 @@ use ON\Application;
 use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\OvernightCommand;
 use ON\Console\Command\RoutesCommand;
+use ON\Console\Command\ServeCommand;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
 use Symfony\Component\Console\Application as ConsoleApplication;
@@ -21,6 +22,7 @@ class ConsoleExtension extends AbstractExtension
 	protected array $q = [
 		ClearCacheCommand::class,
 		RoutesCommand::class,
+		ServeCommand::class,
 	];
 
 	public static function install(Application $app, ?array $options = []): mixed

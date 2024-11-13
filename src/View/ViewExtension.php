@@ -6,7 +6,7 @@ namespace ON\View;
 
 use League\Plates\Engine;
 use ON\Application;
-use ON\Config\ContainerConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
@@ -14,8 +14,6 @@ use ON\View\Plates\PlatesEngineFactory;
 class ViewExtension extends AbstractExtension
 {
 	protected int $type = self::TYPE_EXTENSION;
-
-	protected array $pendingTasks = [ "container:define", "pipeline:inject" ];
 
 	public function __construct(
 		protected Application $app

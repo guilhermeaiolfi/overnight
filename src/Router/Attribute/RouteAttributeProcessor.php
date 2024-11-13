@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace ON\Router\Attribute;
 
 use ON\Application;
-use ON\Config\RouterConfig;
 use ON\Config\Scanner\AttributeReader;
+use ON\Router\RouterConfig;
 
 class RouteAttributeProcessor
 {
 	protected RouterConfig $config;
 
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected array $options = []
 	) {
 		$this->config = $app->config->get(RouterConfig::class);
 	}

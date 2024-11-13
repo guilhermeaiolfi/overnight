@@ -83,7 +83,7 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
 		$defaults = static::getDefaults();
 
 		$config = new static($defaults, $parse, $delimiter);
-		$config->mergeConfigArray($items);
+		$config->mergeConfig($items);
 
 		return $config;
 	}
@@ -375,7 +375,7 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
 	 *
 	 * @return array $a
 	 */
-	public function mergeConfigArray($obj): void
+	public function mergeConfig($obj): void
 	{
 		$values = $this->getArrayItems($obj);
 		$this->items = ArrayUtils::merge($this->items, $values);

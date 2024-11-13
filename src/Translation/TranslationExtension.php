@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\Translation;
 
 use ON\Application;
-use ON\Config\ContainerConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 
 class TranslationExtension extends AbstractExtension
@@ -42,7 +42,7 @@ class TranslationExtension extends AbstractExtension
 			]);
 
 			$translationConfig = $config->get(TranslationConfig::class);
-			$translationConfig->mergeConfigArray([
+			$translationConfig->mergeConfig([
 				'default_locale' => 'en_US@currency=USD',
 				"default_domain" => 'default',
 				'default_timezone' => null,

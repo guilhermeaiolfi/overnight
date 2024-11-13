@@ -16,13 +16,13 @@ class ClassFinder
 			return $this->cache[$filepath];
 		}
 		$php_code = file_get_contents($filepath);
-		$classes = $this->getClasses($php_code);
+		$classes = $this->getClassesFromCode($php_code);
 		$this->cache[$filepath] = $classes;
 
 		return $classes;
 	}
 
-	public function getClasses($php_code)
+	public function getClassesFromCode($php_code)
 	{
 		$classes = [];
 		$namespace = '';

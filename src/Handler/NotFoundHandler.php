@@ -7,8 +7,6 @@ namespace ON\Handler;
 use Fig\Http\Message\StatusCodeInterface;
 use ON\Application;
 use ON\Middleware\OutputTypeMiddleware;
-use ON\Router\Route;
-use ON\Router\RouteResult;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -33,13 +31,7 @@ class NotFoundHandler implements RequestHandlerInterface
 			return $this->generatePlainTextResponse($request);
 		}
 
-		$route = new Route("/404", $this->middleware, ["GET"], "NOT_FOUND");
-
-		$route_result = RouteResult::fromRoute($route);
-
-		$request = $this->app->pipeline->prepareRequestFromRouteResult($route_result, $request);
-
-		return $this->app->runAction($request);
+		return $this->app->processForward($this->middleware, $request);
 	}
 
 	/**
