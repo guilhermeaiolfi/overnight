@@ -14,7 +14,7 @@ declare(strict_types=1);
 namespace ON\Console\Command;
 
 use ON\Application;
-use ON\Router\RouterInterface;
+use ON\Router\RouterConfig;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
 use Symfony\Component\Console\Helper\DescriptorHelper;
@@ -52,8 +52,8 @@ class RoutesCommand extends Command
 
 		$table = new Table($output);
 
-		$router = $this->app->container->get(RouterInterface::class);
-		$collection = $router->getRoutes();
+		$routerCfg = $this->app->container->get(RouterConfig::class);
+		$collection = $routerCfg->getRoutesToInject();
 		$routes = [];
 		foreach ($collection as $route) {
 			$routes[] = [

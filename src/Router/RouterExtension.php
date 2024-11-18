@@ -17,10 +17,10 @@ class RouterExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.router";
 	protected int $type = self::TYPE_EXTENSION;
-	private ?DuplicateRouteDetector $duplicateRouteDetector = null;
-	private bool $detectDuplicates = true;
 
 	protected RouterInterface $router;
+
+	protected RouterConfig $config;
 
 	protected array $pendingTasks = [ ];
 
@@ -89,25 +89,9 @@ class RouterExtension extends AbstractExtension
 		$container = $this->app->container;
 		$this->router = $container->get(RouterInterface::class);
 		$this->app->router = $this;
-		$routerCfg = $container->get(RouterConfig::class);
-		$this->loadRoutesFromConfig($routerCfg);
+		$this->config = $container->get(RouterConfig::class);
 
 		$this->setState('ready');
-	}
-
-	protected function loadRoutesFromConfig($cfg)
-	{
-		$routes = $cfg->get('routes');
-		if (is_array($routes)) {
-			foreach ($routes as $route) {
-				if (is_array($route)) {
-					$this->route(...$route);
-				} else {
-					$this->router->addRoute($route);
-				}
-			}
-		}
-		$cfg->done();
 	}
 
 	protected function loadRoutes(string $file)
@@ -117,8 +101,7 @@ class RouterExtension extends AbstractExtension
 
 	public function addRoute(Route $route): self
 	{
-		$this->detectDuplicateRoute($route);
-		$this->router->addRoute($route);
+		$this->config->addRoute($route);
 
 		return $this;
 	}
@@ -138,24 +121,10 @@ class RouterExtension extends AbstractExtension
 		$methods = $methods ?? Route::HTTP_METHOD_ANY;
 
 		$route = new Route($path, $middleware, $methods, $name);
-		$this->detectDuplicateRoute($route);
 
-		$this->router->addRoute($route);
+		$this->addRoute($route);
 
 		return $route;
-	}
-
-	private function detectDuplicateRoute(Route $route): void
-	{
-		if ($this->detectDuplicates && ! $this->duplicateRouteDetector) {
-			$this->duplicateRouteDetector = new DuplicateRouteDetector();
-		}
-
-		if ($this->duplicateRouteDetector) {
-			$this->duplicateRouteDetector->detectDuplicate($route);
-
-			return;
-		}
 	}
 
 	/**

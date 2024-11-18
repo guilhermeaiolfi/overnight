@@ -75,6 +75,16 @@ class Router implements RouterInterface
         return %s;
         EOT;
 
+	private ?DuplicateRouteDetector $duplicateRouteDetector = null;
+	private bool $detectDuplicates = true;
+
+	protected array $patternMatchers = [
+		'/{(.+?):number}/' => '{$1:[0-9]+}',
+		'/{(.+?):word}/' => '{$1:[a-zA-Z]+}',
+		'/{(.+?):alphanum_dash}/' => '{$1:[a-zA-Z0-9-_]+}',
+		'/{(.+?):slug}/' => '{$1:[a-z0-9-]+}',
+		'/{(.+?):uuid}/' => '{$1:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}+}',
+	];
 
 	/**
 	 * Standard HTTP methods against which to test HEAD/OPTIONS requests.
@@ -119,20 +129,6 @@ class Router implements RouterInterface
 	 */
 	private ?RouteCollector $collection = null;
 
-	/**
-	 * All attached routes as Route instances
-	 *
-	 * @var array<non-empty-string, Route>
-	 */
-	private array $routes = [];
-
-	/**
-	 * Routes to inject into the underlying RouteCollector.
-	 *
-	 * @var list<Route>
-	 */
-	private array $routesToInject = [];
-
 	public const FRAGMENT_IDENTIFIER_REGEX = '/^([!$&\'()*+,;=._~:@\/?-]|%[0-9a-fA-F]{2}|[a-zA-Z0-9])+$/';
 
 	protected ?string $basepath = null;
@@ -161,7 +157,7 @@ class Router implements RouterInterface
 	public function __construct(
 		?RouteCollector $collection = null,
 		?callable $dispatcherFactory = null,
-		RouterConfig $config,
+		protected RouterConfig $config,
 		RequestStack $stack
 	) {
 		if (null === $collection) {
@@ -172,11 +168,6 @@ class Router implements RouterInterface
 		$this->collection = $collection;
 		$this->dispatcherCallback = $dispatcherFactory;
 		$this->loadConfig($config);
-	}
-
-	public function getRoutes(): array
-	{
-		return $this->routesToInject;
 	}
 
 	/**
@@ -191,42 +182,28 @@ class Router implements RouterInterface
 		}
 
 		$this->cacheEnabled = $config->get("cache_enabled", false);
-
 		$this->cacheFile = $config->get("cache_file", false);
-
 		$this->basepath = $config->get("baseHref", null);
 
-		if ($this->basepath !== null) {
-			$this->basepath = Router::normalizePath($this->basepath);
-		} else {
-			$this->basepath = Router::normalizePath(Router::detectBaseUrl());
+		if ($this->basepath === null) {
+			$this->basepath = Router::detectBaseUrl();
 		}
+
+		$this->basepath = Router::normalizePath($this->basepath);
 
 		if ($this->cacheEnabled) {
 			$this->loadDispatchData();
 		}
 	}
 
-	/**
-	 * Add a route to the collection.
-	 *
-	 * Uses the HTTP methods associated (creating sane defaults for an empty
-	 * list or Route::HTTP_METHOD_ANY) and the path, and uses the path as
-	 * the name (to allow later lookup of the middleware).
-	 */
-	public function addRoute(Route $route): void
-	{
-		$this->routesToInject[] = $route;
-	}
-
 	public function match(ServerRequestInterface $request): RouteResult
 	{
 		// Inject any pending routes
 		$this->injectRoutes();
+
 		$dispatchData = $this->getDispatchData();
 
 		$path = rawurldecode($request->getUri()->getPath());
-
 		$path = str_replace($this->basepath, "", $path);
 
 		$method = $request->getMethod();
@@ -265,14 +242,14 @@ class Router implements RouterInterface
 		// Inject any pending routes
 		$this->injectRoutes();
 
-		if (! isset($this->routes[$name])) {
+		if (! $this->config->getRouteByName($name)) {
 			throw new RuntimeException(sprintf(
 				'Cannot generate URI for route "%s"; route not found',
 				$name
 			));
 		}
 
-		$route = $this->routes[$name];
+		$route = $this->config->getRouteByName($name);
 		$options = ArrayUtils::merge($route->getOptions(), $options);
 
 		/** @psalm-var mixed $defaults */
@@ -541,8 +518,10 @@ class Router implements RouterInterface
 	private function marshalMatchedRoute(array $result, string $method): RouteResult
 	{
 		$path = $result[1];
+
+		/** @var Route|bool $route */
 		$route = array_reduce(
-			$this->routes,
+			$this->config->getRoutes(),
 			static function (Route|false $matched, Route $route) use ($path, $method): Route|false {
 				if ($matched) {
 					return $matched;
@@ -580,9 +559,8 @@ class Router implements RouterInterface
 	 */
 	private function injectRoutes(): void
 	{
-		foreach ($this->routesToInject as $index => $route) {
+		while ($route = $this->config->pullAndInject()) {
 			$this->injectRoute($route);
-			unset($this->routesToInject[$index]);
 		}
 	}
 
@@ -591,8 +569,7 @@ class Router implements RouterInterface
 	 */
 	private function injectRoute(Route $route): void
 	{
-		// Filling the routes' hash-map is required by the `generateUri` method
-		$this->routes[$route->getName()] = $route;
+		$this->detectDuplicateRoute($route);
 
 		// Skip feeding FastRoute collector if valid cached data was already loaded
 		if ($this->hasCache) {
@@ -750,18 +727,13 @@ class Router implements RouterInterface
 		$requestRootDir = dirname($requestScriptDir); // remove /public from it
 
 		$basePath = '';
-		$virtualPath = $requestUri;
 
 		if (stripos($requestUri, $requestRootDir) === 0) {
 			$basePath = $requestRootDir;
 		} elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
 			$basePath = $requestScriptDir;
 		}
-		if ($basePath) {
-			$virtualPath = ltrim(substr($requestUri, strlen($basePath)), '/');
-		}
 
-		//$basePath = str_replace('\\','/',substr(getcwd(),strlen($server['DOCUMENT_ROOT'])));
 		return "/" . ltrim($basePath, '/');
 	}
 
@@ -786,5 +758,18 @@ class Router implements RouterInterface
 	public function getBasePath()
 	{
 		return $this->basepath;
+	}
+
+	private function detectDuplicateRoute(Route $route): void
+	{
+		if ($this->detectDuplicates && ! $this->duplicateRouteDetector) {
+			$this->duplicateRouteDetector = new DuplicateRouteDetector();
+		}
+
+		if ($this->duplicateRouteDetector) {
+			$this->duplicateRouteDetector->detectDuplicate($route);
+
+			return;
+		}
 	}
 }

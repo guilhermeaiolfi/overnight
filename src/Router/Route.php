@@ -73,6 +73,16 @@ class Route
 		return $this->path;
 	}
 
+	public function setPath(string $path): void
+	{
+		$this->path = $path;
+	}
+
+	public function prependPath(string $groupPath): void
+	{
+		$this->path = $groupPath . $this->path;
+	}
+
 	/**
 	 * Set the route name.
 	 *

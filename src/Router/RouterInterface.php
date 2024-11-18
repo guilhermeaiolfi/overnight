@@ -13,18 +13,6 @@ interface RouterInterface
 	public function getBasePath();
 
 	/**
-	 * Add a route.
-	 *
-	 * This method adds a route against which the underlying implementation may
-	 * match. Implementations MUST aggregate route instances, but MUST NOT use
-	 * the details to inject the underlying router until `match()` and/or
-	 * `generateUri()` is called.  This is required to allow consumers to
-	 * modify route instances before matching (e.g., to provide route options,
-	 * inject a name, etc.).
-	 */
-	public function addRoute(Route $route): void;
-
-	/**
 	 * Match a request against the known routes.
 	 *
 	 * Implementations will aggregate required information from the provided
