@@ -507,6 +507,20 @@ class Config implements ArrayAccess, Countable, IteratorAggregate, JsonSerializa
 		return $this;
 	}
 
+	public function shift($key)
+	{
+		$items = $this->get($key);
+
+		if (is_array($items)) {
+			$item = array_shift($items);
+			$this->set($key, $items);
+
+			return $item;
+		}
+
+		return null;
+	}
+
 	/**
 	 * Replace all values or values within the given key
 	 * with an array or Dot object

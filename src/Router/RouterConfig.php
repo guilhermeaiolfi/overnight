@@ -8,11 +8,9 @@ use On\Config\Config;
 
 class RouterConfig extends Config
 {
-	protected string $currentGroupPrefix = '';
-
 	protected array $routesToInject = [];
-
 	protected array $routesInjected = [];
+	protected string $currentGroupPrefix = '';
 
 	public static function getDefaults(): array
 	{
@@ -20,24 +18,24 @@ class RouterConfig extends Config
 			"cache_enabled" => ! $_ENV["APP_DEBUG"], // true|false
 			"cache_file" => 'var/cache/router.php.cache', // optional
 			"baseHref" => null,
-			"routes" => [],
 		];
 	}
 
 	public function addRoute(mixed $path_or_obj, string $action = null, ?array $methods = ["GET"], $route_name = null)
 	{
+		$route = $path_or_obj;
+
 		if ($path_or_obj instanceof Route) {
-			$route = $path_or_obj;
 			$route->prependPath($this->currentGroupPrefix);
-			$this->routesToInject[] = $path_or_obj;
 		} else {
-			$this->routesToInject[] = new Route(
+			$route = new Route(
 				$this->currentGroupPrefix . $path_or_obj,
 				$action,
 				$methods,
 				$route_name,
 			);
 		}
+		$this->routesToInject[] = $route;
 	}
 
 	/**
@@ -81,7 +79,9 @@ class RouterConfig extends Config
 	{
 		$route = array_shift($this->routesToInject);
 
-		$this->registerRoute($route);
+		if (isset($route)) {
+			$this->registerRoute($route);
+		}
 
 		return $route;
 	}
@@ -91,11 +91,6 @@ class RouterConfig extends Config
 		$this->routesInjected[$route->getName()] = $route;
 	}
 
-	public function cleanRoutesToInject(): void
-	{
-		$this->routesToInject = [];
-	}
-
 	public function getRoutes(): array
 	{
 		return $this->routesInjected;
@@ -103,6 +98,6 @@ class RouterConfig extends Config
 
 	public function getRouteByName(string $name): ?Route
 	{
-		return isset($this->routesInjected[$name]) ? $this->routesInjected[$name] : null;
+		return $this->routesInjected[$name] ?? null;
 	}
 }

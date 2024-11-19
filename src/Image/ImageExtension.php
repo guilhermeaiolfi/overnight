@@ -9,7 +9,6 @@ use ON\Container\ContainerConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use ON\Image\Container\ImageManagerFactory;
-use ON\Router\Route;
 use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension implements EventSubscriberInterface
@@ -49,12 +48,12 @@ class ImageExtension extends AbstractExtension implements EventSubscriberInterfa
 	{
 		$image_cfg = $this->app->config->get(ImageConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);
-		$router_cfg->addRoute(new Route(
+		$router_cfg->addRoute(
 			'/' . $image_cfg->get('basePath', "i/") . '{uri:\S+}',
 			"ON\Image\ImageManager::process",
 			['GET'],
 			"imagemanager",
-		));
+		);
 	}
 
 	public static function getSubscribedEvents(): array

@@ -43,7 +43,7 @@ class RoutesCommand extends Command
 				new InputOption('format', null, InputOption::VALUE_REQUIRED, 'The output format (txt, xml, json, or md)', 'txt', fn () => (new DescriptorHelper())->getFormats()),
 				new InputOption('raw', null, InputOption::VALUE_NONE, 'To output raw command help'),
 			])
-			->setDescription('Clear Cache');
+			->setDescription('List Routes');
 		;
 	}
 

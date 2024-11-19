@@ -78,14 +78,6 @@ class Router implements RouterInterface
 	private ?DuplicateRouteDetector $duplicateRouteDetector = null;
 	private bool $detectDuplicates = true;
 
-	protected array $patternMatchers = [
-		'/{(.+?):number}/' => '{$1:[0-9]+}',
-		'/{(.+?):word}/' => '{$1:[a-zA-Z]+}',
-		'/{(.+?):alphanum_dash}/' => '{$1:[a-zA-Z0-9-_]+}',
-		'/{(.+?):slug}/' => '{$1:[a-z0-9-]+}',
-		'/{(.+?):uuid}/' => '{$1:[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}+}',
-	];
-
 	/**
 	 * Standard HTTP methods against which to test HEAD/OPTIONS requests.
 	 */
@@ -520,6 +512,7 @@ class Router implements RouterInterface
 		$path = $result[1];
 
 		/** @var Route|bool $route */
+
 		$route = array_reduce(
 			$this->config->getRoutes(),
 			static function (Route|false $matched, Route $route) use ($path, $method): Route|false {
@@ -686,7 +679,7 @@ class Router implements RouterInterface
 	{
 		$path = $result[1];
 		$allowedMethods = array_reduce(
-			$this->routes,
+			$this->config->getRoutes(),
 			/**
 			 * @param list<string> $allowedMethods
 			 * @return list<string>

@@ -9,6 +9,7 @@ use Exception;
 use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
+use ReflectionFunction;
 
 class ConfigExtension extends AbstractExtension
 {
@@ -74,7 +75,22 @@ class ConfigExtension extends AbstractExtension
 				);
 			} elseif ($obj instanceof Closure) {
 				// in case the app wants to do some custom merging/overwritting
-				$obj = $obj($this->app);
+				$reflection = new ReflectionFunction($obj);
+				$parameters = $reflection->getParameters();
+				$values = [];
+				foreach ($parameters as $parameter) {
+					if ($parameter->getType()->getName() == get_class($this->app)) {
+						$values[] = $this->app;
+					} else {
+						$config = $this->get($parameter->getType()->getName());
+						if (! isset($config)) {
+							throw new Exception("You can only get the application and config objects in configuration closures.");
+						}
+						$values[] = $config;
+					}
+
+				}
+				$obj = call_user_func_array($obj, $values);
 			} elseif ($obj instanceof Config) {
 				// for 99% of cases, it's our config object and we know how to merge it
 				$class_name = get_class($obj);
