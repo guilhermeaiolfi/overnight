@@ -17,6 +17,7 @@ class FieldDefinition
 	protected string $type = "int";
 
 	protected bool $pk = false;
+	protected bool $required = false;
 
 	/**
 	 * @var callable-array|string|null
@@ -81,14 +82,21 @@ class FieldDefinition
 		return $this->pk;
 	}
 
+	public function required(bool $required): self
+	{
+		$this->required = $required;
+
+		return $this;
+	}
+
+	public function isRequired(): bool
+	{
+		return $this->required;
+	}
+
 	public function isPrimaryKey(): bool
 	{
 		return $this->pk;
-	}
-
-	public function end(): CollectionDefinition
-	{
-		return $this->collection;
 	}
 
 	public function hasTypecast(): bool
@@ -104,5 +112,10 @@ class FieldDefinition
 		$this->typecast = $typecast;
 
 		return $this;
+	}
+
+	public function end(): CollectionDefinition
+	{
+		return $this->collection;
 	}
 }
