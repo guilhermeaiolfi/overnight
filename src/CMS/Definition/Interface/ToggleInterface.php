@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class ToggleInterface extends InterfaceDefinition
+class ToggleInterface extends AbstractInterface
 {
 	protected ?string $label = null;
 

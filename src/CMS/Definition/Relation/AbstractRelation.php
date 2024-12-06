@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Relation;
 
-use ON\CMS\Definition\CollectionDefinition;
+use ON\CMS\Definition\Collection\CollectionInterface;
+use ON\CMS\Definition\Display\DisplayTrait;
+use ON\CMS\Definition\Interface\InterfaceTrait;
 
-class Relation
+abstract class AbstractRelation implements RelationInterface
 {
+	use DisplayTrait;
+	use InterfaceTrait;
 	// Defines if relation can be nullable (child can have no parent). Defaults to false
 	public bool $nullable = false;
 
@@ -25,24 +29,10 @@ class Relation
 
 	public string $name;
 
-	protected ?string $interface = null;
-
 	public function __construct(
-		public CollectionDefinition $parent
+		public CollectionInterface $parent
 	) {
 
-	}
-
-	public function interface(string $interface): self
-	{
-		$this->interface = $interface;
-
-		return $this;
-	}
-
-	public function getInterface(): string
-	{
-		return $this->interface;
 	}
 
 	public function name(string $name): self
@@ -129,7 +119,7 @@ class Relation
 		return $this->outer_key;
 	}
 
-	public function end(): CollectionDefinition
+	public function end(): CollectionInterface
 	{
 		return $this->parent;
 	}

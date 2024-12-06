@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Display;
 
-class FormattedDisplay extends DisplayDefinition
+class FormattedDisplay extends RawDisplay
 {
 	protected ?string $color = null;
 	protected ?string $font = null;

@@ -4,19 +4,19 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Display;
 
-class LabelsDisplay extends DisplayDefinition
+class LabelsDisplay extends RawDisplay
 {
-	protected bool $format_each_label = true;
+	protected bool $formatEachLabel = true;
 
-	public function formatEachLabel(bool $format_each_label): self
+	public function formatEachLabel(bool $formatEachLabel): self
 	{
-		$this->format_each_label = $format_each_label;
+		$this->formatEachLabel = $formatEachLabel;
 
 		return $this;
 	}
 
 	public function isFormatEachLabel(): ?bool
 	{
-		return $this->format_each_label;
+		return $this->formatEachLabel;
 	}
 }

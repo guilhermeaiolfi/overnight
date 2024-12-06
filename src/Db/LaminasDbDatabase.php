@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Db;
 
-use Laminas\Db\Adapter\Adapter;
+use Laminas\DB\Adapter\Adapter;
 
 class LaminasDbDatabase implements DatabaseInterface
 {

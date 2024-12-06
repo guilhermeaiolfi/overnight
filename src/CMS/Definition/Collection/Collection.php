@@ -1,22 +1,33 @@
-    <?php
+<?php
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition;
+namespace ON\CMS\Definition\Collection;
 
 use Cycle\ORM\Mapper\StdMapper;
+use ON\CMS\Definition\Field\Field;
+use ON\CMS\Definition\Field\FieldInterface;
+use ON\CMS\Definition\Field\FieldMap;
 use ON\CMS\Definition\Relation\O2ORelation;
-use ON\CMS\Definition\Relation\Relation;
+use ON\CMS\Definition\Relation\RelationInterface;
+use ON\CMS\Definition\Relation\RelationMap;
 use stdClass;
 
-class CollectionDefinition
+class Collection implements CollectionInterface
 {
 	public string $name;
+	public ?string $note = null;
 	public bool $hidden = false;
 	public string $mapper = StdMapper::class;
 	public string $entity = stdClass::class;
-	public array $fields = [];
-	public array $relations = [];
+	public FieldMap $fields;
+	public RelationMap $relations;
+
+	public function __construct()
+	{
+		$this->fields = new FieldMap();
+		$this->relations = new RelationMap();
+	}
 
 	/**
 	 * @var class-string<ScopeInterface>|null
@@ -88,6 +99,18 @@ class CollectionDefinition
 		return $this->name;
 	}
 
+	public function note(string $note): self
+	{
+		$this->note = $note;
+
+		return $this;
+	}
+
+	public function getNote(): ?string
+	{
+		return $this->note;
+	}
+
 	public function hidden(bool $hidden): self
 	{
 		$this->hidden = $hidden;
@@ -100,16 +123,10 @@ class CollectionDefinition
 		return $this->hidden;
 	}
 
-	public function getRelations(): array
+	public function field(string $name): FieldInterface
 	{
-		return $this->relations;
-	}
-
-	public function field(string $name = null): FieldDefinition
-	{
-
-		$field = new FieldDefinition($this);
-		$this->fields[] = $field;
+		$field = new Field($this);
+		$this->fields->set($name, $field);
 		if (isset($name)) {
 			$field->name($name);
 		}
@@ -122,20 +139,20 @@ class CollectionDefinition
 	 * @param class-string<T> $type
 	 * @return T
 	 * */
-	public function relation(string $name, string $type = O2ORelation::class): Relation
+	public function relation(string $name, string $type = O2ORelation::class): RelationInterface
 	{
 		$relation = new $type($this);
-		$this->relations[] = $relation;
+		$this->relations->set($name, $relation);
 		$relation->name($name);
 
 		return $relation;
 	}
 
-	/** @return FieldDefinition[]|FieldDefinition */
+	/** @return FieldInterface[]|FieldInterface */
 	public function getPrimaryKey(): mixed
 	{
 		$pk = [];
-		foreach ($this->fields as $field) {
+		foreach ($this->fields as $name => $field) {
 			if ($field->isPrimaryKey()) {
 				$pk[] = $field;
 			}

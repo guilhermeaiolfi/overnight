@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class ManyToManyInterface extends InterfaceDefinition
+class ManyToManyInterface extends AbstractInterface
 {
 	// list || table
 	protected string $type = "list";

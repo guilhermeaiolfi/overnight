@@ -8,7 +8,7 @@ use Doctrine\Common\EventManager;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManager;
-use ON\Db\Manager as DbManager;
+use ON\DB\Manager as DbManager;
 
 class Doctrine2Database implements DatabaseInterface
 {

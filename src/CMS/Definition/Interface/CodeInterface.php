@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class CodeInterface extends InterfaceDefinition
+class CodeInterface extends AbstractInterface
 {
 	protected bool $line_numbers = false;
 

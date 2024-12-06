@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Display;
 
-class FormattedJSONDisplay extends DisplayDefinition
+class FormattedJSONDisplay extends RawDisplay
 {
 	// something like: {{title}}
 	protected ?string $template = null;

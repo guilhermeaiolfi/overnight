@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class TextareaInterface extends InterfaceDefinition
+class TextareaInterface extends AbstractInterface
 {
 	protected bool $trim = false;
 

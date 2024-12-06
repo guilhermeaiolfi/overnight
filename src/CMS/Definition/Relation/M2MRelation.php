@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Relation;
 
-class M2MRelation extends Relation
+class M2MRelation extends AbstractRelation
 {
-	public M2MThroughDefinition $through;
+	public M2MThrough $through;
 	public array $where;
 	public array $order_by;
 	// Collection type that will contain loaded entities. By defaults uses Cycle\ORM\Collection\ArrayCollectionFactory
 	public string $collection_factory;
 
-	public function through(string $collection): M2MThroughDefinition
+	public function through(string $collection): M2MThrough
 	{
-		$this->through = new M2MThroughDefinition($this);
+		$this->through = new M2MThrough($this);
 		$this->through->collection($collection);
 
 		return $this->through;

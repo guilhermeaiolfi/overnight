@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Relation;
 
-class O2MRelation extends Relation
+class O2MRelation extends AbstractRelation
 {
 	public array $where;
 

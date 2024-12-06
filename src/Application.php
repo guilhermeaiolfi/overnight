@@ -111,7 +111,7 @@ class Application
 	 * @param class-string<T> $name
 	 * @return T
 	 */
-	public function ext($name)
+	public function ext(string $name)
 	{
 		return $this->getExtension($name);
 	}

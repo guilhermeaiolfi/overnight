@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
 // Allow selection of many items
-class DropdownMultipleInterface extends InterfaceDefinition
+class DropdownMultipleInterface extends AbstractInterface
 {
 	protected ?string $placeholder = null;
 

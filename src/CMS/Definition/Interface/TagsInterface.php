@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class TagsInterface extends InterfaceDefinition
+class TagsInterface extends AbstractInterface
 {
-	public static int $WHITESPACE_REMOVE = 1;
-	public static int $WHITESPACE_REPLACE_WITH_HYPHEN = 2;
-	public static int $WHITESPACE_REPLACE_WITH_UNDERSCORE = 3;
+	public const WHITESPACE_REMOVE = 1;
+	public const WHITESPACE_REPLACE_WITH_HYPHEN = 2;
+	public const WHITESPACE_REPLACE_WITH_UNDERSCORE = 3;
 
-	public static int $CAPITALIZATION_CONVERT_UPPERCASE = 1;
-	public static int $CAPITALIZATION_CONVERT_LOWERCASE = 2;
+	public const CAPITALIZATION_CONVERT_UPPERCASE = 1;
+	public const CAPITALIZATION_CONVERT_LOWERCASE = 2;
 
 	protected array $preset_tags = [];
 

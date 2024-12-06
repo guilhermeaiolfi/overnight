@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Relation;
 
-class M2MThroughDefinition
+class M2MThrough
 {
 	public string $collection;
 	public string $inner_key;

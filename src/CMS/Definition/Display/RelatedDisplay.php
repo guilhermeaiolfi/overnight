@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\CMS\Definition\Display;
 
 // Used to display an item when it is a complex field, like a many-to-many relation
-class RelatedDisplay extends DisplayDefinition
+class RelatedDisplay extends RawDisplay
 {
 	// something like: {{title}}
 	protected ?string $template = null;

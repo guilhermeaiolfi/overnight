@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class TreeInterface extends InterfaceDefinition
+class TreeInterface extends AbstractInterface
 {
 	// can show fields from the target collection, like {{title}}
 	protected ?string $template = null;
@@ -12,7 +12,6 @@ class TreeInterface extends InterfaceDefinition
 	protected bool $allow_creation = false;
 
 	protected bool $allow_selection = false;
-
 
 	public function template(string $template): self
 	{

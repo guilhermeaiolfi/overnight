@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
 // TODO: not implemented yet
 // Create multi entries of the same structure
-class RepeaterInterface extends InterfaceDefinition
+class RepeaterInterface extends AbstractInterface
 {
 	protected ?string $template = null;
 

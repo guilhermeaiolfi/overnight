@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class WYSIWYGInterface extends InterfaceDefinition
+class WYSIWYGInterface extends AbstractInterface
 {
 	protected array $toolbar = [];
 

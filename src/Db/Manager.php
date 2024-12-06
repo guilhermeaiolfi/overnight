@@ -19,7 +19,7 @@ class Manager
 	protected $eventDispatcher = null;
 
 	public function __construct(
-		$config,
+		DatabaseConfig $config,
 		ContainerInterface $c,
 	) {
 		$this->config = $config;

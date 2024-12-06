@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Db\Cycle;
+namespace ON\DB\Cycle;
 
 use Psr\Log\LoggerInterface;
 use Psr\Log\LoggerTrait;

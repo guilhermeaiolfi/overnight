@@ -2,13 +2,15 @@
 
 declare(strict_types=1);
 
-namespace ON\Db\Cycle;
+namespace ON\DB\Cycle;
 
+use Cycle\Database\Config\DatabaseConfig;
+use Cycle\Database\DatabaseManager;
 use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
-use Cycle\ORM\Schema;
-use ON\Db\DatabaseInterface;
-use Spiral\Database\DatabaseManager;
+use ON\CMS\Compiler\CycleCompiler;
+use ON\CMS\Definition\Registry;
+use ON\DB\DatabaseInterface;
 
 class CycleDatabase implements DatabaseInterface
 {
@@ -19,22 +21,24 @@ class CycleDatabase implements DatabaseInterface
 	public function __construct($name, $parameters, $container)
 	{
 		$this->name = $name;
-		$config = $container->get('config');
-		$cycle_config = new DatabaseConfig($parameters);
+		$cycle_config = new DatabaseConfig($parameters["options"]);
+
 		$this->dbal = new DatabaseManager($cycle_config);
 
-		$this->orm = new ORM(new Factory($this->dbal));
-		$this->orm = $this->orm->withSchema(new Schema($config->get('cycle.schema')));
+		$collections = Registry::getCollections();
+		$compiler = new CycleCompiler($collections);
+		$schema = $compiler->compile();
+		$this->orm = new ORM(new Factory($this->dbal), $schema);
 	}
 
 	public function getConnection()
 	{
-		return $this->orm;
+		return $this->dbal;
 	}
 
 	public function getResource()
 	{
-		return $this->dbal;
+		return $this->orm;
 	}
 
 	public function getName(): string

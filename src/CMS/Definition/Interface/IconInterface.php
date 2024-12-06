@@ -2,8 +2,8 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class IconInterface extends InterfaceDefinition
+class IconInterface extends AbstractInterface
 {
 }

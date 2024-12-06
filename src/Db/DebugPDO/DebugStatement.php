@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Db\DebugPDO;
+namespace ON\DB\DebugPDO;
 
 use Exception;
 

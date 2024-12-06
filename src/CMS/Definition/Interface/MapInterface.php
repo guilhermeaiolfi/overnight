@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
 // TODO: not implemented yet
 // Show a location on a OpenStreetMap
-class MapInterface extends InterfaceDefinition
+class MapInterface extends AbstractInterface
 {
 	// TODO: how is point stored?
 	protected ?string $default_view = null;

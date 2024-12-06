@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Display;
 
-class DatetimeDisplay extends DisplayDefinition
+class DatetimeDisplay extends RawDisplay
 {
 	protected string $format = "long";
 

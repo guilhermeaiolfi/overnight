@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
-class AutocompleteInterface extends InterfaceDefinition
+class AutocompleteInterface extends AbstractInterface
 {
 	// throttle || debounce
 	protected string $trigger = "throttle";

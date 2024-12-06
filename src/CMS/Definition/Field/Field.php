@@ -2,21 +2,25 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition;
+namespace ON\CMS\Definition\Field;
 
+use ON\CMS\Definition\Collection\CollectionInterface;
 use ON\CMS\Definition\Display\DisplayTrait;
-use ON\CMS\Definition\Display\InterfaceTrait;
+use ON\CMS\Definition\Exception\FieldException;
+use ON\CMS\Definition\Interface\InterfaceTrait;
 
-class FieldDefinition
+class Field implements FieldInterface
 {
 	use DisplayTrait;
 	use InterfaceTrait;
+	use SchemaTrait;
 
 	protected string $name;
-	protected ?string $column = null;
-	protected string $type = "int";
 
-	protected bool $pk = false;
+	protected ?string $column = null;
+
+	protected ?string $type = null;
+
 	protected bool $required = false;
 
 	/**
@@ -25,7 +29,7 @@ class FieldDefinition
 	private array|string|null $typecast = null;
 
 	public function __construct(
-		protected CollectionDefinition $collection
+		protected CollectionInterface $collection
 	) {
 
 	}
@@ -51,6 +55,10 @@ class FieldDefinition
 
 	public function getType(): string
 	{
+		if (empty($this->type)) {
+			throw new FieldException('Field type must be set');
+		}
+
 		return $this->type;
 	}
 
@@ -63,23 +71,11 @@ class FieldDefinition
 
 	public function getColumn(): string
 	{
-		if (! isset($this->columnm)) {
+		if (! isset($this->column)) {
 			return $this->name;
 		}
 
 		return $this->column;
-	}
-
-	public function primaryKey(bool $pk): self
-	{
-		$this->pk = $pk;
-
-		return $this;
-	}
-
-	public function getPrimaryKey(): bool
-	{
-		return $this->pk;
 	}
 
 	public function required(bool $required): self
@@ -92,11 +88,6 @@ class FieldDefinition
 	public function isRequired(): bool
 	{
 		return $this->required;
-	}
-
-	public function isPrimaryKey(): bool
-	{
-		return $this->pk;
 	}
 
 	public function hasTypecast(): bool
@@ -114,7 +105,15 @@ class FieldDefinition
 		return $this;
 	}
 
-	public function end(): CollectionDefinition
+	/**
+	 * @return callable-array|string|null
+	 */
+	public function getTypecast(): array|string|null
+	{
+		return $this->typecast;
+	}
+
+	public function end(): CollectionInterface
 	{
 		return $this->collection;
 	}

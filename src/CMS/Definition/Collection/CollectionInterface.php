@@ -1,0 +1,52 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\CMS\Definition\Collection;
+
+use ON\CMS\Definition\Field\FieldInterface;
+use ON\CMS\Definition\Relation\O2ORelation;
+use ON\CMS\Definition\Relation\RelationInterface;
+
+interface CollectionInterface
+{
+	public function entity(string $entity): self;
+
+	public function getEntity(): string;
+
+	public function scope(string $scope): self;
+
+	public function getScope(): string;
+
+	public function repository(string $repository): self;
+
+	public function getRepository(): string;
+
+	public function mapper(string $mapper): self;
+
+	public function getMapper(): string;
+
+	public function name(string $name): self;
+
+	public function getName(): string;
+
+	public function hidden(bool $hidden): self;
+
+	public function isHidden(): bool;
+
+	public function field(string $name): FieldInterface;
+
+	/**
+	 * @template T
+	 * @param class-string<T> $type
+	 * @return T
+	 * */
+	public function relation(string $name, string $type = O2ORelation::class): RelationInterface;
+
+	/** @return FieldInterface[]|FieldInterface */
+	public function getPrimaryKey(): mixed;
+
+	public function note(string $note): self;
+
+	public function getNote(): ?string;
+}

@@ -6,16 +6,21 @@ namespace ON\CMS\Definition\Display;
 
 trait DisplayTrait
 {
-	protected ?DisplayDefinition $display = null;
+	protected ?DisplayInterface $display = null;
 
-	public function display(string $type = RawDisplay::class): DisplayDefinition
+	/**
+	 * @template T
+	 * @param class-string<T> $type
+	 * @return T
+	 */
+	public function display(string $type = RawDisplay::class): DisplayInterface
 	{
 		$this->display = new $type($this);
 
 		return $this->display;
 	}
 
-	public function getDisplay(): DisplayDefinition
+	public function getDisplay(): DisplayInterface
 	{
 		return $this->display;
 	}

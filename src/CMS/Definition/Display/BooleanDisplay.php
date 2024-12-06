@@ -4,86 +4,86 @@ declare(strict_types=1);
 
 namespace ON\CMS\Definition\Display;
 
-class BooleanDisplay extends DisplayDefinition
+class BooleanDisplay extends RawDisplay
 {
-	protected ?string $label_on = null;
-	protected ?string $label_off = null;
+	protected ?string $labelOn = null;
+	protected ?string $labelOff = null;
 
-	protected ?string $icon_on = null;
-	protected ?string $icon_off = null;
+	protected ?string $iconOn = null;
+	protected ?string $iconOff = null;
 
-	protected ?string $color_on = null;
-	protected ?string $color_off = null;
+	protected ?string $colorOn = null;
+	protected ?string $colorOff = null;
 
-	public function labelOn(bool $label): self
+	public function labelOn(string $label): self
 	{
-		$this->label_on = $label;
+		$this->labelOn = $label;
 
 		return $this;
 	}
 
 	public function getLabelOn(): ?string
 	{
-		return $this->label_on;
+		return $this->labelOn;
 	}
 
-	public function labelOff(bool $label): self
+	public function labelOff(string $label): self
 	{
-		$this->label_off = $label;
+		$this->labelOff = $label;
 
 		return $this;
 	}
 
 	public function getLabelOff(): ?string
 	{
-		return $this->label_off;
+		return $this->labelOff;
 	}
 
-	public function iconOn(bool $icon): self
+	public function iconOn(string $icon): self
 	{
-		$this->icon_on = $icon;
+		$this->iconOn = $icon;
 
 		return $this;
 	}
 
 	public function getIconOn(): ?string
 	{
-		return $this->icon_on;
+		return $this->iconOn;
 	}
 
-	public function iconOff(bool $icon): self
+	public function iconOff(string $icon): self
 	{
-		$this->icon_off = $icon;
+		$this->iconOff = $icon;
 
 		return $this;
 	}
 
 	public function getIconOff(): ?string
 	{
-		return $this->icon_off;
+		return $this->iconOff;
 	}
 
-	public function colorOn(bool $color): self
+	public function colorOn(string $color): self
 	{
-		$this->color_on = $color;
+		$this->colorOn = $color;
 
 		return $this;
 	}
 
 	public function getColorOn(): ?string
 	{
-		return $this->color_on;
+		return $this->colorOn;
 	}
 
-	public function colorOff(bool $color): self
+	public function colorOff(string $color): self
 	{
-		$this->color_off = $color;
+		$this->colorOff = $color;
 
 		return $this;
 	}
 
 	public function getColorOff(): ?string
 	{
-		return $this->color_off;
+		return $this->colorOff;
 	}
 }

@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace ON\CMS\Compiler;
 
-use Cycle\ORM\Mapper\StdMapper;
 use Cycle\ORM\Relation as CycleRelation;
 use Cycle\ORM\Schema;
 use Cycle\ORM\SchemaInterface;
-use ON\CMS\Definition\CollectionDefinition;
+use ON\CMS\Definition\Collection\CollectionInterface;
 use ON\CMS\Definition\Relation\M2MRelation;
 use ON\CMS\Definition\Relation\O2MRelation;
 use ON\CMS\Definition\Relation\O2ORelation;
-use ON\CMS\Definition\Relation\Relation;
-use StdClass;
+use ON\CMS\Definition\Relation\RelationInterface;
 
 class CycleCompiler
 {
@@ -26,14 +24,14 @@ class CycleCompiler
 	public function compile(): SchemaInterface
 	{
 		$schema = [];
-		foreach ($$this->collections as $collection) {
+		foreach ($this->collections as $collection) {
 			$schema[$collection->name] = $this->processCollection($collection);
 		}
 
 		return new Schema($schema);
 	}
 
-	public function processCollection(CollectionDefinition $collection): array
+	public function processCollection(CollectionInterface $collection): array
 	{
 		$result = [
 			SchemaInterface::ROLE => $collection->getName(),
@@ -52,39 +50,39 @@ class CycleCompiler
 		return $result;
 	}
 
-    public function processScope(CollectionDefinition $collection): array
-    {
-        // TODO
-        return [];
-    }
+	public function processScope(CollectionInterface $collection): array
+	{
+		// TODO
+		return [];
+	}
 
-	public function processRelations(CollectionDefinition $collection): array
+	public function processRelations(CollectionInterface $collection): array
 	{
 		$relations = [];
-		foreach ($collection->getRelations() as $relation) {
-			$relation[$relation->getName()] = $this->getRelationSchema($relation);
+		foreach ($collection->relations as $relation) {
+			$relations[$relation->getName()] = $this->getRelationSchema($relation);
 		}
 
 		return $relations;
 	}
 
-    public function getLoadStrategy(Relation $relation): int
-    {
-        return $relation->getLoadStrategy() == "load"? 
-            CycleRelation::LOAD_EAGER : CycleRelation::LOAD_PROMISE
-    }
+	public function getLoadStrategy(RelationInterface $relation): int
+	{
+		return $relation->getLoadStrategy() == "load" ?
+			CycleRelation::LOAD_EAGER : CycleRelation::LOAD_PROMISE;
+	}
 
-	public function getRelationSchema(Relation $relation): array
+	public function getRelationSchema(RelationInterface $relation): array
 	{
 		if ($relation instanceof M2MRelation) {
 			/** @var M2MRelation $relation */
 			return [
 				CycleRelation::TYPE => CycleRelation::MANY_TO_MANY,
-                CycleRelation::LOAD  =>  $this->getLoadStrategy($relation),
+				CycleRelation::LOAD => $this->getLoadStrategy($relation),
 				CycleRelation::TARGET => $relation->getCollection(),
 				CycleRelation::SCHEMA => [
-                    CycleRelation::NULLABLE => $relation->isNullable(),
-                    CycleRelation::CASCADE => $relation->isCascade(),
+					CycleRelation::NULLABLE => $relation->isNullable(),
+					CycleRelation::CASCADE => $relation->isCascade(),
 					CycleRelation::INNER_KEY => $relation->getInnerKey(),
 					CycleRelation::OUTER_KEY => $relation->getOuterKey(),
 					CycleRelation::THROUGH_ENTITY => $relation->through->getCollection(),
@@ -97,7 +95,7 @@ class CycleCompiler
 			/** @var O2MRelation $relation */
 			return [
 				CycleRelation::TYPE => CycleRelation::HAS_MANY,
-                CycleRelation::LOAD  =>  $this->getLoadStrategy($relation),
+				CycleRelation::LOAD => $this->getLoadStrategy($relation),
 				CycleRelation::TARGET => $relation->getCollection(),
 				CycleRelation::SCHEMA => [
 					CycleRelation::NULLABLE => $relation->isNullable(),
@@ -113,7 +111,7 @@ class CycleCompiler
 			} else {
 				return [
 					CycleRelation::TYPE => $relation->isNullable() ? CycleRelation::BELONGS_TO : CycleRelation::REFERS_TO,
-                    CycleRelation::LOAD  =>  $this->getLoadStrategy($relation),
+					CycleRelation::LOAD => $this->getLoadStrategy($relation),
 					CycleRelation::TARGET => $relation->getCollection(),
 					CycleRelation::SCHEMA => [
 						CycleRelation::NULLABLE => $relation->isNullable(),
@@ -125,15 +123,15 @@ class CycleCompiler
 			}
 		}
 
-		return $schema;
+		return [];
 	}
 
-	public function processSchema(CollectionDefinition $collection): array
+	public function processSchema(CollectionInterface $collection): array
 	{
 		return [];
 	}
 
-	public function processFields(CollectionDefinition $collection): array
+	public function processFields(CollectionInterface $collection): array
 	{
 		$columns = [];
 		foreach ($collection->fields as $field) {
@@ -143,28 +141,28 @@ class CycleCompiler
 		return $columns;
 	}
 
-	public function processTypecast(CollectionDefinition $collection): array
+	public function processTypecast(CollectionInterface $collection): array
 	{
 		$columns = [];
 		foreach ($collection->fields as $field) {
-            if ($field->hasTypecast()) {
-			    $columns[$field->getName()] = $field->getTypecast();
-            }
+			if ($field->hasTypecast()) {
+				$columns[$field->getName()] = $field->getTypecast();
+			}
 		}
 
 		return $columns;
 	}
 
-	public function getPrimaryKey(CollectionDefinition $collection): mixed
+	public function getPrimaryKey(CollectionInterface $collection): mixed
 	{
 		$pks = $collection->getPrimaryKey();
 		$result = [];
 		if (is_array($pks)) {
 			foreach ($pks as $pk) {
-				$result[] = $pk->name;
+				$result[] = $pk->getName();
 			}
 		} else {
-			$result[] = $pks->name;
+			$result[] = $pks->getName();
 		}
 		if (count($result) == 1) {
 			return $result[0];

@@ -2,23 +2,25 @@
 
 declare(strict_types=1);
 
-namespace ON\CMS\Definition\Display;
+namespace ON\CMS\Definition\Interface;
 
 trait InterfaceTrait
 {
-	protected ?InterfaceDefinition $interface = null;
+	protected ?InterfaceInterface $interface = null;
 
-	public function interface(string $interface = null): InterfaceDefinition
+	/**
+	 * @template T
+	 * @param class-string<T> $className
+	 * @return T
+	 */
+	public function interface(string $className): InterfaceInterface
 	{
-		$this->interface = new InterfaceDefinition($this);
-		if (isset($interface)) {
-			$this->interface->type($interface);
-		}
+		$this->interface = new $className($this);
 
 		return $this->interface;
 	}
 
-	public function getInterface(): InterfaceDefinition
+	public function getInterface(): InterfaceInterface
 	{
 		return $this->interface;
 	}
