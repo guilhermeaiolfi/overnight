@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Db;
+namespace ON\DB;
 
 use Exception;
 use ON\Event\NamedEvent;

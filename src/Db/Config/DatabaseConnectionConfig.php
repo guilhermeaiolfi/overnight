@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace ON\Db\Config;
+namespace ON\DB\Config;
 
-use ON\Db\PdoDatabase;
+use ON\DB\PdoDatabase;
 
 class DatabaseConnectionConfig
 {

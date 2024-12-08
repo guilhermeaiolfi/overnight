@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-namespace ON\Db;
+namespace ON\DB;
 
 use Doctrine\Common\EventManager;
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManager;
 use ON\DB\Manager as DbManager;
+use Psr\Container\ContainerInterface;
 
 class Doctrine2Database implements DatabaseInterface
 {
@@ -17,8 +18,9 @@ class Doctrine2Database implements DatabaseInterface
 	protected $parameters;
 	protected $name;
 
-	public function __construct($name, $parameters, $container)
+	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container)
 	{
+		$parameters = $config->get("databases.{$name}");
 		$this->container = $container;
 		$this->name = $name;
 		$this->parameters = $parameters;

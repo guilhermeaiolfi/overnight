@@ -2,29 +2,29 @@
 
 declare(strict_types=1);
 
-namespace ON\Db;
+namespace ON\DB;
 
 use Exception;
 use PDO;
+use Psr\Container\ContainerInterface;
 
 class PdoDatabase implements DatabaseInterface
 {
 	protected $resource;
 	protected $connection;
-	protected $parameters;
-	protected $container;
-	protected string $name;
+	protected array $parameters;
 
-	public function __construct($name, $parameters, $container)
+	public function __construct(
+		protected string $name, 
+		protected DatabaseConfig $config, 
+		protected ContainerInterface $container)
 	{
-		$this->name = $name;
+		$parameters = $config->get("databases.{$name}");
 		$this->parameters = $parameters;
-		$this->container = $container;
 		$dsn = ! empty($parameters["dsn"]) ? $parameters["dsn"] : null;
 		$username = ! empty($parameters["username"]) ? $parameters["username"] : null;
 		$password = ! empty($parameters["password"]) ? $parameters["password"] : null;
 		$options = ! empty($parameters["options"]) ? $parameters["options"] : null;
-		$config = $container->get('config');
 
 		try {
 			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);

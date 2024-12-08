@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ON\Db\Container;
+namespace ON\DB\Container;
 
 use Exception;
-use ON\Db\Config\DatabaseConfig;
-use ON\Db\Manager;
+use ON\DB\Config\DatabaseConfig;
+use ON\DB\Manager;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 

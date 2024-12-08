@@ -2,11 +2,13 @@
 
 declare(strict_types=1);
 
-namespace ON\Db;
+namespace ON\DB;
+
+use Psr\Container\ContainerInterface;
 
 interface DatabaseInterface
 {
-	public function __construct($name, $parameters, $container);
+	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container);
 
 	public function getConnection();
 

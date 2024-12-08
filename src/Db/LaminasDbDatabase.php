@@ -2,9 +2,10 @@
 
 declare(strict_types=1);
 
-namespace ON\Db;
+namespace ON\DB;
 
 use Laminas\DB\Adapter\Adapter;
+use Psr\Container\ContainerInterface;
 
 class LaminasDbDatabase implements DatabaseInterface
 {
@@ -13,8 +14,9 @@ class LaminasDbDatabase implements DatabaseInterface
 	protected $container;
 	protected string $name;
 
-	public function __construct($name, $parameters, $container)
+	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container)
 	{
+		$parameters = $config->get("databases.{$name}");
 		$this->name = $name;
 		$this->parameters = $parameters;
 		$this->container = $container;

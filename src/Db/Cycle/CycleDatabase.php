@@ -11,15 +11,20 @@ use Cycle\ORM\ORM;
 use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Definition\Registry;
 use ON\DB\DatabaseInterface;
+use Psr\Container\ContainerInterface;
 
 class CycleDatabase implements DatabaseInterface
 {
 	protected $dbal = null;
 	protected $orm = null;
-	protected string $name;
 
-	public function __construct($name, $parameters, $container)
+	public function __construct(
+		protected string $name,
+		protected DatabaseConfig $config, 
+		protected ContainerInterface $container
+	)
 	{
+		$parameters = $config->get("databases.{$name}");
 		$this->name = $name;
 		$cycle_config = new DatabaseConfig($parameters["options"]);
 
