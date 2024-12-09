@@ -6,17 +6,20 @@ namespace ON\DB\Cycle;
 
 use Cycle\Database\Config\DatabaseConfig as CycleDatabaseConfig;
 use Cycle\Database\DatabaseManager;
+use Cycle\ORM\EntityManager;
 use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
 use ON\DB\DatabaseConfig;
 use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Definition\Registry;
+use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseInterface;
 
 use Cycle\ORM\Schema;
 
 class CycleDatabase implements DatabaseInterface
 {
+	protected $entityManager = null;
 	protected $dbal = null;
 	protected $orm = null;
 
@@ -33,6 +36,8 @@ class CycleDatabase implements DatabaseInterface
 		$this->dbal = new CycleDatabaseConfig($cycle_config);
 
 		$this->orm = new ORM(new Factory($this->dbal), $schema);
+
+		$this->entityManager = new EntityManager($this->orm);
 	}
 
 	public function getConnection(): mixed
@@ -43,6 +48,11 @@ class CycleDatabase implements DatabaseInterface
 	public function getResource(): mixed
 	{
 		return $this->orm;
+	}
+
+	public function getEntityManager(): EntityManager
+	{
+		return $this->entityManager;
 	}
 
 	public function getName(): string

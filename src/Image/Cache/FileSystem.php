@@ -6,12 +6,13 @@ namespace ON\Image\Cache;
 
 use Exception;
 use Intervention\Image\ImageManager as InterventionManager;
+use ON\Image\ImageConfig;
 
 class FileSystem implements ImageCacheInterface
 {
-	protected $config = null;
-
-	public function __construct($config)
+	public function __construct(
+		protected ImageConfig $config
+	)
 	{
 		$this->config = $config;
 	}

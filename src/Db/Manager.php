@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use DI\Container;
 use Exception;
 use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
@@ -15,11 +16,13 @@ class Manager
 
 	protected $eventDispatcher = null;
 
+	/**
+	 * @param Container $container
+	 */
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
 	) {
-
 	}
 
 	public function setEventDispatcher(EventDispatcherInterface $dispatcher)
@@ -38,7 +41,7 @@ class Manager
 	}
 
 	public function getDatabaseResource($name = null)
-	{
+	{ 
 		$database = $this->getDatabase($name);
 		if ($database) {
 			return $database->getResource();

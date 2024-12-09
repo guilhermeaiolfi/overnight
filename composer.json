@@ -1,6 +1,6 @@
 {
     "name": "guilhermeaiolfi/overnight",
-    "description": "Modern framework based on Mezzio Framework",
+    "description": "New ideas for a PHP framework",
     "type": "library",
     "require": {
         "php": ">=7.2",
@@ -28,7 +28,8 @@
         "mezzio/mezzio-helpers": "^5.17",
         "laminas/laminas-authentication": "^2.18",
         "laminas/laminas-session": "^2.21",
-        "spatie/php-structure-discoverer": "^2.2"
+        "spatie/php-structure-discoverer": "^2.2",
+        "cycle/orm": "^2.9"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",

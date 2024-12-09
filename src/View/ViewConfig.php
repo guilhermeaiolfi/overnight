@@ -23,7 +23,7 @@ class Node
 		return $this;
 	}
 
-	public function get(string $name = null): array
+	public function get(?string $name = null): ?array
 	{
 		if ($name === null) {
 			return $this->values;
@@ -150,7 +150,7 @@ class LayoutNode extends CollectionNode
 		return $this;
 	}
 
-	public function get(string $name = null): array
+	public function get(?string $name = null): ?array
 	{
 		$values = $this->values;
 		$values["sections"] = [];

@@ -45,7 +45,7 @@ class ConfigExtension extends AbstractExtension
 		return isset($this->configs[$className]);
 	}
 
-	public function get(string $className = null): mixed
+	public function get(?string $className = null): mixed
 	{
 		if ($className === null) {
 			return $this->configs;

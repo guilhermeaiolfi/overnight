@@ -147,10 +147,10 @@ class Router implements RouterInterface
 	 * @psalm-param FastRouteConfig $config
 	 */
 	public function __construct(
-		?RouteCollector $collection = null,
-		?callable $dispatcherFactory = null,
 		protected RouterConfig $config,
-		RequestStack $stack
+		RequestStack $stack,
+		?RouteCollector $collection = null,
+		?callable $dispatcherFactory = null
 	) {
 		if (null === $collection) {
 			$collection = $this->createCollection();
@@ -167,7 +167,7 @@ class Router implements RouterInterface
 	 *
 	 * @param RouterConfig $config Array of custom configuration options.
 	 */
-	private function loadConfig(RouterConfig $config = null): void
+	private function loadConfig(?RouterConfig $config = null): void
 	{
 		if (null === $config) {
 			return;

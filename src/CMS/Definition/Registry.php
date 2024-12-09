@@ -11,7 +11,7 @@ class Registry
 {
 	public static array $collections = [];
 
-	public static function collection(string $name = null)
+	public static function collection(?string $name = null)
 	{
 
 		$collection = new Collection();

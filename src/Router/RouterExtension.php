@@ -12,6 +12,7 @@ use ON\Extension\AbstractExtension;
 use ON\Router\Attribute\RouteAttributeProcessor;
 use ON\Router\Container\RouteMiddlewareFactory;
 use ON\Router\Middleware\RouteMiddleware;
+use ON\Router\Container\RouterFactory;
 
 class RouterExtension extends AbstractExtension
 {

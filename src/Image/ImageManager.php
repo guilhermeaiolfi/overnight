@@ -8,10 +8,13 @@ use Intervention\Image\Image;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
+use ON\Config\AppConfig;
 use ON\Image\Cache\FileSystem;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\Encrypter\OpenSSL;
+use ON\Router\RouterConfig;
+use ON\View\ViewConfig;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -27,38 +30,24 @@ class ImageManager implements MiddlewareInterface
 	*/
 	private $signatureKey = null;
 
-	private $encrypter = null;
-
-	private $config = null;
-
-	private $imageCache = null;
-
-	private $basePath = null;
-
 	/**
 	 * Set the signature key used to encode/decode the data.
 	 */
 	public function __construct(
-		$config,
-		EncrypterInterface $encrypter = null,
-		ImageCacheInterface $imageCache = null
+		protected ImageConfig $imageCfg,
+		protected ?EncrypterInterface $encrypter = null,
+		protected ?ImageCacheInterface $imageCache = null
 	) {
-		$signatureKey = $config['key'];
+		$signatureKey = $_ENV['APP_SALT'];
 		if (! isset($encrypter)) {
-			$encrypter = new OpenSSL($signatureKey);
+			$this->encrypter = new OpenSSL($signatureKey);
 		}
-		$this->encrypter = $encrypter;
 
 		$this->signatureKey = $signatureKey;
 
-		$this->basePath = $config['basePath'];
-
-		$this->config = $config;
-
 		if (! isset($imageCache)) {
-			$imageCache = new FileSystem($config);
+			$this->imageCache = new FileSystem($imageCfg);
 		}
-		$this->imageCache = $imageCache;
 	}
 
 	public function getUri(string $path, string $template, $options = null): string
@@ -82,17 +71,18 @@ class ImageManager implements MiddlewareInterface
 	{
 		$response = null;
 
+		$imageBasePath = $this->imageCfg->get('basePath');
 		if (strpos($request->getHeaderLine('Accept'), 'image/') === false) {
 			$response = $handler->handle($request);
 		} else {
 			$uri = $request->getUri();
 			$path = $uri->getPath();
 
-			if (strpos($path, $this->basePath) === false) {
+			if (strpos($path, $imageBasePath) === false) {
 				return null;
 			}
 
-			list($basePath, $token) = explode($this->basePath, $path, 2);
+			[$basePath, $token] = explode($imageBasePath, $path, 2);
 
 			if ($extensionPos = strrpos($token, '.')) {
 				$token = substr($token, 0, $extensionPos);
@@ -195,7 +185,7 @@ class ImageManager implements MiddlewareInterface
 	 */
 	protected function getTemplate($template, $options = null)
 	{
-		$template = $this->config["templates"][$template];
+		$template = $this->imageCfg->get("templates.{$template}");
 
 		switch (true) {
 			// closure template found
@@ -228,7 +218,7 @@ class ImageManager implements MiddlewareInterface
 	protected function getImagePath($filename)
 	{
 		// find file
-		foreach ($this->config["paths"] as $path) {
+		foreach ($this->imageCfg->get("paths", []) as $path) {
 			// don't allow '..' in filenames
 
 			$image_path = $path . '/' . str_replace('..', '', $filename);
@@ -267,7 +257,7 @@ class ImageManager implements MiddlewareInterface
 
 		return $response
 			->withHeader('Content-Type', $mime)
-			->withHeader('Cache-Control', 'max-age=' . ($this->config["cache"]["lifetime"] * 60) . ', public')
+			->withHeader('Cache-Control', 'max-age=' . ($this->imageCfg->get("cache.lifetime") * 60) . ', public')
 			->withBody($body)
 			->withHeader('Content-Length', strlen($content));
 

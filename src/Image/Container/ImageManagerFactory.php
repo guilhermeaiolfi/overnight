@@ -21,12 +21,12 @@ class ImageManagerFactory
 
 	public function __invoke()
 	{
-		$config = $this->container->get(ImageConfig::class);
-		$encrypter_class = $config->get('encrypter.class', OpenSSL::class);
-		$encrypter = new $encrypter_class($config->get('key'), $config->get('encrypter.options'));
-		$cache_class = $config->get('cache.class', FileSystem::class);
-		$cache = new $cache_class($config->get());
+		$imageCfg = $this->container->get(ImageConfig::class);
+		$encrypter_class = $imageCfg->get('encrypter.class', OpenSSL::class);
+		$encrypter = new $encrypter_class($imageCfg->get('key'), $imageCfg->get('encrypter.options'));
+		$cache_class = $imageCfg->get('cache.class', FileSystem::class);
+		$cache = new $cache_class($imageCfg);
 
-		return new ImageManager($config->get(), $encrypter, $cache);
+		return new ImageManager($imageCfg, $encrypter, $cache);
 	}
 }

@@ -36,7 +36,7 @@ class ClockworkMiddleware implements MiddlewareInterface
 	}
 
 	// Returns a new middleware instance with a default singleton Clockwork instance, takes an additional configuration as argument
-	public static function init($config = [], RequestStack $stack)
+	public static function init(RequestStack $stack, $config = [])
 	{
 		return new static(Clockwork::init($config), $stack);
 	}

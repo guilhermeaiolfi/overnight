@@ -8,7 +8,7 @@ use ON\Config\Config;
 
 class ContainerConfig extends Config
 {
-	public function addFactory(string $key, string $value = null): void
+	public function addFactory(string $key, ?string $value = null): void
 	{
 		$this->set("definitions.factories." . $key, $value);
 	}

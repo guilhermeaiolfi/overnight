@@ -21,7 +21,7 @@ class RouterConfig extends Config
 		];
 	}
 
-	public function addRoute(mixed $path_or_obj, string $action = null, ?array $methods = ["GET"], $route_name = null)
+	public function addRoute(mixed $path_or_obj, ?string $action = null, ?array $methods = ["GET"], ?string $route_name = null)
 	{
 		$route = $path_or_obj;
 
