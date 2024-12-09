@@ -6,21 +6,19 @@ namespace ON\DB;
 
 use Exception;
 use PDO;
-use Psr\Container\ContainerInterface;
 
 class PdoDatabase implements DatabaseInterface
 {
 	protected $resource;
 	protected $connection;
-	protected array $parameters;
 
 	public function __construct(
 		protected string $name, 
-		protected DatabaseConfig $config, 
-		protected ContainerInterface $container)
+		protected DatabaseConfig $config
+	)
 	{
 		$parameters = $config->get("databases.{$name}");
-		$this->parameters = $parameters;
+
 		$dsn = ! empty($parameters["dsn"]) ? $parameters["dsn"] : null;
 		$username = ! empty($parameters["username"]) ? $parameters["username"] : null;
 		$password = ! empty($parameters["password"]) ? $parameters["password"] : null;
@@ -59,12 +57,12 @@ class PdoDatabase implements DatabaseInterface
 		}
 	}
 
-	public function getConnection()
+	public function getConnection(): mixed
 	{
 		return $this->connection;
 	}
 
-	public function getResource()
+	public function getResource(): mixed
 	{
 		return $this->resource;
 	}

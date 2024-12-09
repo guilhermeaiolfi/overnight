@@ -35,6 +35,11 @@ class DatabaseConfig extends Config
 		return $this;
 	}
 
+	public function hasDefault(): bool
+	{
+		return $this->has('default');
+	}
+
 	public function setDefault(string $name)
 	{
 		$this->set('default', $name);
@@ -42,8 +47,16 @@ class DatabaseConfig extends Config
 		return $this;
 	}
 
+	public function getDatabase(string $name): array
+	{
+		return $this->get("databases.{$name}");
+	}
+
 	public function getDefault()
 	{
+		if ($this->hasDefault()) {
+			return null;
+		}
 		$name = $this->get('default');
 
 		return $this->get("databases.{$name}");

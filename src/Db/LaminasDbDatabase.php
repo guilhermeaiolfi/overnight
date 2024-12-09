@@ -5,21 +5,19 @@ declare(strict_types=1);
 namespace ON\DB;
 
 use Laminas\DB\Adapter\Adapter;
-use Psr\Container\ContainerInterface;
 
 class LaminasDbDatabase implements DatabaseInterface
 {
 	protected $adapter;
 	protected $parameters;
-	protected $container;
-	protected string $name;
 
-	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container)
+	public function __construct(
+		protected string $name,
+		protected DatabaseConfig $config,
+	)
 	{
 		$parameters = $config->get("databases.{$name}");
-		$this->name = $name;
 		$this->parameters = $parameters;
-		$this->container = $container;
 
 		$adapter_class = isset($config["adapter_class"]) ? $config["adapter_class"] : Adapter::class;
 		$adapter = new $adapter_class($parameters);

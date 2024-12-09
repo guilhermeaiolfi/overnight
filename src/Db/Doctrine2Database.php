@@ -14,15 +14,17 @@ use Psr\Container\ContainerInterface;
 class Doctrine2Database implements DatabaseInterface
 {
 	protected $connection = null;
-	protected $container;
-	protected $parameters;
-	protected $name;
+	protected bool $debug = false;
+	protected array $parameters;
+	protected string $defaultProxyDir = "var/cache/doctrine/proxy";
 
-	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container)
+	public function __construct(
+		protected string $name,
+		protected DatabaseConfig $config,
+		protected ContainerInterface $container
+	)
 	{
 		$parameters = $config->get("databases.{$name}");
-		$this->container = $container;
-		$this->name = $name;
 		$this->parameters = $parameters;
 		$connection_config = $parameters["connection"];
 
@@ -76,9 +78,8 @@ class Doctrine2Database implements DatabaseInterface
 
 	protected function prepareConfiguration(Configuration $config)
 	{
-		$cfg = $this->container->get('config');
 		// auto-generate proxy classes in debug mode by default
-		$auto_generate = isset($this->parameters['configuration']) && isset($this->parameters['configuration']['auto_generate_proxy_classes']) ? $this->parameters['configuration']['auto_generate_proxy_classes'] : $cfg["debug"];
+		$auto_generate = isset($this->parameters['configuration']) && isset($this->parameters['configuration']['auto_generate_proxy_classes']) ? $this->parameters['configuration']['auto_generate_proxy_classes'] : $this->debug;
 
 		$config->setAutoGenerateProxyClasses($auto_generate);
 
@@ -104,11 +105,11 @@ class Doctrine2Database implements DatabaseInterface
 		$proxy_namespace = isset($this->parameters['configuration']['proxy_namespace']) ? $this->parameters['configuration']['proxy_namespace'] : 'Doctrine2Database_Proxy_' . preg_replace('#\W#', '_', $this->name);
 		$config->setProxyNamespace($proxy_namespace);
 
-		$proxy_dir = isset($this->parameters['configuration']['proxy_dir']) ? $this->parameters['configuration']['proxy_dir'] : $cfg["paths"]["cache"];
+		$proxy_dir = isset($this->parameters['configuration']['proxy_dir']) ? $this->parameters['configuration']['proxy_dir'] : $this->defaultProxyDir;
 		$config->setProxyDir($proxy_dir);
 
 		// unless configured differently, use ArrayCache in debug mode and APC (if available) otherwise
-		if ($cfg["debug"] || ! extension_loaded('apc')) {
+		if ($this->debug || ! extension_loaded('apc')) {
 			$defaultCache = '\Doctrine\Common\Cache\ArrayCache';
 		} else {
 			$defaultCache = '\Doctrine\Common\Cache\ApcCache';
@@ -123,12 +124,12 @@ class Doctrine2Database implements DatabaseInterface
 		$config->setResultCacheImpl(new $resultCache());
 	}
 
-	public function getConnection()
+	public function getConnection(): mixed
 	{
 		return $this->connection;
 	}
 
-	public function getResource()
+	public function getResource(): mixed
 	{
 		return $this->connection->getConnection();
 	}

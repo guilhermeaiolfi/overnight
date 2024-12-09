@@ -11,19 +11,15 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 class Manager
 {
-	protected $config;
-	protected ContainerInterface $container;
-
 	protected $instances = [];
 
 	protected $eventDispatcher = null;
 
 	public function __construct(
-		DatabaseConfig $config,
-		ContainerInterface $c,
+		protected DatabaseConfig $config,
+		protected ContainerInterface $container,
 	) {
-		$this->config = $config;
-		$this->container = $c;
+
 	}
 
 	public function setEventDispatcher(EventDispatcherInterface $dispatcher)
@@ -51,11 +47,11 @@ class Manager
 		return null;
 	}
 
-	public function getDatabase($name = null)
+	public function getDatabase(string $name = null)
 	{
 		if (! isset($name)) {
-			if (isset($this->config["default"])) {
-				$name = $this->config["default"];
+			if ($this->config->hasDefault() {
+				$name = $this->config->getDefaultName();
 			} else {
 				throw new Exception("There is no \"default\" DB set and none was given.");
 			}
@@ -68,7 +64,7 @@ class Manager
 			return  $this->instances[$name];
 		}
 
-		$db_config = $this->config["databases"][$name];
+		$db_config = $this->config->getDatabase($name);
 		$database_class = null;
 		if (isset($db_config["class"])) {
 			$database_class = $db_config["class"];
@@ -76,7 +72,9 @@ class Manager
 			throw new Exception("There is no \"class\" defined for " . $name . " database configuration");
 		}
 
-		$database = new $database_class($name, $db_config, $this->container);
+		$database = $this->container->make($database_class, [
+			"name" => $name
+		]);
 
 		if ($this->eventDispatcher) {
 			$event = new NamedEvent("core.db.manager.create", $database);

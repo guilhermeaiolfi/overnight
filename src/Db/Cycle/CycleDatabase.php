@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace ON\DB\Cycle;
 
-use Cycle\Database\Config\DatabaseConfig;
+use Cycle\Database\Config\DatabaseConfig as CycleDatabaseConfig;
 use Cycle\Database\DatabaseManager;
 use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
+use ON\DB\DatabaseConfig;
 use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Definition\Registry;
 use ON\DB\DatabaseInterface;
-use Psr\Container\ContainerInterface;
+
+use Cycle\ORM\Schema;
 
 class CycleDatabase implements DatabaseInterface
 {
@@ -20,28 +22,25 @@ class CycleDatabase implements DatabaseInterface
 
 	public function __construct(
 		protected string $name,
-		protected DatabaseConfig $config, 
-		protected ContainerInterface $container
+		protected DatabaseConfig $config,
+		protected Schema $schema
 	)
 	{
 		$parameters = $config->get("databases.{$name}");
-		$this->name = $name;
-		$cycle_config = new DatabaseConfig($parameters["options"]);
 
-		$this->dbal = new DatabaseManager($cycle_config);
+		$cycle_config = new CycleDatabaseConfig($parameters["options"]);
 
-		$collections = Registry::getCollections();
-		$compiler = new CycleCompiler($collections);
-		$schema = $compiler->compile();
+		$this->dbal = new CycleDatabaseConfig($cycle_config);
+
 		$this->orm = new ORM(new Factory($this->dbal), $schema);
 	}
 
-	public function getConnection()
+	public function getConnection(): mixed
 	{
 		return $this->dbal;
 	}
 
-	public function getResource()
+	public function getResource(): mixed
 	{
 		return $this->orm;
 	}

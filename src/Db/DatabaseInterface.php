@@ -8,11 +8,9 @@ use Psr\Container\ContainerInterface;
 
 interface DatabaseInterface
 {
-	public function __construct(string $name, DatabaseConfig $config, ContainerInterface $container);
+	public function getConnection(): mixed;
 
-	public function getConnection();
-
-	public function getResource();
+	public function getResource(): mixed;
 
 	public function setName(string $name): void;
 
