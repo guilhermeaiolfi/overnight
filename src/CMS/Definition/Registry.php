@@ -9,13 +9,18 @@ use ON\CMS\Definition\Collection\CollectionInterface;
 
 class Registry
 {
-	public static array $collections = [];
+	public array $collections = [];
 
-	public static function collection(?string $name = null)
+	public function register(CollectionInterface $collection): void
+	{
+		$this->collections[$collection->getName()] = $collection;
+	}
+
+	public function collection(string $name): CollectionInterface
 	{
 
 		$collection = new Collection();
-		static::$collections[] = $collection;
+		$this->collections[$name] = $collection;
 
 		if (isset($name)) {
 			$collection->name($name);
@@ -24,9 +29,14 @@ class Registry
 		return  $collection;
 	}
 
-	/** @var CollectionInterface[] */
-	public static function getCollections(): array
+	public function getCollection(string $name): CollectionInterface
 	{
-		return static::$collections;
+		return $this->collections[$name];
+	}
+
+	/** @var CollectionInterface[] */
+	public function getCollections(): array
+	{
+		return $this->collections;
 	}
 }

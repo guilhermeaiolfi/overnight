@@ -23,6 +23,8 @@ class Field implements FieldInterface
 
 	protected bool $required = false;
 
+	protected bool $sensible = false;
+
 	/**
 	 * @var callable-array|string|null
 	 */
@@ -60,6 +62,18 @@ class Field implements FieldInterface
 		}
 
 		return $this->type;
+	}
+
+	public function sensible(bool $sensible): self
+	{
+		$this->sensible = $sensible;
+
+		return $this;
+	}
+
+	public function getSensible(): bool
+	{
+		return $this->sensible;
 	}
 
 	public function column(string $column): self

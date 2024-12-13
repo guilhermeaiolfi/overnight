@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use ON\CMS\Definition\Registry;
 use On\Config\Config;
 
 class DatabaseConfig extends Config
 {
+	protected Registry $registry;
+
 	public function addDatabase(
 		string $name,
 		?string $dsn = null,
@@ -65,5 +68,14 @@ class DatabaseConfig extends Config
 	public function getDefaultName()
 	{
 		return $this->get('default');
+	}
+
+	public function getRegistry(): Registry
+	{
+		if (! isset($this->registry)) {
+			$this->registry = new Registry();
+		}
+
+		return $this->registry;
 	}
 }

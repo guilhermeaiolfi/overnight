@@ -22,8 +22,6 @@ use Psr\Log\LoggerInterface;
 
 class ClockworkExtension extends AbstractExtension implements EventSubscriberInterface
 {
-	public const NAMESPACE = "core.extensions.clockwork";
-
 	protected Clockwork $clockwork;
 
 	public static function install(Application $app, ?array $options = []): mixed

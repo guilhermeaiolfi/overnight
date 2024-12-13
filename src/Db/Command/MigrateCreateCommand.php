@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ON\DB\Command;
 
 use Cycle\Migrations;
+use Cycle\Schema\Generator\Migrations\GenerateMigrations;
+use Cycle\Schema\Registry;
 use ON\Application;
 use ON\DB\DatabaseConfig;
 use ON\DB\Manager;
@@ -12,7 +14,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class MigrateCommand extends Command
+class MigrateCreateCommand extends Command
 {
 	public function __construct(
 		protected Application $app,
@@ -26,10 +28,10 @@ class MigrateCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('db:migrate')
+			->setName('db:migrate:create')
 			->setDefinition([
 			])
-			->setDescription('Migrate database')
+			->setDescription('Create Migrations database')
 		;
 	}
 
@@ -42,6 +44,13 @@ class MigrateCommand extends Command
 
 		$migrator = new Migrations\Migrator($config, $dbal, new Migrations\FileRepository($config));
 
+		$registry = new Registry($dbal);
+		//$registry->register();
+
+		$generator = new GenerateMigrations(
+			$migrator->getRepository(),
+			$migrator->getConfig()
+		);
 		// Init migration table
 		$migrator->configure();
 

@@ -8,15 +8,16 @@ use Cycle\ORM\Relation as CycleRelation;
 use Cycle\ORM\Schema;
 use Cycle\ORM\SchemaInterface;
 use ON\CMS\Definition\Collection\CollectionInterface;
+use ON\CMS\Definition\Registry;
+use ON\CMS\Definition\Relation\HasManyRelation;
+use ON\CMS\Definition\Relation\HasOneRelation;
 use ON\CMS\Definition\Relation\M2MRelation;
-use ON\CMS\Definition\Relation\O2MRelation;
-use ON\CMS\Definition\Relation\O2ORelation;
 use ON\CMS\Definition\Relation\RelationInterface;
 
 class CycleCompiler
 {
 	public function __construct(
-		protected array $collections
+		protected Registry $registry
 	) {
 
 	}
@@ -24,8 +25,9 @@ class CycleCompiler
 	public function compile(): SchemaInterface
 	{
 		$schema = [];
-		foreach ($this->collections as $collection) {
-			$schema[$collection->name] = $this->processCollection($collection);
+		$collections = $this->registry->getCollections();
+		foreach ($collections as $collection) {
+			$schema[$collection->getName()] = $this->processCollection($collection);
 		}
 
 		return new Schema($schema);
@@ -50,10 +52,10 @@ class CycleCompiler
 		return $result;
 	}
 
-	public function processScope(CollectionInterface $collection): array
+	public function processScope(CollectionInterface $collection): ?array
 	{
 		// TODO
-		return [];
+		return null;
 	}
 
 	public function processRelations(CollectionInterface $collection): array
@@ -91,8 +93,8 @@ class CycleCompiler
 				],
 			];
 
-		} elseif ($relation instanceof O2MRelation) {
-			/** @var O2MRelation $relation */
+		} elseif ($relation instanceof HasManyRelation) {
+			/** @var HasManyRelation $relation */
 			return [
 				CycleRelation::TYPE => CycleRelation::HAS_MANY,
 				CycleRelation::LOAD => $this->getLoadStrategy($relation),
@@ -104,8 +106,8 @@ class CycleCompiler
 					CycleRelation::OUTER_KEY => $relation->getOuterKey(),
 				],
 			];
-		} elseif ($relation instanceof O2ORelation) {
-			/** @var O2ORelation $relation */
+		} elseif ($relation instanceof HasOneRelation) {
+			/** @var HasOneRelation $relation */
 			if ($relation->isExclusive()) {
 				// TODO
 			} else {

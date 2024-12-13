@@ -41,7 +41,7 @@ class Manager
 	}
 
 	public function getDatabaseResource($name = null)
-	{ 
+	{
 		$database = $this->getDatabase($name);
 		if ($database) {
 			return $database->getResource();
@@ -50,10 +50,10 @@ class Manager
 		return null;
 	}
 
-	public function getDatabase(string $name = null)
+	public function getDatabase(?string $name = null)
 	{
 		if (! isset($name)) {
-			if ($this->config->hasDefault() {
+			if ($this->config->hasDefault()) {
 				$name = $this->config->getDefaultName();
 			} else {
 				throw new Exception("There is no \"default\" DB set and none was given.");
@@ -76,7 +76,7 @@ class Manager
 		}
 
 		$database = $this->container->make($database_class, [
-			"name" => $name
+			"name" => $name,
 		]);
 
 		if ($this->eventDispatcher) {

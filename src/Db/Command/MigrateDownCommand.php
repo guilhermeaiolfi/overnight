@@ -12,7 +12,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class MigrateCommand extends Command
+class MigrateDownCommand extends Command
 {
 	public function __construct(
 		protected Application $app,
@@ -26,10 +26,10 @@ class MigrateCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('db:migrate')
+			->setName('migrate:down')
 			->setDefinition([
 			])
-			->setDescription('Migrate database')
+			->setDescription('Rollback last migration')
 		;
 	}
 
@@ -38,12 +38,12 @@ class MigrateCommand extends Command
 		$db = $this->app->container->get(Manager::class);
 		$dbal = $db->getDatabase("cycle")->getConnection();
 
+
 		$config = $this->dbCfg->get('migration');
 
 		$migrator = new Migrations\Migrator($config, $dbal, new Migrations\FileRepository($config));
 
-		// Init migration table
-		$migrator->configure();
+		$migrator->rollback();
 
 		return Command::SUCCESS;
 	}

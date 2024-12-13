@@ -8,14 +8,14 @@ use ON\Config\Config;
 
 class ContainerConfig extends Config
 {
-	public function addFactory(string $key, ?string $value = null): void
+	public function addFactory(string $key, string $value): void
 	{
 		$this->set("definitions.factories." . $key, $value);
 	}
 
-	public function addFactories(array $keys): void
+	public function addFactories(array $factories): void
 	{
-		foreach ($keys as $key => $value) {
+		foreach ($factories as $key => $value) {
 			$this->set("definitions.factories." . $key, $value);
 		}
 	}
@@ -25,9 +25,9 @@ class ContainerConfig extends Config
 		$this->set("definitions.aliases." . $key, $value);
 	}
 
-	public function addAliases(array $keys): void
+	public function addAliases(array $aliases): void
 	{
-		foreach ($keys as $key => $value) {
+		foreach ($aliases as $key => $value) {
 			$this->set("definitions.aliases." . $key, $value);
 		}
 	}

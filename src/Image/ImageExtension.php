@@ -11,7 +11,7 @@ use ON\Extension\AbstractExtension;
 use ON\Image\Container\ImageManagerFactory;
 use ON\Router\RouterConfig;
 
-class ImageExtension extends AbstractExtension implements EventSubscriberInterface
+class ImageExtension extends AbstractExtension
 {
 	public static function install(Application $app, ?array $options = []): mixed
 	{
@@ -54,12 +54,5 @@ class ImageExtension extends AbstractExtension implements EventSubscriberInterfa
 			['GET'],
 			"imagemanager",
 		);
-	}
-
-	public static function getSubscribedEvents(): array
-	{
-		return [
-			//"core.extensions.container.config" => 'onContainerConfig',
-		];
 	}
 }

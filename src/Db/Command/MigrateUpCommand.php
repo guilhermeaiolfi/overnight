@@ -12,7 +12,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
-class MigrateCommand extends Command
+class MigrateUpCommand extends Command
 {
 	public function __construct(
 		protected Application $app,
@@ -26,7 +26,7 @@ class MigrateCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('db:migrate')
+			->setName('migrate')
 			->setDefinition([
 			])
 			->setDescription('Migrate database')
@@ -43,7 +43,7 @@ class MigrateCommand extends Command
 		$migrator = new Migrations\Migrator($config, $dbal, new Migrations\FileRepository($config));
 
 		// Init migration table
-		$migrator->configure();
+		$migrator->run();
 
 		return Command::SUCCESS;
 	}
