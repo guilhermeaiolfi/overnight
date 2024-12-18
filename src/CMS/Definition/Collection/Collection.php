@@ -8,7 +8,8 @@ use Cycle\ORM\Mapper\StdMapper;
 use ON\CMS\Definition\Field\Field;
 use ON\CMS\Definition\Field\FieldInterface;
 use ON\CMS\Definition\Field\FieldMap;
-use ON\CMS\Definition\Relation\O2ORelation;
+use ON\CMS\Definition\Registry;
+use ON\CMS\Definition\Relation\HasOneRelation;
 use ON\CMS\Definition\Relation\RelationInterface;
 use ON\CMS\Definition\Relation\RelationMap;
 use stdClass;
@@ -23,8 +24,9 @@ class Collection implements CollectionInterface
 	public FieldMap $fields;
 	public RelationMap $relations;
 
-	public function __construct()
-	{
+	public function __construct(
+		protected Registry $registry
+	) {
 		$this->fields = new FieldMap();
 		$this->relations = new RelationMap();
 	}
@@ -139,7 +141,7 @@ class Collection implements CollectionInterface
 	 * @param class-string<T> $type
 	 * @return T
 	 * */
-	public function relation(string $name, string $type = O2ORelation::class): RelationInterface
+	public function relation(string $name, string $type = HasOneRelation::class): RelationInterface
 	{
 		$relation = new $type($this);
 		$this->relations->set($name, $relation);
@@ -162,5 +164,10 @@ class Collection implements CollectionInterface
 		}
 
 		return $pk;
+	}
+
+	public function end(): Registry
+	{
+		return $this->registry;
 	}
 }

@@ -11,6 +11,7 @@ class RelationNode extends Node
 	public function __construct(
 		public string $name,
 		public ?Node $parent = null,
+		public ?string $collection = null,
 		public ?string $modifier = null
 	) {
 

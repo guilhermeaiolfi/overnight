@@ -6,10 +6,12 @@ namespace ON\CMS;
 
 use Cycle\ORM\Select;
 use Exception;
-use ON\CMS\Definition\Collection\CollectionInterface;
+use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Definition\Registry;
-use ON\CMS\Definition\Relation\RelationInterface;
+use ON\CMS\Parser\FilterParser;
 use ON\CMS\Parser\Node\Node;
+use ON\CMS\Parser\Node\RelationNode;
+use ON\CMS\Parser\Node\ShallowRelationNode;
 use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
@@ -29,6 +31,8 @@ class DataHandler
 
 	protected array $modifierInstances = [];
 
+	protected FilterParser $filterParser;
+
 	public function __construct(
 		protected DatabaseConfig $dbCfg,
 		protected Manager $db
@@ -38,13 +42,15 @@ class DataHandler
 		foreach ($this->modifiers as $modifierClass) {
 			$this->modifierInstances[] = new $modifierClass($this->registry);
 		}
+
+		$this->filterParser = new FilterParser();
 	}
 
-	public function parseFields(mixed $fields, ?string $rootCollection = null): Node
+	public function parseFields(string $fields): Node
 	{
 		$parser = new Parser();
 
-		return $parser->parse($fields, $rootCollection);
+		return $parser->parse($fields, $this->registry);
 	}
 
 	public function postProcessFields($root): void
@@ -54,57 +60,109 @@ class DataHandler
 		}
 	}
 
-	public function getSelectQuery(string $collection, array $query): Select
+	public function getSelectQuery(string $collection, array $queryParams): Select
 	{
 		$collection = $this->registry->getCollection($collection);
 		$orm = $this->db->getDatabaseResource('cycle');
+
+		$compiler = new CycleCompiler($this->registry);
+		$compiler->compile();
+		$schema = $orm->getSchema();
+
 		$repository = $orm->getRepository($collection->getName());
 
 		$select = $repository->select();
 		$builder = $select->getBuilder();
 		$loader = $builder->getLoader();
+
+		$filter = json_decode($queryParams["filter"], true);
+
+		if (! isset($queryParams["filter"]) && ! $filter) {
+			throw new Exception("Invalid filter sintax");
+		}
+
+
+		$where = $this->filterParser->parse($filter);
+
+		$select->where($where);
 		//dd($loader->getTarget());
 
-		$root = $this->parseFields($query["fields"], $collection->getName());
+
+
+		$query = $collection->getName() . "{" . $queryParams["fields"] . "}";
+		$root = $this->parseFields($query);
 		$this->postProcessFields($root);
 
-		dd($root);
-
 		//var_dump($fields);
-		$relations = $this->getLoadRelations($fields, $collection);
+		$relations = $this->getLoadRelations($root);
+
 		$select->load($relations);
+
+		$returnQuery = $loader->getQuery();
+
+		$returnQuery->columns("id", "name");
+
+		dd($select->fetchData());
+
+		$filter = $this->parseFilter($queryParams["filter"]);
+
+		dd($filter);
+		//$select
 
 		return $select;
 	}
 
-	public function getLoadRelations(array $fields, CollectionInterface $collection): array
+	public function parseFilter($filter): array
+	{
+		$arr = json_decode($filter, true);
+
+		return $arr;
+	}
+
+	public function getAllRelations(Node $root): array
+	{
+		$relations = [];
+
+		$stack = [ $root ];
+		while ($node = array_pop($stack)) {
+			if ($node instanceof RelationNode) {
+				$relations[] = $node;
+			}
+			foreach ($node->children as $child) {
+				$stack[] = $child;
+			}
+		}
+
+		return $relations;
+	}
+
+	public function getLoadOptions(RelationNode $node): array
+	{
+		if (isset($node->method)) {
+			return [
+				"method" => $node->method,
+			];
+		}
+
+		return [];
+	}
+
+	public function getLoadRelations(Node $root): array
 	{
 		$load = [];
-		foreach ($fields as $field => $options) {
-			if (strpos($field, ".") !== false) {
-				$field = explode(".", $field);
-			}
-			if (is_string($field)) {
-				if ($collection->relations->has($field)) {
-					$load[$field] = $options;
-				}
-			} else {
-				$current = $collection;
 
-				for ($i = 0; $i < count($field); $i++) {
-					$last = count($field) == ($i + 1);
-					if (! $current->relations->has($field[$i])) {
-						throw new Exception("This relation is invalid to load: " . implode(".", $field) . "($i)");
-					}
+		$relations = $this->getAllRelations($root);
 
-					$relation = $current->relations->get($field[$i]);
-					/** @var RelationInterface $relation */
-					$current = $this->registry->getCollection($relation->getCollection());
-					if ($last) {
-						$load[implode(".", $field)] = $options;
-					}
-				}
+		foreach ($relations as $relation) {
+			if ($relation instanceof ShallowRelationNode) {
+				continue;
 			}
+			$path = $relation->getPath(1);
+			$keys = [];
+			foreach ($path as $node) {
+				$keys[] = $node->name;
+			}
+			$load[implode(".", $keys)] = $this->getLoadOptions($relation);
 		}
 
 		return $load;

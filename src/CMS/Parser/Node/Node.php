@@ -69,15 +69,24 @@ class Node
 				}
 			}
 
-			if (! isset($this->parent)) {
-				return [
-					$this->name => $children,
-				];
-			} else {
-				return $children;
-			}
+			return $children;
 		}
 
 		return $this->name;
+	}
+
+	public function getPath(int $offset = 0, ?int $length = null): array
+	{
+		$path = [];
+		$node = $this;
+		while ($node) {
+			$path[] = $node;
+			$node = $node->parent;
+		}
+
+		$path = array_reverse($path);
+		$path = array_slice($path, $offset, $length);
+
+		return $path;
 	}
 }

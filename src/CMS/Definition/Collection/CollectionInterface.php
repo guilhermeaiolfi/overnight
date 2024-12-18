@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace ON\CMS\Definition\Collection;
 
 use ON\CMS\Definition\Field\FieldInterface;
-use ON\CMS\Definition\Relation\O2ORelation;
+use ON\CMS\Definition\Registry;
+use ON\CMS\Definition\Relation\HasOneRelation;
 use ON\CMS\Definition\Relation\RelationInterface;
 
 interface CollectionInterface
@@ -41,7 +42,7 @@ interface CollectionInterface
 	 * @param class-string<T> $type
 	 * @return T
 	 * */
-	public function relation(string $name, string $type = O2ORelation::class): RelationInterface;
+	public function relation(string $name, string $type = HasOneRelation::class): RelationInterface;
 
 	/** @return FieldInterface[]|FieldInterface */
 	public function getPrimaryKey(): mixed;
@@ -49,4 +50,6 @@ interface CollectionInterface
 	public function note(string $note): self;
 
 	public function getNote(): ?string;
+
+	public function end(): Registry;
 }

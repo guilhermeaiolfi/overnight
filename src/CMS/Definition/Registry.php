@@ -18,13 +18,10 @@ class Registry
 
 	public function collection(string $name): CollectionInterface
 	{
-
-		$collection = new Collection();
+		$collection = new Collection($this);
 		$this->collections[$name] = $collection;
 
-		if (isset($name)) {
-			$collection->name($name);
-		}
+		$collection->name($name);
 
 		return  $collection;
 	}

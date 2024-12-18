@@ -1,17 +1,62 @@
 <?php
 
 declare(strict_types=1);
+
+use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\Parser;
 use PHPUnit\Framework\TestCase;
 
 final class ParserTest extends TestCase
 {
+	private $registry;
+
+	protected function setUp(): void
+	{
+		$this->registry = new Registry();
+		$this->registry
+		->collection("users")
+			->field("id")->end()
+			->field("name")->end()
+			->relation("parts")
+				->collection('parts')
+			->end()
+			->relation("user")
+				->collection("users")
+			->end()
+			->relation("foo")
+				->collection("foos")
+			->end()
+		->end()
+		->collection("foos")
+			->field("id")->end()
+			->field("name")->end()
+			->relation("bar")
+				->collection("bars")
+			->end()
+		->end()
+		->collection("bars")
+			->field("id")->end()
+			->field("name")->end()
+			->relation('user')
+				->collection('users')
+			->end()
+		->end()
+		->collection("parts")
+			->field("id")->end()
+			->field("name")->end()
+			->relation('user')
+				->collection('users')
+			->end()
+		->end();
+
+	}
+
 	public function testSimpleFields(): void
 	{
-		$string = 'id,parts';
+		$string = 'users{id,parts}';
 
 		$parser = new Parser();
-		$rootNode = $parser->parse($string, "users");
+		$rootNode = $parser->parse($string, $this->registry);
 
 		$this->assertSame([
 			"users" => [
@@ -23,10 +68,11 @@ final class ParserTest extends TestCase
 
 	public function testShallowRelation(): void
 	{
-		$string = 'id,parts{id,name}';
+		$string = 'users{id,parts{id,name}}';
 
 		$parser = new Parser();
-		$rootNode = $parser->parse($string, "users");
+
+		$rootNode = $parser->parse($string, $this->registry);
 
 		//var_dump($rootNode->toArray());
 		$this->assertSame([
@@ -42,10 +88,11 @@ final class ParserTest extends TestCase
 
 	public function testDeepRelationWithFields(): void
 	{
-		$string = 'id,parts{id,name,user{id,name}}';
+
+		$string = 'users{id,parts{id,name,user{id,name}}}';
 
 		$parser = new Parser();
-		$rootNode = $parser->parse($string, "users");
+		$rootNode = $parser->parse($string, $this->registry);
 
 
 		$this->assertSame([
@@ -65,10 +112,10 @@ final class ParserTest extends TestCase
 
 	public function testDeepRelationWithFieldsInTheEnd(): void
 	{
-		$string = 'id,parts{id,name,user{id,name}},name';
+		$string = 'users{id,parts{id,name,user{id,name}},name}';
 
-		$parser = new Parser("users");
-		$rootNode = $parser->parse($string, "users");
+		$parser = new Parser();
+		$rootNode = $parser->parse($string, $this->registry);
 
 		$this->assertSame([
 			"users" => [
@@ -88,10 +135,10 @@ final class ParserTest extends TestCase
 
 	public function testManyRelations(): void
 	{
-		$string = 'id,parts{id,name},name,user{id,name}';
+		$string = 'users{id,parts{id,name},name,user{id,name}}';
 
 		$parser = new Parser();
-		$rootNode = $parser->parse($string, "users");
+		$rootNode = $parser->parse($string, $this->registry);
 
 		$this->assertSame([
 			"users" => [
@@ -111,10 +158,10 @@ final class ParserTest extends TestCase
 
 	public function testManyRelationsWithShallowRelation(): void
 	{
-		$string = 'id,parts{id,name},name,parts.user{id,name}';
+		$string = 'users{id,parts{id,name},name,parts.user{id,name}}';
 
-		$parser = new Parser("users");
-		$rootNode = $parser->parse($string, "users");
+		$parser = new Parser();
+		$rootNode = $parser->parse($string, $this->registry);
 
 		$this->assertSame([
 			"users" => [
@@ -134,10 +181,10 @@ final class ParserTest extends TestCase
 
 	public function testManyRelationsWithDeepShallowRelation(): void
 	{
-		$string = 'id,parts{id,name},name,foo.bar.user{id,name}';
+		$string = 'users{id,parts{id,name},name,foo.bar.user{id,name}}';
 
-		$parser = new Parser("users");
-		$rootNode = $parser->parse($string, "users");
+		$parser = new Parser();
+		$rootNode = $parser->parse($string, $this->registry);
 
 		$this->assertSame([
 			"users" => [
