@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\CMS\Parser;
 
+use Cycle\Database\Injection\Parameter;
+use ON\CMS\Definition\Registry;
+
 class FilterParser
 {
 	public array $operators = [
@@ -34,6 +37,30 @@ class FilterParser
 		'_nempty' => '<>',
 	];
 
+	public function __construct(
+		protected Registry $registry
+	) {
+
+	}
+
+	protected function _in(string $column, string $operator, mixed $value): array
+	{
+		return [
+			$column => [
+				'IN' => new Parameter($value),
+			],
+		];
+	}
+
+	protected function _nin(string $column, string $operator, mixed $value): array
+	{
+		return [
+			$column => [
+				'NOT IN' => new Parameter($value),
+			],
+		];
+	}
+
 	protected function _empty(string $column, string $operator, mixed $value): array
 	{
 		return [
@@ -52,12 +79,36 @@ class FilterParser
 		];
 	}
 
+	public function _or(string $column, string $operator, array $values, bool $negative = false): array
+	{
+		$flatten = [];
+		foreach ($values as $key => $value) {
+			$flatten[$key] = $this->flatten(".", $value);
+		}
+
+		return [
+			'@OR' . ($negative ? ' NOT' : '') => $flatten,
+		];
+	}
+
+	public function _and(string $column, string $operator, array $values, bool $negative = false): array
+	{
+		$flatten = [];
+		foreach ($values as $key => $value) {
+			$flatten[$key] = $this->flatten(".", $value);
+		}
+
+		return [
+			'@AND' . ($negative ? ' NOT' : '') => $flatten,
+		];
+	}
+
 	public function flatten($delimiter = '.', $items = null, $prepend = '')
 	{
 		$flatten = [];
 
 		foreach ($items as $key => $value) {
-			if (is_array($value) && ! empty($value) && $key[0] != "_") {
+			if (is_array($value) && ! empty($value) && is_string($key) && $key[0] != "_") {
 				$flatten[] = $this->flatten($delimiter, $value, $prepend . $key . $delimiter);
 			} else {
 				$method = $key;

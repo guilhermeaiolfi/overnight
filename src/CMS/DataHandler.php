@@ -11,11 +11,13 @@ use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\FilterParser;
 use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
+use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\ShallowRelationNode;
 use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
-use ON\CMS\Parser\Parser;
+use ON\CMS\Parser\QueryParser;
+use ON\CMS\Select\Select as SelectSelect;
 use ON\DB\DatabaseConfig;
 use ON\DB\Manager;
 
@@ -32,6 +34,7 @@ class DataHandler
 	protected array $modifierInstances = [];
 
 	protected FilterParser $filterParser;
+	protected QueryParser $queryParser;
 
 	public function __construct(
 		protected DatabaseConfig $dbCfg,
@@ -43,14 +46,8 @@ class DataHandler
 			$this->modifierInstances[] = new $modifierClass($this->registry);
 		}
 
-		$this->filterParser = new FilterParser();
-	}
-
-	public function parseFields(string $fields): Node
-	{
-		$parser = new Parser();
-
-		return $parser->parse($fields, $this->registry);
+		$this->filterParser = new FilterParser($this->registry);
+		$this->queryParser = new QueryParser($this->registry);
 	}
 
 	public function postProcessFields($root): void
@@ -60,54 +57,73 @@ class DataHandler
 		}
 	}
 
-	public function getSelectQuery(string $collection, array $queryParams): Select
+	public function parseQuery(string $query): RootNode
+	{
+		$rootNode = $this->queryParser->parse($query);
+		$this->postProcessFields($rootNode);
+
+		return $rootNode;
+	}
+
+	public function getSelectQuery(string $collection, array $queryParams): SelectSelect
 	{
 		$collection = $this->registry->getCollection($collection);
 		$orm = $this->db->getDatabaseResource('cycle');
 
-		$compiler = new CycleCompiler($this->registry);
+		/*$compiler = new CycleCompiler($this->registry);
 		$compiler->compile();
-		$schema = $orm->getSchema();
+		$schema = $orm->getSchema();*/
 
 		$repository = $orm->getRepository($collection->getName());
 
-		$select = $repository->select();
+		$select = new SelectSelect($orm, $collection->getName()); //$repository->select();
 		$builder = $select->getBuilder();
-		$loader = $builder->getLoader();
+		$loader = $select->getLoader();
 
+
+		// filter handling
 		$filter = json_decode($queryParams["filter"], true);
 
 		if (! isset($queryParams["filter"]) && ! $filter) {
 			throw new Exception("Invalid filter sintax");
 		}
-
-
 		$where = $this->filterParser->parse($filter);
-
+		//dd($where);
 		$select->where($where);
-		//dd($loader->getTarget());
 
 
 
 		$query = $collection->getName() . "{" . $queryParams["fields"] . "}";
-		$root = $this->parseFields($query);
-		$this->postProcessFields($root);
+		$rootNode = $this->parseQuery($query);
 
-		//var_dump($fields);
-		$relations = $this->getLoadRelations($root);
 
+		// relations loading
+		$relations = $this->getLoadRelations($rootNode);
 		$select->load($relations);
+		$loader->columns(["id", "name"]);
+		dd($loader);
 
-		$returnQuery = $loader->getQuery();
+		// limit handling
+		$limit = 100;
+		if (isset($queryParams["limit"]) && $queryParams["limit"] > 0) {
+			$limit = (int) $queryParams["limit"];
+		}
 
-		$returnQuery->columns("id", "name");
+		$select->limit($limit);
 
-		dd($select->fetchData());
 
-		$filter = $this->parseFilter($queryParams["filter"]);
+		// offset handling
+		$offset = 0;
+		if (isset($queryParams["page"]) && $queryParams["page"] > 0) {
+			$page = (int) $queryParams["page"];
+			$offset = ($page - 1) * $limit;
+		} elseif (isset($queryParams["offset"]) && is_int($queryParams["offset"])) {
+			$offset = $queryParams["offset"];
+		}
+		$select->offset($offset);
 
-		dd($filter);
-		//$select
+
+		//dd($select->fetchData());
 
 		return $select;
 	}

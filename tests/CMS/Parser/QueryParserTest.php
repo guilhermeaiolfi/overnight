@@ -3,10 +3,10 @@
 declare(strict_types=1);
 
 use ON\CMS\Definition\Registry;
-use ON\CMS\Parser\Parser;
+use ON\CMS\Parser\QueryParser;
 use PHPUnit\Framework\TestCase;
 
-final class ParserTest extends TestCase
+final class QueryParserTest extends TestCase
 {
 	private $registry;
 
@@ -55,8 +55,8 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 		$this->assertSame([
 			"users" => [
@@ -70,9 +70,9 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts{id,name}}';
 
-		$parser = new Parser();
+		$parser = new QueryParser($this->registry);
 
-		$rootNode = $parser->parse($string, $this->registry);
+		$rootNode = $parser->parse($string);
 
 		//var_dump($rootNode->toArray());
 		$this->assertSame([
@@ -91,8 +91,8 @@ final class ParserTest extends TestCase
 
 		$string = 'users{id,parts{id,name,user{id,name}}}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 
 		$this->assertSame([
@@ -114,8 +114,8 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts{id,name,user{id,name}},name}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 		$this->assertSame([
 			"users" => [
@@ -137,8 +137,8 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts{id,name},name,user{id,name}}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 		$this->assertSame([
 			"users" => [
@@ -160,8 +160,8 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts{id,name},name,parts.user{id,name}}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 		$this->assertSame([
 			"users" => [
@@ -183,8 +183,8 @@ final class ParserTest extends TestCase
 	{
 		$string = 'users{id,parts{id,name},name,foo.bar.user{id,name}}';
 
-		$parser = new Parser();
-		$rootNode = $parser->parse($string, $this->registry);
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
 
 		$this->assertSame([
 			"users" => [
