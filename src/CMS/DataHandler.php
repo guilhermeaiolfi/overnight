@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace ON\CMS;
 
-use Cycle\ORM\Select;
 use Exception;
 use ON\CMS\Compiler\CycleCompiler;
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\FilterParser;
 use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
@@ -17,13 +15,16 @@ use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
 use ON\CMS\Parser\QueryParser;
-use ON\CMS\Select\Select as SelectSelect;
 use ON\DB\DatabaseConfig;
 use ON\DB\Manager;
+use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Registry as DefinitionRegistry;
+use ON\ORM\Factory;
+use ON\ORM\Select;
 
 class DataHandler
 {
-	protected Registry $registry;
+	protected DefinitionRegistry $registry;
 
 	protected $modifiers = [
 		MergeRelationsNormalizer::class,
@@ -65,7 +66,7 @@ class DataHandler
 		return $rootNode;
 	}
 
-	public function getSelectQuery(string $collection, array $queryParams): SelectSelect
+	public function getSelectQuery(string $collection, array $queryParams): Select
 	{
 		$collection = $this->registry->getCollection($collection);
 		$orm = $this->db->getDatabaseResource('cycle');
@@ -76,7 +77,8 @@ class DataHandler
 
 		$repository = $orm->getRepository($collection->getName());
 
-		$select = new SelectSelect($orm, $collection->getName()); //$repository->select();
+		$factory = new Factory($this->db->getDatabaseConnection('cycle'));
+		$select = new Select($this->registry, $factory, $orm, $collection->getName()); //$repository->select();
 		$builder = $select->getBuilder();
 		$loader = $select->getLoader();
 
@@ -101,7 +103,7 @@ class DataHandler
 		$relations = $this->getLoadRelations($rootNode);
 		$select->load($relations);
 		$loader->columns(["id", "name"]);
-		dd($loader);
+		//dd($loader);
 
 		// limit handling
 		$limit = 100;

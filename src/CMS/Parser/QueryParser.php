@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace ON\CMS\Parser;
 
 use Exception;
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\Node\FieldNode;
 use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\ShallowRelationNode;
+use ON\ORM\Definition\Registry;
 
 class QueryParser
 {

@@ -9,9 +9,9 @@ use Cycle\ORM\Mapper\StdMapper;
 use Cycle\ORM\Relation;
 use Cycle\ORM\Schema;
 use ON\Clockwork\CycleDatabaseLogger;
-use ON\CMS\Compiler\CycleCompiler;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
+use ON\ORM\Compiler\CycleCompiler;
 use StdClass;
 
 class CycleDatabaseFactory

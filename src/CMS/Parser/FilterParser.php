@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\CMS\Parser;
 
 use Cycle\Database\Injection\Parameter;
-use ON\CMS\Definition\Registry;
+use ON\ORM\Definition\Registry;
 
 class FilterParser
 {

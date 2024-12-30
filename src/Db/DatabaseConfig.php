@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ON\CMS\Definition\Registry;
 use On\Config\Config;
+use ON\ORM\Definition\Registry;
 
 class DatabaseConfig extends Config
 {

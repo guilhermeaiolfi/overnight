@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace ON\DB;
 
 use ON\Application;
-use ON\CMS\Definition\Interface\TagsInterface;
-use ON\CMS\Definition\Relation\HasManyRelation;
-use ON\CMS\Definition\Relation\HasOneRelation;
 use ON\Config\ConfigExtension;
 use ON\Container\ContainerConfig;
 use ON\DB\Command\MigrateCommand;
@@ -16,6 +13,9 @@ use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\Extension\AbstractExtension;
+use ON\ORM\Definition\Interface\TagsInterface;
+use ON\ORM\Definition\Relation\HasManyRelation;
+use ON\ORM\Definition\Relation\HasOneRelation;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -55,6 +55,7 @@ class DatabaseExtension extends AbstractExtension
 		$registry->collection("users")
 		->field('id')
 			->primaryKey(true)
+			->type("int")
 			->typecast("int")
 		->end()
 		->field('email')
@@ -93,7 +94,7 @@ class DatabaseExtension extends AbstractExtension
 			->typecast("int")
 		->end()
 		->field('name')->type('string')->end()
-		->field('user_id')->type('int')->end()
+		//->field('user_id')->type('int')->end()
 		->relation("user", HasOneRelation::class)
 			->collection('users')
 			->nullable(true)

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\CMS\Parser\Normalizer;
 
 use Exception;
-use ON\CMS\Definition\Collection\CollectionInterface;
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\Node\RelationNode;
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Registry;
 
 class VerifyNamesNormalizer
 {

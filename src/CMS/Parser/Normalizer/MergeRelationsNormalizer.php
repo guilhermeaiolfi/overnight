@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\CMS\Parser\Normalizer;
 
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\Node\ShallowRelationNode;
+use ON\ORM\Definition\Registry;
 
 class MergeRelationsNormalizer
 {

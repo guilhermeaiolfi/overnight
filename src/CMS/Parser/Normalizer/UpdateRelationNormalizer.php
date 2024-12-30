@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\CMS\Parser\Normalizer;
 
 use Cycle\ORM\Select\AbstractLoader;
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\Node\RelationNode;
+use ON\ORM\Definition\Registry;
 
 class UpdateRelationNormalizer
 {
