@@ -7,7 +7,6 @@ namespace ON\ORM\Select\Loader;
 use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Parser\RootNode;
 use Cycle\ORM\Relation;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
@@ -30,12 +29,11 @@ final class SubQueryLoader extends JoinableLoader
 
 	public function __construct(
 		Registry $registry,
-		SchemaInterface $ormSchema,
 		FactoryInterface $factory,
 		JoinableLoader $loader,
 		array $options
 	) {
-		parent::__construct($registry, $ormSchema, $factory, $loader->name, $loader->getTarget(), $loader->schema);
+		parent::__construct($registry, $factory, $loader->name, $loader->getTarget(), $loader->schema);
 
 		$this->loader = $loader->withContext($this, [
 			'method' => self::SUBQUERY,

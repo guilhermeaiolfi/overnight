@@ -29,11 +29,13 @@
         "laminas/laminas-authentication": "^2.18",
         "laminas/laminas-session": "^2.21",
         "spatie/php-structure-discoverer": "^2.2",
-        "cycle/orm": "^2.9"
+        "cycle/orm": "^2.9",
+        "cycle/migrations": "^4.2",
+        "cycle/schema-migrations-generator": "^2.2"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
-        "phpunit/phpunit": "11.x.x",
+        "phpunit/phpunit": "^11.5",
         "kint-php/kint": "^5.1",
         "filp/whoops": "^2.16",
         "friendsofphp/php-cs-fixer": "^3.64"

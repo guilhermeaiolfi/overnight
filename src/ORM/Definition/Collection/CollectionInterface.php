@@ -17,7 +17,15 @@ interface CollectionInterface
 
 	public function scope(string $scope): self;
 
-	public function getScope(): string;
+	public function getScope(): ?string;
+
+	public function source(string $source): self;
+
+	public function getSource(): ?string;
+
+	public function database(string $database): self;
+
+	public function getDatabase(): string;
 
 	public function repository(string $repository): self;
 
@@ -54,4 +62,8 @@ interface CollectionInterface
 	public function end(): Registry;
 
 	public function getRegistry(): Registry;
+
+	public function parentCollection(string $parentCollection): self;
+
+	public function getParentCollection(): ?string;
 }

@@ -11,8 +11,8 @@ use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use Cycle\ORM\Relation;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\LoaderInterface;
@@ -46,23 +46,19 @@ class ManyToManyLoader extends JoinableLoader
 
 	public function __construct(
 		Registry $registry,
-		SchemaInterface $ormSchema,
 		FactoryInterface $factory,
 		string $name,
-		string $target,
-		array $schema
+		RelationInterface $relation,
 	) {
-		parent::__construct($registry, $ormSchema, $factory, $name, $target, $schema);
+		parent::__construct($registry, $factory, $name, $relation);
 		$this->pivot = new PivotLoader(
 			$registry,
-			$ormSchema,
 			$factory,
 			'pivot',
-			$schema[Relation::THROUGH_ENTITY],
-			$schema
+			$relation
 		);
-		$this->options['where'] = $schema[Relation::WHERE] ?? [];
-		$this->options['orderBy'] = $schema[Relation::ORDER_BY] ?? [];
+		$this->options['where'] = $relation->getWhere() ?? [];
+		$this->options['orderBy'] = $relation->getOrderBy() ?? [];
 	}
 
 	/**
@@ -125,11 +121,11 @@ class ManyToManyLoader extends JoinableLoader
 
 		// Manually join pivoted table
 		if ($this->isJoined()) {
-			$parentKeys = (array)$this->schema[Relation::INNER_KEY];
-			$throughOuterKeys = (array)$this->pivot->schema[Relation::THROUGH_OUTER_KEY];
+			$parentKeys = (array)$this->relation->getInnerKey();
+			$throughOuterKeys = (array)$this->pivot->relation->through->getOuterKey();
 			$parentPrefix = $this->parent->getAlias() . '.';
 			$on = [];
-			foreach ((array)$this->pivot->schema[Relation::THROUGH_INNER_KEY] as $i => $key) {
+			foreach ((array)$this->pivot->relation->through->getInnerKey() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 			}
@@ -140,7 +136,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$on = [];
-			foreach ((array)$this->schema[Relation::OUTER_KEY] as $i => $key) {
+			foreach ((array)$this->relation->getOuterKey() as $i => $key) {
 				$field = $localPrefix . $this->fieldAlias($key);
 				$on[$field] = $pivotPrefix . $this->pivot->fieldAlias($throughOuterKeys[$i]);
 			}
@@ -154,9 +150,9 @@ class ManyToManyLoader extends JoinableLoader
 			// since underlying loader believes it's loaded)
 			$query->columns([]);
 
-			$outerKeyList = (array)$this->schema[Relation::OUTER_KEY];
+			$outerKeyList = (array)$this->relation->getOuterKey();
 			$on = [];
-			foreach ((array)$this->pivot->schema[Relation::THROUGH_OUTER_KEY] as $i => $key) {
+			foreach ((array)$this->pivot->relation->through->getOuterKey() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $localPrefix . $this->fieldAlias($outerKeyList[$i]);
 			}
@@ -167,7 +163,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$fields = [];
-			foreach ((array)$this->pivot->schema[Relation::THROUGH_INNER_KEY] as $key) {
+			foreach ((array)$this->pivot->relation->through->getInnerKey() as $key) {
 				$fields[] = $pivotPrefix . $this->pivot->fieldAlias($key);
 			}
 
@@ -231,11 +227,13 @@ class ManyToManyLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
+		$collection = $this->registry->getCollection($this->target);
+
 		return new SingularNode(
 			$this->columnNames(),
-			(array)$this->define(SchemaInterface::PRIMARY_KEY),
-			(array)$this->schema[Relation::OUTER_KEY],
-			(array)$this->schema[Relation::THROUGH_OUTER_KEY]
+			(array)$collection->getPrimaryKey(true),
+			(array)$this->relation->getOuterKey(),
+			(array)$this->relation->throut->getOuterKey()
 		);
 	}
 }

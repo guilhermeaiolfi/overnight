@@ -8,7 +8,6 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use Cycle\ORM\Relation;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\Traits\WhereTrait;
 
@@ -35,7 +34,7 @@ class PivotLoader extends JoinableLoader
 
 	public function getTable(): string
 	{
-		return $this->define(SchemaInterface::TABLE);
+		return $this->target;
 	}
 
 	public function configureQuery(SelectQuery $query, array $outerKeys = []): SelectQuery
@@ -44,7 +43,7 @@ class PivotLoader extends JoinableLoader
 		$this->setWhere(
 			$query,
 			$this->isJoined() ? 'onWhere' : 'where',
-			$this->options['where'] ?? $this->schema[Relation::THROUGH_WHERE] ?? []
+			$this->relation->through->getWhere()
 		);
 
 		return parent::configureQuery($query, $outerKeys);
@@ -52,11 +51,13 @@ class PivotLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
+		$collection = $this->registry->getCollection($this->target);
+
 		return new ArrayNode(
 			$this->columnNames(),
-			(array)$this->define(SchemaInterface::PRIMARY_KEY),
-			(array)$this->schema[Relation::THROUGH_INNER_KEY],
-			(array)$this->schema[Relation::INNER_KEY]
+			(array)$collection->getPrimaryKey(true),
+			(array)$this->relation->through->getOuterKey(),
+			(array)$this->relation->getInnerKey()
 		);
 	}
 }

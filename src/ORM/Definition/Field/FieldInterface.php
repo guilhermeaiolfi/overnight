@@ -33,6 +33,10 @@ interface FieldInterface
 
 	public function getName(): string;
 
+	public function alias(string $alias): self;
+
+	public function getAlias(): string;
+
 	public function setGeneratedFromRelation(string $name): self;
 
 	public function getGeneratedFromRelation(): string;

@@ -95,7 +95,6 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 		$this->entityFactory = $orm->getService(EntityFactoryInterface::class);
 		$this->loader = new RootLoader(
 			$registry,
-			$orm->getSchema(),
 			$factory,
 			$orm->resolveRole($role)
 		);

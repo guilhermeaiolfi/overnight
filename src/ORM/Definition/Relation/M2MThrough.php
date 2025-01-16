@@ -7,8 +7,8 @@ namespace ON\ORM\Definition\Relation;
 class M2MThrough
 {
 	public string $collection;
-	public string $inner_key;
-	public string $outer_key;
+	public mixed $inner_key;
+	public mixed $outer_key;
 	public array $where;
 
 	public function __construct(
@@ -29,26 +29,26 @@ class M2MThrough
 		return $this->collection;
 	}
 
-	public function innerKey(string $key): self
+	public function innerKey(mixed $key): self
 	{
 		$this->inner_key = $key;
 
 		return $this;
 	}
 
-	public function getInnerKey(): string
+	public function getInnerKey(): mixed
 	{
 		return $this->inner_key;
 	}
 
-	public function outerKey(string $key): self
+	public function outerKey(mixed $key): self
 	{
 		$this->outer_key = $key;
 
 		return $this;
 	}
 
-	public function getOuterKey(): string
+	public function getOuterKey(): mixed
 	{
 		return $this->outer_key;
 	}

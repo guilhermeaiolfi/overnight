@@ -12,14 +12,18 @@ use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\Definition\Relation\RelationMap;
+use ON\ORM\Select\Source;
 use stdClass;
 
 class Collection implements CollectionInterface
 {
 	public string $name;
 	public ?string $note = null;
+	public ?string $source = Source::class;
 	public bool $hidden = false;
 	public string $mapper = StdMapper::class;
+	public string $database = "default";
+	public ?string $parentCollection = null;
 	public string $entity = stdClass::class;
 	public FieldMap $fields;
 	public RelationMap $relations;
@@ -34,7 +38,7 @@ class Collection implements CollectionInterface
 	/**
 	 * @var class-string<ScopeInterface>|null
 	 */
-	private ?string $scope = null;
+	protected ?string $scope = null;
 
 	/**
 	 * @var class-string<RepositoryInterface>|null
@@ -53,6 +57,30 @@ class Collection implements CollectionInterface
 		return $this->entity;
 	}
 
+	public function database(string $database): self
+	{
+		$this->database = $database;
+
+		return $this;
+	}
+
+	public function getDatabase(): string
+	{
+		return $this->database;
+	}
+
+	public function parentCollection(string $parentCollection): self
+	{
+		$this->parentCollection = $parentCollection;
+
+		return $this;
+	}
+
+	public function getParentCollection(): ?string
+	{
+		return $this->parentCollection;
+	}
+
 	public function scope(string $scope): self
 	{
 		$this->scope = $scope;
@@ -60,7 +88,7 @@ class Collection implements CollectionInterface
 		return $this;
 	}
 
-	public function getScope(): string
+	public function getScope(): ?string
 	{
 		return $this->scope;
 	}
@@ -113,6 +141,18 @@ class Collection implements CollectionInterface
 		return $this->note;
 	}
 
+	public function source(string $source): self
+	{
+		$this->source = $source;
+
+		return $this;
+	}
+
+	public function getSource(): ?string
+	{
+		return $this->source;
+	}
+
 	public function hidden(bool $hidden): self
 	{
 		$this->hidden = $hidden;
@@ -151,12 +191,12 @@ class Collection implements CollectionInterface
 	}
 
 	/** @return FieldInterface[]|FieldInterface */
-	public function getPrimaryKey(): mixed
+	public function getPrimaryKey(bool $parse = false): mixed
 	{
 		$pk = [];
 		foreach ($this->fields as $name => $field) {
 			if ($field->isPrimaryKey()) {
-				$pk[] = $field;
+				$pk[] = $parse ? $field->getName() : $field;
 			}
 		}
 		if (count($pk) == 1) {

@@ -21,6 +21,8 @@ class Field implements FieldInterface
 
 	protected ?string $type = null;
 
+	protected ?string $alias = null;
+
 	protected bool $required = false;
 
 	protected bool $sensible = false;
@@ -60,6 +62,18 @@ class Field implements FieldInterface
 	public function getName(): string
 	{
 		return $this->name;
+	}
+
+	public function alias(string $alias): self
+	{
+		$this->alias = $alias;
+
+		return $this;
+	}
+
+	public function getAlias(): string
+	{
+		return $this->alias ?? $this->name;
 	}
 
 	public function type(string $type): self

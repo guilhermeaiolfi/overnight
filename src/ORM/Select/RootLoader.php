@@ -8,7 +8,6 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
-use Cycle\ORM\SchemaInterface;
 use function is_array;
 use ON\ORM\Definition\Registry;
 use ON\ORM\FactoryInterface;
@@ -43,16 +42,15 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function __construct(
 		Registry $registry,
-		SchemaInterface $ormSchema,
 		FactoryInterface $factory,
 		string $target,
 		bool $loadRelations = true,
 	) {
-		parent::__construct($registry, $ormSchema, $factory, $target);
+		parent::__construct($registry, $factory, $target);
 		$this->query = $this->source->getDatabase()->select()->from(
 			sprintf('%s AS %s', $this->source->getTable(), $this->getAlias())
 		);
-		$this->columns = $this->normalizeColumns($this->define(SchemaInterface::COLUMNS));
+		$this->columns = $this->normalizeColumns((array) $this->registry->getCollection($target)->fields->getColumnNames());
 
 		if ($loadRelations) {
 			foreach ($this->getEagerLoaders() as $relation) {
@@ -82,17 +80,17 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPK(): array|string
 	{
-		$pk = $this->define(SchemaInterface::PRIMARY_KEY);
+		$pk = $this->registry->getCollection($this->target)->getPrimaryKey();
 		if (is_array($pk)) {
 			$result = [];
-			foreach ($pk as $key) {
-				$result[] = $this->getAlias() . '.' . $this->fieldAlias($key);
+			foreach ($pk as $field) {
+				$result[] = $this->target . '.' . $field->getAlias();
 			}
 
 			return $result;
 		}
 
-		return $this->getAlias() . '.' . $this->fieldAlias($pk);
+		return $this->target . '.' . $pk->getAlias();
 	}
 
 	/**
@@ -102,7 +100,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPrimaryFields(): array
 	{
-		return (array)$this->define(SchemaInterface::PRIMARY_KEY);
+		return $this->registry->getCollection($this->target)->getPrimaryKey(true);
 	}
 
 	/**
@@ -154,7 +152,7 @@ final class RootLoader extends AbstractLoader
 
 	protected function initNode(): RootNode
 	{
-		return new RootNode($this->columnNames(), (array)$this->define(SchemaInterface::PRIMARY_KEY));
+		return new RootNode($this->columnNames(), (array)$this->registry->getCollection($this->target)->getPrimaryKey(true));
 	}
 
 	public function columns(array $columns): void

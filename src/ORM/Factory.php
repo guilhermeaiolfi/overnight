@@ -11,18 +11,10 @@ use Cycle\ORM\Collection\CollectionFactoryInterface;
 use Cycle\ORM\Config\RelationConfig;
 use Cycle\ORM\Exception\TypecastException;
 use Cycle\ORM\Mapper\Mapper;
-use Cycle\ORM\Relation;
 use Cycle\ORM\SchemaInterface;
 use function is_object;
 use function is_subclass_of;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Select\Loader\BelongsToLoader;
-use ON\ORM\Select\Loader\EmbeddedLoader;
-use ON\ORM\Select\Loader\HasManyLoader;
-use ON\ORM\Select\Loader\HasOneLoader;
-use ON\ORM\Select\Loader\ManyToManyLoader;
-use ON\ORM\Select\Loader\Morphed\MorphedHasManyLoader;
-use ON\ORM\Select\Loader\Morphed\MorphedHasOneLoader;
 use ON\ORM\Select\Loader\ParentLoader;
 use ON\ORM\Select\Loader\SubclassLoader;
 use ON\ORM\Select\LoaderInterface;
@@ -79,59 +71,36 @@ final class Factory implements FactoryInterface
 
 	public function loader(
 		Registry $registry,
-		SchemaInterface $schema,
-		string $role,
+		string $collection_name,
 		string $relation
 	): LoaderInterface {
-		if ($relation === self::PARENT_LOADER) {
-			$parent = $schema->define($role, SchemaInterface::PARENT);
+
+		//echo $collection_name . ":" . $relation . " | ";
+		$collection = $registry->getCollection($collection_name);
+		/*if ($relation === self::PARENT_LOADER) {
+			$parent = $collection->getParentCollection();
 
 			return new ParentLoader($registry, $schema, $this, $role, $parent);
 		}
 		if ($relation === self::CHILD_LOADER) {
-			$parent = $schema->define($role, SchemaInterface::PARENT);
+			$parent = $collection->getParentCollection();
 
 			return new SubclassLoader($registry, $schema, $this, $parent, $role);
-		}
-		$definition = $schema->defineRelation($role, $relation);
+		}*/
+		$relation = $collection->relations->get($relation);
 
+		/*[
+			'ormSchema' => $schema,
+			'sourceProvider' => $sourceProvider,
+			'factory' => $this,
+			'role' => $role,
+			'name' => $relation,
+			'target' => $definition[Relation::TARGET],
+			'schema' => $definition[Relation::SCHEMA],
+		]*/
+		$loader = $relation->getLoader();
 
-		switch ($definition[Relation::TYPE]) {
-
-			case Relation::EMBEDDED:
-				return new EmbeddedLoader($registry, $schema, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-
-			case Relation::HAS_ONE:
-				return new HasOneLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::BELONGS_TO:
-				return new BelongsToLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::REFERS_TO:
-				return new BelongsToLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::HAS_MANY:
-				return new HasManyLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::MANY_TO_MANY:
-				return new ManyToManyLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::MORPHED_HAS_ONE:
-				return new MorphedHasOneLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-			case Relation::MORPHED_HAS_MANY:
-				return new MorphedHasManyLoader($registry, $schema, $this, $relation, $definition[Relation::TARGET], $definition[Relation::SCHEMA]);
-
-				break;
-		}
+		return new $loader($registry, $this, $relation->getCollection(), $relation);
 	}
 
 	public function database(string $database = null): DatabaseInterface
@@ -140,25 +109,26 @@ final class Factory implements FactoryInterface
 	}
 
 	public function source(
-		SchemaInterface $schema,
-		string $role
+		Registry $registry,
+		string $collectionName
 	): SourceInterface {
+
+		$collection = $registry->getCollection($collectionName);
+
 		/** @var class-string<SourceInterface> $source */
-		$source = $schema->define($role, SchemaInterface::SOURCE) ?? $this->defaults[SchemaInterface::SOURCE];
+		$source = $registry->getCollection($collectionName)->getSource();
 
 		if (! is_subclass_of($source, SourceInterface::class)) {
 			throw new TypecastException($source . ' does not implement ' . SourceInterface::class);
 		}
 
-		$table = $schema->define($role, SchemaInterface::TABLE);
-		$database = $this->database($schema->define($role, SchemaInterface::DATABASE));
+		$table = $collectionName;
+		$database = $this->database($collection->getDatabase());
 
-		$source = $source !== Source::class
-			? $this->factory->make($source, ['role' => $role, 'table' => $table, 'database' => $database])
-			: new Source($database, $table);
+		$source = new $source($database, $table);
 
 		/** @var class-string<ScopeInterface>|ScopeInterface|null $scope */
-		$scope = $schema->define($role, SchemaInterface::SCOPE) ?? $this->defaults[SchemaInterface::SCOPE];
+		$scope = $collection->getScope();
 
 		if ($scope === null) {
 			return $source;

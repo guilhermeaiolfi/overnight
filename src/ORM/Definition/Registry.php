@@ -36,4 +36,11 @@ class Registry
 	{
 		return $this->collections;
 	}
+
+	public function getInheritedRoles(): array
+	{
+		// TODO: look in cycle Schema::getInheritedRoles;
+
+		return [];
+	}
 }

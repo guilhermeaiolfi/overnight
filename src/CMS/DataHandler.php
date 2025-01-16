@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\CMS;
 
+use Cycle\ORM\Select as CycleSelect;
 use Exception;
 use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Parser\FilterParser;
@@ -79,8 +80,9 @@ class DataHandler
 
 		$factory = new Factory($this->db->getDatabaseConnection('cycle'));
 		$select = new Select($this->registry, $factory, $orm, $collection->getName()); //$repository->select();
-		$builder = $select->getBuilder();
-		$loader = $select->getLoader();
+		//$select = new CycleSelect($orm, $collection->getName()); //$repository->select();
+		//$builder = $select->getBuilder();
+		//$loader = $select->getLoader();
 
 
 		// filter handling
@@ -102,7 +104,7 @@ class DataHandler
 		// relations loading
 		$relations = $this->getLoadRelations($rootNode);
 		$select->load($relations);
-		$loader->columns(["id", "name"]);
+		//$loader->columns(["id", "name"]);
 		//dd($loader);
 
 		// limit handling

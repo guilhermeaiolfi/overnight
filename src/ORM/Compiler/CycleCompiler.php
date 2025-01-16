@@ -39,7 +39,7 @@ class CycleCompiler
 			SchemaInterface::ROLE => $collection->getName(),
 			SchemaInterface::ENTITY => $collection->getEntity(),
 			SchemaInterface::MAPPER => $collection->getMapper(),
-			SchemaInterface::DATABASE => 'default',
+			SchemaInterface::DATABASE => $collection->getDatabase(),
 			SchemaInterface::TABLE => $collection->getName(),
 			SchemaInterface::PRIMARY_KEY => $this->getPrimaryKey($collection),
 			SchemaInterface::COLUMNS => $this->processFields($collection),

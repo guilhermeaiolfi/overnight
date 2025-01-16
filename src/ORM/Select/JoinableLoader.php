@@ -9,10 +9,10 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface;
 use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
-use Cycle\ORM\SchemaInterface;
 use function is_callable;
 use function is_string;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Loader\SubQueryLoader;
 use ON\ORM\Select\Traits\ColumnsTrait;
@@ -62,16 +62,18 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	 */
 	private bool $eagerLoaded = false;
 
+	protected ?string $name = null;
+
 	public function __construct(
 		Registry $registry,
-		SchemaInterface $ormSchema,
 		FactoryInterface $factory,
-		protected string $name,
-		string $target,
-		protected array $schema
+		string $collection,
+		protected RelationInterface $relation
 	) {
-		parent::__construct($registry, $ormSchema, $factory, $target);
-		$this->columns = $this->normalizeColumns($this->define(SchemaInterface::COLUMNS));
+		parent::__construct($registry, $factory, $collection);
+		$this->columns = $this->normalizeColumns((array) $registry->getCollection($collection)->fields->getColumnNames());
+
+		$this->name = $relation->getName();
 	}
 
 	/**
@@ -202,7 +204,7 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 			return $this->configureQuery($query);
 		}
 
-		$loader = new SubQueryLoader($this->registry, $this->ormSchema, $this->factory, $this, $this->options);
+		$loader = new SubQueryLoader($this->registry, $this->factory, $this, $this->options);
 
 		return $loader->configureQuery($query);
 	}
@@ -311,7 +313,7 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	 */
 	protected function getJoinTable(): string
 	{
-		return "{$this->define(SchemaInterface::TABLE)} AS {$this->getAlias()}";
+		return "{$this->target} AS {$this->getAlias()}";
 	}
 
 	private function makeQueryBuilder(SelectQuery $query): QueryBuilder

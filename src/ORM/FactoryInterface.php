@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\ORM;
 
 use Cycle\Database\DatabaseProviderInterface;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\LoaderInterface;
 use ON\ORM\Select\SourceInterface;
@@ -24,7 +23,6 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 */
 	public function loader(
 		Registry $registry,
-		SchemaInterface $schema,
 		string $role,
 		string $relation
 	): LoaderInterface;
@@ -33,7 +31,7 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 * Create source associated with given role.
 	 */
 	public function source(
-		SchemaInterface $schema,
-		string $role
+		Registry $registry,
+		string $collection
 	): SourceInterface;
 }

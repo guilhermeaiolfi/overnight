@@ -8,7 +8,6 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use Cycle\ORM\Relation;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\Traits\JoinOneTableTrait;
 use ON\ORM\Select\Traits\WhereTrait;
@@ -61,11 +60,13 @@ class HasOneLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
+		$collection = $this->registry->getCollection($this->target);
+
 		return new SingularNode(
 			$this->columnNames(),
-			(array)$this->define(SchemaInterface::PRIMARY_KEY),
-			(array)$this->schema[Relation::OUTER_KEY],
-			(array)$this->schema[Relation::INNER_KEY]
+			(array)$collection->getPrimaryKey(true),
+			(array)$this->relation->getOuterKey(),
+			(array)$this->relation->getInnerKey()
 		);
 	}
 }

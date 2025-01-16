@@ -39,13 +39,25 @@ interface RelationInterface
 
 	public function getLoadStrategy(): string;
 
-	public function innerKey(string $key): self;
+	public function innerKey(mixed $key): self;
 
-	public function getInnerKey(): string;
+	public function getInnerKey(): mixed;
 
-	public function outerKey(string $key): self;
+	public function outerKey(mixed $key): self;
 
-	public function getOuterKey(): string;
+	public function getOuterKey(): mixed;
+
+	public function loader(string $loader): self;
+
+	public function getLoader(): string;
+
+	public function where(array $where): self;
+
+	public function getWhere(): array;
+
+	public function orderBy(array $orderBy): self;
+
+	public function getOrderBy(): array;
 
 	public function end(): CollectionInterface;
 }

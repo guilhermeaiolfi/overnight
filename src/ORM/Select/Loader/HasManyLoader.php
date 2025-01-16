@@ -9,8 +9,8 @@ use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use Cycle\ORM\Relation;
-use Cycle\ORM\SchemaInterface;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\Traits\JoinOneTableTrait;
@@ -42,13 +42,11 @@ class HasManyLoader extends JoinableLoader
 
 	public function __construct(
 		Registry $registry,
-		SchemaInterface $ormSchema,
 		FactoryInterface $factory,
-		string $name,
-		string $target,
-		array $schema
+		string $collection,
+		protected RelationInterface $relation
 	) {
-		parent::__construct($registry, $ormSchema, $factory, $name, $target, $schema);
+		parent::__construct($registry, $factory, $collection, $relation);
 		$this->options['where'] = $schema[Relation::WHERE] ?? [];
 		$this->options['orderBy'] = $schema[Relation::ORDER_BY] ?? [];
 	}
@@ -85,11 +83,13 @@ class HasManyLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
+		$collection = $this->registry->getCollection($this->target);
+
 		return new ArrayNode(
 			$this->columnNames(),
-			(array)$this->define(SchemaInterface::PRIMARY_KEY),
-			(array)$this->schema[Relation::OUTER_KEY],
-			(array)$this->schema[Relation::INNER_KEY]
+			(array)$collection->getPrimaryKey(true),
+			(array)$this->relation->getOuterKey(),
+			(array)$this->relation->getInnerKey()
 		);
 	}
 }

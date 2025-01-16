@@ -8,6 +8,7 @@ use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Select\Loader\BelongsToLoader;
 
 class HasOneRelation extends AbstractRelation
 {
@@ -52,5 +53,17 @@ class HasOneRelation extends AbstractRelation
 			->type($type);
 
 		return $field;
+	}
+
+	public function getLoader(): string
+	{
+		if (isset($this->loader)) {
+			return $this->loader;
+		}
+		if ($this->isNullable()) {
+			return BelongsToLoader::class;
+		}
+
+		return BelongsToLoader::class;
 	}
 }

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\ORM\Definition\Relation;
 
+use ON\ORM\Select\Loader\ManyToManyLoader;
+
 class M2MRelation extends AbstractRelation
 {
 	public M2MThrough $through;
@@ -11,6 +13,8 @@ class M2MRelation extends AbstractRelation
 	public array $order_by;
 	// Collection type that will contain loaded entities. By defaults uses Cycle\ORM\Collection\ArrayCollectionFactory
 	public string $collection_factory;
+
+	protected ?string $loader = ManyToManyLoader::class;
 
 	public function through(string $collection): M2MThrough
 	{

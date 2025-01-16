@@ -21,13 +21,20 @@ abstract class AbstractRelation implements RelationInterface
 	// lazy || eager
 	public string $load = "lazy";
 
-	public string $inner_key;
+	public array $inner_key;
 
-	public string $outer_key;
+	public array $outer_key;
 
 	public string $collection;
 
 	public string $name;
+
+	public array $where = [];
+
+	// format: ['key1' => 'asc', 'key2' => 'asc']
+	public array $orderBy = [];
+
+	protected ?string $loader = null;
 
 	public function __construct(
 		public CollectionInterface $parent
@@ -71,6 +78,30 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->nullable;
 	}
 
+	public function where(array $where): self
+	{
+		$this->where = $where;
+
+		return $this;
+	}
+
+	public function getWhere(): array
+	{
+		return $this->where;
+	}
+
+	public function orderBy(array $orderBy): self
+	{
+		$this->orderBy = $orderBy;
+
+		return $this;
+	}
+
+	public function getOrderBy(): array
+	{
+		return $this->orderBy;
+	}
+
 	public function cascade(bool $cascade): self
 	{
 		$this->cascade = $cascade;
@@ -95,28 +126,40 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->load;
 	}
 
-	public function innerKey(string $key): self
+	public function innerKey(mixed $key): self
 	{
 		$this->inner_key = $key;
 
 		return $this;
 	}
 
-	public function getInnerKey(): string
+	public function getInnerKey(): mixed
 	{
 		return $this->inner_key;
 	}
 
-	public function outerKey(string $key): self
+	public function outerKey(mixed $key): self
 	{
 		$this->outer_key = $key;
 
 		return $this;
 	}
 
-	public function getOuterKey(): string
+	public function getOuterKey(): mixed
 	{
 		return $this->outer_key;
+	}
+
+	public function loader(string $loader): self
+	{
+		$this->loader = $loader;
+
+		return $this;
+	}
+
+	public function getLoader(): string
+	{
+		return $this->loader;
 	}
 
 	public function end(): CollectionInterface
