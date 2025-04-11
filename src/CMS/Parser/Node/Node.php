@@ -8,11 +8,32 @@ class Node
 {
 	public array $children = [];
 
+	public ?string $modifier = null;
+
 	public function __construct(
 		public string $name,
 		public ?Node $parent = null
 	) {
 
+	}
+
+	public function getChildren(mixed $filterClass_or_callable = null): array
+	{
+		if (! isset($filterClass_or_callable)) {
+			return $this->children;
+		}
+		$result = [];
+		foreach ($this->children as $child) {
+			if (is_string($filterClass_or_callable) && is_a($child, $filterClass_or_callable)) {
+				$result[] = $child;
+			} elseif (is_callable($filterClass_or_callable)) {
+				if (call_user_func($filterClass_or_callable, $child)) {
+					$result[] = $child;
+				}
+			}
+		}
+
+		return $result;
 	}
 
 	public function addNode(Node $node): self
@@ -46,7 +67,7 @@ class Node
 		return false;
 	}
 
-	public function findNode(string $name): Node
+	public function findNode(string $name): ?Node
 	{
 		foreach ($this->children as $node) {
 			if ($node->name == $name) {
@@ -72,7 +93,7 @@ class Node
 			return $children;
 		}
 
-		return $this->name;
+		return ($this->modifier ?? "") . $this->name;
 	}
 
 	public function getPath(int $offset = 0, ?int $length = null): array

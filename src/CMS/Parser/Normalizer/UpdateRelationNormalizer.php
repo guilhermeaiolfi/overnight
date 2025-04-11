@@ -56,5 +56,7 @@ class UpdateRelationNormalizer
 			case "~":
 				return AbstractLoader::LEFT_JOIN;
 		}
+
+		return AbstractLoader::POSTLOAD;
 	}
 }

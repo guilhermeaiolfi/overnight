@@ -12,8 +12,8 @@ class RelationNode extends Node
 		public string $name,
 		public ?Node $parent = null,
 		public ?string $collection = null,
-		public ?string $modifier = null
+		?string $modifier = null
 	) {
-
+		$this->modifier = $modifier;
 	}
 }

@@ -39,6 +39,7 @@ class ItemsPage
 		$select = $this->dataHandler->getSelectQuery($collection, $query);
 
 		/** @var Select $select */
+
 		$all = $select->fetchData();
 		//dd($all);
 

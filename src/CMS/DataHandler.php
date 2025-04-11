@@ -4,21 +4,20 @@ declare(strict_types=1);
 
 namespace ON\CMS;
 
-use Cycle\ORM\Select as CycleSelect;
 use Exception;
-use ON\CMS\Compiler\CycleCompiler;
 use ON\CMS\Parser\FilterParser;
+use ON\CMS\Parser\Node\FieldNode;
 use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\ShallowRelationNode;
+use ON\CMS\Parser\Normalizer\IncludeColumnsNormalizer;
 use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
 use ON\CMS\Parser\QueryParser;
 use ON\DB\DatabaseConfig;
 use ON\DB\Manager;
-use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Registry as DefinitionRegistry;
 use ON\ORM\Factory;
 use ON\ORM\Select;
@@ -31,6 +30,7 @@ class DataHandler
 		MergeRelationsNormalizer::class,
 		UpdateRelationNormalizer::class,
 		VerifyNamesNormalizer::class,
+		//IncludeColumnsNormalizer::class,
 	];
 
 	protected array $modifierInstances = [];
@@ -70,42 +70,29 @@ class DataHandler
 	public function getSelectQuery(string $collection, array $queryParams): Select
 	{
 		$collection = $this->registry->getCollection($collection);
-		$orm = $this->db->getDatabaseResource('cycle');
-
-		/*$compiler = new CycleCompiler($this->registry);
-		$compiler->compile();
-		$schema = $orm->getSchema();*/
-
-		$repository = $orm->getRepository($collection->getName());
 
 		$factory = new Factory($this->db->getDatabaseConnection('cycle'));
-		$select = new Select($this->registry, $factory, $orm, $collection->getName()); //$repository->select();
-		//$select = new CycleSelect($orm, $collection->getName()); //$repository->select();
-		//$builder = $select->getBuilder();
-		//$loader = $select->getLoader();
-
+		$select = new Select($this->registry, $factory, $collection); //$repository->select();
 
 		// filter handling
 		$filter = json_decode($queryParams["filter"], true);
 
-		if (! isset($queryParams["filter"]) && ! $filter) {
+		if (isset($queryParams["filter"]) && ! $filter) {
 			throw new Exception("Invalid filter sintax");
 		}
 		$where = $this->filterParser->parse($filter);
-		//dd($where);
 		$select->where($where);
-
 
 
 		$query = $collection->getName() . "{" . $queryParams["fields"] . "}";
 		$rootNode = $this->parseQuery($query);
 
+		// select columns for the main collection
+		$select->columns($this->getColumnsFilter($rootNode));
 
-		// relations loading
+		// relations loading, including the columns to load in each relation
 		$relations = $this->getLoadRelations($rootNode);
 		$select->load($relations);
-		//$loader->columns(["id", "name"]);
-		//dd($loader);
 
 		// limit handling
 		$limit = 100;
@@ -125,9 +112,6 @@ class DataHandler
 			$offset = $queryParams["offset"];
 		}
 		$select->offset($offset);
-
-
-		//dd($select->fetchData());
 
 		return $select;
 	}
@@ -156,15 +140,31 @@ class DataHandler
 		return $relations;
 	}
 
-	public function getLoadOptions(RelationNode $node): array
+	public function getColumnsFilter(Node $node): array
 	{
-		if (isset($node->method)) {
-			return [
-				"method" => $node->method,
-			];
+		$fields = $node->getChildren(FieldNode::class);
+
+		$columns = [];
+		foreach ($fields as $i => $field) {
+			if ($field->name == "*") {
+				return ["*"];
+			}
+			$columns[$field->name] = true;
 		}
 
-		return [];
+		return $columns;
+	}
+
+	public function getLoadOptions(RelationNode $node): array
+	{
+
+		$options = [];
+		if (isset($node->method)) {
+			$options["method"] = $node->method;
+		}
+		$options["columns"] = $this->getColumnsFilter($node);
+
+		return $options;
 	}
 
 	public function getLoadRelations(Node $root): array

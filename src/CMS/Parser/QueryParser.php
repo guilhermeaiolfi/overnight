@@ -10,6 +10,7 @@ use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\ShallowRelationNode;
+use ON\CMS\Parser\Node\VirtualNode;
 use ON\ORM\Definition\Registry;
 
 class QueryParser
@@ -22,7 +23,7 @@ class QueryParser
 
 	public function hasModifier($token): bool
 	{
-		return in_array($token[0], ["%", "~", ":", "!"]);
+		return in_array($token[0], ["+", "-", "%", "~", ":", "!"]);
 	}
 
 	public function getModifier($token): ?string
@@ -34,7 +35,7 @@ class QueryParser
 		return null;
 	}
 
-	public function createNode(string $token, RelationNode|RootNode $currentNode = null, bool $shallow = false): Node
+	public function createNode(string $token, mixed $currentNode, bool $shallow = false): Node
 	{
 		if (! isset($currentNode)) {
 			$collection = $this->registry->getCollection($token);
@@ -47,19 +48,18 @@ class QueryParser
 
 		$collection = $this->registry->getCollection($currentNode->collection);
 
-		if ($token == "parts" && $currentNode->collection == "users") {
-			//var_dump(array_keys($collection->relations), $collection->relations->has($token));
-			//exit;
+		$modifier = $this->getModifier($token);
+		if ($modifier) {
+			$token = substr($token, 1);
 		}
+
 		if ($collection->relations->has($token)) {
 			$relation = $collection->relations->get($token);
 			$collection = $this->registry->getCollection($currentNode->collection);
 			$relationCollection = $this->registry->getCollection($relation->getCollection());
-			$modifier = $this->getModifier($token);
+
 			$node = null;
-			if ($modifier) {
-				$token = substr($token, 1);
-			}
+
 			if ($shallow) {
 				$node = new ShallowRelationNode($token, $currentNode, $relationCollection->getName(), $modifier);
 			} else {
@@ -67,6 +67,11 @@ class QueryParser
 			}
 		} elseif ($collection->fields->has($token)) {
 			$node = new FieldNode($token, $currentNode);
+			if (isset($modifier)) {
+				$node->modifier = $modifier;
+			}
+		} elseif ($token == "*") {
+			$node = new VirtualNode($token, $currentNode);
 		} else {
 			throw new Exception("There is no field {$token} in collection " . $collection->getName());
 		}
@@ -135,6 +140,7 @@ class QueryParser
 				$token = "";
 
 			} elseif (($currentPos + 1) == strlen($query)) {
+				// end of string
 				$token .= $char;
 				$currentNode->addNode(
 					$this->createNode($token, $currentNode)

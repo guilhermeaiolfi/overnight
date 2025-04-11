@@ -40,6 +40,11 @@
         "filp/whoops": "^2.16",
         "friendsofphp/php-cs-fixer": "^3.64"
     },
+    "autoload-dev": {
+      "psr-4": {
+        "Tests\\ON\\": "tests/"
+      }
+    },
     "autoload": {
       "files": [
 
