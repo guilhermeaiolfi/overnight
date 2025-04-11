@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\ORM;
 
 use Cycle\Database\DatabaseProviderInterface;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\LoaderInterface;
 use ON\ORM\Select\SourceInterface;
@@ -23,8 +24,9 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 */
 	public function loader(
 		Registry $registry,
-		string $role,
-		string $relation
+		Collection $collection,
+		string $relation,
+		array $options
 	): LoaderInterface;
 
 	/**
@@ -32,6 +34,6 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 */
 	public function source(
 		Registry $registry,
-		string $collection
+		Collection $collection
 	): SourceInterface;
 }

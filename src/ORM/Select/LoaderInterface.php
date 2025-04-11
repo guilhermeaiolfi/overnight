@@ -6,6 +6,7 @@ namespace ON\ORM\Select;
 
 use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
+use ON\ORM\Definition\Collection\Collection;
 
 /**
  * Loaders provide the ability to create data tree based on set of nested queries or parse resulted
@@ -23,7 +24,7 @@ interface LoaderInterface
 	/**
 	 * Loader specific entity class.
 	 */
-	public function getTarget(): string;
+	public function getTarget(): Collection;
 
 	/**
 	 * Get column name related to internal key.

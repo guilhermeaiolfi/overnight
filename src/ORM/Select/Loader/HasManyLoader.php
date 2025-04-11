@@ -9,6 +9,7 @@ use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use Cycle\ORM\Relation;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
@@ -38,15 +39,17 @@ class HasManyLoader extends JoinableLoader
 		'using' => null,
 		'where' => null,
 		'orderBy' => null,
+		'columns' => ['*'],
 	];
 
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		string $collection,
-		protected RelationInterface $relation
+		Collection $collection,
+		protected RelationInterface $relation,
+		array $options
 	) {
-		parent::__construct($registry, $factory, $collection, $relation);
+		parent::__construct($registry, $factory, $collection, $relation, $options);
 		$this->options['where'] = $schema[Relation::WHERE] ?? [];
 		$this->options['orderBy'] = $schema[Relation::ORDER_BY] ?? [];
 	}
@@ -83,11 +86,10 @@ class HasManyLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
-		$collection = $this->registry->getCollection($this->target);
 
 		return new ArrayNode(
 			$this->columnNames(),
-			(array)$collection->getPrimaryKey(true),
+			(array)$this->target->getPrimaryKey(true),
 			(array)$this->relation->getOuterKey(),
 			(array)$this->relation->getInnerKey()
 		);

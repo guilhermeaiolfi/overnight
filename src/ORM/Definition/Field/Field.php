@@ -40,14 +40,14 @@ class Field implements FieldInterface
 
 	}
 
-	public function setGeneratedFromRelation(string $relation_name): self
+	public function setGeneratedFromRelation(?string $relation_name): self
 	{
 		$this->generatedFromRelation = $relation_name;
 
 		return $this;
 	}
 
-	public function getGeneratedFromRelation(): string
+	public function getGeneratedFromRelation(): ?string
 	{
 		return $this->generatedFromRelation;
 	}

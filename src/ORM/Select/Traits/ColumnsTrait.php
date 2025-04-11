@@ -11,6 +11,7 @@ use function explode;
 use function implode;
 use function is_int;
 use JetBrains\PhpStorm\Pure;
+use ON\ORM\Definition\Collection\Collection;
 
 /**
  * Provides ability to add aliased columns into SelectQuery.
@@ -108,5 +109,63 @@ trait ColumnsTrait
 		}
 
 		return $result;
+	}
+
+	public function getMandatoryColumns(Collection $collection): array
+	{
+		$columns = [];
+		foreach ($collection->fields as $field) {
+			if ($field->isPrimaryKey() || $field->getGeneratedFromRelation()) {
+				$columns[$field->getName()] = $field->getColumn();
+			}
+		}
+
+		return $columns;
+	}
+
+	/**
+	 * if $columnsFilter is null, it should return all columns
+	 */
+	public function resolveColumns(Collection $collection, array $columnsFilter): array
+	{
+		$columns = [];
+
+		$mandatory = $this->getMandatoryColumns($collection);
+
+		if (count($columnsFilter) == 0) {
+			return $mandatory;
+		}
+
+		if (count($columnsFilter) == 1 && isset($columnsFilter[0]) && $columnsFilter[0] == "*") {
+			$columns = (array) $collection->fields->getColumnNames();
+
+			return $this->normalizeColumns($columns);
+		}
+
+		if (! $this->hasIncludeColumn($columnsFilter)) {
+			$columns = (array) $collection->fields->getColumnNames();
+			$columns = $this->normalizeColumns($columns);
+		}
+
+		foreach ($columnsFilter as $name => $include) {
+			if ($include) {
+				$columns[$name] = $name;
+			} else {
+				unset($columns[$name]);
+			}
+		}
+
+		return array_merge($columns, $mandatory);
+	}
+
+	protected function hasIncludeColumn(array $columnsFilter): bool
+	{
+		foreach ($columnsFilter as $name => $include) {
+			if ($include) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 }

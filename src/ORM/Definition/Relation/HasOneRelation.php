@@ -34,13 +34,17 @@ class HasOneRelation extends AbstractRelation
 	}
 
 	// creates the field into the parent collection
-	public function generateField(): FieldInterface
+	public function generateField(): ?FieldInterface
 	{
 
 		$parentCollection = $this->parent;
 
 		$inner_key = $this->getInnerKey();
 		$outer_key = $this->getOuterKey();
+
+		if (! isset($inner_key) || ! isset($outer_key)) {
+			return null;
+		}
 
 		$registry = $parentCollection->getRegistry();
 

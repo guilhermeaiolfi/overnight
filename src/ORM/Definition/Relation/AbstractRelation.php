@@ -21,9 +21,9 @@ abstract class AbstractRelation implements RelationInterface
 	// lazy || eager
 	public string $load = "lazy";
 
-	public array $inner_key;
+	public mixed $inner_key = null;
 
-	public array $outer_key;
+	public mixed $outer_key = null;
 
 	public string $collection;
 

@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace ON\CMS\Parser\Normalizer;
 
 use Exception;
+use ON\CMS\Parser\Node\FieldNode;
 use ON\CMS\Parser\Node\RelationNode;
+use ON\CMS\Parser\Node\VirtualNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
 
@@ -42,7 +44,9 @@ class VerifyNamesNormalizer
 				if (! ($node instanceof RelationNode)) {
 					$this->changeToRelation($node);
 				}
-			} elseif (! $isField) {
+			} elseif ($isField && ! ($node instanceof FieldNode)) {
+				$this->changeToField($node);
+			} elseif (! $isField && ! ($node instanceof VirtualNode)) {
 				throw new Exception("Field {$node->name} is not present in any form in the collection: " . $collection->getName());
 			}
 		}
@@ -61,6 +65,16 @@ class VerifyNamesNormalizer
 	{
 		$relation = new RelationNode($node->name, $node->collection, $node->parent);
 		$relation->children = $node->children;
+		$relation->modifier = $node->modifier;
+		$node->parent->addNode($relation);
+		$node->parent->removeNode($node);
+	}
+
+	public function changeToField($node)
+	{
+		$relation = new FieldNode($node->name, $node->collection, $node->parent);
+		$relation->children = $node->children;
+		$relation->modifier = $node->modifier;
 		$node->parent->addNode($relation);
 		$node->parent->removeNode($node);
 	}

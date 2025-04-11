@@ -48,6 +48,14 @@ final class FieldMap implements IteratorAggregate, Countable
 		}, $this->fields));
 	}
 
+	public function getFieldNameColumnNameMap(): array
+	{
+		$data = [];
+		foreach ($this->fields as $name => $field) {
+			$data[$field->getName()] = $field->getColumn();
+		}
+		return $data;
+	}
 	/**
 	 * Get property names
 	 */

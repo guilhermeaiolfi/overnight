@@ -48,7 +48,7 @@ class M2MRelation extends AbstractRelation
 		return $this->order_by;
 	}
 
-	public function collectionFactory(array $factory): self
+	public function collectionFactory(string $factory): self
 	{
 		$this->collection_factory = $factory;
 

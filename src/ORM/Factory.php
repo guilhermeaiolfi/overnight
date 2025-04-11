@@ -14,6 +14,7 @@ use Cycle\ORM\Mapper\Mapper;
 use Cycle\ORM\SchemaInterface;
 use function is_object;
 use function is_subclass_of;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\Loader\ParentLoader;
 use ON\ORM\Select\Loader\SubclassLoader;
@@ -42,6 +43,7 @@ final class Factory implements FactoryInterface
 	/** @var array<string, CollectionFactoryInterface> */
 	private array $collectionFactoryAlias = [];
 
+	private array $mappers = [];
 	/**
 	 * @var array<string, CollectionFactoryInterface>
 	 *
@@ -53,9 +55,9 @@ final class Factory implements FactoryInterface
 
 	public function __construct(
 		private DatabaseProviderInterface $dbal,
-		RelationConfig $config = null,
-		CoreFactory $factory = null,
-		CollectionFactoryInterface $defaultCollectionFactory = null
+		?RelationConfig $config = null,
+		?CoreFactory $factory = null,
+		?CollectionFactoryInterface $defaultCollectionFactory = null
 	) {
 		$this->config = $config ?? RelationConfig::getDefault();
 		$this->factory = $factory ?? new Container();
@@ -69,14 +71,25 @@ final class Factory implements FactoryInterface
 		return $this->factory->make($alias, $parameters);
 	}
 
+	public function mapper($collection)
+	{
+		$mapperClass = $collection->getMapper();
+		if (! isset($this->mappers[$collection->getName()])) {
+			$this->mappers[$collection->getName()] = new $mapperClass();
+		}
+
+		return $this->mappers[$collection->getName()];
+	}
+
 	public function loader(
 		Registry $registry,
-		string $collection_name,
-		string $relation
+		Collection $collection,
+		string $relation,
+		array $options
 	): LoaderInterface {
 
 		//echo $collection_name . ":" . $relation . " | ";
-		$collection = $registry->getCollection($collection_name);
+		//$collection = $registry->getCollection($collection_name);
 		/*if ($relation === self::PARENT_LOADER) {
 			$parent = $collection->getParentCollection();
 
@@ -100,29 +113,27 @@ final class Factory implements FactoryInterface
 		]*/
 		$loader = $relation->getLoader();
 
-		return new $loader($registry, $this, $relation->getCollection(), $relation);
+		return new $loader($registry, $this, $registry->getCollection($relation->getCollection()), $relation, $options);
 	}
 
-	public function database(string $database = null): DatabaseInterface
+	public function database(?string $database = null): DatabaseInterface
 	{
 		return $this->dbal->database($database);
 	}
 
 	public function source(
 		Registry $registry,
-		string $collectionName
+		Collection $collection
 	): SourceInterface {
 
-		$collection = $registry->getCollection($collectionName);
-
 		/** @var class-string<SourceInterface> $source */
-		$source = $registry->getCollection($collectionName)->getSource();
+		$source = $collection->getSource();
 
 		if (! is_subclass_of($source, SourceInterface::class)) {
 			throw new TypecastException($source . ' does not implement ' . SourceInterface::class);
 		}
 
-		$table = $collectionName;
+		$table = $collection->getName();
 		$database = $this->database($collection->getDatabase());
 
 		$source = new $source($database, $table);

@@ -33,6 +33,7 @@ class BelongsToLoader extends JoinableLoader
 		'as' => null,
 		'using' => null,
 		'where' => null,
+		'columns' => ['*'],
 	];
 
 	public function configureQuery(SelectQuery $query, array $outerKeys = []): SelectQuery
@@ -56,11 +57,10 @@ class BelongsToLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
-		$collection = $this->registry->getCollection($this->target);
 
 		return new SingularNode(
 			$this->columnNames(),
-			(array)$collection->getPrimaryKey(true),
+			(array)$this->target->getPrimaryKey(true),
 			(array)$this->relation->getOuterKey(),
 			(array)$this->relation->getInnerKey()
 		);

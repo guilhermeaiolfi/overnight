@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-use ON\CMS\Definition\Registry;
 use ON\CMS\Parser\QueryParser;
 use PHPUnit\Framework\TestCase;
+use Tests\ON\Fixtures\UserPartsRegistry;
 
 final class QueryParserTest extends TestCase
 {
@@ -12,43 +12,7 @@ final class QueryParserTest extends TestCase
 
 	protected function setUp(): void
 	{
-		$this->registry = new Registry();
-		$this->registry
-		->collection("users")
-			->field("id")->end()
-			->field("name")->end()
-			->relation("parts")
-				->collection('parts')
-			->end()
-			->relation("user")
-				->collection("users")
-			->end()
-			->relation("foo")
-				->collection("foos")
-			->end()
-		->end()
-		->collection("foos")
-			->field("id")->end()
-			->field("name")->end()
-			->relation("bar")
-				->collection("bars")
-			->end()
-		->end()
-		->collection("bars")
-			->field("id")->end()
-			->field("name")->end()
-			->relation('user')
-				->collection('users')
-			->end()
-		->end()
-		->collection("parts")
-			->field("id")->end()
-			->field("name")->end()
-			->relation('user')
-				->collection('users')
-			->end()
-		->end();
-
+		$this->registry = new UserPartsRegistry();
 	}
 
 	public function testSimpleFields(): void
@@ -202,6 +166,34 @@ final class QueryParserTest extends TestCase
 						],
 					],
 				],
+			],
+		], $rootNode->toArray());
+	}
+
+	public function testFieldModifiers(): void
+	{
+		$string = 'users{-name}';
+
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
+
+		$this->assertSame([
+			"users" => [
+				"name" => "-name",
+			],
+		], $rootNode->toArray());
+	}
+
+	public function testStarField(): void
+	{
+		$string = 'users{*}';
+
+		$parser = new QueryParser($this->registry);
+		$rootNode = $parser->parse($string);
+
+		$this->assertSame([
+			"users" => [
+				"*" => "*",
 			],
 		], $rootNode->toArray());
 	}

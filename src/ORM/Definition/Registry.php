@@ -37,7 +37,7 @@ class Registry
 		return $this->collections;
 	}
 
-	public function getInheritedRoles(): array
+	public function getInheritedCollections(): array
 	{
 		// TODO: look in cycle Schema::getInheritedRoles;
 

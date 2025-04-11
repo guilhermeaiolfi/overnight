@@ -10,19 +10,10 @@ use function count;
 use Countable;
 use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\SelectQuery;
-use Cycle\ORM;
-use Cycle\ORM\Heap\HeapInterface;
-use Cycle\ORM\Heap\Node;
-use Cycle\ORM\Iterator;
-use Cycle\ORM\ORMInterface;
-use Cycle\ORM\SchemaInterface;
-use Cycle\ORM\Service\EntityFactoryInterface;
-use Cycle\ORM\Service\MapperProviderInterface;
 use InvalidArgumentException;
 use function is_array;
 use function is_string;
-use function iterator_to_array;
-use IteratorAggregate;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\QueryBuilder;
@@ -64,7 +55,7 @@ use function sprintf;
  *
  * @template-covariant TEntity of object
  */
-class Select implements IteratorAggregate, Countable, PaginableInterface
+class Select implements Countable, PaginableInterface
 {
 	// load relation data within same query
 	public const SINGLE_QUERY = JoinableLoader::INLOAD;
@@ -75,28 +66,16 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 	private RootLoader $loader;
 
 	private QueryBuilder $builder;
-	private MapperProviderInterface $mapperProvider;
-	private HeapInterface $heap;
-	private SchemaInterface $schema;
-	private EntityFactoryInterface $entityFactory;
 
-	/**
-	 * @param class-string<TEntity>|string $role
-	 */
 	public function __construct(
-		Registry $registry,
-		FactoryInterface $factory,
-		ORMInterface $orm,
-		string $role
+		private Registry $registry,
+		private FactoryInterface $factory,
+		private Collection $collection
 	) {
-		$this->heap = $orm->getHeap();
-		$this->schema = $orm->getSchema();
-		$this->mapperProvider = $orm->getService(MapperProviderInterface::class);
-		$this->entityFactory = $orm->getService(EntityFactoryInterface::class);
 		$this->loader = new RootLoader(
 			$registry,
 			$factory,
-			$orm->resolveRole($role)
+			$collection
 		);
 		$this->builder = new QueryBuilder($this->loader->getQuery(), $this->loader);
 	}
@@ -150,7 +129,7 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 	 *
 	 * @return static<TEntity>
 	 */
-	public function scope(ScopeInterface $scope = null): self
+	public function scope(?ScopeInterface $scope = null): self
 	{
 		$this->loader->setScope($scope);
 
@@ -199,7 +178,7 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 	 *
 	 * @param string|null $column When column is null DISTINCT(PK) will be generated.
 	 */
-	public function count(string $column = null): int
+	public function count(?string $column = null): int
 	{
 		if ($column === null) {
 			// @tuneyourserver solves the issue with counting on queries with joins.
@@ -275,55 +254,6 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 	}
 
 	/**
-	 * Find one entity or return null. Method provides the ability to configure custom query parameters.
-	 *
-	 * @return TEntity|null
-	 */
-	public function fetchOne(array $query = null): ?object
-	{
-		$select = (clone $this)->where($query)->limit(1);
-		$node = $select->loader->createNode();
-		$select->loader->loadData($node, true);
-		$data = $node->getResult();
-
-		if (! isset($data[0])) {
-			return null;
-		}
-
-		/** @var TEntity $result */
-		return $this->entityFactory->make($this->loader->getTarget(), $data[0], Node::MANAGED, typecast: true);
-	}
-
-	/**
-	 * Fetch all records in a form of array.
-	 *
-	 * @return list<TEntity>
-	 */
-	public function fetchAll(): iterable
-	{
-		return iterator_to_array($this->getIterator(), false);
-	}
-
-	/**
-	 * @return Iterator<TEntity>
-	 */
-	public function getIterator(bool $findInHeap = false): Iterator
-	{
-		$node = $this->loader->createNode();
-		$this->loader->loadData($node, true);
-
-		return Iterator::createWithServices(
-			$this->heap,
-			$this->schema,
-			$this->entityFactory,
-			$this->loader->getTarget(),
-			$node->getResult(),
-			$findInHeap,
-			typecast: true
-		);
-	}
-
-	/**
 	 * Load data tree from database and linked loaders in a form of array.
 	 *
 	 * @return array<array-key, array<string, mixed>>
@@ -337,9 +267,9 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 			return $node->getResult();
 		}
 
-		$mapper = $this->mapperProvider->getMapper($this->loader->getTarget());
-
-		return array_map([$mapper, 'cast'], $node->getResult());
+		// TODO: cast results
+		//return array_map([$mapper, 'cast'], $node->getResult());
+		return $node->getResult();
 	}
 
 	/**
@@ -361,7 +291,7 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 	 * @param list<non-empty-string> $pk
 	 * @param list<array|int|object|string> $args
 	 *
-	 * @return static<TEntity>
+	 * @return self<TEntity>
 	 */
 	private function buildCompositePKQuery(array $pk, array $args): self
 	{
@@ -395,5 +325,11 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 		}]);
 
 		return $this;
+	}
+
+	public function columns(array $columnsFilter): void
+	{
+		$columns = $this->loader->resolveColumns($this->collection, $columnsFilter);
+		$this->loader->setColumns($columns);
 	}
 }

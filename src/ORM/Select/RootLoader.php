@@ -9,6 +9,7 @@ use Cycle\Database\StatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
 use function is_array;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Traits\ColumnsTrait;
@@ -32,7 +33,9 @@ final class RootLoader extends AbstractLoader
 	/** @var array */
 	protected array $options = [
 		'load' => true,
+		'loadRelations' => true,
 		'scope' => true,
+		'columns' => ['*'],
 	];
 
 	private SelectQuery $query;
@@ -43,16 +46,16 @@ final class RootLoader extends AbstractLoader
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		string $target,
-		bool $loadRelations = true,
+		Collection $target,
+		array $options = []
 	) {
-		parent::__construct($registry, $factory, $target);
+		parent::__construct($registry, $factory, $target, $options);
 		$this->query = $this->source->getDatabase()->select()->from(
 			sprintf('%s AS %s', $this->source->getTable(), $this->getAlias())
 		);
-		$this->columns = $this->normalizeColumns((array) $this->registry->getCollection($target)->fields->getColumnNames());
+		$this->columns = $options["columns"] ?? $this->normalizeColumns((array) $target->fields->getColumnNames());
 
-		if ($loadRelations) {
+		if ($this->options["loadRelations"]) {
 			foreach ($this->getEagerLoaders() as $relation) {
 				$this->loadRelation($relation, [], false, true);
 			}
@@ -70,7 +73,7 @@ final class RootLoader extends AbstractLoader
 
 	public function getAlias(): string
 	{
-		return $this->target;
+		return $this->target->getName();
 	}
 
 	/**
@@ -80,7 +83,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPK(): array|string
 	{
-		$pk = $this->registry->getCollection($this->target)->getPrimaryKey();
+		$pk = $this->target->getPrimaryKey();
 		if (is_array($pk)) {
 			$result = [];
 			foreach ($pk as $field) {
@@ -100,7 +103,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPrimaryFields(): array
 	{
-		return $this->registry->getCollection($this->target)->getPrimaryKey(true);
+		return $this->target->getPrimaryKey(true);
 	}
 
 	/**
@@ -152,11 +155,6 @@ final class RootLoader extends AbstractLoader
 
 	protected function initNode(): RootNode
 	{
-		return new RootNode($this->columnNames(), (array)$this->registry->getCollection($this->target)->getPrimaryKey(true));
-	}
-
-	public function columns(array $columns): void
-	{
-		$this->columns = $this->normalizeColumns($columns);
+		return new RootNode($this->columnNames(), (array)$this->target->getPrimaryKey(true));
 	}
 }

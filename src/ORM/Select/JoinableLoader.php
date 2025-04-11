@@ -11,6 +11,7 @@ use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use function is_callable;
 use function is_string;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
@@ -36,25 +37,28 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 		// load relation data
 		'load' => false,
 
+		// scope to be used for the relation
 		// true or instance to enable, false or null to disable
 		'scope' => true,
 
-		// scope to be used for the relation
+		// load method, see AbstractLoader constants
 		'method' => null,
 
-		// load method, see AbstractLoader constants
+		// when true all loader columns will be minified (only for loading)
 		'minify' => true,
 
-		// when true all loader columns will be minified (only for loading)
+		// table alias
 		'as' => null,
 
-		// table alias
+		// alias used by another relation
 		'using' => null,
 
-		// alias used by another relation
+		// where conditions (if any)
 		'where' => null,
 
-		// where conditions (if any)
+		// columns filter
+		'columns' => ['*'],
+
 	];
 
 	/**
@@ -67,11 +71,13 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		string $collection,
-		protected RelationInterface $relation
+		Collection $collection,
+		protected RelationInterface $relation,
+		array $options
 	) {
-		parent::__construct($registry, $factory, $collection);
-		$this->columns = $this->normalizeColumns((array) $registry->getCollection($collection)->fields->getColumnNames());
+		parent::__construct($registry, $factory, $collection, $options);
+
+		$this->columns = $this->resolveColumns($collection, $this->options["columns"]);
 
 		$this->name = $relation->getName();
 	}
@@ -313,7 +319,7 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	 */
 	protected function getJoinTable(): string
 	{
-		return "{$this->target} AS {$this->getAlias()}";
+		return "{$this->target->getName()} AS {$this->getAlias()}";
 	}
 
 	private function makeQueryBuilder(SelectQuery $query): QueryBuilder

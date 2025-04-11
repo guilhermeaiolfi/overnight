@@ -11,6 +11,7 @@ use Cycle\ORM\Exception\SchemaException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Relation;
 use Generator;
+use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Loader\ParentLoader;
@@ -88,10 +89,12 @@ abstract class AbstractLoader implements LoaderInterface
 	public function __construct(
 		protected Registry $registry,
 		protected FactoryInterface $factory,
-		protected string $target,
+		protected Collection $target,
+		array $options
 	) {
-		$this->children = $registry->getInheritedRoles($target);
+		$this->children = $registry->getInheritedCollections($target->getName());
 		$this->source = $this->factory->source($registry, $target);
+		$this->options = $options + $this->options;
 	}
 
 	final public function __destruct()
@@ -131,7 +134,7 @@ abstract class AbstractLoader implements LoaderInterface
 		$this->loadSubclasses = $enabled;
 	}
 
-	public function getTarget(): string
+	public function getTarget(): Collection
 	{
 		return $this->target;
 	}
@@ -230,7 +233,8 @@ abstract class AbstractLoader implements LoaderInterface
 			$loader = $this->factory->loader(
 				$this->registry,
 				$this->target,
-				$relation
+				$relation,
+				$options
 			);
 
 		} catch (SchemaException | FactoryException $e) {
@@ -367,51 +371,41 @@ abstract class AbstractLoader implements LoaderInterface
 	abstract protected function applyScope(SelectQuery $query): SelectQuery;
 
 	/**
-	 * Define schema option associated with the entity.
-	 *
-	 * @return mixed
-	 */
-	protected function getTargetDefinition()
-	{
-		return $this->registry->getCollection($this->target);
-	}
-
-	/**
 	 * Returns list of relations to be automatically joined with parent object.
 	 */
-	protected function getEagerLoaders(string $role = null): Generator
+	protected function getEagerLoaders(?string $collection = null): Generator
 	{
-		$role ??= $this->target;
-		$parentLoader = $this->generateParentLoader($role);
+		$collection ??= $this->target;
+		$parentLoader = $this->generateParentLoader($collection);
 		if ($parentLoader !== null) {
 			yield $parentLoader;
 		}
 		yield from $this->generateSublassLoaders();
-		yield from $this->generateEagerRelationLoaders($role);
+		yield from $this->generateEagerRelationLoaders($collection);
 	}
 
-	protected function generateParentLoader(string $role): ?LoaderInterface
+	protected function generateParentLoader(Collection $collection): ?LoaderInterface
 	{
-		$parent = $this->registry->getCollection($role)->getParentCollection();
+		$parent = $collection->getParentCollection();
 
 		return $parent === null
 			? null
-			: $this->factory->loader($this->registry, $role, FactoryInterface::PARENT_LOADER);
+			: $this->factory->loader($this->registry, $collection, FactoryInterface::PARENT_LOADER, $this->options);
 	}
 
 	protected function generateSublassLoaders(): iterable
 	{
 		if ($this->children !== []) {
-			foreach ($this->children as $subRole => $children) {
+			foreach ($this->children as $subCollection => $children) {
 				yield $this->factory
-					->loader($this->registry, $subRole, FactoryInterface::CHILD_LOADER);
+					->loader($this->registry, $this->registry->getCollection($subCollection), FactoryInterface::CHILD_LOADER, $this->options);
 			}
 		}
 	}
 
-	protected function generateEagerRelationLoaders(string $target): Generator
+	protected function generateEagerRelationLoaders(Collection $target): Generator
 	{
-		$relations = $this->registry->getCollection($target)->relations ?? [];
+		$relations = $target->relations ?? [];
 		foreach ($relations as $relation_name => $relation) {
 			if (($relation->getLoadStrategy() ?? null) === Relation::LOAD_EAGER) {
 				yield $relation;
