@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ON\ORM;
 
 use Cycle\Database\DatabaseProviderInterface;
+use Cycle\ORM\MapperInterface;
+use Cycle\ORM\ORMInterface;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\LoaderInterface;
@@ -36,4 +38,9 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 		Registry $registry,
 		Collection $collection
 	): SourceInterface;
+
+	public function mapper(
+		ORMInterface $orm,
+		Collection $collection
+	): MapperInterface;
 }

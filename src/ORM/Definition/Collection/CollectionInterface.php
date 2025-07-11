@@ -15,6 +15,10 @@ interface CollectionInterface
 
 	public function getEntity(): string;
 
+	public function table(string $table): self;
+
+	public function getTable(): string;
+
 	public function scope(string $scope): self;
 
 	public function getScope(): ?string;
@@ -27,9 +31,9 @@ interface CollectionInterface
 
 	public function getDatabase(): string;
 
-	public function repository(string $repository): self;
+	public function repository(?string $repository): self;
 
-	public function getRepository(): string;
+	public function getRepository(): ?string;
 
 	public function mapper(string $mapper): self;
 
@@ -66,4 +70,8 @@ interface CollectionInterface
 	public function parentCollection(string $parentCollection): self;
 
 	public function getParentCollection(): ?string;
+
+	public function setFileDefinitionLocation(?string $file = null): void;
+
+	public function getFileDefinitionLocation(): ?string;
 }

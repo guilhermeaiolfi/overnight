@@ -72,7 +72,9 @@ class DataHandler
 		$collection = $this->registry->getCollection($collection);
 
 		$factory = new Factory($this->db->getDatabaseConnection('cycle'));
-		$select = new Select($this->registry, $factory, $collection); //$repository->select();
+		$orm = $this->db->getDatabaseResource('cycle');
+
+		$select = new Select($orm, $this->registry, $factory, $collection); //$repository->select();
 
 		// filter handling
 		$filter = json_decode($queryParams["filter"], true);
@@ -82,7 +84,6 @@ class DataHandler
 		}
 		$where = $this->filterParser->parse($filter);
 		$select->where($where);
-
 
 		$query = $collection->getName() . "{" . $queryParams["fields"] . "}";
 		$rootNode = $this->parseQuery($query);

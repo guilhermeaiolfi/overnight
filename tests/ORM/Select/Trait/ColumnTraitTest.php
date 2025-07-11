@@ -62,7 +62,6 @@ final class ColumnTraitTest extends TestCase
 		$columns = $this->dummyLoader->resolveColumns($this->registry->getCollection('users'), []);
 
 		$this->assertSame([
-
 		], $columns);
 	}
 
@@ -73,6 +72,16 @@ final class ColumnTraitTest extends TestCase
 		]);
 
 		$this->assertSame([
+			"name" => "name",
+		], $columns);
+	}
+
+	public function testAllFilter(): void
+	{
+		$columns = $this->dummyLoader->resolveColumns($this->registry->getCollection('users'), null);
+
+		$this->assertSame([
+			"id" => "id",
 			"name" => "name",
 		], $columns);
 	}

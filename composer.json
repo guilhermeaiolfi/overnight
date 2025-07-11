@@ -29,9 +29,10 @@
         "laminas/laminas-authentication": "^2.18",
         "laminas/laminas-session": "^2.21",
         "spatie/php-structure-discoverer": "^2.2",
-        "cycle/orm": "^2.9",
+        "cycle/orm": "^2.10.1",
         "cycle/migrations": "^4.2",
-        "cycle/schema-migrations-generator": "^2.2"
+        "cycle/schema-migrations-generator": "^2.2",
+        "cycle/schema-builder": "^2.11"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",

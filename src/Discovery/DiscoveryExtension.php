@@ -24,11 +24,14 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 	protected array $files;
 	protected AppConfig $appCfg;
 
+	protected DiscoveryCache $cache;
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
 		$this->classFinder = new ClassFinder();
+		$this->cache = new DiscoveryCache();
 	}
 
 	public function get(string $className): DiscoverInterface
@@ -52,6 +55,22 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 		return $extension;
 	}
 
+	protected function restore($discovers): float
+	{
+		$oldest = 0;
+		foreach ($discovers as $discover) {
+			$timestamp = $this->cache->timestamp($discover);
+			if ($oldest == 0 || $oldest > $timestamp) {
+				$oldest = $timestamp;
+			}
+			if ($timestamp > 0) {
+				$this->cache->read($discover);
+			}
+		}
+
+		return $oldest;
+	}
+
 	public function setup(): void
 	{
 		if (! $this->app->ext('config')->isReady()) {
@@ -64,49 +83,45 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 
 		$discovers = array_keys($this->appCfg->get('discovery.discoverers', []));
 
+		$pattern = $this->appCfg->get('discovery.pattern');
+
+		$this->setupDiscovers($discovers, $pattern);
+
+		$this->setState('ready');
+	}
+
+	public function setupDiscovers(array $discovers, $pattern): void
+	{
 		foreach ($discovers as $className) {
 			$this->discovers[$className] = new $className($this->app);
 		}
-		$pattern = $this->appCfg->get('discovery.pattern');
 
-		$discovers = $this->discovers;
+		$oldest = $this->restore($this->discovers);
 
-		$oldest = 0;
-		foreach ($discovers as $discover) {
-			$timestamp = $discover->cachedTimestamp();
-			if ($oldest == 0 || $oldest > $timestamp) {
-				$oldest = $timestamp;
-			}
-			if ($timestamp > 0) {
-				$discover->recover();
-			}
-		}
 		$finder = new Finder();
 
 		$finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", (int) $oldest));
 		foreach ($finder as $file) {
-			$timestamp = $discover->cachedTimestamp();
-			if ($timestamp == 0 || $this->app->isDebug()) {
-				foreach ($discovers as $discover) {
+			if ($oldest == 0 || $this->app->isDebug()) {
+				foreach ($this->discovers as $discover) {
+					$timestamp = $this->cache->timestamp($discover);
 					if ($file->getMTime() > $timestamp) {
-						$discover->handle($file);
+						$discover->discover($file);
 					}
 				}
 			}
 		}
 
-		foreach ($discovers as $discover) {
-			$discover->save();
-			$discover->process();
+		foreach ($this->discovers as $discover) {
+			$this->cache->save($discover);
+			$discover->apply();
 		}
-
-		$this->setState('ready');
 	}
 
-	public function forget(): void
+	public function clear(): void
 	{
-		foreach ($this->discovers as $className => $discover) {
-			$discover->forget();
+		foreach ($this->discovers as $discover) {
+			$this->cache->clear($discover);
 		}
 	}
 

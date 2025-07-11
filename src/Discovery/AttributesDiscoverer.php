@@ -13,7 +13,6 @@ class AttributesDiscoverer implements DiscoverInterface
 {
 	public AttributeReader $reader;
 
-	protected $cachefile = "var/cache/discovery/attributes.cache.php";
 	protected ClassFinder $classFinder;
 	protected bool $dirty = false;
 	protected AppConfig $config;
@@ -30,15 +29,7 @@ class AttributesDiscoverer implements DiscoverInterface
 		$this->processors = $this->config->get('discovery.discoverers.' . self::class . '.processors', []);
 	}
 
-	public function cachedTimestamp(): float
-	{
-		return $this->timestamp > 0 ?
-			$this->timestamp :
-			(file_exists($this->cachefile) ?
-				filemtime($this->cachefile) : 0);
-	}
-
-	public function process(): bool
+	public function apply(): bool
 	{
 		foreach ($this->processors as $className => $options) {
 			$processor = new $className($this->app, $options);
@@ -53,7 +44,7 @@ class AttributesDiscoverer implements DiscoverInterface
 		$this->processors[$className] = $options;
 	}
 
-	public function handle($file): bool
+	public function discover($file): void
 	{
 		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
 		foreach ($classes as $className) {
@@ -63,22 +54,6 @@ class AttributesDiscoverer implements DiscoverInterface
 				$this->dirty = true;
 			}
 		}
-
-		return true;
-	}
-
-	public function getAttributes(): AttributeReader
-	{
-		return $this->reader;
-	}
-
-	public function recover(): bool
-	{
-
-		$data = file_get_contents($this->cachefile);
-		$this->reader = unserialize($data);
-
-		return true;
 	}
 
 	public function isDirty(): bool
@@ -86,22 +61,14 @@ class AttributesDiscoverer implements DiscoverInterface
 		return $this->dirty;
 	}
 
-	public function save(): bool
+	public function getData(): mixed
 	{
-		if ($this->isDirty()) {
-			@mkdir(dirname($this->cachefile), 0777, true);
-			file_put_contents($this->cachefile, serialize($this->reader));
-
-			return true;
-		}
-
-		return false;
+		return $this->reader;
 	}
 
-	public function forget(): void
+	public function setData(mixed $data): void
 	{
-		if (file_exists($this->cachefile)) {
-			unlink($this->cachefile);
-		}
+		$this->reader = $data;
+
 	}
 }

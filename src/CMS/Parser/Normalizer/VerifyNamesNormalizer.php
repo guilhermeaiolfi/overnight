@@ -52,12 +52,12 @@ class VerifyNamesNormalizer
 		}
 
 		// go deeper into node hierarchy
-		foreach ($node->children as $child) {
-			if ($isRelation) {
+		if ($isRelation) {
+			foreach ($node->children as $child) {
 				$relation = $collection->relations->get($node->name);
 				$collection = $this->registry->getCollection($relation->getCollection());
+				$this->executeNode($root, $child, $collection);
 			}
-			$this->executeNode($root, $child, $collection);
 		}
 	}
 

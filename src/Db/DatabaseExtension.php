@@ -13,9 +13,6 @@ use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\Extension\AbstractExtension;
-use ON\ORM\Definition\Interface\TagsInterface;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use ON\ORM\Definition\Relation\HasOneRelation;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -50,59 +47,6 @@ class DatabaseExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		$registry = $this->app->config->get(DatabaseConfig::class)->getRegistry();
-
-		$registry->collection("users")
-		->field('id')
-			->primaryKey(true)
-			->type("int")
-			->typecast("int")
-		->end()
-		->field('email')
-			->type('string')
-		->end()
-		->field('password')
-			->type('string')
-			->sensible(true)
-		->end()
-		->field("created_at")
-			->type('datetime')
-			->nullable(true)
-		->end()
-		->field("time")
-			->type('time')
-			->nullable(true)
-		->end()
-		->field("name")
-			->column("name")
-			->type('string')
-			->interface(TagsInterface::class)
-				->az(true)
-			->end()
-		->end()
-		->relation("parts", HasManyRelation::class)
-			->collection('parts')
-			->nullable(true)
-			->cascade(true)
-			->innerKey('id')
-			->outerKey('user_id')
-		->end();
-
-		$registry->collection("parts")
-		->field('id')
-			->primaryKey(true)
-			->typecast("int")
-		->end()
-		->field('name')->type('string')->end()
-		//->field('user_id')->type('int')->end()
-		->relation("user", HasOneRelation::class)
-			->collection('users')
-			->nullable(true)
-			->cascade(true)
-			->innerKey('user_id')
-			->outerKey('id')
-		->end();
-
 		$this->setState('ready');
 	}
 

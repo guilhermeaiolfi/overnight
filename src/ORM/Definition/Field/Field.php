@@ -25,7 +25,12 @@ class Field implements FieldInterface
 
 	protected bool $required = false;
 
+
 	protected bool $sensible = false;
+
+	protected mixed $default = null;
+
+	protected bool $castDefault = false;
 
 	protected ?string $generatedFromRelation = null;
 
@@ -50,6 +55,30 @@ class Field implements FieldInterface
 	public function getGeneratedFromRelation(): ?string
 	{
 		return $this->generatedFromRelation;
+	}
+
+	public function default(mixed $default, bool $castDefault = true): self
+	{
+		$this->default = $default;
+
+		$this->castDefault = $castDefault;
+
+		return $this;
+	}
+
+	public function getDefault(): mixed
+	{
+		return $this->default;
+	}
+
+	public function hasDefault(): bool
+	{
+		return $this->default !== null;
+	}
+
+	public function castDefault(): bool
+	{
+		return $this->castDefault;
 	}
 
 	public function name(string $name): self

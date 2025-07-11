@@ -25,8 +25,10 @@ class Collection implements CollectionInterface
 	public string $database = "default";
 	public ?string $parentCollection = null;
 	public string $entity = stdClass::class;
+	public ?string $table = null;
 	public FieldMap $fields;
 	public RelationMap $relations;
+	public ?string $fileLocation = null;
 
 	public function __construct(
 		protected Registry $registry
@@ -44,6 +46,18 @@ class Collection implements CollectionInterface
 	 * @var class-string<RepositoryInterface>|null
 	 */
 	private ?string $repository = null;
+
+	public function table(string $table): self
+	{
+		$this->table = $table;
+
+		return $this;
+	}
+
+	public function getTable(): string
+	{
+		return $this->table;
+	}
 
 	public function entity(string $entity): self
 	{
@@ -93,14 +107,14 @@ class Collection implements CollectionInterface
 		return $this->scope;
 	}
 
-	public function repository(string $repository): self
+	public function repository(?string $repository): self
 	{
 		$this->repository = $repository;
 
 		return $this;
 	}
 
-	public function getRepository(): string
+	public function getRepository(): ?string
 	{
 		return $this->repository;
 	}
@@ -214,5 +228,15 @@ class Collection implements CollectionInterface
 	public function getRegistry(): Registry
 	{
 		return $this->registry;
+	}
+
+	public function setFileDefinitionLocation(?string $file = null): void
+	{
+		$this->fileLocation = $file;
+	}
+
+	public function getFileDefinitionLocation(): ?string
+	{
+		return $this->fileLocation;
 	}
 }

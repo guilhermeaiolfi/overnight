@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\ORM\Compiler;
 
 use Cycle\ORM\Relation as CycleRelation;
-use Cycle\ORM\Schema;
 use Cycle\ORM\SchemaInterface;
+use JetBrains\PhpStorm\Deprecated;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasManyRelation;
@@ -14,6 +14,17 @@ use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 
+/**
+ * It converts an overnight Registry into a \Cycle\ORM\Schema.
+ * As documented here: https://cycle-orm.dev/docs/schema-manual/current/en
+ * That was the old way of using it. Since sometime, overnigh
+ * converts to Cycle Registry. The advantage is that it can generate not only
+ * the cycle schema, but migrations and many other things.
+ *
+ * Basically, use CycleEntityGenerator instead.
+ *
+ */
+#[Deprecated(reason:"CycleEntityGenerator fits better with Cycle", replacement: "use CycleEntityGenerator instead")]
 class CycleCompiler
 {
 	public function __construct(
@@ -22,7 +33,7 @@ class CycleCompiler
 
 	}
 
-	public function compile(): SchemaInterface
+	public function compile(): array
 	{
 		$schema = [];
 		$collections = $this->registry->getCollections();
@@ -30,7 +41,7 @@ class CycleCompiler
 			$schema[$collection->getName()] = $this->processCollection($collection);
 		}
 
-		return new Schema($schema);
+		return $schema;
 	}
 
 	public function processCollection(CollectionInterface $collection): array
@@ -109,7 +120,17 @@ class CycleCompiler
 		} elseif ($relation instanceof HasOneRelation) {
 			/** @var HasOneRelation $relation */
 			if ($relation->isExclusive()) {
-				// TODO
+				return [
+					CycleRelation::TYPE => CycleRelation::HAS_ONE,
+					CycleRelation::LOAD => $this->getLoadStrategy($relation),
+					CycleRelation::TARGET => $relation->getCollection(),
+					CycleRelation::SCHEMA => [
+						CycleRelation::NULLABLE => $relation->isNullable(),
+						CycleRelation::CASCADE => $relation->isCascade(),
+						CycleRelation::INNER_KEY => $relation->getInnerKey(),
+						CycleRelation::OUTER_KEY => $relation->getOuterKey(),
+					],
+				];
 			} else {
 				return [
 					CycleRelation::TYPE => $relation->isNullable() ? CycleRelation::BELONGS_TO : CycleRelation::REFERS_TO,

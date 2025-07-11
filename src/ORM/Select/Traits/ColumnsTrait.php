@@ -123,20 +123,31 @@ trait ColumnsTrait
 		return $columns;
 	}
 
+	protected function isStarFilter(array $columnsFilter): bool
+	{
+		return count($columnsFilter) == 1 && isset($columnsFilter[0]) && $columnsFilter[0] == "*";
+	}
+
 	/**
 	 * if $columnsFilter is null, it should return all columns
 	 */
-	public function resolveColumns(Collection $collection, array $columnsFilter): array
+	public function resolveColumns(Collection $collection, ?array $columnsFilter): array
 	{
 		$columns = [];
 
 		$mandatory = $this->getMandatoryColumns($collection);
 
-		if (count($columnsFilter) == 0) {
-			return $mandatory;
+		if (! isset($columnsFilter)) {
+			$columnsFilter = ["*"];
 		}
 
-		if (count($columnsFilter) == 1 && isset($columnsFilter[0]) && $columnsFilter[0] == "*") {
+		// explicity asked for no columns
+		if (count($columnsFilter) == 0) {
+			return [];
+		}
+
+
+		if ($this->isStarFilter($columnsFilter)) {
 			$columns = (array) $collection->fields->getColumnNames();
 
 			return $this->normalizeColumns($columns);

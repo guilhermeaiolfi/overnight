@@ -10,9 +10,18 @@ use function count;
 use Countable;
 use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\SelectQuery;
+use Cycle\ORM\Heap\HeapInterface;
+use Cycle\ORM\Heap\Node;
+use Cycle\ORM\Iterator;
+use Cycle\ORM\ORMInterface;
+use Cycle\ORM\SchemaInterface;
+use Cycle\ORM\Service\EntityFactoryInterface;
+use Cycle\ORM\Service\MapperProviderInterface;
 use InvalidArgumentException;
 use function is_array;
 use function is_string;
+use function iterator_to_array;
+use IteratorAggregate;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Select\JoinableLoader;
@@ -55,7 +64,7 @@ use function sprintf;
  *
  * @template-covariant TEntity of object
  */
-class Select implements Countable, PaginableInterface
+class Select implements IteratorAggregate, Countable, PaginableInterface
 {
 	// load relation data within same query
 	public const SINGLE_QUERY = JoinableLoader::INLOAD;
@@ -67,16 +76,28 @@ class Select implements Countable, PaginableInterface
 
 	private QueryBuilder $builder;
 
+	//private MapperProviderInterface $mapperProvider;
+	private HeapInterface $heap;
+	private SchemaInterface $schema;
+	private EntityFactoryInterface $entityFactory;
+
 	public function __construct(
+		private ORMInterface $orm,
 		private Registry $registry,
 		private FactoryInterface $factory,
 		private Collection $collection
 	) {
+		$this->heap = $orm->getHeap();
+		$this->schema = $orm->getSchema();
+		//$this->mapperProvider = $orm->getService(MapperProviderInterface::class);
+		$this->entityFactory = $orm->getService(EntityFactoryInterface::class);
+
 		$this->loader = new RootLoader(
 			$registry,
 			$factory,
 			$collection
 		);
+		//var_dump($factory->mapper($orm, $collection));
 		$this->builder = new QueryBuilder($this->loader->getQuery(), $this->loader);
 	}
 
@@ -122,6 +143,55 @@ class Select implements Countable, PaginableInterface
 	{
 		$this->loader = clone $this->loader;
 		$this->builder = new QueryBuilder($this->loader->getQuery(), $this->loader);
+	}
+
+	/**
+	 * @return Iterator<TEntity>
+	 */
+	public function getIterator(bool $findInHeap = false): Iterator
+	{
+		$node = $this->loader->createNode();
+		$this->loader->loadData($node, true);
+
+		return Iterator::createWithServices(
+			$this->heap,
+			$this->schema,
+			$this->entityFactory,
+			$this->loader->getTarget()->getName(),
+			$node->getResult(),
+			$findInHeap,
+			typecast: true,
+		);
+	}
+
+	/**
+	 * Find one entity or return null. Method provides the ability to configure custom query parameters.
+	 *
+	 * @return TEntity|null
+	 */
+	public function fetchOne(?array $query = null): ?object
+	{
+		$select = (clone $this)->where($query)->limit(1);
+		$node = $select->loader->createNode();
+		$select->loader->loadData($node, true);
+		$data = $node->getResult();
+
+		if (! isset($data[0])) {
+			return null;
+		}
+
+		/** @var TEntity $result */
+		return $this->entityFactory->make($this->loader->getTarget()->getName(), $data[0], Node::MANAGED, typecast: true);
+	}
+
+	/**
+	 * Fetch all records in a form of array.
+	 *
+	 * @return list<TEntity>
+	 */
+	public function fetchAll(): iterable
+	{
+		return iterator_to_array($this->getIterator(), false);
 	}
 
 	/**
@@ -267,9 +337,9 @@ class Select implements Countable, PaginableInterface
 			return $node->getResult();
 		}
 
-		// TODO: cast results
-		//return array_map([$mapper, 'cast'], $node->getResult());
-		return $node->getResult();
+		$mapper = $this->factory->mapper($this->orm, $this->loader->getTarget());
+
+		return array_map([$mapper, 'cast'], $node->getResult());
 	}
 
 	/**

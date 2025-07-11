@@ -11,6 +11,8 @@ use Cycle\ORM\Collection\CollectionFactoryInterface;
 use Cycle\ORM\Config\RelationConfig;
 use Cycle\ORM\Exception\TypecastException;
 use Cycle\ORM\Mapper\Mapper;
+use Cycle\ORM\MapperInterface;
+use Cycle\ORM\ORMInterface;
 use Cycle\ORM\SchemaInterface;
 use function is_object;
 use function is_subclass_of;
@@ -71,14 +73,28 @@ final class Factory implements FactoryInterface
 		return $this->factory->make($alias, $parameters);
 	}
 
-	public function mapper($collection)
+	public function mapper(ORMInterface $orm, Collection $collection): MapperInterface
 	{
-		$mapperClass = $collection->getMapper();
-		if (! isset($this->mappers[$collection->getName()])) {
-			$this->mappers[$collection->getName()] = new $mapperClass();
+		$schema = $orm->getSchema();
+		$class = $collection->getMapper();
+		$role = $collection->getName();
+
+		if (! is_subclass_of($class, MapperInterface::class)) {
+			throw new TypecastException(\sprintf('%s does not implement %s.', $class, MapperInterface::class));
 		}
 
-		return $this->mappers[$collection->getName()];
+		if (! isset($this->mappers[$role])) {
+			$this->mappers[$role] = $this->factory->make(
+				$class,
+				[
+					'orm' => $orm,
+					'role' => $role,
+					'schema' => $schema->define($role, SchemaInterface::SCHEMA),
+				]
+			);
+		}
+
+		return $this->mappers[$role];
 	}
 
 	public function loader(

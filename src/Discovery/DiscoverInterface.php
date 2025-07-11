@@ -6,15 +6,13 @@ namespace ON\Discovery;
 
 interface DiscoverInterface
 {
-	public function cachedTimestamp(): float;
+	public function getData(): mixed;
 
-	public function save(): bool;
+	public function setData(mixed $data): void;
 
-	public function recover(): bool;
+	public function apply(): bool;
 
-	public function forget(): void;
+	public function discover(string $file): void;
 
-	public function handle($file): bool;
-
-	public function process(): bool;
+	public function isDirty(): bool;
 }
