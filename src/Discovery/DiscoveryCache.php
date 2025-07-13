@@ -4,63 +4,53 @@ declare(strict_types=1);
 
 namespace ON\Discovery;
 
+use Psr\Container\ContainerInterface;
+
 class DiscoveryCache
 {
-	public const PATH = "var/cache/discovery/";
+	protected array $adapters = []; 
 
-	public function save($discovery): bool
+	public function __construct(
+		protected ContainerInterface $container
+	) {
+
+	}
+	
+	protected function getAdapter(DiscoveryLocation $location): mixed
 	{
-		if ($discovery->isDirty()) {
-			$cacheFile = self::PATH . $this->classNameToFilename(get_class($discovery));
-			@mkdir(self::PATH, 0777, true);
-			file_put_contents($cacheFile, serialize($discovery->getData()));
-
-			return true;
+		$className = $location->strategy;
+		if (!isset($this->adapters[$location->strategy])) {
+			$instance = $this->container->get($className);
+			$this->adapters[$className] = $instance;
 		}
-
-		return false;
+		return $this->adapters[$className];
 	}
 
-	public function clear(?DiscoverInterface $discover = null): void
+	public function save(DiscoverInterface $discover, DiscoveryLocation $location): bool
 	{
-		if (! isset($discover)) {
-			// TODO: remove all files in PATH
-		}
-
-		$cacheFile = $this->cacheFilenameFromDiscover($discover);
-		if (file_exists($cacheFile)) {
-			unlink($cacheFile);
-		}
+		$adapter = $this->getAdapter($location);
+		return $adapter->save($discover, $location);
 	}
 
-	public function read(DiscoverInterface $discover): DiscoverInterface
+	public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
 	{
-		$cacheFile = $this->cacheFilenameFromDiscover($discover);
-		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
-		$discover->setData($data);
-
-		return $discover;
+		$adapter = $this->getAdapter($location);
+		$adapter->clear($discover, $location);
 	}
 
-	public function timestamp(DiscoverInterface $discover): float
+	public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface
 	{
-		$cacheFile = $this->cacheFilenameFromDiscover($discover);
-
-		return file_exists($cacheFile) ?
-				filemtime($cacheFile) : 0;
+		$adapter = $this->getAdapter($location);
+		return $adapter->recover($discover, $location);
 	}
 
-	protected function cacheFilenameFromDiscover(DiscoverInterface $discover): string
+	/**
+	 * It updates all discovers together because it's more efficiente
+	 * Otherwise, we would have to scan the filesystem as many times as there were discovers.
+	 */
+	public function update(array $discovers, DiscoveryLocation $location): void
 	{
-		return self::PATH . $this->classNameToFilename(get_class($discover));
-	}
-
-	protected function classNameToFilename($className)
-	{
-		$filename = str_replace([' ', '\\'], '_', $className);
-		$filename .= '.cache.php';
-
-		return $filename;
+		$adapter = $this->getAdapter($location);
+		$adapter->update($discovers, $location);
 	}
 }

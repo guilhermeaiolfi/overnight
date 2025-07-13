@@ -10,9 +10,9 @@ interface DiscoverInterface
 
 	public function setData(mixed $data): void;
 
+	public function addData(mixed $data): void;
+
 	public function apply(): bool;
 
-	public function discover(string $file): void;
-
-	public function isDirty(): bool;
+	public function discover($file, DiscoveryLocation $location): void;
 }

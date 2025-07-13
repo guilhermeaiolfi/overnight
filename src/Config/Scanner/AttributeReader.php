@@ -30,24 +30,89 @@ class AttributeReader
 		$this->data = new Dot();
 	}
 
-	public function cacheAttribute($class, ReflectionAttribute $attr, mixed $instance)
+	public function cacheAttribute($class, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".c." . $attr->getName(), $instance);
+		$this->data->set($class . ".c." . $attrName, $instance);
 	}
 
-	public function cacheMethodAttribute($class, string $method, ReflectionAttribute $attr, mixed $instance): void
+	public function cacheMethodAttribute($class, string $method, string $attrName, mixed $instance): void
 	{
-		$this->data->set($class . ".m." . $method . "." . $attr->getName(), $instance);
+		$this->data->set($class . ".m." . $method . "." . $attrName, $instance);
 	}
 
-	public function cacheClassConstantAttribute($class, string $classConst, ReflectionAttribute $attr, mixed $instance)
+	public function cacheClassConstantAttribute($class, string $classConst, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".cc." . $classConst . "." . $attr->getName(), $instance);
+		$this->data->set($class . ".cc." . $classConst . "." . $attrName, $instance);
 	}
 
-	public function cachePropertyAttribute($class, string $property, ReflectionAttribute $attr, mixed $instance)
+	public function cachePropertyAttribute($class, string $property, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".p." . $property . "." . $attr->getName(), $instance);
+		$this->data->set($class . ".p." . $property . "." . $attrName, $instance);
+	}
+
+
+	public function cacheData($className, array $attributes): void
+	{
+		foreach ($attributes as $attribute) {
+			if ($attribute[0] == "class") {
+				$this->cacheAttribute($className, $attribute[1], $attribute[2]);
+			}
+			else if ($attribute[0] == "property") {
+				$this->cachePropertyAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
+			} else if ($attribute[0] == "method") {
+				$this->cacheMethodAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
+			} else if ($attribute[0] == "constant") {
+				$this->cacheClassConstantAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
+			}
+		}
+	}
+	
+	public function extractData(ReflectionClass $class): array
+	{
+		$className = $class->getName();
+
+		$attributes = [];
+		
+		// Parse class attributes
+		foreach ($this->getAttributesFrom($class) as $attr) {
+			$instance = $attr->newInstance();
+			if ($instance instanceof ReflectionAnalyzableInterface) {
+				$instance->__analyzeReflection([$class, $attr]);
+			}
+			$attributes[] = ["class", $className, $attr->getName(), $instance];
+		}
+		// Parse properties annotations
+		foreach ($class->getProperties() as $property) {
+			foreach ($this->getAttributesFrom($property) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $property, $attr]);
+				}
+				$attributes[] = ["property", $property->getName(), $attr->getName(), $instance];
+			}
+		}
+		// Parse methods annotations
+		foreach ($class->getMethods() as $method) {
+			foreach ($this->getAttributesFrom($method) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $method, $attr]);
+				}
+				$attributes[] = ["method", $method->getName(), $attr->getName(), $instance];
+			}
+		}
+		// Parse class constants annotations
+		foreach ($class->getReflectionConstants() as $classConstant) {
+			foreach ($this->getAttributesFrom($classConstant) as $attr) {
+				$instance = $attr->newInstance();
+				if ($instance instanceof ReflectionAnalyzableInterface) {
+					$instance->__analyzeReflection([$class, $classConstant, $attr]);
+				}
+				$attributes[] = ["constant", $classConstant->getName(), $attr->getName(), $instance];
+			}
+		}
+
+		return $attributes;
 	}
 
 	public function load(ReflectionClass $class): void
@@ -183,5 +248,10 @@ class AttributeReader
 		}
 
 		return $result;
+	}
+
+	public function merge(self $reader): void
+	{
+		throw new \Exception("TODO: implement merge method");
 	}
 }

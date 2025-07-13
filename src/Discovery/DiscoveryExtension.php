@@ -10,7 +10,7 @@ use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use Symfony\Component\Finder\Finder;
 
-class DiscoveryExtension extends AbstractExtension implements EventSubscriberInterface
+class DiscoveryExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.discovery";
 	protected int $type = self::TYPE_EXTENSION;
@@ -31,7 +31,17 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 		protected array $options = []
 	) {
 		$this->classFinder = new ClassFinder();
-		$this->cache = new DiscoveryCache();
+		//$this->cache = $app->container->get(DiscoveryCache::class);
+	}
+
+	public function boot(): void
+	{
+		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+	}
+
+	public function onContainerReady(): void
+	{
+		$this->cache = $this->app->container->get(DiscoveryCache::class);
 	}
 
 	public function get(string $className): DiscoverInterface
@@ -55,25 +65,9 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 		return $extension;
 	}
 
-	protected function restore($discovers): float
-	{
-		$oldest = 0;
-		foreach ($discovers as $discover) {
-			$timestamp = $this->cache->timestamp($discover);
-			if ($oldest == 0 || $oldest > $timestamp) {
-				$oldest = $timestamp;
-			}
-			if ($timestamp > 0) {
-				$this->cache->read($discover);
-			}
-		}
-
-		return $oldest;
-	}
-
 	public function setup(): void
 	{
-		if (! $this->app->ext('config')->isReady()) {
+		if (! $this->app->ext('config')->isReady() || !isset($this->cache)) {
 			$this->nextTick([$this, 'setup']);
 
 			return;
@@ -81,60 +75,40 @@ class DiscoveryExtension extends AbstractExtension implements EventSubscriberInt
 
 		$this->appCfg = $this->app->config->get(AppConfig::class);
 
-		$discovers = array_keys($this->appCfg->get('discovery.discoverers', []));
+		$discoverClassnames = array_keys($this->appCfg->get('discovery.discoverers', []));
 
-		$pattern = $this->appCfg->get('discovery.pattern');
+		$locations = $this->appCfg->get('discovery.locations');
 
-		$this->setupDiscovers($discovers, $pattern);
 
-		$this->setState('ready');
-	}
-
-	public function setupDiscovers(array $discovers, $pattern): void
-	{
-		foreach ($discovers as $className) {
+		// creates the discovers instances
+		foreach ($discoverClassnames as $className) {
 			$this->discovers[$className] = new $className($this->app);
 		}
 
-		$oldest = $this->restore($this->discovers);
+		foreach ($locations as $location) {
+			// set the discovers up to the cache state
+			foreach ($this->discovers as $discover) {
+				$this->cache->recover($discover, $location);
+			}
 
-		$finder = new Finder();
+			// now we go after the changes made after the cache was created
+			$this->cache->update($this->discovers, $location);
 
-		$finder->files()->in($pattern)->date(">= " . date("d.m.Y H:i:s", (int) $oldest));
-		foreach ($finder as $file) {
-			if ($oldest == 0 || $this->app->isDebug()) {
-				foreach ($this->discovers as $discover) {
-					$timestamp = $this->cache->timestamp($discover);
-					if ($file->getMTime() > $timestamp) {
-						$discover->discover($file);
-					}
-				}
+			foreach ($this->discovers as $discover) {
+				$this->cache->save($discover, $location);
+				$discover->apply();
 			}
 		}
 
-		foreach ($this->discovers as $discover) {
-			$this->cache->save($discover);
-			$discover->apply();
-		}
+
+		// we are now fully ready
+		$this->setState('ready');
 	}
 
-	public function clear(): void
+	public function clear(?string $location = null): void
 	{
 		foreach ($this->discovers as $discover) {
-			$this->cache->clear($discover);
+			$this->cache->clear($discover, $location);
 		}
-	}
-
-	public function isVendor($path): bool
-	{
-		return str_contains($path, '/vendor/')
-			|| str_contains($path, '\\vendor\\');
-	}
-
-	public static function getSubscribedEvents()
-	{
-		return [
-			//'core.extensions.config.ready' => 'onConfigReady',
-		];
 	}
 }

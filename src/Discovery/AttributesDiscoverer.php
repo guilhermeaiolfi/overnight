@@ -7,6 +7,7 @@ namespace ON\Discovery;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Scanner\AttributeReader;
+use ON\Config\Scanner\ReflectionAnalyzableInterface;
 use ReflectionClass;
 
 class AttributesDiscoverer implements DiscoverInterface
@@ -18,8 +19,8 @@ class AttributesDiscoverer implements DiscoverInterface
 	protected AppConfig $config;
 
 	protected array $processors = [ ];
-	protected float $timestamp = 0;
 
+	protected DiscoveryItems $items;
 	public function __construct(
 		protected Application $app,
 	) {
@@ -27,10 +28,18 @@ class AttributesDiscoverer implements DiscoverInterface
 		$this->classFinder = $app->discovery->classFinder;
 		$this->config = $app->config->get(AppConfig::class);
 		$this->processors = $this->config->get('discovery.discoverers.' . self::class . '.processors', []);
+		$this->items = new DiscoveryItems();
 	}
 
 	public function apply(): bool
 	{
+		// convert DiscoveryItems into reader cache data
+		foreach ($this->items as $item) {
+			$attributes = $item->getValue();
+			$className = $item->getClassName();
+			$this->reader->cacheData($className, $attributes);
+		}
+
 		foreach ($this->processors as $className => $options) {
 			$processor = new $className($this->app, $options);
 			$processor($this->reader);
@@ -44,31 +53,38 @@ class AttributesDiscoverer implements DiscoverInterface
 		$this->processors[$className] = $options;
 	}
 
-	public function discover($file): void
+	public function discover($file, DiscoveryLocation $location): void
 	{
 		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
 		foreach ($classes as $className) {
 			if (preg_match('/(.*)Page$/', $className)) {
 				$class = new ReflectionClass($className);
-				$this->reader->load($class);
-				$this->dirty = true;
+
+				$attributes = $this->reader->extractData($class);
+				$item = new DiscoveryItem($attributes, $location);
+				$item->setFile($file->getRealPath());
+				$item->setClassName($class->getName());
+
+				$this->items->add($item);
 			}
 		}
 	}
 
-	public function isDirty(): bool
-	{
-		return $this->dirty;
-	}
-
 	public function getData(): mixed
 	{
-		return $this->reader;
+		return $this->items;
 	}
 
-	public function setData(mixed $data): void
+	public function addData(mixed $items): void
 	{
-		$this->reader = $data;
+		foreach ($items as $item) {
+			$this->items->add($item);
+		}
+	}
+
+	public function setData(mixed $items): void
+	{
+		$this->items = $items;
 
 	}
 }
