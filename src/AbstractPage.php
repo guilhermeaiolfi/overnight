@@ -14,14 +14,6 @@ abstract class AbstractPage implements PageInterface
 
 	protected $default_template_name;
 
-	protected $container = null;
-
-	public function __construct(
-		protected Application $app
-	) {
-		$this->container = $this->app->container;
-	}
-
 	public function isSecure()
 	{
 		return false;
@@ -79,16 +71,23 @@ abstract class AbstractPage implements PageInterface
 		$this->default_template_name = $template_name;
 	}
 
+	private function getApplicationInstance(): Application
+	{
+		return Application::$instance;
+		;
+	}
+
 	public function render($layout_name = null, $template_name = null, $data = null, $params = [])
 	{
+		$app = $this->getApplicationInstance();
 
-		if (! $this->app->hasExtension('view')) {
+		if (! $app->hasExtension('view')) {
 			throw new Exception("You are trying to render something but has not installed any view extension.", 1);
 
 			return;
 
 		}
-		$config = $this->container->get(ViewConfig::class);
+		$config = $app->container->get(ViewConfig::class);
 
 		// if nothing is passed, use the attributes of the page instance
 		if (! isset($data)) {
@@ -116,11 +115,11 @@ abstract class AbstractPage implements PageInterface
 
 		$renderer_class = $renderer_config['class'] ?? '\ON\Renderer';
 
-		$renderer = $this->container->get($renderer_class);
+		$renderer = $app->container->get($renderer_class);
 
 		if ($assigns = $renderer_config['inject']) {
 			foreach ($assigns as $key => $class) {
-				$data[$key] = $this->container->get($class);
+				$data[$key] = $app->container->get($class);
 			}
 		}
 		// get the page method executed to determine the template name
@@ -134,11 +133,14 @@ abstract class AbstractPage implements PageInterface
 
 	public function processForward($middleware, $request)
 	{
-		$this->app->processForward($middleware, $request);
+		$app = $this->getApplicationInstance();
+		$app->processForward($middleware, $request);
 	}
 
 	public function getContainer()
 	{
-		return $this->app->container;
+		$app = $this->getApplicationInstance();
+
+		return $app->container;
 	}
 }

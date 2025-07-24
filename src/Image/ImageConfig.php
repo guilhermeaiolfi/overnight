@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Image;
 
+use Intervention\Image\Drivers\Gd\Driver;
 use ON\Config\Config;
 
 class ImageConfig extends Config
@@ -12,6 +13,11 @@ class ImageConfig extends Config
 	{
 		return [
 			"basePath" => "i/",
+			"404ImagePath" => "404i.png",
+			"templates" => [
+				"custom" => CustomTemplate::class,
+			],
+			"driver" => Driver::class,
 		];
 	}
 }

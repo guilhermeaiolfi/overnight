@@ -181,10 +181,18 @@ class Collection implements CollectionInterface
 
 	public function field(string $name): FieldInterface
 	{
-		$field = new Field($this);
-		$this->fields->set($name, $field);
-		if (isset($name)) {
-			$field->name($name);
+		$field = null;
+
+		// it could get in here when generating fields because of relations
+		// but that field could also be a primary field that's already defined
+		if ($this->fields->has($name)) {
+			$field = $this->fields->get($name);
+		} else {
+			$field = new Field($this);
+			$this->fields->set($name, $field);
+			if (isset($name)) {
+				$field->name($name);
+			}
 		}
 
 		return $field;

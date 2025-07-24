@@ -6,6 +6,7 @@ namespace ON\Translation;
 
 use DateTime;
 use DateTimeZone;
+use IntlDateFormatter;
 
 class DateFormatter implements TranslatorInterface
 {
@@ -31,9 +32,12 @@ class DateFormatter implements TranslatorInterface
 
 	protected $translationManager = null;
 
+	protected string $format;
+
 	public function __construct(TranslationManagerInterface $tm, array $parameters = [])
 	{
 		$type = 'datetime';
+
 		$this->translationManager = $tm;
 
 		$this->format = $parameters["format"];
@@ -70,6 +74,7 @@ class DateFormatter implements TranslatorInterface
 	 */
 	public function translate($message, $domain, $locale = null)
 	{
+
 		$date = $message;
 		if (is_null($message)) {
 			$message = "now";
@@ -79,9 +84,11 @@ class DateFormatter implements TranslatorInterface
 		}
 
 		$date->setTimezone(new DateTimeZone($this->translationManager->getDefaultTimeZone()));
-		$str = strftime($this->format, $date->getTimestamp());
-		if (! mb_check_encoding($str, 'utf-8')) {
-			$str = utf8_encode($str);
+
+		$str = IntlDateFormatter::formatObject($date, "EEEE, dd 'de' MMMM 'de' y", $locale);
+
+		if (! mb_check_encoding($str, 'UTF-8')) {
+			$str = mb_convert_encoding($str, 'UTF-8');
 		}
 
 		return $str;

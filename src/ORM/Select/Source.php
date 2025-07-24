@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace ON\ORM\Select;
 
 use Cycle\Database\DatabaseInterface;
+use Cycle\ORM\Select\ScopeInterface as CycleScopeInterface;
+use Cycle\ORM\Select\SourceInterface as CycleSourceInterface;
 
-final class Source implements SourceInterface
+final class Source implements CycleSourceInterface
 {
 	private ?ScopeInterface $scope = null;
 
@@ -26,7 +28,7 @@ final class Source implements SourceInterface
 		return $this->table;
 	}
 
-	public function withScope(?ScopeInterface $scope): SourceInterface
+	public function withScope(?CycleScopeInterface $scope): self
 	{
 		$source = clone $this;
 		$source->scope = $scope;
@@ -34,7 +36,7 @@ final class Source implements SourceInterface
 		return $source;
 	}
 
-	public function getScope(): ?ScopeInterface
+	public function getScope(): ?CycleScopeInterface
 	{
 		return $this->scope;
 	}

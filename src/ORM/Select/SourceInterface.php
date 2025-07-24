@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace ON\ORM\Select;
 
 use Cycle\Database\DatabaseInterface;
+use Cycle\ORM\Select\SourceInterface as CycleSourceInterface;
 
 /**
  * Defines the access to the SQL database.
  */
-interface SourceInterface
+interface SourceInterface implements CycleSourceInterface
 {
 	/**
 	 * Get database associated with the entity.

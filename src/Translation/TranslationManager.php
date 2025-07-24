@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Translation;
 
 use Exception;
+use ON\Translation\Locale\Locale;
 
 /**
   * HEAVY INSPIRED BY AgaviTrasnlationManager
@@ -152,9 +153,9 @@ class TranslationManager implements TranslationManagerInterface
 		$this->availableLocales = $availables;
 	}
 
-	public function __construct($config = [])
-	{
-		$this->config = $config;
+	public function __construct(
+		protected array $config = []
+	) {
 		$this->translators = $config["translators"];
 
 		//load available configs
@@ -196,7 +197,7 @@ class TranslationManager implements TranslationManagerInterface
 	 * @author     Dominik del Bondio <ddb@bitxtender.com>
 	 * @since      0.11.0
 	 */
-	public function setLocale($identifier)
+	public function setLocale($identifier): void
 	{
 		$this->currentLocaleIdentifier = $this->getLocaleIdentifier($identifier);
 		$givenData = $this->parseLocaleIdentifier($identifier);
@@ -308,6 +309,7 @@ class TranslationManager implements TranslationManagerInterface
 
 		if ($locale === null) {
 			$this->loadCurrentLocale();
+			$locale = $this->getCurrentLocaleIdentifier();
 		} elseif (is_string($locale)) {
 			$locale = $this->getLocale($locale);
 		}
@@ -498,7 +500,7 @@ class TranslationManager implements TranslationManagerInterface
 	 * @author     Dominik del Bondio <ddb@bitxtender.com>
 	 * @since      0.11.0
 	 */
-	protected function loadCurrentLocale()
+	protected function loadCurrentLocale(): void
 	{
 		if (! isset($this->currentLocale) || ! isset($this->currentLocale["identifier"]) || $this->currentLocale["identifier"] != $this->givenLocaleIdentifier) {
 			$this->currentLocale = $this->getLocale($this->givenLocaleIdentifier);

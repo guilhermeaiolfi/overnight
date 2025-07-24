@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Middleware;
 
+use Exception;
 use ON\Action;
 use ON\Application;
 use ON\RequestStack;
@@ -26,6 +27,7 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
 	public function process(ServerRequestInterface $request,  RequestHandlerInterface $handler): ResponseInterface
 	{
+		throw new Exception("This middleware is deprecated. DO NOT USE.");
 		$routeResult = $request->getAttribute(RouteResult::class, false);
 
 		if (! $routeResult) {

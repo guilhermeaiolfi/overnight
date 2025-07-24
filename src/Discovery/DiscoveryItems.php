@@ -11,41 +11,49 @@ use Traversable;
 
 class DiscoveryItems implements IteratorAggregate, Countable
 {
-    public function __construct(
-        private array $items = [],
-    ) {}
+	public function __construct(
+		private array $items = [],
+	) {
+	}
 
-    public function add(DiscoveryItem $item): self
-    {
-        $this->items[] = $item;
+	public function add(DiscoveryItem $item): self
+	{
+		$this->items[] = $item;
 
-        return $this;
-    }
+		return $this;
+	}
 
-    public function filterByLocation(DiscoveryLocation $location): array
-    {
-        return $this->filter(fn($item) => $item->getLocation() == $location);
-    }
+	public function filterByLocation(DiscoveryLocation $location): array
+	{
+		return $this->filter(fn ($item) => $item->getLocation() == $location);
+	}
 
-    public function filterByTag(string $tag): array
-    {
-        return $this->filter(function ($item) use ($tag) {
-            return in_array($tag, $item->getTags());
-        });
-    }
+	public function filterByTag(string $tag): array
+	{
+		return $this->filter(function ($item) use ($tag) {
+			return in_array($tag, $item->getTags());
+		});
+	}
 
-    public function filter($func): array
-    {
-        return array_filter($this->items, $func);
-    }
+	public function filter($func): array
+	{
+		return array_filter($this->items, $func);
+	}
 
-    public function getIterator(): Traversable
-    {
-        return new ArrayIterator($this->items);
-    }
+	public function getIterator(): Traversable
+	{
+		return new ArrayIterator($this->items);
+	}
 
-    public function count(): int
-    {
-        return iterator_count($this->getIterator());
-    }
+	public function count(): int
+	{
+		return iterator_count($this->getIterator());
+	}
+
+	public function removeFromFile(string $file): void
+	{
+		$this->items = $this->filter(function ($item) use ($file) {
+			return $item->getFile() != $file;
+		});
+	}
 }

@@ -7,7 +7,7 @@ declare(strict_types=1);
  *
  */
 
-namespace On\Config;
+namespace ON\Config;
 
 use ArrayAccess;
 use ArrayIterator;

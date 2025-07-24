@@ -10,6 +10,8 @@ use Symfony\Component\Dotenv\Dotenv;
 
 class Application
 {
+	public static ?self $instance = null;
+
 	protected string $project_dir;
 
 	protected array $extensionsToInstall = [];
@@ -50,6 +52,10 @@ class Application
 	public function __construct(
 		protected ?array $options = []
 	) {
+
+		if (! isset(self::$instance)) {
+			self::$instance = $this;
+		}
 
 		$this->project_dir = $project_dir = $options["project_dir"] ?? dirname(getcwd(), 1);
 

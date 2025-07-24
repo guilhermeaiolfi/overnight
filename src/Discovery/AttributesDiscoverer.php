@@ -7,7 +7,6 @@ namespace ON\Discovery;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Scanner\AttributeReader;
-use ON\Config\Scanner\ReflectionAnalyzableInterface;
 use ReflectionClass;
 
 class AttributesDiscoverer implements DiscoverInterface
@@ -20,6 +19,7 @@ class AttributesDiscoverer implements DiscoverInterface
 	protected array $processors = [ ];
 
 	protected DiscoveryItems $items;
+
 	public function __construct(
 		protected Application $app,
 		protected ClassFinder $classFinder,
@@ -32,6 +32,7 @@ class AttributesDiscoverer implements DiscoverInterface
 
 	public function apply(): bool
 	{
+		//dump($this->items);
 		// convert DiscoveryItems into reader cache data
 		foreach ($this->items as $item) {
 			$attributes = $item->getValue();
@@ -59,12 +60,18 @@ class AttributesDiscoverer implements DiscoverInterface
 			if (preg_match('/(.*)Page$/', $className)) {
 				$class = new ReflectionClass($className);
 
-				$attributes = $this->reader->extractData($class);
-				$item = new DiscoveryItem($attributes, $location);
-				$item->setFile($file->getRealPath());
-				$item->setClassName($class->getName());
+				// remove current references loaded from cache
+				$this->items->removeFromFile($file->getRealPath());
 
-				$this->items->add($item);
+				$attributes = $this->reader->extractData($class);
+
+				if (count($attributes) > 0) {
+					$item = new DiscoveryItem($attributes, $location);
+					$item->setFile($file->getRealPath());
+					$item->setClassName($class->getName());
+
+					$this->items->add($item);
+				}
 			}
 		}
 	}

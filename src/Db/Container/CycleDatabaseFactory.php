@@ -18,6 +18,7 @@ use Cycle\Schema\Generator\RenderRelations;
 use Cycle\Schema\Generator\RenderTables;
 use Cycle\Schema\Generator\ValidateEntities;
 use Cycle\Schema\Registry as CycleRegistry;
+use ON\Application;
 use ON\Clockwork\CycleDatabaseLogger;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
@@ -28,8 +29,11 @@ class CycleDatabaseFactory
 {
 	public const CACHE_FILE = "./var/cache/cycle.schema.php";
 
-	public function __invoke(Clockwork $clockwork, DatabaseConfig $dbCfg, string $name): CycleDatabase
-	{
+	public function __invoke(
+		Clockwork $clockwork,
+		DatabaseConfig $dbCfg,
+		string $name
+	): CycleDatabase {
 		$registry = $dbCfg->getRegistry();
 
 		$manager = new CycleDatabase($name, $dbCfg);
@@ -52,8 +56,12 @@ class CycleDatabaseFactory
 
 	protected function isCacheClean(Registry $registry): bool
 	{
+		// TODO: ugly and not great, we should get the current application
+		$app = Application::$instance;
 		if (! file_exists(self::CACHE_FILE)) {
 			return false;
+		} elseif (! $app->isDebug()) {
+			return true;
 		}
 
 		$newer = 0;
@@ -74,6 +82,7 @@ class CycleDatabaseFactory
 
 	protected function readCache(Registry $registry, $dbal): ?array
 	{
+
 		if (! $this->isCacheClean($registry)) {
 			$cycleRegistry = new CycleRegistry($dbal);
 			$schema = (new Compiler())->compile($cycleRegistry, [

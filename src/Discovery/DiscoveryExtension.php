@@ -6,9 +6,7 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
-use Symfony\Component\Finder\Finder;
 
 class DiscoveryExtension extends AbstractExtension
 {
@@ -65,7 +63,7 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		if (! $this->app->ext('config')->isReady() || !isset($this->cache)) {
+		if (! $this->app->ext('config')->isReady() || ! isset($this->cache)) {
 			$this->nextTick([$this, 'setup']);
 
 			return;

@@ -7,8 +7,7 @@ namespace ON\ORM\Compiler;
 use Cycle\ORM\Schema\GeneratedField as CycleGeneratedField;
 use Cycle\Schema\Definition\Entity;
 use Cycle\Schema\Definition\Field as CycleField;
-use Cycle\Schema\Definition\Map\RelationMap as CycleRelationMap;
-use Cycle\Schema\Definition\Relation;
+use Cycle\Schema\Definition\Relation as CycleRelation;
 use Cycle\Schema\GeneratorInterface;
 use Cycle\Schema\Registry as CycleRegistry;
 use Cycle\Schema\Table\Column;
@@ -17,7 +16,6 @@ use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
-use ON\ORM\Definition\Relation\RelationMap;
 use ReflectionClass;
 
 /**
@@ -47,7 +45,7 @@ class CycleRegistryGenerator implements GeneratorInterface
 		$entity = new Entity();
 		$this->convertEntityBaseAttributes($collection, $entity);
 		$this->convertFieldMap($collection, $entity);
-		$this->convertRelationMap($collection->relations, $entity->getRelations());
+		$this->convertRelationMap($collection, $entity);
 
 		return $entity;
 	}
@@ -125,7 +123,9 @@ class CycleRegistryGenerator implements GeneratorInterface
 			"setRepository" => "getRepository",
 			"setSource" => "getSource",
 			"setDatabase" => "getDatabase",
+			"setTableName" => "getTable",
 		];
+
 		$this->convertUsingMapArray($collection, $entity, $convertMap);
 	}
 
@@ -136,8 +136,11 @@ class CycleRegistryGenerator implements GeneratorInterface
 		}
 	}
 
-	protected function convertRelationMap(RelationMap $on_relations, CycleRelationMap $cycle_relations): void
+	protected function convertRelationMap(Collection $collection, Entity $entity): void
 	{
+		$on_relations = $collection->relations;
+		$cycle_relations = $entity->getRelations();
+
 		foreach ($on_relations as $name => $on_relation) {
 
 			$cycle_relation = $this->convertRelation($on_relation);
@@ -148,15 +151,28 @@ class CycleRegistryGenerator implements GeneratorInterface
 		}
 	}
 
-	protected function convertRelation(RelationInterface $on_relation): Relation
+	protected function convertRelation(RelationInterface $on_relation): CycleRelation
 	{
-		$cycle_relation = new Relation();
+		$cycle_relation = new CycleRelation();
 		$cycle_relation
 			->setTarget($on_relation->getCollection())
 			->setType($this->resolveRelationType($on_relation));
 
 		// TODO: convert options map
+		$this->convertOptionMap($on_relation, $cycle_relation);
+
 		return $cycle_relation;
+	}
+
+	protected function convertOptionMap(RelationInterface $on_relation, CycleRelation $cycle_relation): void
+	{
+		// reference: https://cycle-orm.dev/docs/relation-refers-to/current/en
+		$cycle_relation->getOptions()
+			->set("load", $on_relation->getLoadStrategy())
+			->set("cascade", $on_relation->isCascade())
+			->set("nullable", $on_relation->isNullable())
+			->set("innerKey", $on_relation->getInnerKey())
+			->set("outerKey", $on_relation->getOuterKey());
 	}
 
 	/**

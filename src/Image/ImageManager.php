@@ -8,13 +8,10 @@ use Intervention\Image\Image;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
-use ON\Config\AppConfig;
 use ON\Image\Cache\FileSystem;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\Encrypter\OpenSSL;
-use ON\Router\RouterConfig;
-use ON\View\ViewConfig;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -57,6 +54,14 @@ class ImageManager implements MiddlewareInterface
 			' You must instantiate the middleware or assign the key as third argument');
 		}
 
+		// TODO: what is the best approach here?
+		// If we simply return the image, it won't be the size needed
+		// for the moment, converting the base image to what we need
+		// seems the best approach
+		if (! file_exists($path)) {
+			//return $this->imageCfg->get("404ImagePath");
+			$path = $this->imageCfg->get("404ImagePath");
+		}
 		$token = $this->encrypter->encrypt(["path" => $path, "template" => $template, "options" => $options], $this->signatureKey);
 		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
 		//$token = str_replace('/.', './', $token); //create folders for images
@@ -78,8 +83,10 @@ class ImageManager implements MiddlewareInterface
 			$uri = $request->getUri();
 			$path = $uri->getPath();
 
+
+			// if the path is not in the images folder, ignore, we shouldn't handle
 			if (strpos($path, $imageBasePath) === false) {
-				return null;
+				return $handler->handle($request);
 			}
 
 			[$basePath, $token] = explode($imageBasePath, $path, 2);
@@ -135,6 +142,7 @@ class ImageManager implements MiddlewareInterface
 	{
 		$template = $this->getTemplate($template, $options);
 		$path = $this->getImagePath($filename);
+
 
 		if (! $path) {
 			return new EmptyResponse(404);

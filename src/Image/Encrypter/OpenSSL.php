@@ -44,11 +44,14 @@ class OpenSSL implements EncrypterInterface
 		];
 	}
 
-	public function encrypt($data)
+	public function encrypt($data): ?string
 	{
 		$plaintext = $data["path"] . "?t=" . $data["template"] . '&o=' . $data["options"];
 		$ivlen = openssl_cipher_iv_length($this->cipher);
-		$iv = substr(md5(filemtime('public/' . $data["path"])), 0, $ivlen);//openssl_random_pseudo_bytes($ivlen);
+
+		// TODO: figured it out what iv should be
+		// it was: $iv = substr(md5(filemtime('public/' . $data["path"])), 0, $ivlen);
+		$iv = substr(md5($data["path"]), 0, $ivlen);
 		//$iv=1234567890123456;
 		//$iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('AES-256-CBC'));
 		$ciphertext_raw = openssl_encrypt($plaintext, $this->cipher, $this->key, OPENSSL_RAW_DATA, $iv);

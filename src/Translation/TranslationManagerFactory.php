@@ -10,8 +10,10 @@ class TranslationManagerFactory
 {
 	public function __invoke(ContainerInterface $container): TranslationManagerInterface
 	{
+		$cfg = $container->get(TranslationConfig::class);
+
 		return new TranslationManager(
-			$container->get("config")["translation"]
+			$cfg->get()
 		);
 	}
 }

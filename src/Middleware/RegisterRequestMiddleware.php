@@ -12,6 +12,12 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+/**
+ * This class keeps track of all request made in the process.
+ * Because it's not just the original request we need to keep.
+ * If we are dealing with views and there are subrequests,
+ * we should be able to get all of those if necessary.
+ */
 class RegisterRequestMiddleware implements MiddlewareInterface
 {
 	public function __construct(

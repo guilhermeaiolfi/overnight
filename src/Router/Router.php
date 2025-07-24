@@ -370,7 +370,9 @@ class Router implements RouterInterface
 			$params = [];
 		}
 
-		$uri = $request->getUri()->withPath($path);
+
+
+		$uri = $request->getUri()->withPath($basepath . "/" . ltrim($path, "\\/"));
 
 		$queryParams = array_diff_key($routeParams, $params);
 
@@ -411,6 +413,7 @@ class Router implements RouterInterface
 		}
 
 		$uri = (string) $uri;
+
 
 		return $uri;
 	}
