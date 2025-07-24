@@ -20,7 +20,6 @@ class DiscoveryExtension extends AbstractExtension
 
 	protected array $pendingTasks = [ ];
 
-	public ClassFinder $classFinder;
 	protected array $files;
 	protected AppConfig $appCfg;
 
@@ -30,7 +29,6 @@ class DiscoveryExtension extends AbstractExtension
 		protected Application $app,
 		protected array $options = []
 	) {
-		$this->classFinder = new ClassFinder();
 		//$this->cache = $app->container->get(DiscoveryCache::class);
 	}
 
@@ -82,7 +80,7 @@ class DiscoveryExtension extends AbstractExtension
 
 		// creates the discovers instances
 		foreach ($discoverClassnames as $className) {
-			$this->discovers[$className] = new $className($this->app);
+			$this->discovers[$className] = $this->app->container->get($className);
 		}
 
 		foreach ($locations as $location) {

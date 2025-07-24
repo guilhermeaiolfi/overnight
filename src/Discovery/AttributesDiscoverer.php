@@ -14,7 +14,6 @@ class AttributesDiscoverer implements DiscoverInterface
 {
 	public AttributeReader $reader;
 
-	protected ClassFinder $classFinder;
 	protected bool $dirty = false;
 	protected AppConfig $config;
 
@@ -23,9 +22,9 @@ class AttributesDiscoverer implements DiscoverInterface
 	protected DiscoveryItems $items;
 	public function __construct(
 		protected Application $app,
+		protected ClassFinder $classFinder,
 	) {
 		$this->reader = new AttributeReader();
-		$this->classFinder = $app->discovery->classFinder;
 		$this->config = $app->config->get(AppConfig::class);
 		$this->processors = $this->config->get('discovery.discoverers.' . self::class . '.processors', []);
 		$this->items = new DiscoveryItems();
