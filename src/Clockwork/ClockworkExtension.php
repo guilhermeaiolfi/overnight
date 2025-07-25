@@ -17,6 +17,7 @@ use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Db\DatabaseConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
+use ON\Router\Router;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 
@@ -37,6 +38,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	) {
 		if (! function_exists('clock')) {
 			$settings = ArrayUtils::merge($this->getOptions(), $options);
+			$settings["api"] = Router::detectBaseUrl() . "/__clockwork/";
 			$this->clockwork = Clockwork::init($settings);
 			clock()->event("Booting")->begin();
 		} else {
@@ -56,8 +58,8 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	public function getOptions(): array
 	{
 		return [
-			// TODO: figure it out how to be dynamically set
-			'api' => '/ondemo/__clockwork/',
+			//'api' => it is determined in the constructor, should be
+			//         something like: '/onlegis/__clockwork/'
 			'storage_files_path' => 'var/clockwork',
 			'register_helpers' => true,
 			'storage_expiration' => 2,
