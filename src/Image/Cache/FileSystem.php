@@ -12,9 +12,7 @@ class FileSystem implements ImageCacheInterface
 {
 	public function __construct(
 		protected ImageConfig $config
-	)
-	{
-		$this->config = $config;
+	) {
 	}
 
 	public function get($token, $template, $path)
