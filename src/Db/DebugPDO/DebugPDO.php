@@ -144,7 +144,8 @@ class DebugPDO extends PDO
 		return $this->pdo->prepare($statement, $driver_options);
 	}
 
-	public function query($statement, $fetchMode = null, ...$fetchModeArgs)
+	#[\ReturnTypeWillChange]
+	public function query($statement, $fetchMode = null, ...$fetchModeArgs): PDOStatement|false
 	{
 		return $this->profileCall('query', $statement, func_get_args());
 	}

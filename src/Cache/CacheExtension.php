@@ -10,6 +10,7 @@ use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use Symfony\Component\Cache\Adapter\AdapterInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 
 class CacheExtension extends AbstractExtension
@@ -40,6 +41,10 @@ class CacheExtension extends AbstractExtension
 				CacheInterface::class => CacheFactory::class,
 				FilesystemAdapter::class => FilesystemAdapterFactory::class,
 			]);
+
+			/*$containerConfig->addAliases([
+				AdapterInterface::class => FilesystemAdapter::class,
+			]);*/
 
 			$this->setState('ready');
 		});

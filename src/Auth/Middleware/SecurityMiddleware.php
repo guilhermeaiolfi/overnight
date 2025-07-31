@@ -29,7 +29,6 @@ class SecurityMiddleware implements MiddlewareInterface
 
 		$route = $routeResult->getMatchedRoute();
 		$middleware = $route->getMiddleware();
-
 		if ($middleware instanceof ActionMiddlewareDecorator) {
 			return $middleware->loggedCheck($request, $handler);
 		}

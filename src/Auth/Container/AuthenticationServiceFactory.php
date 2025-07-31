@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ON\Auth;
+namespace ON\Auth\Container;
 
-use Laminas\Authentication\Storage\StorageInterface;
+use ON\Auth\AuthenticationService;
+use ON\Auth\AuthenticatorInterface;
+use ON\Auth\Storage\StorageInterface;
 use Psr\Container\ContainerInterface;
 
 class AuthenticationServiceFactory

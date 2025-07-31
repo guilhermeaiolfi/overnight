@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use Laminas\Authentication\Adapter\AdapterInterface;
+use ON\Auth\Exception\ExceptionInterface;
 
-interface AuthenticatorInterface extends AdapterInterface
+interface AuthenticatorInterface
 {
+	/**
+	 * Performs an authentication attempt
+	 *
+	 * @return Result
+	 * @throws ExceptionInterface If authentication cannot be performed.
+	 */
+	public function authenticate(): Result;
 }

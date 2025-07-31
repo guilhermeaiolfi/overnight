@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use Laminas\Authentication\Storage\Session;
-use Laminas\Authentication\Storage\StorageInterface;
 use Laminas\Session\ManagerInterface;
 use ON\Application;
+use ON\Auth\Authenticator\DummyAuthenticator;
+use ON\Auth\Container\AuthenticationServiceFactory;
+use ON\Auth\Middleware\AuthorizationMiddleware;
+use ON\Auth\Middleware\SecurityMiddleware;
+use ON\Auth\Storage\LaminasSessionStorage;
+use ON\Auth\Storage\StorageInterface;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
-use ON\Session\SessionManagerFactory;
+use ON\Session\Container\SessionManagerFactory;
 
 class AuthExtension extends AbstractExtension
 {
@@ -44,8 +48,8 @@ class AuthExtension extends AbstractExtension
 
 			$containerConfig = $config->get(ContainerConfig::class);
 			$containerConfig->addAliases([
-				StorageInterface::class => Session::class,
-				AuthenticatorInterface::class => Authenticator::class,
+				StorageInterface::class => LaminasSessionStorage::class,
+				AuthenticatorInterface::class => DummyAuthenticator::class,
 				AuthorizationServiceInterface::class => AuthorizationService::class,
 			]);
 			$containerConfig->addFactories([
@@ -54,8 +58,7 @@ class AuthExtension extends AbstractExtension
 			]);
 		});
 
-		$this->app->ext('pipeline')->when('ready', function () {
-		});
+		$this->app->ext('pipeline')->when('ready', [$this, "onPipelineReady"]);
 
 		$this->setState('ready');
 	}

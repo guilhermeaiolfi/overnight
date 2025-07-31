@@ -125,8 +125,6 @@ class Router implements RouterInterface
 
 	protected ?string $basepath = null;
 
-	protected ?RequestStack $stack = null;
-
 	/**
 	 * Constructor
 	 *
@@ -148,7 +146,7 @@ class Router implements RouterInterface
 	 */
 	public function __construct(
 		protected RouterConfig $config,
-		RequestStack $stack,
+		public RequestStack $stack,
 		?RouteCollector $collection = null,
 		?callable $dispatcherFactory = null
 	) {
@@ -156,7 +154,6 @@ class Router implements RouterInterface
 			$collection = $this->createCollection();
 		}
 
-		$this->stack = $stack;
 		$this->collection = $collection;
 		$this->dispatcherCallback = $dispatcherFactory;
 		$this->loadConfig($config);
@@ -366,11 +363,9 @@ class Router implements RouterInterface
 			$result = $this->match(new ServerRequest([], [], $path));
 			$params = $result->getMatchedParams();
 		} catch (Exception $e) {
-			$path = $this->getBasePath() . "/" . $routeName;
+			$path = $routeName;
 			$params = [];
 		}
-
-
 
 		$uri = $request->getUri()->withPath($basepath . "/" . ltrim($path, "\\/"));
 

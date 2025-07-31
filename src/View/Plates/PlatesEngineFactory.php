@@ -77,6 +77,7 @@ class PlatesEngineFactory
 		foreach ($allPaths as $namespace => $paths) {
 			$namespace = is_numeric($namespace) ? null : $namespace;
 			foreach ((array) $paths as $path) {
+				//dump($namespace);
 				if (! $namespace && ! $engine->getDirectory()) {
 					$engine->setDirectory($path);
 
