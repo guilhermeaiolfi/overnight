@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use Laminas\Session\ManagerInterface;
+use Laminas\Session\ManagerInterface as LaminasManagerInterface;
 use ON\Application;
 use ON\Auth\Authenticator\DummyAuthenticator;
 use ON\Auth\Container\AuthenticationServiceFactory;
 use ON\Auth\Middleware\AuthorizationMiddleware;
 use ON\Auth\Middleware\SecurityMiddleware;
-use ON\Auth\Storage\LaminasSessionStorage;
+use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
-use ON\Session\Container\SessionManagerFactory;
+use ON\Session\Container\LaminasSessionManagerFactory;
 
 class AuthExtension extends AbstractExtension
 {
@@ -48,13 +48,13 @@ class AuthExtension extends AbstractExtension
 
 			$containerConfig = $config->get(ContainerConfig::class);
 			$containerConfig->addAliases([
-				StorageInterface::class => LaminasSessionStorage::class,
+				StorageInterface::class => SessionStorage::class,
 				AuthenticatorInterface::class => DummyAuthenticator::class,
 				AuthorizationServiceInterface::class => AuthorizationService::class,
 			]);
 			$containerConfig->addFactories([
 				AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,
-				ManagerInterface::class => SessionManagerFactory::class,
+				//LaminasManagerInterface::class => LaminasSessionManagerFactory::class,
 			]);
 		});
 

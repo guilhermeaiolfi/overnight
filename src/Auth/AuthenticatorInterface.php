@@ -10,8 +10,6 @@ interface AuthenticatorInterface
 {
 	/**
 	 * Performs an authentication attempt
-	 *
-	 * @return Result
 	 * @throws ExceptionInterface If authentication cannot be performed.
 	 */
 	public function authenticate(): Result;

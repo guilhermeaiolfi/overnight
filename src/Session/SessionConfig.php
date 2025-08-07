@@ -13,15 +13,17 @@ class SessionConfig extends Config
 	public static function getDefaults(): array
 	{
 		return [
-			'save_handler' => null,
-			'config' => [
-				'class' => LaminasSessionConfig::class,
-				'options' => [
-					//'name' => 'legis',
-					'gc_maxlifetime' => 3600,
+			"laminas" => [
+				'save_handler' => null,
+				'config' => [
+					'class' => LaminasSessionConfig::class,
+					'options' => [
+						//'name' => 'legis',
+						'gc_maxlifetime' => 3600,
+					],
 				],
+				'storage' => SessionArrayStorage::class,
 			],
-			'storage' => SessionArrayStorage::class,
 		];
 	}
 }

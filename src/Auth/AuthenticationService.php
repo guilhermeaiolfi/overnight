@@ -50,10 +50,6 @@ class AuthenticationService implements AuthenticationServiceInterface
 	 */
 	public function getStorage(): StorageInterface
 	{
-		if (null === $this->storage) {
-			$this->setStorage(new Storage\LaminasSessionStorage());
-		}
-
 		assert($this->storage !== null);
 
 		return $this->storage;
@@ -118,7 +114,6 @@ class AuthenticationService implements AuthenticationServiceInterface
 	public function getIdentity(): mixed
 	{
 		$storage = $this->getStorage();
-
 		if ($storage->isEmpty()) {
 			return null;
 		}

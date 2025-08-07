@@ -16,7 +16,7 @@ use ON\Session\SessionConfig;
 use Psr\Container\ContainerInterface;
 use Psr\Container\Exception\ContainerException;
 
-class SessionManagerFactory
+class LaminasSessionManagerFactory
 {
 	public function __construct(
 		protected ContainerInterface $container,
@@ -46,8 +46,8 @@ class SessionManagerFactory
 		}
 		$laminasSessionConfig = null;
 		if (isset($this->sessionConfig)) {
-			$class = $this->sessionConfig->get('config.class', LaminasSessionConfig::class);
-			$options = $this->sessionConfig->get('config.options', []);
+			$class = $this->sessionConfig->get('laminas.config.class', LaminasSessionConfig::class);
+			$options = $this->sessionConfig->get('laminas.config.options', []);
 
 			$laminasSessionConfig = new $class();
 			if (! ($laminasSessionConfig instanceof ConfigInterface)) {
@@ -58,7 +58,7 @@ class SessionManagerFactory
 			$laminasSessionConfig->setOptions($options);
 		}
 
-		$storageClass = $this->sessionConfig->get('storage', SessionArrayStorage::class);
+		$storageClass = $this->sessionConfig->get('laminas.storage', SessionArrayStorage::class);
 
 		$sessionStorage = new $storageClass();
 
@@ -68,7 +68,7 @@ class SessionManagerFactory
 			);
 		}
 
-		$sessionSaveHandlerClass = $this->sessionConfig->get('save_handler');
+		$sessionSaveHandlerClass = $this->sessionConfig->get('laminas.save_handler');
 		$sessionSaveHandler = null;
 		if (isset($sessionSaveHandlerClass)) {
 			// class should be fetched from service manager
@@ -86,7 +86,7 @@ class SessionManagerFactory
 			$laminasSessionConfig,
 			$sessionStorage,
 			$sessionSaveHandler,
-			$this->sessionConfig->get('validators', [])
+			$this->sessionConfig->get('laminas.validators', [])
 		);
 		Container::setDefaultManager($sessionManager);
 

@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Config\Scanner;
 
-use Adbar\Dot;
 use Attribute;
 use Exception;
-use ReflectionAttribute;
+use ON\Config\Dot;
 use ReflectionClass;
 use ReflectionClassConstant;
 use ReflectionMethod;
@@ -50,29 +49,27 @@ class AttributeReader
 		$this->data->set($class . ".p." . $property . "." . $attrName, $instance);
 	}
 
-
 	public function cacheData($className, array $attributes): void
 	{
 		foreach ($attributes as $attribute) {
 			if ($attribute[0] == "class") {
 				$this->cacheAttribute($className, $attribute[1], $attribute[2]);
-			}
-			else if ($attribute[0] == "property") {
+			} elseif ($attribute[0] == "property") {
 				$this->cachePropertyAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
-			} else if ($attribute[0] == "method") {
+			} elseif ($attribute[0] == "method") {
 				$this->cacheMethodAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
-			} else if ($attribute[0] == "constant") {
+			} elseif ($attribute[0] == "constant") {
 				$this->cacheClassConstantAttribute($className, $attribute[1], $attribute[2], $attribute[3]);
 			}
 		}
 	}
-	
+
 	public function extractData(ReflectionClass $class): array
 	{
 		$className = $class->getName();
 
 		$attributes = [];
-		
+
 		// Parse class attributes
 		foreach ($this->getAttributesFrom($class) as $attr) {
 			$instance = $attr->newInstance();
@@ -252,6 +249,6 @@ class AttributeReader
 
 	public function merge(self $reader): void
 	{
-		throw new \Exception("TODO: implement merge method");
+		throw new Exception("TODO: implement merge method");
 	}
 }
