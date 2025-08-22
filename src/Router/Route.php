@@ -55,7 +55,8 @@ class Route
 		private string $path,
 		private mixed $middleware,
 		?array $methods = self::HTTP_METHOD_ANY,
-		?string $name = null
+		?string $name = null,
+		?array $options = []
 	) {
 		$this->methods = is_array($methods) ? $this->validateHttpMethods($methods) : $methods;
 
@@ -65,6 +66,7 @@ class Route
 				: $path . '^' . implode(self::HTTP_METHOD_SEPARATOR, $this->methods);
 		}
 		$this->name = $name;
+		$this->options = $options;
 	}
 
 	/** @return non-empty-string */

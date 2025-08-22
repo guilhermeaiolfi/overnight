@@ -31,22 +31,22 @@ class AttributeReader
 
 	public function cacheAttribute($class, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".c." . $attrName, $instance);
+		$this->data->push($class . ".c." . $attrName, $instance);
 	}
 
 	public function cacheMethodAttribute($class, string $method, string $attrName, mixed $instance): void
 	{
-		$this->data->set($class . ".m." . $method . "." . $attrName, $instance);
+		$this->data->push($class . ".m." . $method . "." . $attrName, $instance);
 	}
 
 	public function cacheClassConstantAttribute($class, string $classConst, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".cc." . $classConst . "." . $attrName, $instance);
+		$this->data->push($class . ".cc." . $classConst . "." . $attrName, $instance);
 	}
 
 	public function cachePropertyAttribute($class, string $property, string $attrName, mixed $instance)
 	{
-		$this->data->set($class . ".p." . $property . "." . $attrName, $instance);
+		$this->data->push($class . ".p." . $property . "." . $attrName, $instance);
 	}
 
 	public function cacheData($className, array $attributes): void
@@ -183,9 +183,15 @@ class AttributeReader
 				}
 			} else {
 				foreach ($places[$targetIndex] as $targetName => $attributes) {
-					foreach ($attributes as $attrClassName => $attrInstance) {
+					foreach ($attributes as $attrClassName => $attrsArray) {
 						if (empty($attrClassNames) || in_array($attrClassName, $attrClassNames)) {
-							$result[] = $attrInstance;
+							if (is_array($attrsArray)) {
+								foreach ($attrsArray as $attrInstance) {
+									$result[] = $attrInstance;
+								}
+							} else {
+								$result[] = $attrsArray;
+							}
 						}
 					}
 				}

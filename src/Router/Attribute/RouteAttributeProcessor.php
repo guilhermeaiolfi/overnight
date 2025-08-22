@@ -28,7 +28,8 @@ class RouteAttributeProcessor
 				$attribute->getPath(),
 				$attribute->__declaringClass . "::" . $attribute->__methodName,
 				empty($attribute->getMethods()) ? null : $attribute->getMethods(),
-				$attribute->getName()
+				$attribute->getName(),
+				$attribute->getOptions()
 			);
 		}
 	}

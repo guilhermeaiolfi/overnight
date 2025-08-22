@@ -21,7 +21,7 @@ class RouterConfig extends Config
 		];
 	}
 
-	public function addRoute(mixed $path_or_obj, ?string $action = null, ?array $methods = ["GET"], ?string $route_name = null)
+	public function addRoute(mixed $path_or_obj, ?string $action = null, ?array $methods = ["GET"], ?string $route_name = null, ?array $options = [])
 	{
 		$route = $path_or_obj;
 
@@ -33,6 +33,7 @@ class RouterConfig extends Config
 				$action,
 				$methods,
 				$route_name,
+				$options
 			);
 		}
 		$this->routesToInject[] = $route;

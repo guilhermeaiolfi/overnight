@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace ON\Image;
 
+use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Application;
 use ON\Container\ContainerConfig;
-use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use ON\Image\Container\ImageManagerFactory;
+use ON\Image\Container\InterventionImageManagerFactory;
 use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension
@@ -42,6 +43,7 @@ class ImageExtension extends AbstractExtension
 		$containerConfig = $this->app->config->get(ContainerConfig::class);
 
 		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
+		$containerConfig->addFactory(InterventionImageManager::class, InterventionImageManagerFactory::class);
 	}
 
 	public function onConfigSetup(): void

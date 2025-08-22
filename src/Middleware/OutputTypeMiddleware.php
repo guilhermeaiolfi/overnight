@@ -21,6 +21,7 @@ class OutputTypeMiddleware implements MiddlewareInterface
 	{
 		$accept = $request->getHeader('Accept')[0];
 		$old_request = $request;
+
 		if (! $accept || ! preg_match('#^application/([^+\s]+\+)?json#', $accept)) {
 			$request = $request->withAttribute(OutputTypeMiddleware::class, "html");
 		} else {
