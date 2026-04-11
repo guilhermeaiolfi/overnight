@@ -14,7 +14,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Throwable;
 
-class MaintenanceExtension extends AbstractExtension
+class MaintenanceExtension extends AbstractExtension implements MaintenanceModeInterface
 {
 	protected int $type = self::TYPE_EXTENSION;
 

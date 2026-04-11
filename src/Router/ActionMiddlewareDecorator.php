@@ -7,6 +7,9 @@ namespace ON\Router;
 use Exception;
 use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Application;
+use ON\Router\RouteResult;
+use ReflectionMethod;
+use ReflectionNamedType;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Config\AppConfig;
 use ON\Container\Executor\ExecutorInterface;
@@ -55,15 +58,44 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 
 	public function execute(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
+		$args = $this->resolveRouteParams($request);
+		$args[ServerRequestInterface::class] = $request;
+		$args[RequestHandlerInterface::class] = $handler;
 
-		$args = [
-			ServerRequestInterface::class => $request,
-			RequestHandlerInterface::class => $handler,
-		];
 		$action_response = $this->executor->execute([$this->instance, $this->method], $args);
 
 		return $this->buildView($this->instance, $this->method, $action_response, $request, $handler);
+	}
 
+	protected function resolveRouteParams(ServerRequestInterface $request): array
+	{
+		$args = [];
+		$result = $request->getAttribute(RouteResult::class);
+
+		if (! $result || ! $result->isSuccess()) {
+			return $args;
+		}
+
+		$routeParams = $result->getMatchedParams();
+		$method = new ReflectionMethod($this->instance, $this->method);
+
+		foreach ($method->getParameters() as $param) {
+			$paramName = $param->getName();
+
+			if (isset($routeParams[$paramName])) {
+				$type = $param->getType();
+
+				if ($type instanceof ReflectionNamedType && $type->isBuiltin()) {
+					$value = $routeParams[$paramName];
+					settype($value, $type->getName());
+					$args[$paramName] = $value;
+				} elseif (! $type) {
+					$args[$paramName] = $routeParams[$paramName];
+				}
+			}
+		}
+
+		return $args;
 	}
 
 	public function getClassName(): string
