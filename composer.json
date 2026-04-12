@@ -28,6 +28,7 @@
         "cycle/migrations": "^4.2",
         "cycle/schema-migrations-generator": "^2.2",
         "cycle/schema-builder": "^2.11",
+        "webonyx/graphql-php": "^15.0",
         "laminas/laminas-stdlib": "^3.20",
         "mezzio/mezzio-helpers": "^5.18"
       },

@@ -8,12 +8,14 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Display\DisplayTrait;
 use ON\ORM\Definition\Exception\FieldException;
 use ON\ORM\Definition\Interface\InterfaceTrait;
+use ON\ORM\Definition\MetadataTrait;
 
 class Field implements FieldInterface
 {
 	use DisplayTrait;
 	use InterfaceTrait;
 	use SchemaTrait;
+	use MetadataTrait;
 
 	protected string $name;
 

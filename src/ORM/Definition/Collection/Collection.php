@@ -8,6 +8,7 @@ use Cycle\ORM\Mapper\StdMapper;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Field\FieldMap;
+use ON\ORM\Definition\MetadataTrait;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
@@ -17,6 +18,7 @@ use stdClass;
 
 class Collection implements CollectionInterface
 {
+	use MetadataTrait;
 	public string $name;
 	public ?string $note = null;
 	public ?string $source = Source::class;

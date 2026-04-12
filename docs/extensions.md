@@ -4,23 +4,39 @@ Extensions are modular components that extend the framework's functionality.
 
 ## Built-in Extensions
 
-| Extension | Purpose |
-|-----------|---------|
-| `RouterExtension` | Route registration helpers |
-| `ContainerExtension` | PHP-DI container |
-| `ViewExtension` | Template rendering |
-| `AuthExtension` | Authentication/authorization |
-| `SessionExtension` | Session management |
-| `TranslationExtension` | Internationalization |
-| `LoggingExtension` | Monolog logging |
-| `DatabaseExtension` | ORM/database |
-| `EventsExtension` | Event dispatcher |
-| `DiscoveryExtension` | Class discovery |
-| `ConsoleExtension` | CLI commands |
-| `CMSExtension` | Built-in CMS |
-| `MaintenanceExtension` | Maintenance mode |
-| `ClockworkExtension` | Debug profiling |
-| `FileRoutingExtension` | File-based routing |
+| Extension | Purpose | Documentation |
+|-----------|---------|---------------|
+| `RouterExtension` | Route registration helpers | [routing.md](extensions/routing.md) |
+| `ContainerExtension` | PHP-DI container | [di-container.md](extensions/di-container.md) |
+| `ViewExtension` | Template rendering | [views.md](extensions/views.md) |
+| `AuthExtension` | Authentication/authorization | [auth.md](extensions/auth.md) |
+| `SessionExtension` | Session management | [sessions.md](extensions/sessions.md) |
+| `TranslationExtension` | Internationalization | [translation.md](extensions/translation.md) |
+| `LoggingExtension` | Monolog logging | |
+| `DatabaseExtension` | ORM/database | [database.md](extensions/database.md) |
+| `EventsExtension` | Event dispatcher | [events.md](extensions/events.md) |
+| `DiscoveryExtension` | Class discovery | |
+| `ConsoleExtension` | CLI commands | |
+| `CMSExtension` | Built-in CMS | |
+| `MaintenanceExtension` | Maintenance mode | [maintenance.md](extensions/maintenance.md) |
+| `ClockworkExtension` | Debug profiling | |
+| `FileRoutingExtension` | File-based routing | |
+| `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
+
+## Extension Documentation
+
+Detailed documentation for each extension is available in the `docs/extensions/` folder:
+
+- [Routing](extensions/routing.md) - Route registration and configuration
+- [DI Container](extensions/di-container.md) - PHP-DI container setup
+- [Views](extensions/views.md) - Template rendering with Plates
+- [Authentication](extensions/auth.md) - User authentication and authorization
+- [Sessions](extensions/sessions.md) - Session management
+- [Translation](extensions/translation.md) - Internationalization (i18n)
+- [Database](extensions/database.md) - ORM and database configuration
+- [Events](extensions/events.md) - Event dispatcher
+- [Maintenance](extensions/maintenance.md) - Maintenance mode
+- [GraphQL](extensions/graphql.md) - GraphQL API support
 
 ## Installing Extensions
 

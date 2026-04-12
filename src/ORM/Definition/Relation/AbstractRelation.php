@@ -7,11 +7,13 @@ namespace ON\ORM\Definition\Relation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Display\DisplayTrait;
 use ON\ORM\Definition\Interface\InterfaceTrait;
+use ON\ORM\Definition\MetadataTrait;
 
 abstract class AbstractRelation implements RelationInterface
 {
 	use DisplayTrait;
 	use InterfaceTrait;
+	use MetadataTrait;
 	// Defines if relation can be nullable (child can have no parent). Defaults to false
 	public bool $nullable = false;
 
