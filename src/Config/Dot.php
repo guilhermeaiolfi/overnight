@@ -47,14 +47,11 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	protected $delimiter = ".";
 
 	/**
-	 * Create a new Dot instance
-	 *
-	 * @param  mixed  $items
-	 * @param  bool  $parse
-	 * @param  non-empty-string  $delimiter
-	 * @return void
+	 * @param array|object|null $items
+	 * @param bool $parse
+	 * @param non-empty-string $delimiter
 	 */
-	public function __construct($items = [], $parse = false, $delimiter = ".")
+	public function __construct(array|object|null $items = [], bool $parse = false, string $delimiter = ".")
 	{
 		$items = $this->getArrayItems($items);
 
@@ -78,7 +75,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 		return [];
 	}
 
-	public static function create($items = [], $parse = false, $delimiter = "."): static
+	public static function create(array|object|null $items = [], bool $parse = false, string $delimiter = "."): static
 	{
 		$defaults = static::getDefaults();
 
@@ -88,7 +85,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 		return $config;
 	}
 
-	public function resolvePath($path, $bag): string
+	public function resolvePath(string $path, array $bag): string
 	{
 		if (preg_match_all("/%(.*?)%/", $path, $m)) {
 			$values = array_values(array_replace(array_flip($m[1]), $bag));
@@ -110,7 +107,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $value
 	 * @return $this
 	 */
-	public function add($keys, $value = null)
+	public function add(array|int|string $keys, mixed $value = null): static
 	{
 		if (is_array($keys)) {
 			foreach ($keys as $key => $value) {
@@ -128,7 +125,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 *
 	 * @return array<TKey, TValue>
 	 */
-	public function all()
+	public function all(): array
 	{
 		return $this->items;
 	}
@@ -139,7 +136,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey>|int|string|null  $keys
 	 * @return $this
 	 */
-	public function clear($keys = null)
+	public function clear(array|int|string|null $keys = null): static
 	{
 		if ($keys === null) {
 			$this->items = [];
@@ -162,7 +159,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey>|array<TKey, TValue>|int|string  $keys
 	 * @return $this
 	 */
-	public function delete($keys)
+	public function delete(array|int|string $keys): static
 	{
 		$keys = (array) $keys;
 
@@ -198,7 +195,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  int|string  $key  The key to look for
 	 * @return bool
 	 */
-	protected function exists($array, $key)
+	protected function exists(array $array, int|string $key): bool
 	{
 		return array_key_exists($key, $array);
 	}
@@ -211,7 +208,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  string  $prepend
 	 * @return array<TKey, TValue>
 	 */
-	public function flatten($delimiter = '.', $items = null, $prepend = '')
+	public function flatten(string $delimiter = '.', array|null $items = null, string $prepend = ''): array
 	{
 		$flatten = [];
 
@@ -237,7 +234,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $default
 	 * @return mixed
 	 */
-	public function get($key = null, $default = null)
+	public function get(string|int|null $key = null, mixed $default = null): mixed
 	{
 		if ($key === null) {
 			return $this->items;
@@ -270,7 +267,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>|self<TKey, TValue>|object|string  $items
 	 * @return array<TKey, TValue>
 	 */
-	protected function getArrayItems($items)
+	protected function getArrayItems(array|object|string $items): array
 	{
 		if (is_array($items)) {
 			return $items;
@@ -289,7 +286,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey>|int|string  $keys
 	 * @return bool
 	 */
-	public function has($keys)
+	public function has(array|int|string $keys): bool
 	{
 		$keys = (array) $keys;
 
@@ -322,7 +319,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey>|int|string|null  $keys
 	 * @return bool
 	 */
-	public function isEmpty($keys = null)
+	public function isEmpty(array|int|string|null $keys = null): bool
 	{
 		if ($keys === null) {
 			return empty($this->items);
@@ -347,7 +344,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>|self<TKey, TValue>  $value
 	 * @return $this
 	 */
-	public function merge($key, $value = [])
+	public function merge(array|self|string $key, array|self $value = []): static
 	{
 		if (is_array($key)) {
 			$this->items = array_merge($this->items, $key);
@@ -373,7 +370,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>|self<TKey, TValue>  $value
 	 * @return $this
 	 */
-	public function mergeRecursive($key, $value = [])
+	public function mergeRecursive(array|self|string $key, array|self $value = []): static
 	{
 		if (is_array($key)) {
 			$this->items = array_merge_recursive($this->items, $key);
@@ -400,7 +397,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>|self<TKey, TValue>  $value
 	 * @return $this
 	 */
-	public function mergeRecursiveDistinct($key, $value = [])
+	public function mergeRecursiveDistinct(array|self|string $key, array|self $value = []): static
 	{
 		if (is_array($key)) {
 			$this->items = $this->arrayMergeRecursiveDistinct($this->items, $key);
@@ -448,7 +445,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $default
 	 * @return mixed
 	 */
-	public function pull($key = null, $default = null)
+	public function pull(string|int|null $key = null, mixed $default = null): mixed
 	{
 		if ($key === null) {
 			$value = $this->all();
@@ -471,7 +468,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $value
 	 * @return $this
 	 */
-	public function push($key, $value = null)
+	public function push(string|int $key, mixed $value = null): static
 	{
 		if ($value === null) {
 			$this->items[] = $key;
@@ -489,7 +486,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 		return $this;
 	}
 
-	public function shift($key)
+	public function shift(string|int $key): mixed
 	{
 		$items = $this->get($key);
 
@@ -511,7 +508,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>|self<TKey, TValue>  $value
 	 * @return $this
 	 */
-	public function replace($key, $value = [])
+	public function replace(array|self|string $key, array|self $value = []): static
 	{
 		if (is_array($key)) {
 			$this->items = array_replace($this->items, $key);
@@ -534,7 +531,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $value
 	 * @return $this
 	 */
-	public function set($keys, $value = null)
+	public function set(array|int|string $keys, mixed $value = null): static
 	{
 		if (is_array($keys)) {
 			foreach ($keys as $key => $value) {
@@ -567,7 +564,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  mixed  $items
 	 * @return $this
 	 */
-	public function setArray($items)
+	public function setArray(array $items): static
 	{
 		$this->items = $this->getArrayItems($items);
 
@@ -580,7 +577,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  array<TKey, TValue>  $items
 	 * @return $this
 	 */
-	public function setReference(array &$items)
+	public function setReference(array &$items): static
 	{
 		$this->items = &$items;
 
@@ -594,7 +591,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  int  $options
 	 * @return string|false
 	 */
-	public function toJson($key = null, $options = 0)
+	public function toJson(string|int|null $key = null, int $options = 0): string|false
 	{
 		if (is_string($key)) {
 			return json_encode($this->get($key), $options);
@@ -629,7 +626,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  int|string  $key
 	 * @return bool
 	 */
-	public function offsetExists($key): bool
+	public function offsetExists(mixed $key): bool
 	{
 		return $this->has($key);
 	}
@@ -641,7 +638,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @return mixed
 	 */
 	#[ReturnTypeWillChange]
-	public function offsetGet($key)
+	public function offsetGet(mixed $key): mixed
 	{
 		return $this->get($key);
 	}
@@ -652,7 +649,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param int|string|null  $key
 	 * @param mixed  $value
 	 */
-	public function offsetSet($key, $value): void
+	public function offsetSet(mixed $key, mixed $value): void
 	{
 		if ($key === null) {
 			$this->items[] = $value;
@@ -669,7 +666,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  int|string  $key
 	 * @return void
 	 */
-	public function offsetUnset($key): void
+	public function offsetUnset(mixed $key): void
 	{
 		$this->delete($key);
 	}
@@ -686,7 +683,7 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	 * @param  int|string|null  $key
 	 * @return int
 	 */
-	public function count($key = null): int
+	public function count(string|int|null $key = null): int
 	{
 		return count($this->get($key));
 	}
