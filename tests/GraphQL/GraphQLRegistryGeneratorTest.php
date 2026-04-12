@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Tests\ON\GraphQL;
 
 use GraphQL\Type\Schema;
+use ON\DB\DatabaseInterface;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
+use stdClass;
 
 final class GraphQLRegistryGeneratorTest extends TestCase
 {
-	private Registry $registry;
+private Registry $registry;
+	private ?TestDatabaseMock $database = null;
 
 	protected function setUp(): void
 	{
 		$this->registry = new Registry();
+		$this->database = new TestDatabaseMock();
 	}
 
 	public function testCanBeInstantiated(): void
@@ -121,7 +125,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Resolver for collection "user::findAll" is not defined');
+		$this->expectExceptionMessage('Database not configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, [], null);
@@ -140,7 +144,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user_by_id');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Resolver for collection "user::findById" is not defined');
+		$this->expectExceptionMessage('Database not configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, ['id' => '1'], null);
@@ -240,5 +244,144 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$resolver(null, ['input' => '{}'], null);
 
 		$this->assertTrue($called);
+	}
+
+	public function testResolveCollectionWithoutDatabaseThrowsException(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$queryType = $schema->getQueryType();
+		$userField = $queryType->getField('user');
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage('Database not configured');
+
+		$resolver = $userField->resolveFn;
+		$resolver(null, [], null);
+	}
+
+	public function testResolveByIdWithoutDatabaseThrowsException(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$queryType = $schema->getQueryType();
+		$userField = $queryType->getField('user_by_id');
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage('Database not configured');
+
+		$resolver = $userField->resolveFn;
+		$resolver(null, ['id' => '1'], null);
+	}
+
+	public function testResolveCreateWithoutDatabaseWithCustomResolver(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->metadata('gql::resolver::create', fn() => null)
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$mutationType = $schema->getMutationType();
+		$createField = $mutationType->getField('create_user');
+
+		$resolver = $createField->resolveFn;
+		$result = $resolver(null, ['input' => '{"name":"John"}'], null);
+
+		$this->assertNull($result);
+	}
+
+	public function testResolveUpdateWithoutDatabaseWithCustomResolver(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->metadata('gql::resolver::update', fn() => null)
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$mutationType = $schema->getMutationType();
+		$updateField = $mutationType->getField('update_user');
+
+		$resolver = $updateField->resolveFn;
+		$result = $resolver(null, ['id' => '1', 'input' => '{"name":"John"}'], null);
+
+		$this->assertNull($result);
+	}
+
+	public function testResolveDeleteWithoutDatabaseWithCustomResolver(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->metadata('gql::resolver::delete', fn() => null)
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$mutationType = $schema->getMutationType();
+		$deleteField = $mutationType->getField('delete_user');
+
+		$resolver = $deleteField->resolveFn;
+		$result = $resolver(null, ['id' => '1'], null);
+
+		$this->assertNull($result);
+	}
+
+	public function testFilterableFieldsAreAddedAsQueryArgs(): void
+	{
+		$this->registry->collection('post')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('title', 'string')->type('string')->end()
+			->field('status', 'string')->type('string')->end()
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$queryType = $schema->getQueryType();
+		$postField = $queryType->getField('post');
+		$postArgs = $postField->config['args'] ?? [];
+
+		$this->assertArrayHasKey('title', $postArgs);
+		$this->assertArrayHasKey('status', $postArgs);
+		$this->assertArrayHasKey('sort', $postArgs);
+		$this->assertArrayHasKey('order', $postArgs);
+		$this->assertArrayNotHasKey('id', $postArgs);
+	}
+
+	public function testPrimaryKeyNotFilterable(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->end();
+
+		$collection = $this->registry->getCollection('user');
+
+		$fieldsArray = iterator_to_array($collection->fields);
+		$idField = $fieldsArray['id'];
+		$nameField = $fieldsArray['name'];
+
+		$this->assertFalse($idField->isFilterable());
+		$this->assertTrue($nameField->isFilterable());
 	}
 }

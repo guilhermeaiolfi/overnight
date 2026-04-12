@@ -53,6 +53,10 @@ interface FieldInterface
 
 	public function isPrimaryKey(): bool;
 
+	public function filterable(bool $filterable = true): self;
+
+	public function isFilterable(): bool;
+
 	public function required(bool $required): self;
 
 	public function isRequired(): bool;

@@ -30,6 +30,8 @@ trait SchemaTrait
 
 	protected bool $auto_increment = false;
 
+	protected bool $filterable = true;
+
 	public function numericPrecision(int $numeric_precision): self
 	{
 		$this->numeric_precision = $numeric_precision;
@@ -57,6 +59,9 @@ trait SchemaTrait
 	public function primaryKey(bool $pk): self
 	{
 		$this->pk = $pk;
+		if ($pk) {
+			$this->filterable = false;
+		}
 
 		return $this;
 	}
@@ -64,6 +69,18 @@ trait SchemaTrait
 	public function isPrimaryKey(): bool
 	{
 		return $this->pk;
+	}
+
+	public function filterable(bool $filterable = true): self
+	{
+		$this->filterable = $filterable;
+
+		return $this;
+	}
+
+	public function isFilterable(): bool
+	{
+		return $this->filterable;
 	}
 
 	/** @param RelationInterface|FieldInterface $parent */
