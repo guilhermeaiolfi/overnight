@@ -109,7 +109,7 @@ src/
 
 ## Requirements
 
-- PHP 7.2+
+- PHP 8.1+
 - PSR-7 (HTTP messages)
 - PSR-11 (Container)
 - PSR-15 (Middleware)
