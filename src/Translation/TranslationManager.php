@@ -488,7 +488,7 @@ class TranslationManager implements TranslationManagerInterface
 		try {
 			$domainExtra = '';
 
-			return $this->getTranslators($domain, $domainExtra, $type);
+			return $this->getTranslator($domain, $domainExtra, $type);
 		} catch (InvalidArgumentException $e) {
 			return null;
 		}

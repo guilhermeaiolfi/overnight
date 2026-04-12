@@ -31,7 +31,7 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 		$routeResult = $request->getAttribute(RouteResult::class, false);
 
 		if (! $routeResult) {
-			return $handler->handle($request, $handler);
+			return $handler->handle($request);
 		}
 
 		$middleware = $routeResult->getMatchedRoute()->getMiddleware();
@@ -58,6 +58,6 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 			$routeResult->set(Action::class, $action);
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 }

@@ -123,7 +123,7 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			$valid = $this->executor->execute([$page, $validateMethod], $args);
 
 			if ($valid) {
-				return $handler->handle($request, $handler);
+				return $handler->handle($request);
 			}
 			// if it's not validated, we need to handle the error response
 			$handleErrorMethod = "handleError";
@@ -135,7 +135,7 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			return $this->buildView($page, $this->method, $response, $request, $handler);
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 
 	public function loggedCheck(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -157,7 +157,7 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			//return new RedirectResponse($this->router->gen("login"));
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 
 	public function checkPermissions(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -191,6 +191,6 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			}
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 }

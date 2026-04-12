@@ -23,7 +23,7 @@ class ValidationMiddleware implements MiddlewareInterface
 		$routeResult = $request->getAttribute(RouteResult::class, false);
 
 		if (! $routeResult) {
-			return $handler->handle($request, $handler);
+			return $handler->handle($request);
 		}
 
 		$route = $routeResult->getMatchedRoute();
@@ -33,6 +33,6 @@ class ValidationMiddleware implements MiddlewareInterface
 			return $middleware->validate($request, $handler);
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 }

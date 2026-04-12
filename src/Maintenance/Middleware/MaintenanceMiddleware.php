@@ -25,7 +25,7 @@ class MaintenanceMiddleware implements MiddlewareInterface
 	{
 		if ($this->app->isMaintenanceMode()) {
 			if ($this->isIpAllowed($request)) {
-				return $handler->handle($request, $handler);
+				return $handler->handle($request);
 			}
 
 			$appCfg = $this->app->config;
@@ -48,7 +48,7 @@ class MaintenanceMiddleware implements MiddlewareInterface
 			return $result;
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 
 	private function isIpAllowed(ServerRequestInterface $request): bool
