@@ -47,7 +47,7 @@ class Registry
 		// by default, set the table name as the same as the collection name
 		$collection->table($name);
 
-		return  $collection;
+		return $collection;
 	}
 
 	public function getCollection(string $name): CollectionInterface
