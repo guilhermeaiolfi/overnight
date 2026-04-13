@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\GraphQL;
 
+use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
-use function implode;
 use ON\DB\DatabaseInterface;
 use ON\GraphQL\DataLoader\GenericDataLoader;
 use ON\ORM\Definition\Collection\Collection;
@@ -18,17 +18,13 @@ use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use PDO;
-use function preg_replace;
 use Psr\Container\ContainerInterface;
 use RuntimeException;
-use function sprintf;
-use function strtoupper;
 
 class GraphQLRegistryGenerator
 {
-	protected Registry $registry;
 	protected array $types = [];
-	protected array $typeFieldsMap = [];
+	protected array $inputTypes = [];
 	protected GenericDataLoader $dataLoader;
 
 	public function __construct(
@@ -43,39 +39,43 @@ class GraphQLRegistryGenerator
 
 	public function generate(): Schema
 	{
+		$this->types = [];
+		$this->inputTypes = [];
+
 		$this->buildTypes();
 		$queryFields = $this->buildQueryFields();
 		$mutationFields = $this->buildMutationFields();
 
 		$queryType = new ObjectType([
 			'name' => 'Query',
+			'description' => 'Root query type',
 			'fields' => $queryFields,
 		]);
 
-		$hasMutationResolvers = $this->hasAnyMutationResolvers();
-		$mutationType = ! empty($mutationFields) && $hasMutationResolvers
-			? new ObjectType(['name' => 'Mutation', 'fields' => $mutationFields])
+		$mutationType = !empty($mutationFields)
+			? new ObjectType([
+				'name' => 'Mutation',
+				'description' => 'Root mutation type',
+				'fields' => $mutationFields,
+			])
 			: null;
+
+		$this->types['Query'] = $queryType;
+		if ($mutationType !== null) {
+			$this->types['Mutation'] = $mutationType;
+		}
 
 		return new Schema([
 			'query' => $queryType,
 			'mutation' => $mutationType,
-			'typeLoader' => fn (string $name) => $this->types[$name] ?? null,
+			'typeLoader' => fn (string $name) => $this->types[$name] ?? $this->inputTypes[$name] ?? null,
 		]);
 	}
 
-	protected function hasAnyMutationResolvers(): bool
+	protected function quoteIdentifier(string $identifier): string
 	{
-		foreach ($this->ormRegistry->getCollections() as $collection) {
-			if ($collection->metadata('gql::resolver::create') !== null
-				|| $collection->metadata('gql::resolver::update') !== null
-				|| $collection->metadata('gql::resolver::delete') !== null
-			) {
-				return true;
-			}
-		}
-
-		return false;
+		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
+		return "`{$sanitized}`";
 	}
 
 	protected function buildTypes(): void
@@ -84,27 +84,27 @@ class GraphQLRegistryGenerator
 			if ($collection->hidden) {
 				continue;
 			}
-
 			$typeName = $this->getTypeName($collection->name);
-			$fields = [];
-
-			foreach ($collection->fields as $fieldName => $field) {
-				$fields[$fieldName] = $this->convertField($field);
-			}
-
-			foreach ($collection->relations as $relationName => $relation) {
-				$fields[$relationName] = $this->convertRelation($relation);
-			}
-
-			$this->typeFieldsMap[$typeName] = $fields;
-		}
-
-		foreach ($this->typeFieldsMap as $typeName => $fields) {
 			$this->types[$typeName] = new ObjectType([
 				'name' => $typeName,
-				'fields' => $fields,
+				'fields' => fn() => $this->buildFieldsForCollection($collection),
 			]);
 		}
+	}
+
+	protected function buildFieldsForCollection(Collection $collection): array
+	{
+		$fields = [];
+
+		foreach ($collection->fields as $fieldName => $field) {
+			$fields[$fieldName] = $this->convertField($field);
+		}
+
+		foreach ($collection->relations as $relationName => $relation) {
+			$fields[$relationName] = $this->convertRelation($relation);
+		}
+
+		return $fields;
 	}
 
 	protected function getTypeName(string $collectionName): string
@@ -138,7 +138,7 @@ class GraphQLRegistryGenerator
 		$targetTypeObj = $this->types[$targetType] ?? null;
 
 		if ($targetTypeObj === null) {
-			$targetTypeObj = $this->createSyntheticType($relation->getCollection());
+			$targetTypeObj = $this->buildFallbackType($relation->getCollection());
 			$this->types[$targetType] = $targetTypeObj;
 		}
 
@@ -162,37 +162,43 @@ class GraphQLRegistryGenerator
 		];
 	}
 
-	protected function createSyntheticType(string $collectionName): ObjectType
+	protected function buildFallbackType(string $collectionName): ObjectType
 	{
 		$collection = $this->ormRegistry->getCollection($collectionName);
-		if (! $collection) {
-			return new ObjectType(['name' => $collectionName, 'fields' => []]);
-		}
+		$typeName = $this->getTypeName($collectionName);
 
-		$fields = [];
-		foreach ($collection->fields as $fieldName => $field) {
-			$fields[$fieldName] = $this->convertField($field);
-		}
-
-		foreach ($collection->relations as $relationName => $relation) {
-			$fields[$relationName] = $this->convertRelation($relation);
+		if (!$collection) {
+			return new ObjectType(['name' => $typeName, 'fields' => []]);
 		}
 
 		return new ObjectType([
-			'name' => $collectionName,
-			'fields' => $fields,
+			'name' => $typeName,
+			'fields' => fn() => $this->buildFieldsForCollection($collection),
 		]);
 	}
 
-	protected function wrapResolver(callable $resolver): callable
+	protected function wrapResolver(callable $resolver, bool $includeSource = true): callable
 	{
-		return function ($source, array $args = [], ?object $context = null) use ($resolver) {
-			if ($this->container !== null) {
-				return $resolver($source, $args, $this->container, $context);
-			}
+		return function ($source, array $args = [], ?object $context = null) use ($resolver, $includeSource) {
+			$params = $includeSource ? [$source, $args] : [$args];
+			$params[] = $this->container;
+			$params[] = $context;
 
-			return $resolver($source, $args, null, $context);
+			return $resolver(...$params);
 		};
+	}
+
+	protected function requireDatabase(string $operation): void
+	{
+		if ($this->database === null) {
+			throw new RuntimeException(
+				sprintf(
+					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("%s", callable).',
+					self::class,
+					$operation
+				)
+			);
+		}
 	}
 
 	protected function resolveRelation($source, RelationInterface $relation): mixed
@@ -207,6 +213,10 @@ class GraphQLRegistryGenerator
 			$property = $relation->getInnerKey();
 			$value = $source->{$property} ?? null;
 
+			if ($relation instanceof HasOneRelation) {
+				return is_array($value) ? ($value[0] ?? null) : $value;
+			}
+
 			if ($relation instanceof HasManyRelation && is_array($value)) {
 				return $value;
 			}
@@ -218,47 +228,65 @@ class GraphQLRegistryGenerator
 		}
 	}
 
-	protected function resolveRelationFromDatabase($source, RelationInterface $relation): array
+	protected function resolveRelationFromDatabase($source, RelationInterface $relation): mixed
 	{
 		$collectionName = $relation->getCollection();
 		$innerKey = $relation->getInnerKey();
 		$outerKey = $relation->getOuterKey();
 
-		// Get source's outer key value (e.g., user->id)
 		$sourceId = is_array($source)
 			? ($source[$outerKey] ?? null)
 			: ($source->{$outerKey} ?? null);
 
 		if ($sourceId === null) {
-			return [];
+			return $relation instanceof HasOneRelation ? null : [];
 		}
 
-		// Get Collection for table lookup
 		$collection = $this->ormRegistry->getCollection($collectionName);
 		if ($collection === null) {
 			throw new \RuntimeException("Collection not found: {$collectionName}");
 		}
 
-		// Check DataLoader cache first (use collection NAME string, not object)
-		$cacheKey = $this->dataLoader->normalizeKey($collectionName, ['id' => $sourceId]);
-		$cached = $this->dataLoader->get($collectionName, ['id' => $sourceId]);
-		if ($cached !== null) {
-			return $cached;
-		}
-
-		// Direct query for relations
 		$table = $collection->getTable();
+		$isHasOne = $relation instanceof HasOneRelation;
 
-		$sql = "SELECT * FROM {$table} WHERE {$innerKey} = ?";
-		$stmt = $this->database->getConnection()->prepare($sql);
-		$stmt->execute([$sourceId]);
+		$entityKey = $collectionName . ':' . $innerKey;
 
-		$results = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
+		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $innerKey, $isHasOne) {
+			$placeholders = implode(', ', array_fill(0, count($batchKeys), '?'));
+			$flatKeys = [];
+			foreach ($batchKeys as $keySet) {
+				$flatKeys[] = is_array($keySet) ? reset($keySet) : $keySet;
+			}
 
-		// Cache for potential reuse (use collection NAME string)
-		$this->dataLoader->set($collectionName, ['id' => $sourceId], $results);
+			$quotedTable = $this->quoteIdentifier($table);
+			$quotedInnerKey = $this->quoteIdentifier($innerKey);
+			$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedInnerKey} IN ({$placeholders})";
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute($flatKeys);
 
-		return $results;
+			$allResults = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
+
+			$grouped = [];
+			foreach ($allResults as $row) {
+				$key = $row->{$innerKey} ?? null;
+				if ($key !== null) {
+					$grouped[$key][] = $row;
+				}
+			}
+
+			$results = [];
+			foreach ($flatKeys as $i => $keyValue) {
+				$rows = $grouped[$keyValue] ?? [];
+				if ($isHasOne) {
+					$results[$i] = $rows[0] ?? null;
+				} else {
+					$results[$i] = $rows;
+				}
+			}
+
+			return $results;
+		});
 	}
 
 	protected function mapOrmTypeToGraphQL(Field $field): Type|string
@@ -283,6 +311,34 @@ class GraphQLRegistryGenerator
 		return $graphqlType;
 	}
 
+	protected function buildConnectionType(string $typeName, ObjectType $itemType): ObjectType
+	{
+		$connectionTypeName = $typeName . 'Connection';
+
+		if (isset($this->types[$connectionTypeName])) {
+			return $this->types[$connectionTypeName];
+		}
+
+		$connectionType = new ObjectType([
+			'name' => $connectionTypeName,
+			'description' => "Paginated list of {$typeName} items",
+			'fields' => [
+				'items' => [
+					'type' => Type::listOf($itemType),
+					'description' => 'The list of items',
+				],
+				'totalCount' => [
+					'type' => Type::nonNull(Type::int()),
+					'description' => 'Total number of matching items',
+				],
+			],
+		]);
+
+		$this->types[$connectionTypeName] = $connectionType;
+
+		return $connectionType;
+	}
+
 	protected function buildQueryFields(): array
 	{
 		$fields = [];
@@ -295,12 +351,14 @@ class GraphQLRegistryGenerator
 			$typeName = $this->getTypeName($collection->name);
 			$type = $this->types[$typeName] ?? Type::string();
 
+			$connectionType = $this->buildConnectionType($typeName, $type);
+
 			$findAllResolver = $collection->metadata('gql::resolver::findAll');
 			$fields[$collection->name] = [
-				'type' => Type::listOf($type),
+				'type' => $connectionType,
 				'args' => $this->buildQueryArgs($collection),
 				'resolve' => $findAllResolver !== null
-					? $this->wrapResolver($findAllResolver)
+					? $this->wrapResolver($findAllResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						return $this->resolveCollection($collection, $args ?? []);
 					},
@@ -311,7 +369,7 @@ class GraphQLRegistryGenerator
 				'type' => $type,
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $findByIdResolver !== null
-					? $this->wrapResolver($findByIdResolver)
+					? $this->wrapResolver($findByIdResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						return $this->resolveById($collection, $args['id'] ?? '');
 					},
@@ -319,6 +377,43 @@ class GraphQLRegistryGenerator
 		}
 
 		return $fields;
+	}
+
+	protected function buildInputType(Collection $collection, bool $forUpdate = false): InputObjectType
+	{
+		$suffix = $forUpdate ? 'UpdateInput' : 'Input';
+		$typeName = $this->getTypeName($collection->name) . $suffix;
+
+		if (isset($this->inputTypes[$typeName])) {
+			return $this->inputTypes[$typeName];
+		}
+
+		$fields = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isPrimaryKey()) {
+				continue;
+			}
+			$fieldType = $this->mapOrmTypeToGraphQL($field);
+			if ($forUpdate && $fieldType instanceof \GraphQL\Type\Definition\NonNull) {
+				$fieldType = $fieldType->getWrappedType();
+			}
+			$fields[$fieldName] = [
+				'type' => $fieldType,
+			];
+		}
+
+		if (empty($fields)) {
+			$fields['_empty'] = ['type' => Type::string()];
+		}
+
+		$inputType = new InputObjectType([
+			'name' => $typeName,
+			'fields' => $fields,
+		]);
+
+		$this->inputTypes[$typeName] = $inputType;
+
+		return $inputType;
 	}
 
 	protected function buildMutationFields(): array
@@ -332,94 +427,102 @@ class GraphQLRegistryGenerator
 
 			$typeName = $this->getTypeName($collection->name);
 			$type = $this->types[$typeName] ?? Type::string();
+			$createInputType = $this->buildInputType($collection);
+			$updateInputType = $this->buildInputType($collection, true);
 
 			$createResolver = $collection->metadata('gql::resolver::create');
-			if ($createResolver !== null) {
-				$fields['create_' . $collection->name] = [
-					'type' => $type,
-					'args' => ['input' => Type::nonNull(Type::string())],
-					'resolve' => $this->wrapResolver($createResolver),
-				];
-			}
+			$fields['create_' . $collection->name] = [
+				'type' => $type,
+				'args' => ['input' => Type::nonNull($createInputType)],
+				'resolve' => $createResolver !== null
+					? $this->wrapResolver($createResolver, false)
+					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						return $this->resolveCreate($collection, $args['input'] ?? []);
+					},
+			];
 
 			$updateResolver = $collection->metadata('gql::resolver::update');
-			if ($updateResolver !== null) {
-				$fields['update_' . $collection->name] = [
-					'type' => $type,
-					'args' => [
-						'id' => Type::nonNull(Type::id()),
-						'input' => Type::nonNull(Type::string()),
-					],
-					'resolve' => $this->wrapResolver($updateResolver),
-				];
-			}
+			$fields['update_' . $collection->name] = [
+				'type' => $type,
+				'args' => [
+					'id' => Type::nonNull(Type::id()),
+					'input' => Type::nonNull($updateInputType),
+				],
+				'resolve' => $updateResolver !== null
+					? $this->wrapResolver($updateResolver, false)
+					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						return $this->resolveUpdate($collection, $args['id'] ?? '', $args['input'] ?? []);
+					},
+			];
 
 			$deleteResolver = $collection->metadata('gql::resolver::delete');
-			if ($deleteResolver !== null) {
-				$fields['delete_' . $collection->name] = [
-					'type' => Type::boolean(),
-					'args' => ['id' => Type::nonNull(Type::id())],
-					'resolve' => $this->wrapResolver($deleteResolver),
-				];
-			}
+			$fields['delete_' . $collection->name] = [
+				'type' => Type::boolean(),
+				'args' => ['id' => Type::nonNull(Type::id())],
+				'resolve' => $deleteResolver !== null
+					? $this->wrapResolver($deleteResolver, false)
+					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						return $this->resolveDelete($collection, $args['id'] ?? '');
+					},
+			];
 		}
 
 		return $fields;
 	}
 
+	protected function getFilterableFields(Collection $collection): array
+	{
+		$fields = [];
+		foreach ($collection->fields as $name => $field) {
+			if (!$field->isPrimaryKey() && $field->isFilterable()) {
+				$fields[$name] = $field;
+			}
+		}
+		return $fields;
+	}
+
 	protected function resolveCollection(Collection $collection, array $args = []): array
 	{
-		if ($this->database === null) {
-			throw new RuntimeException(
-				sprintf(
-					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("gql::resolver::findAll", callable).',
-					self::class
-				)
-			);
-		}
+		$this->requireDatabase('gql::resolver::findAll');
 
-		// For collections: direct query
 		$table = $collection->getTable();
 		$where = $this->buildWhereClause($collection, $args);
 		$orderBy = $this->buildOrderBy($collection, $args);
 
-		$sql = "SELECT * FROM {$table} {$where} {$orderBy}";
+		$limit = isset($args['limit']) ? ' LIMIT ' . (int) $args['limit'] : '';
+		$offset = isset($args['offset']) ? ' OFFSET ' . (int) $args['offset'] : '';
 
+		$quotedTable = $this->quoteIdentifier($table);
+
+		$countSql = "SELECT COUNT(*) as cnt FROM {$quotedTable} {$where}";
 		$values = $this->extractFilterValues($collection, $args);
 
+		$countStmt = $this->database->getConnection()->prepare($countSql);
+		$countStmt->execute($values);
+		$countRow = $countStmt->fetch(PDO::FETCH_OBJ);
+		$totalCount = $countRow ? (int) $countRow->cnt : 0;
+
+		$sql = "SELECT * FROM {$quotedTable} {$where} {$orderBy}{$limit}{$offset}";
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute($values);
+		$items = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
 
-		$results = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
-
-		// Pre-populate DataLoader cache for potential relation loads
-		if (isset($this->dataLoader)) {
-			foreach ($results as $item) {
-				$id = is_array($item) ? ($item['id'] ?? null) : ($item->id ?? null);
-				if ($id !== null) {
-					$this->dataLoader->set($collection->name, ['id' => $id], $item);
-				}
-			}
-		}
-
-		return $results;
+		return [
+			'items' => $items,
+			'totalCount' => $totalCount,
+		];
 	}
 
 	protected function resolveById(Collection $collection, string $id): ?object
 	{
-		if ($this->database === null) {
-			throw new RuntimeException(
-				sprintf(
-					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("gql::resolver::findById", callable).',
-					self::class
-				)
-			);
-		}
+		$this->requireDatabase('gql::resolver::findById');
 
 		$table = $collection->getTable();
 		$pkColumn = $this->getPrimaryKeyColumn($collection);
 
-		$sql = "SELECT * FROM {$table} WHERE {$pkColumn} = ?";
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
+		$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedPk} = ?";
 
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute([$id]);
@@ -429,31 +532,25 @@ class GraphQLRegistryGenerator
 
 	protected function resolveCreate(Collection $collection, array $input): ?object
 	{
-		if ($this->database === null) {
-			throw new RuntimeException(
-				sprintf(
-					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("gql::resolver::create", callable).',
-					self::class
-				)
-			);
-		}
+		$this->requireDatabase('gql::resolver::create');
 
 		$table = $collection->getTable();
 
 		$columns = array_keys($input);
+		$quotedColumns = array_map(fn(string $col) => $this->quoteIdentifier($col), $columns);
 		$placeholders = array_fill(0, count($columns), '?');
 
+		$quotedTable = $this->quoteIdentifier($table);
 		$sql = sprintf(
 			'INSERT INTO %s (%s) VALUES (%s)',
-			$table,
-			implode(', ', $columns),
+			$quotedTable,
+			implode(', ', $quotedColumns),
 			implode(', ', $placeholders)
 		);
 
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute(array_values($input));
 
-		$pkColumn = $this->getPrimaryKeyColumn($collection);
 		$lastId = $this->database->getConnection()->lastInsertId();
 
 		return $this->resolveById($collection, (string) $lastId);
@@ -461,28 +558,23 @@ class GraphQLRegistryGenerator
 
 	protected function resolveUpdate(Collection $collection, string $id, array $input): ?object
 	{
-		if ($this->database === null) {
-			throw new RuntimeException(
-				sprintf(
-					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("gql::resolver::update", callable).',
-					self::class
-				)
-			);
-		}
+		$this->requireDatabase('gql::resolver::update');
 
 		$table = $collection->getTable();
 		$pkColumn = $this->getPrimaryKeyColumn($collection);
 
 		$sets = [];
 		foreach (array_keys($input) as $column) {
-			$sets[] = "{$column} = ?";
+			$sets[] = $this->quoteIdentifier($column) . " = ?";
 		}
 
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
 		$sql = sprintf(
 			'UPDATE %s SET %s WHERE %s = ?',
-			$table,
+			$quotedTable,
 			implode(', ', $sets),
-			$pkColumn
+			$quotedPk
 		);
 
 		$values = array_values($input);
@@ -496,19 +588,14 @@ class GraphQLRegistryGenerator
 
 	protected function resolveDelete(Collection $collection, string $id): bool
 	{
-		if ($this->database === null) {
-			throw new RuntimeException(
-				sprintf(
-					'Database not configured. Pass DatabaseInterface to %s constructor or define ->metadata("gql::resolver::delete", callable).',
-					self::class
-				)
-			);
-		}
+		$this->requireDatabase('gql::resolver::delete');
 
 		$table = $collection->getTable();
 		$pkColumn = $this->getPrimaryKeyColumn($collection);
 
-		$sql = "DELETE FROM {$table} WHERE {$pkColumn} = ?";
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
+		$sql = "DELETE FROM {$quotedTable} WHERE {$quotedPk} = ?";
 
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute([$id]);
@@ -519,15 +606,20 @@ class GraphQLRegistryGenerator
 	protected function buildQueryArgs(Collection $collection): array
 	{
 		$args = [];
-
-		foreach ($collection->fields as $name => $field) {
-			if (! $field->isPrimaryKey() && $field->isFilterable()) {
-				$args[$name] = ['type' => Type::string()];
+		foreach ($this->getFilterableFields($collection) as $name => $field) {
+			$baseType = $this->mapOrmTypeToGraphQL($field);
+			if (is_string($baseType)) {
+				$baseType = Type::string();
+			} elseif ($baseType instanceof \GraphQL\Type\Definition\NonNull) {
+				$baseType = $baseType->getWrappedType();
 			}
+			$args[$name] = ['type' => $baseType];
 		}
 
 		$args['sort'] = ['type' => Type::string()];
 		$args['order'] = ['type' => Type::string()];
+		$args['limit'] = ['type' => Type::int()];
+		$args['offset'] = ['type' => Type::int()];
 
 		return $args;
 	}
@@ -539,59 +631,50 @@ class GraphQLRegistryGenerator
 		}
 
 		$conditions = [];
-		$filterableFields = [];
-
-		foreach ($collection->fields as $name => $field) {
-			if (! $field->isPrimaryKey() && $field->isFilterable()) {
-				$filterableFields[$name] = $field->getColumn();
-			}
-		}
+		$filterableFields = $this->getFilterableFields($collection);
 
 		foreach ($args as $argName => $value) {
 			if (isset($filterableFields[$argName])) {
-				$conditions[] = "{$filterableFields[$argName]} = ?";
+				$conditions[] = $this->quoteIdentifier($filterableFields[$argName]->getColumn()) . " = ?";
 			}
 		}
 
-		if (empty($conditions)) {
-			return '';
-		}
-
-		return 'WHERE ' . implode(' AND ', $conditions);
+		return empty($conditions) ? '' : 'WHERE ' . implode(' AND ', $conditions);
 	}
 
 	protected function buildOrderBy(Collection $collection, array $args): string
 	{
-		$sort = $args['sort'] ?? $args['orderBy'] ?? null;
+		$sort = $args['sort'] ?? null;
 		$order = $args['order'] ?? 'ASC';
 
 		if ($sort === null) {
 			return '';
 		}
 
-		$sort = preg_replace('/[^a-zA-Z0-9_]/', '', $sort);
+		$validFields = [];
+		foreach ($collection->fields as $name => $field) {
+			$validFields[$name] = $field->getColumn();
+		}
+
+		if (!isset($validFields[$sort])) {
+			return '';
+		}
+
+		$column = $validFields[$sort];
 		$order = strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
 
-		return "ORDER BY {$sort} {$order}";
+		return "ORDER BY " . $this->quoteIdentifier($column) . " {$order}";
 	}
 
 	protected function extractFilterValues(Collection $collection, array $args): array
 	{
-		$filterableFields = [];
-
-		foreach ($collection->fields as $name => $field) {
-			if (! $field->isPrimaryKey() && $field->isFilterable()) {
-				$filterableFields[$name] = $field->getColumn();
-			}
-		}
-
+		$filterableFields = $this->getFilterableFields($collection);
 		$values = [];
 		foreach ($args as $argName => $value) {
 			if (isset($filterableFields[$argName])) {
 				$values[] = $value;
 			}
 		}
-
 		return $values;
 	}
 

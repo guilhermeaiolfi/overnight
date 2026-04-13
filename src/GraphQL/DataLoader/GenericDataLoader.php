@@ -12,12 +12,11 @@ class GenericDataLoader
 {
 	protected array $cache = [];
 
-	protected array $pending = [];
-
 	protected array $pendingKeysByEntity = [];
 
 	public function __construct(
-		protected Registry $registry
+		protected Registry $registry,
+		protected int $maxCacheSize = 10000
 	) {
 	}
 
@@ -29,7 +28,6 @@ class GenericDataLoader
 			return $this->cache[$key];
 		}
 
-		$this->pending[$key] = true;
 		$this->pendingKeysByEntity[$entity][$key] = true;
 
 		return new Deferred(function () use ($entity, $keys, $key, $loaderFn) {
@@ -40,7 +38,7 @@ class GenericDataLoader
 		});
 	}
 
-	public function loadMany(string $entity, array $keys, callable $loaderFn): array
+	public function loadMany(string $entity, array $keys, callable $loaderFn): mixed
 	{
 		$deferredResults = [];
 
@@ -78,7 +76,7 @@ class GenericDataLoader
 	{
 		$normalized = $this->normalizeKey($entity, $key);
 
-		return isset($this->cache[$normalized]);
+		return array_key_exists($normalized, $this->cache);
 	}
 
 	public function get(string $entity, array|int|string $key): mixed
@@ -92,12 +90,13 @@ class GenericDataLoader
 	{
 		$normalized = $this->normalizeKey($entity, $key);
 		$this->cache[$normalized] = $value;
+
+		$this->evictIfNeeded();
 	}
 
 	public function clear(): void
 	{
 		$this->cache = [];
-		$this->pending = [];
 		$this->pendingKeysByEntity = [];
 	}
 
@@ -108,7 +107,6 @@ class GenericDataLoader
 			unset($this->cache[$key]);
 		}
 		unset($this->pendingKeysByEntity[$entity]);
-		$this->pending = array_diff_key($this->pending, $keys);
 	}
 
 	public function getPendingKeys(string $entity): array
@@ -121,12 +119,20 @@ class GenericDataLoader
 		return ! empty($this->pendingKeysByEntity[$entity] ?? []);
 	}
 
+	protected function evictIfNeeded(): void
+	{
+		if (count($this->cache) > $this->maxCacheSize) {
+			$evictCount = (int) ($this->maxCacheSize * 0.1);
+			$this->cache = array_slice($this->cache, $evictCount, null, true);
+		}
+	}
+
 	protected function loadPendingBatch(string $entity, callable $loaderFn): array
 	{
 		$keysToLoad = array_keys($this->pendingKeysByEntity[$entity] ?? []);
 
 		if (empty($keysToLoad)) {
-			return [];
+			return $this->cache;
 		}
 
 		$keys = [];
@@ -138,11 +144,11 @@ class GenericDataLoader
 		$loadedItems = $loaderFn($keys);
 
 		foreach ($keysToLoad as $i => $key) {
-			$decoded = $this->decodeKey($entity, $key);
 			$item = $loadedItems[$i] ?? null;
 			$this->cache[$key] = $item;
-			unset($this->pending[$key]);
 		}
+
+		$this->evictIfNeeded();
 
 		unset($this->pendingKeysByEntity[$entity]);
 
@@ -185,18 +191,20 @@ class GenericDataLoader
 	protected function decodeKey(string $entity, string $key): array
 	{
 		$pkColumns = $this->getPrimaryKeyColumns($entity);
+		$remainder = substr($key, strlen($entity) + 1);
+		$parts = explode(':', $remainder);
 
-		$result = substr($key, strlen($entity) + 1);
-		$parts = explode(':', $result);
-
-		if (count($pkColumns) === 1 && count($parts) === 2) {
+		// Single PK: key is either "value" or "col:value"
+		if (count($pkColumns) === 1) {
 			$pkColumn = $pkColumns[0];
+			$value = count($parts) === 1 ? $parts[0] : $parts[1];
 			return [
 				'entity' => $entity,
-				'keys' => [$pkColumn => $parts[1]],
+				'keys' => [$pkColumn => $value],
 			];
 		}
 
+		// Composite PK: pairs of "col:value"
 		$keys = [];
 		for ($i = 0; $i < count($parts); $i += 2) {
 			if (isset($parts[$i + 1])) {
@@ -212,11 +220,11 @@ class GenericDataLoader
 
 	protected function getPrimaryKeyColumns(string $entity): array
 	{
-		$collection = $this->registry->getCollection($entity);
-
-		if (! $collection) {
+		if (!isset($this->registry->collections[$entity])) {
 			return ['id'];
 		}
+
+		$collection = $this->registry->getCollection($entity);
 
 		$pk = $collection->getPrimaryKey();
 

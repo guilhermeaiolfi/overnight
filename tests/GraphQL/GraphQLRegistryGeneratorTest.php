@@ -5,21 +5,17 @@ declare(strict_types=1);
 namespace Tests\ON\GraphQL;
 
 use GraphQL\Type\Schema;
-use ON\DB\DatabaseInterface;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
-use stdClass;
 
 final class GraphQLRegistryGeneratorTest extends TestCase
 {
-private Registry $registry;
-	private ?TestDatabaseMock $database = null;
+	private Registry $registry;
 
 	protected function setUp(): void
 	{
 		$this->registry = new Registry();
-		$this->database = new TestDatabaseMock();
 	}
 
 	public function testCanBeInstantiated(): void
@@ -47,7 +43,7 @@ private Registry $registry;
 
 		$this->assertInstanceOf(Schema::class, $schema);
 		$this->assertNotNull($schema->getQueryType());
-		$this->assertNull($schema->getMutationType());
+		$this->assertNotNull($schema->getMutationType());
 	}
 
 	public function testGenerateSchemaWithMultipleCollections(): void
@@ -150,7 +146,7 @@ private Registry $registry;
 		$resolver(null, ['id' => '1'], null);
 	}
 
-	public function testMutationTypeIsNullWhenNoResolvers(): void
+	public function testMutationTypeExistsWithDefaultResolvers(): void
 	{
 		$this->registry->collection('user')
 			->field('id', 'int')->type('int')->primaryKey(true)->end()
@@ -159,7 +155,7 @@ private Registry $registry;
 		$generator = new GraphQLRegistryGenerator($this->registry);
 		$schema = $generator->generate();
 
-		$this->assertNull($schema->getMutationType());
+		$this->assertNotNull($schema->getMutationType());
 	}
 
 	public function testMutationTypeCreatedWithAnyResolver(): void
@@ -176,7 +172,7 @@ private Registry $registry;
 		$this->assertNotNull($schema->getMutationType()->getField('update_user'));
 	}
 
-	public function testMutationFieldsCreatedOnlyWithResolvers(): void
+	public function testMutationFieldsCreatedForAllCollections(): void
 	{
 		$customResolver = fn () => null;
 
@@ -192,8 +188,8 @@ private Registry $registry;
 		$this->assertNotNull($mutationType);
 		$mutationFields = $mutationType->config['fields'] ?? [];
 		$this->assertArrayHasKey('create_user', $mutationFields);
-		$this->assertArrayNotHasKey('update_user', $mutationFields);
-		$this->assertArrayNotHasKey('delete_user', $mutationFields);
+		$this->assertArrayHasKey('update_user', $mutationFields);
+		$this->assertArrayHasKey('delete_user', $mutationFields);
 	}
 
 	public function testCustomResolverIsCalled(): void
@@ -365,6 +361,8 @@ private Registry $registry;
 		$this->assertArrayHasKey('status', $postArgs);
 		$this->assertArrayHasKey('sort', $postArgs);
 		$this->assertArrayHasKey('order', $postArgs);
+		$this->assertArrayHasKey('limit', $postArgs);
+		$this->assertArrayHasKey('offset', $postArgs);
 		$this->assertArrayNotHasKey('id', $postArgs);
 	}
 
