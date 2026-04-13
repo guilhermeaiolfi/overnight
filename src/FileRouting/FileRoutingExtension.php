@@ -6,7 +6,7 @@ namespace ON\FileRouting;
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use ON\View\ViewConfig;
+use ON\Router\RouterConfig;
 
 class FileRoutingExtension extends AbstractExtension
 {
@@ -27,12 +27,19 @@ class FileRoutingExtension extends AbstractExtension
 
 	public function boot(): void
 	{
-		/*$this->app->ext('config')->when('setup', function () {
+		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
+	}
 
-			$viewConfig = $this->app->config->get(ViewConfig::class);
-
-			$viewConfig->set("templates.paths.fileRouting", [__DIR__ . '/../pages']);
-		});*/
+	public function onConfigSetup(): void
+	{
+		$filerouting_cfg = $this->app->config->get(FileRoutingConfig::class);
+		$router_cfg = $this->app->config->get(RouterConfig::class);
+		$router_cfg->addRoute(
+			'/' . $filerouting_cfg->get('url', "__fileRouting"),
+			"ON\FileRouting\Page\ApiPage::index",
+			['GET'],
+			"filerouting.api",
+		);
 	}
 
 	public function setup(): void

@@ -149,7 +149,7 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 			throw new Exception("SecurityMiddleware needs an AuthenticationServiceInterface registered in the container");
 		}
 
-		if ($page->isSecure() && ! $auth->hasIdentity()) {
+		if (method_exists($page, "isSecure") && $page->isSecure() && ! $auth->hasIdentity()) {
 			$config = $this->container->get(AppConfig::class);
 
 			//throw new Exception('User has no permittion!');

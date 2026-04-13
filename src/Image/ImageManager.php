@@ -49,6 +49,7 @@ class ImageManager implements MiddlewareInterface
 
 	public function getUri(string $path, string $template, $options = null): string
 	{
+
 		if ($this->signatureKey === null) {
 			throw new RuntimeException('No signature key provided!'.
 			' You must instantiate the middleware or assign the key as third argument');
@@ -234,7 +235,7 @@ class ImageManager implements MiddlewareInterface
 				// file found
 				return $image_path;
 			}
-
+			exit;
 		}
 
 		// file not found
