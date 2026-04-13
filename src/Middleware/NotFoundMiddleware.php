@@ -26,11 +26,11 @@ class NotFoundMiddleware implements MiddlewareInterface
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
 		try {
-			$response = $handler->handle($request, $handler);
+			$response = $handler->handle($request);
 
 			return $response;
 		} catch (EmptyPipelineException $e) {
-			return $this->notFoundHandler->handle($request, $handler);
+			return $this->notFoundHandler->handle($request);
 		}
 	}
 }

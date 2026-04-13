@@ -22,7 +22,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
 	{
 		$routeResult = $request->getAttribute(RouteResult::class, false);
 		if (! $routeResult) {
-			return $handler->handle($request, $handler);
+			return $handler->handle($request);
 		}
 
 		$route = $routeResult->getMatchedRoute();
@@ -32,6 +32,6 @@ class AuthorizationMiddleware implements MiddlewareInterface
 			return $middleware->loggedCheck($request, $handler);
 		}
 
-		return $handler->handle($request, $handler);
+		return $handler->handle($request);
 	}
 }
