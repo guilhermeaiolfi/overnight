@@ -50,9 +50,9 @@ class Registry
 		return $collection;
 	}
 
-	public function getCollection(string $name): CollectionInterface
+	public function getCollection(string $name): ?CollectionInterface
 	{
-		return $this->collections[$name];
+		return $this->collections[$name] ?? null;
 	}
 
 	/** @var CollectionInterface[] */

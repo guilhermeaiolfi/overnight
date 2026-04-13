@@ -8,23 +8,23 @@ use ON\ORM\Definition\Relation\RelationInterface;
 
 trait SchemaTrait
 {
-	public bool $nullable = false;
+	protected bool $nullable = false;
 
-	public bool $hidden = false;
+	protected bool $hidden = false;
 
-	public bool $unique = false;
+	protected bool $unique = false;
 
-	public bool $indexed = false;
+	protected bool $indexed = false;
 
-	public int $max_length = 255;
+	protected int $max_length = 255;
 
-	public int $numeric_precision = 2;
+	protected int $numeric_precision = 2;
 
-	public mixed $default_value = null;
+	protected mixed $default_value = null;
 
-	public ?string $data_type = null;
+	protected ?string $data_type = null;
 
-	public ?string $comment = null;
+	protected ?string $comment = null;
 
 	protected bool $pk = false;
 
@@ -81,13 +81,6 @@ trait SchemaTrait
 	public function isFilterable(): bool
 	{
 		return $this->filterable;
-	}
-
-	/** @param RelationInterface|FieldInterface $parent */
-	public function __construct(
-		protected mixed $parent
-	) {
-
 	}
 
 	public function dataType(mixed $data_type): self

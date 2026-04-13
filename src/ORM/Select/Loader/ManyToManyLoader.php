@@ -233,7 +233,7 @@ class ManyToManyLoader extends JoinableLoader
 			$this->columnNames(),
 			(array)$collection->getPrimaryKey(true),
 			(array)$this->relation->getOuterKey(),
-			(array)$this->relation->throut->getOuterKey()
+			(array)$this->relation->through->getOuterKey()
 		);
 	}
 }

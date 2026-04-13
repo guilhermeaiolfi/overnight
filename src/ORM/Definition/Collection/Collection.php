@@ -10,6 +10,8 @@ use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Field\FieldMap;
 use ON\ORM\Definition\MetadataTrait;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\BelongsToRelation;
+use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ON\ORM\Definition\Relation\RelationMap;
@@ -19,18 +21,18 @@ use stdClass;
 class Collection implements CollectionInterface
 {
 	use MetadataTrait;
-	public string $name;
-	public ?string $note = null;
-	public ?string $source = Source::class;
-	public bool $hidden = false;
-	public string $mapper = StdMapper::class;
-	public string $database = "default";
-	public ?string $parentCollection = null;
-	public string $entity = stdClass::class;
-	public ?string $table = null;
+	protected string $name;
+	protected ?string $note = null;
+	protected ?string $source = Source::class;
+	protected bool $hidden = false;
+	protected string $mapper = StdMapper::class;
+	protected string $database = "default";
+	protected ?string $parentCollection = null;
+	protected string $entity = stdClass::class;
+	protected ?string $table = null;
 	public FieldMap $fields;
 	public RelationMap $relations;
-	public ?string $fileLocation = null;
+	protected ?string $fileLocation = null;
 
 	public function __construct(
 		protected Registry $registry
@@ -181,7 +183,7 @@ class Collection implements CollectionInterface
 		return $this->hidden;
 	}
 
-	public function field(string $name): FieldInterface
+	public function field(string $name, ?string $type = null): FieldInterface
 	{
 		$field = null;
 
@@ -194,6 +196,9 @@ class Collection implements CollectionInterface
 			$this->fields->set($name, $field);
 			if (isset($name)) {
 				$field->name($name);
+			}
+			if (isset($type)) {
+				$field->type($type);
 			}
 		}
 
@@ -211,6 +216,30 @@ class Collection implements CollectionInterface
 		$this->relations->set($name, $relation);
 		$relation->name($name);
 
+		return $relation;
+	}
+
+	public function hasMany(string $name, string $targetCollection): HasManyRelation
+	{
+		/** @var HasManyRelation $relation */
+		$relation = $this->relation($name, HasManyRelation::class);
+		$relation->collection($targetCollection);
+		return $relation;
+	}
+
+	public function hasOne(string $name, string $targetCollection): HasOneRelation
+	{
+		/** @var HasOneRelation $relation */
+		$relation = $this->relation($name, HasOneRelation::class);
+		$relation->collection($targetCollection);
+		return $relation;
+	}
+
+	public function belongsTo(string $name, string $targetCollection): BelongsToRelation
+	{
+		/** @var BelongsToRelation $relation */
+		$relation = $this->relation($name, BelongsToRelation::class);
+		$relation->collection($targetCollection);
 		return $relation;
 	}
 

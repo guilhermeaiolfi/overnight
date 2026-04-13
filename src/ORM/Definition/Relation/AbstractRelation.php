@@ -15,26 +15,26 @@ abstract class AbstractRelation implements RelationInterface
 	use InterfaceTrait;
 	use MetadataTrait;
 	// Defines if relation can be nullable (child can have no parent). Defaults to false
-	public bool $nullable = false;
+	protected bool $nullable = false;
 
 	// Automatically save related data with parent entity. Defaults to true
-	public bool $cascade = true;
+	protected bool $cascade = true;
 
 	// lazy || eager
-	public string $load = "lazy";
+	protected string $load = "lazy";
 
-	public mixed $inner_key = null;
+	protected mixed $inner_key = null;
 
-	public mixed $outer_key = null;
+	protected mixed $outer_key = null;
 
-	public string $collection;
+	protected string $collection;
 
-	public string $name;
+	protected string $name;
 
-	public array $where = [];
+	protected array $where = [];
 
 	// format: ['key1' => 'asc', 'key2' => 'asc']
-	public array $orderBy = [];
+	protected array $orderBy = [];
 
 	protected ?string $loader = null;
 
@@ -42,6 +42,11 @@ abstract class AbstractRelation implements RelationInterface
 		public CollectionInterface $parent
 	) {
 
+	}
+
+	public function getParent(): CollectionInterface
+	{
+		return $this->parent;
 	}
 
 	public function name(string $name): self

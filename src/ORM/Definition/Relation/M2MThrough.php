@@ -6,10 +6,10 @@ namespace ON\ORM\Definition\Relation;
 
 class M2MThrough
 {
-	public string $collection;
-	public mixed $inner_key;
-	public mixed $outer_key;
-	public array $where;
+	protected string $collection;
+	protected mixed $inner_key;
+	protected mixed $outer_key;
+	protected array $where;
 
 	public function __construct(
 		protected M2MRelation $m2m

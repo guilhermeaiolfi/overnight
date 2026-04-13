@@ -6,6 +6,8 @@ namespace ON\ORM\Definition\Collection;
 
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\BelongsToRelation;
+use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 
@@ -47,7 +49,7 @@ interface CollectionInterface
 
 	public function isHidden(): bool;
 
-	public function field(string $name): FieldInterface;
+	public function field(string $name, ?string $type = null): FieldInterface;
 
 	/**
 	 * @template T
@@ -55,6 +57,12 @@ interface CollectionInterface
 	 * @return T
 	 * */
 	public function relation(string $name, string $type = HasOneRelation::class): RelationInterface;
+
+	public function hasMany(string $name, string $targetCollection): HasManyRelation;
+
+	public function hasOne(string $name, string $targetCollection): HasOneRelation;
+
+	public function belongsTo(string $name, string $targetCollection): BelongsToRelation;
 
 	/** @return FieldInterface[]|FieldInterface */
 	public function getPrimaryKey(): mixed;

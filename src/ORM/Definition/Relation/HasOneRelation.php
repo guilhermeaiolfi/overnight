@@ -12,7 +12,7 @@ use ON\ORM\Select\Loader\BelongsToLoader;
 
 class HasOneRelation extends AbstractRelation
 {
-	public bool $exclusive = false;
+	protected bool $exclusive = false;
 
 	public function exclusive(bool $exclusive): self
 	{

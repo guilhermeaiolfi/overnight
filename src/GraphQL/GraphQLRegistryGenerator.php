@@ -81,10 +81,10 @@ class GraphQLRegistryGenerator
 	protected function buildTypes(): void
 	{
 		foreach ($this->ormRegistry->getCollections() as $collection) {
-			if ($collection->hidden) {
+			if ($collection->isHidden()) {
 				continue;
 			}
-			$typeName = $this->getTypeName($collection->name);
+			$typeName = $this->getTypeName($collection->getName());
 			$this->types[$typeName] = new ObjectType([
 				'name' => $typeName,
 				'fields' => fn() => $this->buildFieldsForCollection($collection),
@@ -344,17 +344,17 @@ class GraphQLRegistryGenerator
 		$fields = [];
 
 		foreach ($this->ormRegistry->getCollections() as $collection) {
-			if ($collection->hidden) {
+			if ($collection->isHidden()) {
 				continue;
 			}
 
-			$typeName = $this->getTypeName($collection->name);
+			$typeName = $this->getTypeName($collection->getName());
 			$type = $this->types[$typeName] ?? Type::string();
 
 			$connectionType = $this->buildConnectionType($typeName, $type);
 
 			$findAllResolver = $collection->metadata('gql::resolver::findAll');
-			$fields[$collection->name] = [
+			$fields[$collection->getName()] = [
 				'type' => $connectionType,
 				'args' => $this->buildQueryArgs($collection),
 				'resolve' => $findAllResolver !== null
@@ -365,7 +365,7 @@ class GraphQLRegistryGenerator
 			];
 
 			$findByIdResolver = $collection->metadata('gql::resolver::findById');
-			$fields[$collection->name . '_by_id'] = [
+			$fields[$collection->getName() . '_by_id'] = [
 				'type' => $type,
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $findByIdResolver !== null
@@ -382,7 +382,7 @@ class GraphQLRegistryGenerator
 	protected function buildInputType(Collection $collection, bool $forUpdate = false): InputObjectType
 	{
 		$suffix = $forUpdate ? 'UpdateInput' : 'Input';
-		$typeName = $this->getTypeName($collection->name) . $suffix;
+		$typeName = $this->getTypeName($collection->getName()) . $suffix;
 
 		if (isset($this->inputTypes[$typeName])) {
 			return $this->inputTypes[$typeName];
@@ -421,17 +421,17 @@ class GraphQLRegistryGenerator
 		$fields = [];
 
 		foreach ($this->ormRegistry->getCollections() as $collection) {
-			if ($collection->hidden) {
+			if ($collection->isHidden()) {
 				continue;
 			}
 
-			$typeName = $this->getTypeName($collection->name);
+			$typeName = $this->getTypeName($collection->getName());
 			$type = $this->types[$typeName] ?? Type::string();
 			$createInputType = $this->buildInputType($collection);
 			$updateInputType = $this->buildInputType($collection, true);
 
 			$createResolver = $collection->metadata('gql::resolver::create');
-			$fields['create_' . $collection->name] = [
+			$fields['create_' . $collection->getName()] = [
 				'type' => $type,
 				'args' => ['input' => Type::nonNull($createInputType)],
 				'resolve' => $createResolver !== null
@@ -442,7 +442,7 @@ class GraphQLRegistryGenerator
 			];
 
 			$updateResolver = $collection->metadata('gql::resolver::update');
-			$fields['update_' . $collection->name] = [
+			$fields['update_' . $collection->getName()] = [
 				'type' => $type,
 				'args' => [
 					'id' => Type::nonNull(Type::id()),
@@ -456,7 +456,7 @@ class GraphQLRegistryGenerator
 			];
 
 			$deleteResolver = $collection->metadata('gql::resolver::delete');
-			$fields['delete_' . $collection->name] = [
+			$fields['delete_' . $collection->getName()] = [
 				'type' => Type::boolean(),
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $deleteResolver !== null

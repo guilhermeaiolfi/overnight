@@ -13,5 +13,5 @@ use ON\ORM\Select\Loader\BelongsToLoader;
 // TODO: I need to really think about it to make sure that's the right behavior.
 class BelongsToRelation extends HasOneRelation
 {
-	public bool $nullable = true;
+	protected bool $nullable = true;
 }
