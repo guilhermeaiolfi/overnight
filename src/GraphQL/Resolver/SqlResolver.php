@@ -1,0 +1,293 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\GraphQL\Resolver;
+
+use ON\DB\DatabaseInterface;
+use ON\GraphQL\DataLoader\GenericDataLoader;
+use ON\ORM\Definition\Collection\Collection;
+use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\HasManyRelation;
+use ON\ORM\Definition\Relation\HasOneRelation;
+use ON\ORM\Definition\Relation\RelationInterface;
+use PDO;
+
+class SqlResolver implements GraphQLResolverInterface
+{
+	protected GenericDataLoader $dataLoader;
+
+	public function __construct(
+		protected Registry $ormRegistry,
+		protected DatabaseInterface $database
+	) {
+		$this->dataLoader = new GenericDataLoader($ormRegistry);
+	}
+
+	public function resolveCollection(Collection $collection, array $args = []): array
+	{
+		$table = $collection->getTable();
+		$where = $this->buildWhereClause($collection, $args);
+		$orderBy = $this->buildOrderBy($collection, $args);
+
+		$limit = isset($args['limit']) ? ' LIMIT ' . (int) $args['limit'] : '';
+		$offset = isset($args['offset']) ? ' OFFSET ' . (int) $args['offset'] : '';
+
+		$quotedTable = $this->quoteIdentifier($table);
+
+		$countSql = "SELECT COUNT(*) as cnt FROM {$quotedTable} {$where}";
+		$values = $this->extractFilterValues($collection, $args);
+
+		$countStmt = $this->database->getConnection()->prepare($countSql);
+		$countStmt->execute($values);
+		$countRow = $countStmt->fetch(PDO::FETCH_OBJ);
+		$totalCount = $countRow ? (int) $countRow->cnt : 0;
+
+		$sql = "SELECT * FROM {$quotedTable} {$where} {$orderBy}{$limit}{$offset}";
+		$stmt = $this->database->getConnection()->prepare($sql);
+		$stmt->execute($values);
+		$items = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
+
+		return [
+			'items' => $items,
+			'totalCount' => $totalCount,
+		];
+	}
+
+	public function resolveById(Collection $collection, string $id): ?object
+	{
+		$table = $collection->getTable();
+		$pkColumn = $this->getPrimaryKeyColumn($collection);
+
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
+		$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedPk} = ?";
+
+		$stmt = $this->database->getConnection()->prepare($sql);
+		$stmt->execute([$id]);
+
+		return $stmt->fetch(PDO::FETCH_OBJ) ?: null;
+	}
+
+	public function resolveCreate(Collection $collection, array $input): ?object
+	{
+		$table = $collection->getTable();
+
+		$columns = array_keys($input);
+		$quotedColumns = array_map(fn(string $col) => $this->quoteIdentifier($col), $columns);
+		$placeholders = array_fill(0, count($columns), '?');
+
+		$quotedTable = $this->quoteIdentifier($table);
+		$sql = sprintf(
+			'INSERT INTO %s (%s) VALUES (%s)',
+			$quotedTable,
+			implode(', ', $quotedColumns),
+			implode(', ', $placeholders)
+		);
+
+		$stmt = $this->database->getConnection()->prepare($sql);
+		$stmt->execute(array_values($input));
+
+		$lastId = $this->database->getConnection()->lastInsertId();
+
+		return $this->resolveById($collection, (string) $lastId);
+	}
+
+	public function resolveUpdate(Collection $collection, string $id, array $input): ?object
+	{
+		$table = $collection->getTable();
+		$pkColumn = $this->getPrimaryKeyColumn($collection);
+
+		$sets = [];
+		foreach (array_keys($input) as $column) {
+			$sets[] = $this->quoteIdentifier($column) . " = ?";
+		}
+
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
+		$sql = sprintf(
+			'UPDATE %s SET %s WHERE %s = ?',
+			$quotedTable,
+			implode(', ', $sets),
+			$quotedPk
+		);
+
+		$values = array_values($input);
+		$values[] = $id;
+
+		$stmt = $this->database->getConnection()->prepare($sql);
+		$stmt->execute($values);
+
+		return $this->resolveById($collection, $id);
+	}
+
+	public function resolveDelete(Collection $collection, string $id): bool
+	{
+		$table = $collection->getTable();
+		$pkColumn = $this->getPrimaryKeyColumn($collection);
+
+		$quotedTable = $this->quoteIdentifier($table);
+		$quotedPk = $this->quoteIdentifier($pkColumn);
+		$sql = "DELETE FROM {$quotedTable} WHERE {$quotedPk} = ?";
+
+		$stmt = $this->database->getConnection()->prepare($sql);
+		$stmt->execute([$id]);
+
+		return $stmt->rowCount() > 0;
+	}
+
+	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
+	{
+		return $this->resolveRelationFromDatabase($source, $relation);
+	}
+
+	private function resolveRelationFromDatabase(mixed $source, RelationInterface $relation): mixed
+	{
+		$collectionName = $relation->getCollection();
+		$innerKey = $relation->getInnerKey();
+		$outerKey = $relation->getOuterKey();
+
+		$sourceId = is_array($source)
+			? ($source[$outerKey] ?? null)
+			: ($source->{$outerKey} ?? null);
+
+		if ($sourceId === null) {
+			return $relation instanceof HasOneRelation ? null : [];
+		}
+
+		$collection = $this->ormRegistry->getCollection($collectionName);
+		if ($collection === null) {
+			throw new \RuntimeException("Collection not found: {$collectionName}");
+		}
+
+		$table = $collection->getTable();
+		$isHasOne = $relation instanceof HasOneRelation;
+
+		$entityKey = $collectionName . ':' . $innerKey;
+
+		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $innerKey, $isHasOne) {
+			$placeholders = implode(', ', array_fill(0, count($batchKeys), '?'));
+			$flatKeys = [];
+			foreach ($batchKeys as $keySet) {
+				$flatKeys[] = is_array($keySet) ? reset($keySet) : $keySet;
+			}
+
+			$quotedTable = $this->quoteIdentifier($table);
+			$quotedInnerKey = $this->quoteIdentifier($innerKey);
+			$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedInnerKey} IN ({$placeholders})";
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute($flatKeys);
+
+			$allResults = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
+
+			$grouped = [];
+			foreach ($allResults as $row) {
+				$key = $row->{$innerKey} ?? null;
+				if ($key !== null) {
+					$grouped[$key][] = $row;
+				}
+			}
+
+			$results = [];
+			foreach ($flatKeys as $i => $keyValue) {
+				$rows = $grouped[$keyValue] ?? [];
+				if ($isHasOne) {
+					$results[$i] = $rows[0] ?? null;
+				} else {
+					$results[$i] = $rows;
+				}
+			}
+
+			return $results;
+		});
+	}
+
+	protected function quoteIdentifier(string $identifier): string
+	{
+		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
+		return "`{$sanitized}`";
+	}
+
+	protected function getFilterableFields(Collection $collection): array
+	{
+		$fields = [];
+		foreach ($collection->fields as $name => $field) {
+			if (!$field->isPrimaryKey() && $field->isFilterable()) {
+				$fields[$name] = $field;
+			}
+		}
+		return $fields;
+	}
+
+	protected function buildWhereClause(Collection $collection, array $args): string
+	{
+		if (empty($args)) {
+			return '';
+		}
+
+		$conditions = [];
+		$filterableFields = $this->getFilterableFields($collection);
+
+		foreach ($args as $argName => $value) {
+			if (isset($filterableFields[$argName])) {
+				$column = $this->quoteIdentifier($filterableFields[$argName]->getColumn());
+				$operator = is_string($value) && str_contains($value, '%') ? 'LIKE' : '=';
+				$conditions[] = "{$column} {$operator} ?";
+			}
+		}
+
+		return empty($conditions) ? '' : 'WHERE ' . implode(' AND ', $conditions);
+	}
+
+	protected function buildOrderBy(Collection $collection, array $args): string
+	{
+		$sort = $args['sort'] ?? null;
+		$order = $args['order'] ?? 'ASC';
+
+		if ($sort === null) {
+			return '';
+		}
+
+		$validFields = [];
+		foreach ($collection->fields as $name => $field) {
+			$validFields[$name] = $field->getColumn();
+		}
+
+		if (!isset($validFields[$sort])) {
+			return '';
+		}
+
+		$column = $validFields[$sort];
+		$order = strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
+
+		return "ORDER BY " . $this->quoteIdentifier($column) . " {$order}";
+	}
+
+	protected function extractFilterValues(Collection $collection, array $args): array
+	{
+		$filterableFields = $this->getFilterableFields($collection);
+		$values = [];
+		foreach ($args as $argName => $value) {
+			if (isset($filterableFields[$argName])) {
+				$values[] = $value;
+			}
+		}
+		return $values;
+	}
+
+	protected function getPrimaryKeyColumn(Collection $collection): string
+	{
+		$pk = $collection->getPrimaryKey();
+
+		if ($pk instanceof FieldInterface) {
+			return $pk->getColumn();
+		}
+
+		if (\is_array($pk) && ! empty($pk)) {
+			return $pk[0]->getColumn();
+		}
+
+		return 'id';
+	}
+}

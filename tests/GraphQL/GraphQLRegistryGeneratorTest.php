@@ -121,7 +121,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Database not configured');
+		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, [], null);
@@ -140,7 +140,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user_by_id');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Database not configured');
+		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, ['id' => '1'], null);
@@ -256,7 +256,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Database not configured');
+		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, [], null);
@@ -276,7 +276,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$userField = $queryType->getField('user_by_id');
 
 		$this->expectException(\RuntimeException::class);
-		$this->expectExceptionMessage('Database not configured');
+		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
 		$resolver(null, ['id' => '1'], null);

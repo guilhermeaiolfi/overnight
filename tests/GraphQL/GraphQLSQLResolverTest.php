@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
-use GraphQL\Deferred;
-use GraphQL\Executor\Promise\Adapter\SyncPromise;
 use GraphQL\GraphQL;
 use ON\GraphQL\GraphQLRegistryGenerator;
+use ON\GraphQL\Resolver\SqlResolver;
 use ON\ORM\Definition\Registry;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\GraphQL\Support\GraphQLTestFixtures;
 
+#[RequiresPhpExtension('pdo_sqlite')]
 final class GraphQLSQLResolverTest extends TestCase
 {
 	use GraphQLTestFixtures;
@@ -28,7 +29,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createUserCollection($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$queryType = $schema->getQueryType();
@@ -47,7 +48,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createUserWithPostsRelation($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$query = '{ user { items { id name posts { id title } } totalCount } }';
@@ -83,12 +84,93 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertSame('Post 3', $jane['posts'][0]['title']);
 	}
 
+	public function testExecuteNestedQueryWithFilters(): void
+	{
+		$this->createFullSchema($this->registry);
+		$database = $this->createFullDatabase();
+
+		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$schema = $generator->generate();
+
+		// Query users filtered by name, with nested posts and comments
+		$query = '
+		{
+			user(name: "John") {
+				items {
+					id
+					name
+					posts {
+						id
+						title
+						comments {
+							id
+							body
+							author
+						}
+					}
+				}
+				totalCount
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+
+		$connection = $data['data']['user'];
+		$this->assertSame(1, $connection['totalCount']);
+
+		$users = $connection['items'];
+		$this->assertCount(1, $users);
+
+		$john = $users[0];
+		$this->assertSame(1, $john['id']);
+		$this->assertSame('John', $john['name']);
+
+		// John has 2 posts
+		$this->assertCount(2, $john['posts']);
+
+		// First post (PHP Tips) has 2 comments
+		$phpTips = $john['posts'][0];
+		$this->assertSame('PHP Tips', $phpTips['title']);
+		$this->assertCount(2, $phpTips['comments']);
+		$this->assertSame('Great tips!', $phpTips['comments'][0]['body']);
+		$this->assertSame('Very helpful', $phpTips['comments'][1]['body']);
+
+		// Second post (Draft Post) has 0 comments
+		$draft = $john['posts'][1];
+		$this->assertSame('Draft Post', $draft['title']);
+		$this->assertCount(0, $draft['comments']);
+	}
+
+	public function testExecuteQueryWithLikeFilter(): void
+	{
+		$this->createFullSchema($this->registry);
+		$database = $this->createFullDatabase();
+
+		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$schema = $generator->generate();
+
+		// Filter posts by title containing "Post" using LIKE
+		$query = '{ post(title: "%Guide%") { items { id title } totalCount } }';
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+
+		$connection = $data['data']['post'];
+		$this->assertSame(1, $connection['totalCount']);
+		$this->assertCount(1, $connection['items']);
+		$this->assertSame('GraphQL Guide', $connection['items'][0]['title']);
+	}
+
 	public function testExecuteFindByIdQuery(): void
 	{
 		$this->createUserCollection($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$queryType = $schema->getQueryType();
