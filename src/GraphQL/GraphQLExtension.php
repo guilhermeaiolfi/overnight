@@ -33,7 +33,7 @@ class GraphQLExtension extends AbstractExtension
 
 	public function requires(): array
 	{
-		return ['container'];
+		return ['container', 'events'];
 	}
 
 	public function boot(): void
@@ -61,11 +61,14 @@ class GraphQLExtension extends AbstractExtension
 		// Build the resolver based on config
 		$resolver = $this->buildResolver();
 
+		// Get event dispatcher from events extension
+		$eventsExt = $this->app->events;
+
 		// Build the schema
 		$registry = $container->get(Registry::class);
 		$generator = $debug
-			? new GraphQLRegistryGenerator($registry, $resolver)
-			: new CachedGraphQLRegistryGenerator($registry, $resolver);
+			? new GraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher)
+			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher);
 		$schema = $generator->generate();
 
 		// Wire up per-request cleanup

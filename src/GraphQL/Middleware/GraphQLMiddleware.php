@@ -35,7 +35,8 @@ class GraphQLMiddleware implements MiddlewareInterface
 		$contentType = $request->getHeaderLine('Content-Type');
 
 		$isGraphQL = $method === 'GET'
-			|| ($method === 'POST' && str_contains($contentType, 'application/json'));
+			|| ($method === 'POST' && str_contains($contentType, 'application/json'))
+			|| ($method === 'POST' && str_contains($contentType, 'multipart/form-data'));
 
 		if (!$isGraphQL) {
 			return $handler->handle($request);
@@ -57,6 +58,27 @@ class GraphQLMiddleware implements MiddlewareInterface
 			$query = $params['query'] ?? null;
 			$variables = isset($params['variables']) ? json_decode($params['variables'], true) : null;
 			$operationName = $params['operationName'] ?? null;
+		} elseif (str_contains($request->getHeaderLine('Content-Type'), 'multipart/form-data')) {
+			// GraphQL multipart request spec: https://github.com/jaydenseric/graphql-multipart-request-spec
+			$parsedBody = $request->getParsedBody();
+			$operations = json_decode($parsedBody['operations'] ?? '{}', true);
+			$map = json_decode($parsedBody['map'] ?? '{}', true);
+			$uploadedFiles = $request->getUploadedFiles();
+
+			$query = $operations['query'] ?? null;
+			$variables = $operations['variables'] ?? null;
+			$operationName = $operations['operationName'] ?? null;
+
+			// Map uploaded files into variables
+			foreach ($map as $fileKey => $paths) {
+				$file = $uploadedFiles[$fileKey] ?? null;
+				if ($file === null) {
+					continue;
+				}
+				foreach ($paths as $path) {
+					$variables = $this->injectFileIntoVariables($variables, $path, $file);
+				}
+			}
 		} else {
 			$body = json_decode((string) $request->getBody(), true) ?? [];
 			$query = $body['query'] ?? null;
@@ -101,5 +123,34 @@ class GraphQLMiddleware implements MiddlewareInterface
 			: DebugFlag::NONE;
 
 		return $result->toArray($debugFlag);
+	}
+
+	/**
+	 * Inject an uploaded file into the variables array at the given dot-notation path.
+	 * Path format: "variables.avatar" or "variables.input.photo"
+	 */
+	protected function injectFileIntoVariables(?array $variables, string $path, mixed $file): ?array
+	{
+		if ($variables === null) {
+			$variables = [];
+		}
+
+		// Path starts with "variables." — strip it
+		$path = preg_replace('/^variables\./', '', $path);
+		$keys = explode('.', $path);
+
+		$current = &$variables;
+		foreach ($keys as $i => $key) {
+			if ($i === count($keys) - 1) {
+				$current[$key] = $file;
+			} else {
+				if (!isset($current[$key]) || !is_array($current[$key])) {
+					$current[$key] = [];
+				}
+				$current = &$current[$key];
+			}
+		}
+
+		return $variables;
 	}
 }

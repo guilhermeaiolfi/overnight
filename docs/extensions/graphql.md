@@ -9,12 +9,14 @@ The GraphQL extension provides GraphQL API support for the Overnight framework. 
 3. [Resolver Architecture](#resolver-architecture)
 4. [Queries](#queries)
 5. [Mutations](#mutations)
-6. [Validation](#validation)
-7. [Error Handling](#error-handling)
-8. [Schema Caching](#schema-caching)
-9. [Custom Resolvers](#custom-resolvers)
-10. [Configuration](#configuration)
-11. [API Reference](#api-reference)
+6. [File Uploads](#file-uploads)
+7. [Mutation Events](#mutation-events)
+8. [Validation](#validation)
+9. [Error Handling](#error-handling)
+10. [Schema Caching](#schema-caching)
+11. [Custom Resolvers](#custom-resolvers)
+12. [Configuration](#configuration)
+13. [API Reference](#api-reference)
 
 ---
 
@@ -362,6 +364,194 @@ Nested input types (`FooNestedInput`) have all fields nullable since the parent 
 | `FooInput` | `create_foo` | Preserves required/nullable from definition |
 | `FooUpdateInput` | `update_foo` | All fields nullable |
 | `FooNestedInput` | Nested creates | All fields nullable |
+
+---
+
+## File Uploads
+
+The GraphQL extension supports file uploads via the [GraphQL multipart request specification](https://github.com/jaydenseric/graphql-multipart-request-spec).
+
+### Defining File Fields
+
+Use the `file`, `image`, or `upload` type on a field. These map to the custom `Upload` scalar:
+
+```php
+$registry->collection('document')
+    ->field('id', 'int')->primaryKey(true)->end()
+    ->field('name', 'string')->end()
+    ->field('attachment', 'file')->end()
+    ->end();
+
+$registry->collection('user')
+    ->field('id', 'int')->primaryKey(true)->end()
+    ->field('name', 'string')->end()
+    ->field('avatar', 'image')->end()
+    ->end();
+```
+
+### Client Request
+
+File uploads use `multipart/form-data` with three parts:
+
+- `operations` — the GraphQL query/mutation as JSON, with `null` placeholders for file variables
+- `map` — maps file keys to their variable paths
+- File parts — the actual binary files
+
+```
+POST /graphql
+Content-Type: multipart/form-data
+
+operations: {
+  "query": "mutation($file: Upload!) { create_document(input: { name: \"Report\", attachment: $file }) { id name } }",
+  "variables": { "file": null }
+}
+map: { "0": ["variables.file"] }
+0: (binary file data)
+```
+
+### JavaScript Example
+
+```javascript
+const formData = new FormData();
+
+formData.append('operations', JSON.stringify({
+  query: `mutation($file: Upload!) {
+    create_document(input: { name: "Report", attachment: $file }) {
+      id
+      name
+    }
+  }`,
+  variables: { file: null }
+}));
+
+formData.append('map', JSON.stringify({ '0': ['variables.file'] }));
+formData.append('0', fileInput.files[0]);
+
+fetch('/graphql', { method: 'POST', body: formData });
+```
+
+### Multiple Files
+
+```
+operations: {
+  "query": "mutation($avatar: Upload!, $cover: Upload!) { ... }",
+  "variables": { "avatar": null, "cover": null }
+}
+map: { "0": ["variables.avatar"], "1": ["variables.cover"] }
+0: (avatar file)
+1: (cover file)
+```
+
+### Handling Uploads
+
+File uploads are best handled via mutation events. See [Mutation Events](#mutation-events) for the recommended approach.
+
+For simple cases, you can also handle files in a custom metadata resolver:
+
+```php
+$registry->collection('document')
+    ->metadata('gql::resolver::create', function($args, $context) use ($container) {
+        $input = $args['input'];
+        $file = $input['attachment']; // UploadedFileInterface
+
+        $path = 'uploads/' . $file->getClientFilename();
+        $file->moveTo($path);
+        $input['attachment'] = $path;
+
+        $repo = $container->get(DocumentRepository::class);
+        return $repo->create($input);
+    })
+    ->end();
+```
+
+The file arrives as a PSR-7 `UploadedFileInterface` with methods like `getClientFilename()`, `getSize()`, `getClientMediaType()`, and `moveTo()`.
+
+### Upload Scalar
+
+The `Upload` scalar is input-only — it cannot be serialized in query responses. In output types, file fields return their stored value (typically a path or URL string).
+
+---
+
+## Mutation Events
+
+The GraphQL extension dispatches events before and after each mutation, allowing modules to hook into the mutation lifecycle.
+
+### Event Types
+
+| Event | When | Can Modify Input |
+|-------|------|-----------------|
+| `BeforeMutation` (`graphql.mutation.before`) | Before resolver executes | Yes — call `$event->setInput(...)` |
+| `AfterMutation` (`graphql.mutation.after`) | After resolver executes | No — read-only |
+
+### BeforeMutation
+
+Dispatched before create, update, and delete operations. Listeners can inspect and modify the input data.
+
+```php
+use ON\GraphQL\Event\BeforeMutation;
+
+$events->registerListener('graphql.mutation.before', function (BeforeMutation $event) {
+    $collection = $event->getCollection();
+    $operation = $event->getOperation(); // 'create', 'update', or 'delete'
+    $input = $event->getInput();
+
+    // Modify input before it reaches the resolver
+    $input['updated_at'] = date('Y-m-d H:i:s');
+    $event->setInput($input);
+});
+```
+
+### AfterMutation
+
+Dispatched after the resolver completes. Useful for logging, cache invalidation, or notifications.
+
+```php
+use ON\GraphQL\Event\AfterMutation;
+
+$events->registerListener('graphql.mutation.after', function (AfterMutation $event) {
+    $collection = $event->getCollection();
+    $operation = $event->getOperation();
+    $result = $event->getResult();
+
+    // Log the mutation
+    logger()->info("GraphQL {$operation} on {$collection->getName()}", [
+        'result_id' => $result->id ?? null,
+    ]);
+});
+```
+
+### File Upload Handling via Events
+
+Instead of handling file uploads in custom resolvers, use a `BeforeMutation` listener to process uploaded files before they reach the database:
+
+```php
+use ON\GraphQL\Event\BeforeMutation;
+use Psr\Http\Message\UploadedFileInterface;
+
+$events->registerListener('graphql.mutation.before', function (BeforeMutation $event) {
+    $input = $event->getInput();
+    $collection = $event->getCollection();
+    $modified = false;
+
+    foreach ($input as $key => $value) {
+        if ($value instanceof UploadedFileInterface) {
+            // Save the file and replace with the stored path
+            $filename = uniqid() . '_' . $value->getClientFilename();
+            $path = "uploads/{$collection->getName()}/{$filename}";
+            $value->moveTo($path);
+
+            $input[$key] = $path;
+            $modified = true;
+        }
+    }
+
+    if ($modified) {
+        $event->setInput($input);
+    }
+});
+```
+
+This approach keeps file handling out of the GraphQL extension and lets each module decide how to process its files.
 
 ---
 

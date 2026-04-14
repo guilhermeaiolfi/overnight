@@ -9,7 +9,10 @@ use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use ON\GraphQL\Error\GraphQLUserError;
+use ON\GraphQL\Event\AfterMutation;
+use ON\GraphQL\Event\BeforeMutation;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\GraphQL\Type\UploadType;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Field\FieldInterface;
@@ -17,16 +20,19 @@ use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 class GraphQLRegistryGenerator
 {
 	protected array $types = [];
 	protected array $inputTypes = [];
+	protected static ?UploadType $uploadType = null;
 
 	public function __construct(
 		protected Registry $ormRegistry,
-		protected ?GraphQLResolverInterface $resolver = null
+		protected ?GraphQLResolverInterface $resolver = null,
+		protected ?EventDispatcherInterface $eventDispatcher = null
 	) {
 	}
 
@@ -201,6 +207,7 @@ class GraphQLRegistryGenerator
 			'float', 'double', 'decimal' => Type::float(),
 			'datetime', 'date', 'time', 'timestamp' => Type::string(),
 			'id', 'uuid' => Type::id(),
+			'file', 'image', 'upload' => self::$uploadType ??= new UploadType(),
 			default => Type::string(),
 		};
 
@@ -368,17 +375,30 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($createResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new \RuntimeException('No resolver configured.');
 						}
 						$input = $args['input'] ?? [];
 						[$scalarInput, $nestedInput] = $this->separateNestedInput($collection, $input);
 
 						$this->validateInput($collection, $scalarInput);
 
-						if (empty($nestedInput)) {
-							return $this->resolver->resolveCreate($collection, $scalarInput);
+						// Dispatch before event — listeners can modify input (e.g., process file uploads)
+						if ($this->eventDispatcher !== null) {
+							$event = new BeforeMutation($collection, 'create', $scalarInput);
+							$this->eventDispatcher->dispatch($event);
+							$scalarInput = $event->getInput();
 						}
-						return $this->resolver->resolveNestedCreate($collection, $scalarInput, $nestedInput);
+
+						$result = empty($nestedInput)
+							? $this->resolver->resolveCreate($collection, $scalarInput)
+							: $this->resolver->resolveNestedCreate($collection, $scalarInput, $nestedInput);
+
+						// Dispatch after event
+						if ($this->eventDispatcher !== null) {
+							$this->eventDispatcher->dispatch(new AfterMutation($collection, 'create', $result));
+						}
+
+						return $result;
 					},
 			];
 
@@ -393,11 +413,24 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($updateResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new \RuntimeException('No resolver configured.');
 						}
 						$input = $args['input'] ?? [];
 						$this->validateInput($collection, $input);
-						return $this->resolver->resolveUpdate($collection, $args['id'] ?? '', $input);
+
+						if ($this->eventDispatcher !== null) {
+							$event = new BeforeMutation($collection, 'update', $input);
+							$this->eventDispatcher->dispatch($event);
+							$input = $event->getInput();
+						}
+
+						$result = $this->resolver->resolveUpdate($collection, $args['id'] ?? '', $input);
+
+						if ($this->eventDispatcher !== null) {
+							$this->eventDispatcher->dispatch(new AfterMutation($collection, 'update', $result));
+						}
+
+						return $result;
 					},
 			];
 
@@ -409,9 +442,21 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($deleteResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new \RuntimeException('No resolver configured.');
 						}
-						return $this->resolver->resolveDelete($collection, $args['id'] ?? '');
+
+						if ($this->eventDispatcher !== null) {
+							$event = new BeforeMutation($collection, 'delete', ['id' => $args['id'] ?? '']);
+							$this->eventDispatcher->dispatch($event);
+						}
+
+						$result = $this->resolver->resolveDelete($collection, $args['id'] ?? '');
+
+						if ($this->eventDispatcher !== null) {
+							$this->eventDispatcher->dispatch(new AfterMutation($collection, 'delete', $result));
+						}
+
+						return $result;
 					},
 			];
 		}

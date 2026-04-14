@@ -402,4 +402,45 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$this->assertFalse($idField->isFilterable());
 		$this->assertTrue($nameField->isFilterable());
 	}
+
+	public function testBeforeMutationEventIsDispatched(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->end();
+
+		$eventDispatched = false;
+		$dispatcher = new class($eventDispatched) implements \Psr\EventDispatcher\EventDispatcherInterface {
+			public function __construct(private bool &$dispatched) {}
+			public function dispatch(object $event): object {
+				if ($event instanceof \ON\GraphQL\Event\BeforeMutation) {
+					$this->dispatched = true;
+				}
+				return $event;
+			}
+		};
+
+		// Create a mock resolver that returns a stdClass
+		$mockResolver = new class implements \ON\GraphQL\Resolver\GraphQLResolverInterface {
+			public function resolveCollection(\ON\ORM\Definition\Collection\Collection $c, array $a = []): array { return ['items' => [], 'totalCount' => 0]; }
+			public function resolveById(\ON\ORM\Definition\Collection\Collection $c, string $id): ?object { return null; }
+			public function resolveCreate(\ON\ORM\Definition\Collection\Collection $c, array $input): ?object { return (object) $input; }
+			public function resolveUpdate(\ON\ORM\Definition\Collection\Collection $c, string $id, array $input): ?object { return null; }
+			public function resolveDelete(\ON\ORM\Definition\Collection\Collection $c, string $id): ?object { return null; }
+			public function resolveNestedCreate(\ON\ORM\Definition\Collection\Collection $c, array $input, array $nested): ?object { return null; }
+			public function resolveRelation(mixed $source, \ON\ORM\Definition\Relation\RelationInterface $r): mixed { return null; }
+			public function clearCache(): void {}
+		};
+
+		$generator = new GraphQLRegistryGenerator($this->registry, $mockResolver, $dispatcher);
+		$schema = $generator->generate();
+
+		$mutationType = $schema->getMutationType();
+		$createField = $mutationType->getField('create_user');
+		$resolver = $createField->resolveFn;
+		$resolver(null, ['input' => ['name' => 'Test']], null);
+
+		$this->assertTrue($eventDispatched);
+	}
 }
