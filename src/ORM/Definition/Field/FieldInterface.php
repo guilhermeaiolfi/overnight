@@ -68,5 +68,12 @@ interface FieldInterface
 	 */
 	public function typecast(array|string|null $typecast): self;
 
+	/**
+	 * Set validation rules (pipe-delimited string, e.g. 'required|email|max:255').
+	 */
+	public function validation(?string $rules): self;
+
+	public function getValidation(): ?string;
+
 	public function end(): CollectionInterface;
 }

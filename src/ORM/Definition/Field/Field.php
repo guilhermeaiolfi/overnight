@@ -36,6 +36,8 @@ class Field implements FieldInterface
 
 	protected ?string $generatedFromRelation = null;
 
+	protected ?string $validation = null;
+
 	/**
 	 * @var callable-array|string|null
 	 */
@@ -185,6 +187,18 @@ class Field implements FieldInterface
 	public function getTypecast(): array|string|null
 	{
 		return $this->typecast;
+	}
+
+	public function validation(?string $rules): self
+	{
+		$this->validation = $rules;
+
+		return $this;
+	}
+
+	public function getValidation(): ?string
+	{
+		return $this->validation;
 	}
 
 	public function end(): CollectionInterface

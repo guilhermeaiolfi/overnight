@@ -30,7 +30,8 @@
         "cycle/schema-builder": "^2.11",
         "webonyx/graphql-php": "^15.0",
         "laminas/laminas-stdlib": "^3.20",
-        "mezzio/mezzio-helpers": "^5.18"
+        "mezzio/mezzio-helpers": "^5.18",
+        "somnambulist/validation": "^1.13"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",

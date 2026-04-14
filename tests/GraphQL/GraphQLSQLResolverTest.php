@@ -312,4 +312,76 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayHasKey('extensions', $error);
 		$this->assertSame('DUPLICATE', $error['extensions']['code']);
 	}
+
+	public function testValidationRejectsInvalidInput(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('name', 'string')->type('string')->nullable(true)
+				->validation('required|min:3')
+				->end()
+			->field('email', 'string')->type('string')->nullable(true)
+				->validation('required|email')
+				->end()
+			->end();
+
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$schema = $generator->generate();
+
+		// Try to create with invalid email and short name
+		$query = '
+		mutation {
+			create_user(input: { name: "AB", email: "not-an-email" }) {
+				id
+				name
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+
+		$this->assertArrayHasKey('errors', $data);
+		$this->assertNotEmpty($data['errors']);
+
+		$error = $data['errors'][0];
+		$this->assertArrayHasKey('extensions', $error);
+		$this->assertSame('VALIDATION_ERROR', $error['extensions']['code']);
+		$this->assertNotNull($error['extensions']['field']);
+	}
+
+	public function testValidationPassesWithValidInput(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('name', 'string')->type('string')->nullable(true)
+				->validation('required|min:3')
+				->end()
+			->field('email', 'string')->type('string')->nullable(true)
+				->validation('required|email')
+				->end()
+			->end();
+
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$schema = $generator->generate();
+
+		$query = '
+		mutation {
+			create_user(input: { name: "Alice", email: "alice@test.com" }) {
+				id
+				name
+				email
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+		$this->assertSame('Alice', $data['data']['create_user']['name']);
+		$this->assertSame('alice@test.com', $data['data']['create_user']['email']);
+	}
 }

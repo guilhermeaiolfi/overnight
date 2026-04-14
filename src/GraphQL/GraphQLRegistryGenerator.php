@@ -8,6 +8,7 @@ use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
+use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\Field;
@@ -17,6 +18,7 @@ use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use Psr\Container\ContainerInterface;
+use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 class GraphQLRegistryGenerator
 {
@@ -368,6 +370,8 @@ class GraphQLRegistryGenerator
 						$input = $args['input'] ?? [];
 						[$scalarInput, $nestedInput] = $this->separateNestedInput($collection, $input);
 
+						$this->validateInput($collection, $scalarInput);
+
 						if (empty($nestedInput)) {
 							return $this->resolver->resolveCreate($collection, $scalarInput);
 						}
@@ -388,7 +392,9 @@ class GraphQLRegistryGenerator
 						if ($this->resolver === null) {
 							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
 						}
-						return $this->resolver->resolveUpdate($collection, $args['id'] ?? '', $args['input'] ?? []);
+						$input = $args['input'] ?? [];
+						$this->validateInput($collection, $input);
+						return $this->resolver->resolveUpdate($collection, $args['id'] ?? '', $input);
 					},
 			];
 
@@ -496,5 +502,44 @@ class GraphQLRegistryGenerator
 		}
 
 		return [$scalarInput, $nestedInput];
+	}
+
+	/**
+	 * Validate input against field validation rules defined on the collection.
+	 * Throws GraphQLUserError if validation fails.
+	 */
+	protected function validateInput(Collection $collection, array $input): void
+	{
+		$rules = [];
+
+		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isPrimaryKey()) {
+				continue;
+			}
+
+			$validation = $field->getValidation();
+			if ($validation !== null) {
+				$rules[$fieldName] = $validation;
+			}
+		}
+
+		if (empty($rules)) {
+			return;
+		}
+
+		$factory = new ValidationFactory();
+		$validation = $factory->validate($input, $rules);
+
+		if ($validation->fails()) {
+			$errors = $validation->errors();
+			$firstField = array_key_first($errors->toArray());
+			$firstMessage = $errors->first($firstField);
+
+			throw new GraphQLUserError(
+				$firstMessage,
+				'VALIDATION_ERROR',
+				$firstField
+			);
+		}
 	}
 }
