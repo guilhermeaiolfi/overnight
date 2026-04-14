@@ -306,6 +306,27 @@ class GraphQLRegistryGenerator
 			];
 		}
 
+		// Add nested relation fields for create input types (not update)
+		if (!$forUpdate) {
+			foreach ($collection->relations as $relationName => $relation) {
+				$targetCollectionName = $relation->getCollection();
+				$targetCollection = $this->ormRegistry->getCollection($targetCollectionName);
+
+				if ($targetCollection === null) {
+					continue;
+				}
+
+				// Build a nested input type for the target collection (without its own relations to avoid infinite recursion)
+				$nestedInputType = $this->buildNestedInputType($targetCollection);
+
+				if ($relation instanceof HasManyRelation) {
+					$fields[$relationName] = ['type' => Type::listOf($nestedInputType)];
+				} elseif ($relation instanceof HasOneRelation) {
+					$fields[$relationName] = ['type' => $nestedInputType];
+				}
+			}
+		}
+
 		if (empty($fields)) {
 			$fields['_empty'] = ['type' => Type::string()];
 		}
@@ -344,7 +365,13 @@ class GraphQLRegistryGenerator
 						if ($this->resolver === null) {
 							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
 						}
-						return $this->resolver->resolveCreate($collection, $args['input'] ?? []);
+						$input = $args['input'] ?? [];
+						[$scalarInput, $nestedInput] = $this->separateNestedInput($collection, $input);
+
+						if (empty($nestedInput)) {
+							return $this->resolver->resolveCreate($collection, $scalarInput);
+						}
+						return $this->resolver->resolveNestedCreate($collection, $scalarInput, $nestedInput);
 					},
 			];
 
@@ -413,5 +440,61 @@ class GraphQLRegistryGenerator
 			}
 		}
 		return $fields;
+	}
+
+	protected function buildNestedInputType(Collection $collection): InputObjectType
+	{
+		$typeName = $this->getTypeName($collection->getName()) . 'NestedInput';
+
+		if (isset($this->inputTypes[$typeName])) {
+			return $this->inputTypes[$typeName];
+		}
+
+		$fields = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isPrimaryKey()) {
+				continue;
+			}
+			$fieldType = $this->mapOrmTypeToGraphQL($field);
+			// All nested fields are nullable (the parent sets the FK)
+			if ($fieldType instanceof \GraphQL\Type\Definition\NonNull) {
+				$fieldType = $fieldType->getWrappedType();
+			}
+			$fields[$fieldName] = ['type' => $fieldType];
+		}
+
+		if (empty($fields)) {
+			$fields['_empty'] = ['type' => Type::string()];
+		}
+
+		$inputType = new InputObjectType([
+			'name' => $typeName,
+			'fields' => $fields,
+		]);
+
+		$this->inputTypes[$typeName] = $inputType;
+
+		return $inputType;
+	}
+
+	protected function separateNestedInput(Collection $collection, array $input): array
+	{
+		$scalarInput = [];
+		$nestedInput = [];
+
+		$relationNames = [];
+		foreach ($collection->relations as $name => $relation) {
+			$relationNames[$name] = true;
+		}
+
+		foreach ($input as $key => $value) {
+			if (isset($relationNames[$key]) && (is_array($value))) {
+				$nestedInput[$key] = $value;
+			} else {
+				$scalarInput[$key] = $value;
+			}
+		}
+
+		return [$scalarInput, $nestedInput];
 	}
 }

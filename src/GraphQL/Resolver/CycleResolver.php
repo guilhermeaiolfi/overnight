@@ -6,6 +6,7 @@ namespace ON\GraphQL\Resolver;
 
 use Cycle\ORM\EntityManager;
 use Cycle\ORM\ORMInterface;
+use ON\GraphQL\Error\GraphQLUserError;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasManyRelation;
@@ -52,52 +53,125 @@ class CycleResolver implements GraphQLResolverInterface
 
 	public function resolveCreate(Collection $collection, array $input): ?object
 	{
-		$entityClass = $collection->getEntity();
-		$entity = new $entityClass();
+		try {
+			$entityClass = $collection->getEntity();
+			$entity = new $entityClass();
 
-		foreach ($input as $key => $value) {
-			$entity->{$key} = $value;
+			foreach ($input as $key => $value) {
+				$entity->{$key} = $value;
+			}
+
+			$em = new EntityManager($this->orm);
+			$em->persist($entity);
+			$em->run();
+
+			return $entity;
+		} catch (\Throwable $e) {
+			throw new GraphQLUserError('Failed to create record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
-
-		$em = new EntityManager($this->orm);
-		$em->persist($entity);
-		$em->run();
-
-		return $entity;
 	}
 
 	public function resolveUpdate(Collection $collection, string $id, array $input): ?object
 	{
-		$entity = $this->resolveById($collection, $id);
+		try {
+			$entity = $this->resolveById($collection, $id);
 
-		if ($entity === null) {
-			return null;
+			if ($entity === null) {
+				return null;
+			}
+
+			foreach ($input as $key => $value) {
+				$entity->{$key} = $value;
+			}
+
+			$em = new EntityManager($this->orm);
+			$em->persist($entity);
+			$em->run();
+
+			return $entity;
+		} catch (\Throwable $e) {
+			throw new GraphQLUserError('Failed to update record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
-
-		foreach ($input as $key => $value) {
-			$entity->{$key} = $value;
-		}
-
-		$em = new EntityManager($this->orm);
-		$em->persist($entity);
-		$em->run();
-
-		return $entity;
 	}
 
 	public function resolveDelete(Collection $collection, string $id): bool
 	{
-		$entity = $this->resolveById($collection, $id);
+		try {
+			$entity = $this->resolveById($collection, $id);
 
-		if ($entity === null) {
-			return false;
+			if ($entity === null) {
+				return false;
+			}
+
+			$em = new EntityManager($this->orm);
+			$em->delete($entity);
+			$em->run();
+
+			return true;
+		} catch (\Throwable $e) {
+			throw new GraphQLUserError('Failed to delete record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
+	}
 
-		$em = new EntityManager($this->orm);
-		$em->delete($entity);
-		$em->run();
+	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
+	{
+		try {
+			$entityClass = $collection->getEntity();
+			$entity = new $entityClass();
 
-		return true;
+			foreach ($input as $key => $value) {
+				$entity->{$key} = $value;
+			}
+
+			$em = new EntityManager($this->orm);
+			$em->persist($entity);
+			$em->run();
+
+			// Process nested relations
+			foreach ($nestedInput as $relationName => $relationData) {
+				if (!$collection->relations->has($relationName)) {
+					continue;
+				}
+
+				$relation = $collection->relations->get($relationName);
+				$targetCollection = $this->registry->getCollection($relation->getCollection());
+
+				if ($targetCollection === null) {
+					continue;
+				}
+
+				$innerKey = $relation->getInnerKey();
+				$outerKey = $relation->getOuterKey();
+				$foreignKeyValue = $entity->{$outerKey} ?? null;
+				$targetEntityClass = $targetCollection->getEntity();
+
+				if ($relation instanceof HasManyRelation) {
+					$em2 = new EntityManager($this->orm);
+					foreach ($relationData as $childInput) {
+						$child = new $targetEntityClass();
+						$childInput[$innerKey] = $foreignKeyValue;
+						foreach ($childInput as $key => $value) {
+							$child->{$key} = $value;
+						}
+						$em2->persist($child);
+					}
+					$em2->run();
+				} elseif ($relation instanceof HasOneRelation) {
+					$child = new $targetEntityClass();
+					$relationData[$innerKey] = $foreignKeyValue;
+					foreach ($relationData as $key => $value) {
+						$child->{$key} = $value;
+					}
+					$em2 = new EntityManager($this->orm);
+					$em2->persist($child);
+					$em2->run();
+				}
+			}
+
+			return $entity;
+		} catch (\Throwable $e) {
+			throw new GraphQLUserError('Failed to create record with relations: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
+		}
 	}
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed

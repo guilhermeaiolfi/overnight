@@ -36,6 +36,12 @@ interface GraphQLResolverInterface
 	public function resolveDelete(Collection $collection, string $id): bool;
 
 	/**
+	 * Create a new item with nested relations and return it.
+	 * The $nestedInput contains relation data keyed by relation name.
+	 */
+	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object;
+
+	/**
 	 * Resolve a relation from a source object.
 	 * May return a Deferred for batching.
 	 */

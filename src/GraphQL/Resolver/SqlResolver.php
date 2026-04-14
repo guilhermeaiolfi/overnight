@@ -6,6 +6,7 @@ namespace ON\GraphQL\Resolver;
 
 use ON\DB\DatabaseInterface;
 use ON\GraphQL\DataLoader\GenericDataLoader;
+use ON\GraphQL\Error\GraphQLUserError;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
@@ -72,69 +73,132 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveCreate(Collection $collection, array $input): ?object
 	{
-		$table = $collection->getTable();
+		try {
+			$table = $collection->getTable();
 
-		$columns = array_keys($input);
-		$quotedColumns = array_map(fn(string $col) => $this->quoteIdentifier($col), $columns);
-		$placeholders = array_fill(0, count($columns), '?');
+			$columns = array_keys($input);
+			$quotedColumns = array_map(fn(string $col) => $this->quoteIdentifier($col), $columns);
+			$placeholders = array_fill(0, count($columns), '?');
 
-		$quotedTable = $this->quoteIdentifier($table);
-		$sql = sprintf(
-			'INSERT INTO %s (%s) VALUES (%s)',
-			$quotedTable,
-			implode(', ', $quotedColumns),
-			implode(', ', $placeholders)
-		);
+			$quotedTable = $this->quoteIdentifier($table);
+			$sql = sprintf(
+				'INSERT INTO %s (%s) VALUES (%s)',
+				$quotedTable,
+				implode(', ', $quotedColumns),
+				implode(', ', $placeholders)
+			);
 
-		$stmt = $this->database->getConnection()->prepare($sql);
-		$stmt->execute(array_values($input));
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute(array_values($input));
 
-		$lastId = $this->database->getConnection()->lastInsertId();
+			$lastId = $this->database->getConnection()->lastInsertId();
 
-		return $this->resolveById($collection, (string) $lastId);
+			return $this->resolveById($collection, (string) $lastId);
+		} catch (\PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
+		}
 	}
 
 	public function resolveUpdate(Collection $collection, string $id, array $input): ?object
 	{
-		$table = $collection->getTable();
-		$pkColumn = $this->getPrimaryKeyColumn($collection);
+		try {
+			$table = $collection->getTable();
+			$pkColumn = $this->getPrimaryKeyColumn($collection);
 
-		$sets = [];
-		foreach (array_keys($input) as $column) {
-			$sets[] = $this->quoteIdentifier($column) . " = ?";
+			$sets = [];
+			foreach (array_keys($input) as $column) {
+				$sets[] = $this->quoteIdentifier($column) . " = ?";
+			}
+
+			$quotedTable = $this->quoteIdentifier($table);
+			$quotedPk = $this->quoteIdentifier($pkColumn);
+			$sql = sprintf(
+				'UPDATE %s SET %s WHERE %s = ?',
+				$quotedTable,
+				implode(', ', $sets),
+				$quotedPk
+			);
+
+			$values = array_values($input);
+			$values[] = $id;
+
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute($values);
+
+			return $this->resolveById($collection, $id);
+		} catch (\PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
 		}
-
-		$quotedTable = $this->quoteIdentifier($table);
-		$quotedPk = $this->quoteIdentifier($pkColumn);
-		$sql = sprintf(
-			'UPDATE %s SET %s WHERE %s = ?',
-			$quotedTable,
-			implode(', ', $sets),
-			$quotedPk
-		);
-
-		$values = array_values($input);
-		$values[] = $id;
-
-		$stmt = $this->database->getConnection()->prepare($sql);
-		$stmt->execute($values);
-
-		return $this->resolveById($collection, $id);
 	}
 
 	public function resolveDelete(Collection $collection, string $id): bool
 	{
-		$table = $collection->getTable();
-		$pkColumn = $this->getPrimaryKeyColumn($collection);
+		try {
+			$table = $collection->getTable();
+			$pkColumn = $this->getPrimaryKeyColumn($collection);
 
-		$quotedTable = $this->quoteIdentifier($table);
-		$quotedPk = $this->quoteIdentifier($pkColumn);
-		$sql = "DELETE FROM {$quotedTable} WHERE {$quotedPk} = ?";
+			$quotedTable = $this->quoteIdentifier($table);
+			$quotedPk = $this->quoteIdentifier($pkColumn);
+			$sql = "DELETE FROM {$quotedTable} WHERE {$quotedPk} = ?";
 
-		$stmt = $this->database->getConnection()->prepare($sql);
-		$stmt->execute([$id]);
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute([$id]);
 
-		return $stmt->rowCount() > 0;
+			return $stmt->rowCount() > 0;
+		} catch (\PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
+		}
+	}
+
+	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
+	{
+		try {
+			// Create the parent record
+			$parent = $this->resolveCreate($collection, $input);
+
+			if ($parent === null) {
+				return null;
+			}
+
+			$pkColumn = $this->getPrimaryKeyColumn($collection);
+			$parentId = $parent->{$pkColumn} ?? null;
+
+			// Process nested relations
+			foreach ($nestedInput as $relationName => $relationData) {
+				if (!$collection->relations->has($relationName)) {
+					continue;
+				}
+
+				$relation = $collection->relations->get($relationName);
+				$targetCollectionName = $relation->getCollection();
+				$targetCollection = $this->ormRegistry->getCollection($targetCollectionName);
+
+				if ($targetCollection === null) {
+					continue;
+				}
+
+				$innerKey = $relation->getInnerKey();
+				$outerKey = $relation->getOuterKey();
+				$foreignKeyValue = $parent->{$outerKey} ?? $parentId;
+
+				if ($relation instanceof HasManyRelation) {
+					// relationData is an array of items
+					foreach ($relationData as $childInput) {
+						$childInput[$innerKey] = $foreignKeyValue;
+						$this->resolveCreate($targetCollection, $childInput);
+					}
+				} elseif ($relation instanceof HasOneRelation) {
+					// relationData is a single item
+					$relationData[$innerKey] = $foreignKeyValue;
+					$this->resolveCreate($targetCollection, $relationData);
+				}
+			}
+
+			// Re-fetch the parent to get fresh data
+			return $this->resolveById($collection, (string) $parentId);
+		} catch (\PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
+		}
 	}
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
@@ -289,5 +353,41 @@ class SqlResolver implements GraphQLResolverInterface
 		}
 
 		return 'id';
+	}
+
+	protected function convertDatabaseError(\PDOException $e, Collection $collection): GraphQLUserError
+	{
+		$message = $e->getMessage();
+		$code = $e->getCode();
+
+		// Detect common database errors
+		if (str_contains($message, 'UNIQUE constraint') || str_contains($message, 'Duplicate entry')) {
+			// Try to extract the field name
+			if (preg_match('/column[s]?\s+[`\']?(\w+)/i', $message, $matches)) {
+				return new GraphQLUserError(
+					"A record with this {$matches[1]} already exists.",
+					'DUPLICATE',
+					$matches[1]
+				);
+			}
+			return new GraphQLUserError('A record with these values already exists.', 'DUPLICATE');
+		}
+
+		if (str_contains($message, 'NOT NULL constraint') || str_contains($message, 'cannot be null')) {
+			if (preg_match('/[`\']?(\w+)[`\']?\s+(?:cannot be null|NOT NULL)/i', $message, $matches)) {
+				return new GraphQLUserError(
+					"The field {$matches[1]} is required.",
+					'REQUIRED_FIELD',
+					$matches[1]
+				);
+			}
+			return new GraphQLUserError('A required field is missing.', 'REQUIRED_FIELD');
+		}
+
+		if (str_contains($message, 'FOREIGN KEY constraint')) {
+			return new GraphQLUserError('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION');
+		}
+
+		return new GraphQLUserError('Database operation failed.', 'DATABASE_ERROR', null, $e);
 	}
 }

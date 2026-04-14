@@ -177,4 +177,139 @@ final class GraphQLSQLResolverTest extends TestCase
 		$byIdField = $queryType->getField('user_by_id');
 		$this->assertNotNull($byIdField);
 	}
+
+	public function testNestedCreateMutationCreatesChildren(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+
+		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$schema = $generator->generate();
+
+		// Create user with nested posts
+		$mutation = '
+		mutation {
+			create_user(input: {
+				name: "Alice",
+				posts: [
+					{ title: "First Post" },
+					{ title: "Second Post" }
+				]
+			}) {
+				id
+				name
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $mutation);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+		$alice = $data['data']['create_user'];
+		$this->assertSame('Alice', $alice['name']);
+
+		// Now query Alice with her posts to verify children were created
+		$query = '
+		{
+			user(name: "Alice") {
+				items {
+					id
+					name
+					posts { id title }
+				}
+				totalCount
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+		$this->assertSame(1, $data['data']['user']['totalCount']);
+
+		$aliceData = $data['data']['user']['items'][0];
+		$this->assertSame('Alice', $aliceData['name']);
+		$this->assertCount(2, $aliceData['posts']);
+		$this->assertSame('First Post', $aliceData['posts'][0]['title']);
+		$this->assertSame('Second Post', $aliceData['posts'][1]['title']);
+	}
+
+	public function testUpdateMutation(): void
+	{
+		$this->createUserCollection($this->registry);
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+
+		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$schema = $generator->generate();
+
+		// Update John's name
+		$mutation = '
+		mutation {
+			update_user(id: "1", input: { name: "Johnny" }) {
+				id
+				name
+				email
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $mutation);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+		$user = $data['data']['update_user'];
+		$this->assertSame(1, $user['id']);
+		$this->assertSame('Johnny', $user['name']);
+		$this->assertSame('john@test.com', $user['email']); // unchanged
+
+		// Verify via query
+		$query = '{ user_by_id(id: "1") { id name email } }';
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray();
+
+		$this->assertArrayNotHasKey('errors', $data);
+		$this->assertSame('Johnny', $data['data']['user_by_id']['name']);
+		$this->assertSame('john@test.com', $data['data']['user_by_id']['email']);
+	}
+
+	public function testCreateDuplicateReturnsStructuredError(): void
+	{
+		// Create a collection with a unique constraint
+		$this->registry->collection('category')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('name', 'string')->type('string')->nullable(false)->end()
+			->end();
+
+		$database = new \Tests\ON\GraphQL\Support\SqliteTestDatabase([
+			'category' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'name' => 'TEXT NOT NULL UNIQUE'],
+				'rows' => [
+					['id' => 1, 'name' => 'Existing'],
+				],
+			],
+		]);
+
+		$resolver = new SqlResolver($this->registry, $database);
+		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$schema = $generator->generate();
+
+		$query = '
+		mutation {
+			create_category(input: { name: "Existing" }) {
+				id
+				name
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+
+		$this->assertArrayHasKey('errors', $data);
+		$this->assertNotEmpty($data['errors']);
+
+		$error = $data['errors'][0];
+		$this->assertArrayHasKey('extensions', $error);
+		$this->assertSame('DUPLICATE', $error['extensions']['code']);
+	}
 }
