@@ -1,17 +1,20 @@
 # GraphQL Extension
 
-The GraphQL extension provides GraphQL API support for the Overnight framework. It automatically generates GraphQL types and resolvers from your ORM entity definitions.
+The GraphQL extension provides GraphQL API support for the Overnight framework. It automatically generates a full GraphQL schema — types, queries, and mutations — from your ORM entity definitions. No boilerplate resolvers needed.
 
 ## Table of Contents
 
 1. [Installation](#installation)
 2. [Quick Start](#quick-start)
-3. [Entity Definition with Resolvers](#entity-definition-with-resolvers)
-4. [Resolver Patterns](#resolver-patterns)
-5. [Field Type Overrides](#field-type-overrides)
-6. [N+1 Problem Solutions](#n1-problem-solutions)
-7. [Configuration](#configuration)
-8. [API Reference](#api-reference)
+3. [Resolver Architecture](#resolver-architecture)
+4. [Queries](#queries)
+5. [Mutations](#mutations)
+6. [Validation](#validation)
+7. [Error Handling](#error-handling)
+8. [Schema Caching](#schema-caching)
+9. [Custom Resolvers](#custom-resolvers)
+10. [Configuration](#configuration)
+11. [API Reference](#api-reference)
 
 ---
 
@@ -28,7 +31,7 @@ Then install the extension in your application:
 ```php
 // config/extensions.php
 
-use ON\GraphQL\Extension\GraphQLExtension;
+use ON\GraphQL\GraphQLExtension;
 
 $app->install(GraphQLExtension::class);
 
@@ -55,382 +58,511 @@ $registry = new Registry();
 $registry->collection("user")
     ->field("id", "int")->primaryKey(true)->end()
     ->field("name", "string")->end()
-    ->field("email", "string")->end()
+    ->field("email", "string")->validation('required|email|max:255')->end()
     ->hasMany("posts", "post")
         ->end()
     ->end();
 
 $registry->collection("post")
     ->field("id", "int")->primaryKey(true)->end()
-    ->field("title", "string")->end()
+    ->field("title", "string")->validation('required|max:255')->end()
     ->field("content", "text")->end()
     ->field("user_id", "int")->end()
-    ->belongsTo("user", "user")
+    ->belongsTo("author", "user")
         ->innerKey('user_id')->outerKey('id')->end()
         ->end()
     ->end();
 ```
 
-### Step 2: Add Resolvers
+### Step 2: Choose a Resolver
+
+Pass a resolver to the generator. Two built-in resolvers are available:
 
 ```php
-// Continue from above...
+use ON\GraphQL\GraphQLRegistryGenerator;
+use ON\GraphQL\Resolver\SqlResolver;
 
-$registry->collection("user")
-    ->metadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\User::class)->findAll();
-    })->end()
-    ->metadata('gql::resolver::findById', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\User::class)->findByPK($args['id']);
-    })->end()
-    // Relation resolver
-    ->hasMany("posts", "post")
-        ->metadata('gql::resolver', function($user, $args, $container) {
-            $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-            return iterator_to_array(
-                $orm->getRepository(\App\Models\Post::class)->findAll(['user_id' => $user->id])
-            );
-        })->end()
-        ->end()
-    ->end();
+// Option A: SqlResolver — raw PDO/SQL queries
+$resolver = new SqlResolver($registry, $database);
+$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
+$schema = $generator->generate();
+```
 
-$registry->collection("post")
-    ->metadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\Post::class)->findAll();
-    })->end()
-    ->metadata('gql::resolver::findById', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\Post::class)->findByPK($args['id']);
-    })->end()
-    ->metadata('gql::resolver::create', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        $post = new \App\Models\Post($args['input']);
-        $orm->persist($post);
-        $orm->run();
-        return $post;
-    })->end()
-    ->end();
+```php
+use ON\GraphQL\GraphQLRegistryGenerator;
+use ON\GraphQL\Resolver\CycleResolver;
+
+// Option B: CycleResolver — uses Cycle ORM's repository pattern
+$resolver = new CycleResolver($orm, $registry);
+$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
+$schema = $generator->generate();
 ```
 
 ### Step 3: Query Your API
 
-```
-POST /graphql
+All non-hidden collections automatically get queries and mutations.
+
+```graphql
+# List users with pagination
 {
-  "query": "{ users { id name email posts { id title } } }"
+  user(limit: 10, offset: 0) {
+    items {
+      id
+      name
+      email
+      posts {
+        id
+        title
+      }
+    }
+    totalCount
+  }
+}
+
+# Get a single user by ID
+{
+  user_by_id(id: "1") {
+    id
+    name
+  }
 }
 ```
 
 ---
 
-## Entity Definition with Resolvers
+## Resolver Architecture
 
-### Collection-Level Resolvers
+The generator accepts an optional `GraphQLResolverInterface` that handles all data operations. You don't need to write per-collection resolvers — the built-in resolvers handle everything.
 
-| Metadata Key | Purpose | Signature |
-|--------------|---------|-----------|
-| `gql::resolver::findAll` | Collection query resolver | `fn(array $args, ContainerInterface $container, ?object $context): mixed` |
-| `gql::resolver::findById` | Single item query resolver | `fn(array $args, ContainerInterface $container, ?object $context): mixed` |
-| `gql::resolver::create` | Create mutation resolver | `fn(array $args, ContainerInterface $container, ?object $context): mixed` |
-| `gql::resolver::update` | Update mutation resolver | `fn(array $args, ContainerInterface $container, ?object $context): mixed` |
-| `gql::resolver::delete` | Delete mutation resolver | `fn(array $args, ContainerInterface $container, ?object $context): mixed` |
+### Constructor
 
-### Field/Relation-Level Resolvers
+```php
+new GraphQLRegistryGenerator(
+    Registry $ormRegistry,
+    ?ContainerInterface $container = null,
+    ?GraphQLResolverInterface $resolver = null
+);
+```
 
-| Metadata Key | Target | Signature |
-|--------------|--------|-----------|
-| `gql::resolver` | Field or Relation | `fn(mixed $source, array $args, ContainerInterface $container, ?object $context): mixed` |
-| `gql::type` | Field only | `string` - Override inferred GraphQL type |
+### Built-in Resolvers
+
+| Resolver | Backend | Use Case |
+|----------|---------|----------|
+| `SqlResolver` | Raw PDO/SQL | Simple apps, no ORM dependency |
+| `CycleResolver` | Cycle ORM repositories | Apps using Cycle ORM |
+
+### SqlResolver
+
+Uses raw SQL via `DatabaseInterface`. Handles filtering, sorting, pagination, nested creates, and relation batching via the built-in DataLoader.
+
+```php
+use ON\GraphQL\Resolver\SqlResolver;
+
+$resolver = new SqlResolver($registry, $database);
+```
+
+### CycleResolver
+
+Uses Cycle ORM's `EntityManager` and repository pattern. Supports eager-loaded relations and entity class instantiation.
+
+```php
+use ON\GraphQL\Resolver\CycleResolver;
+
+$resolver = new CycleResolver($orm, $registry);
+```
+
+### Custom Resolver
+
+Implement `GraphQLResolverInterface` for full control:
+
+```php
+use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\ORM\Definition\Collection\Collection;
+use ON\ORM\Definition\Relation\RelationInterface;
+
+class MyResolver implements GraphQLResolverInterface
+{
+    public function resolveCollection(Collection $collection, array $args = []): array;
+    public function resolveById(Collection $collection, string $id): ?object;
+    public function resolveCreate(Collection $collection, array $input): ?object;
+    public function resolveUpdate(Collection $collection, string $id, array $input): ?object;
+    public function resolveDelete(Collection $collection, string $id): bool;
+    public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object;
+    public function resolveRelation(mixed $source, RelationInterface $relation): mixed;
+}
+```
 
 ---
 
-## Resolver Patterns
+## Queries
 
-### Basic Collection Resolver
+### List Queries (Connection Types)
+
+List queries return a connection type with `items` and `totalCount`:
+
+```graphql
+{
+  post(limit: 20, offset: 0, sort: "title", order: "ASC") {
+    items {
+      id
+      title
+      content
+    }
+    totalCount
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "data": {
+    "post": {
+      "items": [
+        { "id": "1", "title": "Hello World", "content": "..." }
+      ],
+      "totalCount": 42
+    }
+  }
+}
+```
+
+### Pagination
+
+All list queries accept `limit` and `offset` arguments:
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `limit` | `Int` | Maximum number of items to return |
+| `offset` | `Int` | Number of items to skip |
+
+### Sorting
+
+| Argument | Type | Description |
+|----------|------|-------------|
+| `sort` | `String` | Field name to sort by |
+| `order` | `String` | `ASC` or `DESC` (default: `ASC`) |
+
+The sort field must exist on the collection. If the field doesn't exist, the sort is silently ignored.
+
+### Filtering
+
+Filterable fields are exposed as query arguments. Pass a value to filter by exact match:
+
+```graphql
+{
+  user(name: "Alice") {
+    items { id name }
+    totalCount
+  }
+}
+```
+
+### LIKE Filtering
+
+String filter values containing `%` automatically use `LIKE` instead of `=`:
+
+```graphql
+{
+  user(name: "%ali%") {
+    items { id name }
+    totalCount
+  }
+}
+```
+
+### Find By ID
+
+Each collection gets a `<name>_by_id` query:
+
+```graphql
+{
+  user_by_id(id: "1") {
+    id
+    name
+    email
+  }
+}
+```
+
+---
+
+## Mutations
+
+All non-hidden collections automatically get `create`, `update`, and `delete` mutations. No custom resolvers needed.
+
+### Create
+
+Create mutations use a `FooInput` input type. Required fields from the collection definition are preserved as non-nullable:
+
+```graphql
+mutation {
+  create_user(input: { name: "Alice", email: "alice@example.com" }) {
+    id
+    name
+    email
+  }
+}
+```
+
+### Update
+
+Update mutations use a `FooUpdateInput` input type where all fields are nullable (you only send what changed):
+
+```graphql
+mutation {
+  update_user(id: "1", input: { name: "Alice Updated" }) {
+    id
+    name
+  }
+}
+```
+
+### Delete
+
+```graphql
+mutation {
+  delete_user(id: "1")
+}
+```
+
+Returns `true` if the record was deleted, `false` if not found.
+
+### Nested Mutations
+
+Create mutations accept nested relation data. The foreign key is set automatically:
+
+```graphql
+mutation {
+  create_user(input: {
+    name: "Alice",
+    email: "alice@example.com",
+    posts: [
+      { title: "First Post", content: "Hello!" },
+      { title: "Second Post", content: "World!" }
+    ]
+  }) {
+    id
+    name
+    posts {
+      id
+      title
+    }
+  }
+}
+```
+
+Nested input types (`FooNestedInput`) have all fields nullable since the parent sets the foreign key.
+
+### Input Types Summary
+
+| Type | Used By | Field Nullability |
+|------|---------|-------------------|
+| `FooInput` | `create_foo` | Preserves required/nullable from definition |
+| `FooUpdateInput` | `update_foo` | All fields nullable |
+| `FooNestedInput` | Nested creates | All fields nullable |
+
+---
+
+## Validation
+
+Fields can have validation rules using `somnambulist/validation` pipe syntax:
+
+```php
+$registry->collection("user")
+    ->field("name", "string")->validation('required|max:255')->end()
+    ->field("email", "string")->validation('required|email|max:255')->end()
+    ->field("age", "int")->validation('min:0|max:150')->end()
+    ->end();
+```
+
+Validation runs on create and update mutations. All errors are returned at once in the response extensions:
+
+```json
+{
+  "errors": [
+    {
+      "message": "The Email is not valid email",
+      "extensions": {
+        "code": "VALIDATION_ERROR",
+        "field": "email",
+        "validationErrors": {
+          "email": ["The Email is not valid email"],
+          "name": ["The Name is required"]
+        }
+      }
+    }
+  ]
+}
+```
+
+### Available Validation Rules
+
+Uses `somnambulist/validation` — common rules include:
+
+| Rule | Example |
+|------|---------|
+| `required` | Field must be present and non-empty |
+| `email` | Must be a valid email |
+| `max:N` | Maximum length (string) or value (number) |
+| `min:N` | Minimum length or value |
+| `numeric` | Must be numeric |
+| `url` | Must be a valid URL |
+| `alpha` | Alphabetic characters only |
+| `alpha_num` | Alphanumeric characters only |
+
+---
+
+## Error Handling
+
+The extension uses `GraphQLUserError` for structured, client-safe errors with extensions.
+
+### Error Structure
+
+```json
+{
+  "errors": [
+    {
+      "message": "A record with this email already exists.",
+      "extensions": {
+        "code": "DUPLICATE",
+        "field": "email"
+      }
+    }
+  ]
+}
+```
+
+### Error Codes
+
+| Code | Meaning |
+|------|---------|
+| `VALIDATION_ERROR` | Input validation failed (includes `validationErrors` map) |
+| `DUPLICATE` | Unique constraint violation |
+| `REQUIRED_FIELD` | NOT NULL constraint violation |
+| `FOREIGN_KEY_VIOLATION` | Referenced record does not exist |
+| `DATABASE_ERROR` | General database error |
+| `INTERNAL_ERROR` | Unexpected server error |
+
+Database errors from PDO exceptions are automatically detected and converted to the appropriate error code.
+
+### GraphQLUserError
+
+```php
+use ON\GraphQL\Error\GraphQLUserError;
+
+// Simple error
+throw new GraphQLUserError('Something went wrong', 'CUSTOM_CODE', 'fieldName');
+
+// Validation error with all field errors
+throw GraphQLUserError::validationFailed([
+    'email' => ['The Email is not valid email'],
+    'name' => ['The Name is required'],
+]);
+```
+
+---
+
+## Schema Caching
+
+Use `CachedGraphQLRegistryGenerator` to memoize the generated schema. It detects registry changes via a hash of collection names, fields, and relations:
+
+```php
+use ON\GraphQL\CachedGraphQLRegistryGenerator;
+
+$generator = new CachedGraphQLRegistryGenerator($registry, $container, $resolver);
+
+// First call generates the schema
+$schema = $generator->generate();
+
+// Subsequent calls return the cached schema (if registry hasn't changed)
+$schema = $generator->generate();
+
+// Force regeneration
+$generator->invalidate();
+
+// Check cache status
+$generator->isCached(); // true/false
+```
+
+The cache is invalidated automatically when the registry hash changes (e.g., collections added/removed, fields changed).
+
+---
+
+## Custom Resolvers
+
+While the built-in resolvers handle most cases, you can override individual collection resolvers via metadata:
+
+### Collection-Level Overrides
 
 ```php
 $registry->collection("user")
     ->metadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        $repo = $orm->getRepository(\App\Models\User::class);
-        
-        // Apply filters from args
-        $scope = $args['filter'] ?? [];
-        return iterator_to_array($repo->findAll($scope));
-    })->end()
+        // Custom list logic
+        $repo = $container->get(UserRepository::class);
+        return [
+            'items' => $repo->search($args),
+            'totalCount' => $repo->count($args),
+        ];
+    })
+    ->metadata('gql::resolver::findById', function($args, $container) {
+        return $container->get(UserRepository::class)->find($args['id']);
+    })
     ->end();
 ```
 
-### Find By ID Resolver
-
-```php
-->metadata('gql::resolver::findById', function($args, $container) {
-    $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-    $repo = $orm->getRepository(\App\Models\User::class);
-    
-    return $repo->findByPK($args['id']);
-})->end()
-```
-
-### Create Mutation Resolver
-
-```php
-->metadata('gql::resolver::create', function($args, $container) {
-    $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-    
-    $user = new \App\Models\User();
-    $user->name = $args['input']['name'] ?? null;
-    $user->email = $args['input']['email'] ?? null;
-    
-    $orm->persist($user);
-    $orm->run();
-    
-    return $user;
-})->end()
-```
-
-### Field Resolver (e.g., conditional field)
+### Field-Level Overrides
 
 ```php
 $registry->collection("user")
     ->field("email", "string")
         ->metadata('gql::resolver', function($source, $args, $container) {
-            // Only show email to admin users
+            // Only show email to admins
             $currentUser = $container->get('current_user');
-            if ($currentUser && $currentUser->isAdmin()) {
-                return $source->email;
-            }
-            return null;
-        })->end()
+            return $currentUser->isAdmin() ? $source->email : null;
+        })
         ->end()
     ->end();
 ```
 
-### Relation Resolver (hasMany)
+### Relation-Level Overrides
 
 ```php
 $registry->collection("user")
     ->hasMany("posts", "post")
         ->metadata('gql::resolver', function($user, $args, $container) {
-            $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-            return iterator_to_array(
-                $orm->getRepository(\App\Models\Post::class)->findAll([
-                    'user_id' => $user->id
-                ])
-            );
-        })->end()
+            // Custom relation loading
+            return $container->get(PostRepository::class)
+                ->findByUser($user->id);
+        })
         ->end()
     ->end();
 ```
 
-### Relation Resolver (belongsTo/hasOne)
+### Field Type Overrides
 
-```php
-$registry->collection("post")
-    ->belongsTo("user", "user")
-        ->metadata('gql::resolver', function($post, $args, $container) {
-            $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-            return $orm->getRepository(\App\Models\User::class)->findByPK($post->user_id);
-        })->end()
-        ->end()
-    ->end();
-```
-
----
-
-## Field Type Overrides
-
-Override the inferred GraphQL type using `gql::type`:
+Override the inferred GraphQL type:
 
 ```php
 $registry->collection("user")
     ->field("email", "string")
-        ->metadata('gql::type', 'EmailType!')->end()
-        ->end()
-    ->field("created_at", "datetime")
-        ->metadata('gql::type', 'DateTime!')->end()
+        ->metadata('gql::type', 'String!')
         ->end()
     ->end();
 ```
 
-### Available Type Formats
+### Metadata Keys Reference
 
-- `String` - nullable string
-- `String!` - non-nullable string
-- `[String]!` - non-nullable list of nullable strings
-- `[String!]!` - non-nullable list of non-nullable strings
-
----
-
-## N+1 Problem Solutions
-
-The N+1 problem occurs when fetching a list of items with relations, causing one query per item.
-
-### Solution 1: Simple Batch Loading
-
-```php
-$registry->collection("user")
-    ->metadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        $users = iterator_to_array(
-            $orm->getRepository(\App\Models\User::class)->findAll()
-        );
-        
-        // Pre-load all posts for these users
-        $userIds = array_map(fn($u) => $u->id, $users);
-        $posts = iterator_to_array(
-            $orm->getRepository(\App\Models\Post::class)->findAll(['user_id' => $userIds])
-        );
-        
-        // Group posts by user_id
-        $postsByUser = [];
-        foreach ($posts as $post) {
-            $postsByUser[$post->user_id][] = $post;
-        }
-        
-        // Attach posts to users
-        foreach ($users as $user) {
-            $user->posts = $postsByUser[$user->id] ?? [];
-        }
-        
-        return $users;
-    })->end()
-    ->end();
-```
-
-### Solution 2: DataLoader Pattern (Recommended)
-
-Create a DataLoader class:
-
-```php
-<?php
-// src/GraphQL/DataLoader/PostLoader.php
-
-namespace ON\GraphQL\DataLoader;
-
-use Cycle\ORM\ORMInterface;
-
-class PostLoader
-{
-    protected array $cache = [];
-    protected array $pending = [];
-
-    public function __construct(
-        protected ORMInterface $orm
-    ) {
-    }
-
-    public function load(int $userId): array
-    {
-        if (isset($this->cache[$userId])) {
-            return $this->cache[$userId];
-        }
-
-        $this->pending[$userId] = true;
-
-        return [];
-    }
-
-    public function resolve(): void
-    {
-        if (empty($this->pending)) {
-            return;
-        }
-
-        $userIds = array_keys($this->pending);
-
-        $posts = iterator_to_array(
-            $this->orm->getRepository(\App\Models\Post::class)
-                ->findAll(['user_id' => $userIds])
-        );
-
-        $grouped = [];
-        foreach ($posts as $post) {
-            $grouped[$post->user_id][] = $post;
-        }
-
-        foreach ($userIds as $userId) {
-            $this->cache[$userId] = $grouped[$userId] ?? [];
-        }
-
-        $this->pending = [];
-    }
-
-    public function getCache(): array
-    {
-        return $this->cache;
-    }
-}
-```
-
-Register the DataLoader in your container:
-
-```php
-// config/container.php
-
-$container->define(\ON\GraphQL\DataLoader\PostLoader::class, function($c) {
-    return new \ON\GraphQL\DataLoader\PostLoader(
-        $c->get(\Cycle\ORM\ORMInterface::class)
-    );
-});
-```
-
-Use in resolver:
-
-```php
-$registry->collection("user")
-    ->hasMany("posts", "post")
-        ->metadata('gql::resolver', function($user, $args, $container) {
-            $loader = $container->get(\ON\GraphQL\DataLoader\PostLoader::class);
-            
-            // Register user for batch loading
-            $loader->load($user->id);
-            
-            // This is simplified - in production you'd use a defer/promise pattern
-            return $loader->getCache()[$user->id] ?? [];
-        })->end()
-        ->end()
-    ->metadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        $users = iterator_to_array(
-            $orm->getRepository(\App\Models\User::class)->findAll()
-        );
-        
-        // Batch load all posts
-        $loader = $container->get(\ON\GraphQL\DataLoader\PostLoader::class);
-        foreach ($users as $user) {
-            $loader->load($user->id);
-        }
-        $loader->resolve();
-        
-        return $users;
-    })->end()
-    ->end();
-```
-
-### Solution 3: Cycle ORM Eager Loading
-
-Use Cycle's eager loading for simpler cases:
-
-```php
-$registry->collection("user")
-    ->hasMany("posts", "post")
-        ->load('eager')  // Load all posts with user in single query
-        ->end()
-    ->end();
-
-// Resolver simply accesses the pre-loaded relation
-->metadata('gql::resolver::findAll', function($args, $container) {
-    $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-    $repo = $orm->getRepository(\App\Models\User::class);
-    
-    // The select will automatically eager load 'posts' relation
-    return iterator_to_array($repo->select()->with('posts')->fetchAll());
-})->end()
-```
+| Key | Target | Description |
+|-----|--------|-------------|
+| `gql::resolver::findAll` | Collection | Override list query resolver |
+| `gql::resolver::findById` | Collection | Override find-by-ID resolver |
+| `gql::resolver::create` | Collection | Override create mutation resolver |
+| `gql::resolver::update` | Collection | Override update mutation resolver |
+| `gql::resolver::delete` | Collection | Override delete mutation resolver |
+| `gql::resolver` | Field/Relation | Override field or relation resolver |
+| `gql::type` | Field | Override inferred GraphQL type |
 
 ---
 
@@ -439,7 +571,7 @@ $registry->collection("user")
 ### Extension Options
 
 ```php
-$app->install(\ON\GraphQL\Extension\GraphQLExtension::class, [
+$app->install(\ON\GraphQL\GraphQLExtension::class, [
     'path' => '/graphql',     // GraphQL endpoint path (default: '/graphql')
     'enabled' => true,        // Enable/disable extension
 ]);
@@ -447,9 +579,18 @@ $app->install(\ON\GraphQL\Extension\GraphQLExtension::class, [
 
 ### Middleware
 
-The GraphQL middleware handles:
-- `GET` requests with `?query=...&variables=...`
-- `POST` requests with `{"query": "...", "variables": {...}}`
+The `GraphQLMiddleware` handles both GET and POST requests:
+
+- `GET` requests: `?query=...&variables=...&operationName=...`
+- `POST` requests: `{"query": "...", "variables": {...}, "operationName": "..."}`
+
+Responses are returned as `JsonResponse`. In debug mode, error messages include debug info and stack traces.
+
+```php
+use ON\GraphQL\Middleware\GraphQLMiddleware;
+
+$middleware = new GraphQLMiddleware($schema, debug: true);
+```
 
 ---
 
@@ -460,38 +601,52 @@ The GraphQL middleware handles:
 ```php
 use ON\GraphQL\GraphQLRegistryGenerator;
 
-$generator = new GraphQLRegistryGenerator($ormRegistry, $container);
+$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
 $schema = $generator->generate();
+```
+
+### CachedGraphQLRegistryGenerator
+
+```php
+use ON\GraphQL\CachedGraphQLRegistryGenerator;
+
+$generator = new CachedGraphQLRegistryGenerator($registry, $container, $resolver);
+$schema = $generator->generate();
+$generator->invalidate();
+$generator->isCached();
 ```
 
 ### GraphQLSchemaFactory
 
+Used internally by the extension to create the schema from the container:
+
 ```php
 use ON\GraphQL\GraphQLSchemaFactory;
-use Psr\Container\ContainerInterface;
 
 $factory = new GraphQLSchemaFactory($container);
 $schema = $factory->create($config);
 ```
 
-### Metadata Keys Reference
+### GraphQLResolverInterface
 
-| Key | Target | Description |
-|-----|--------|-------------|
-| `gql::resolver::findAll` | Collection | Resolver for listing collections |
-| `gql::resolver::findById` | Collection | Resolver for getting single item |
-| `gql::resolver::create` | Collection | Resolver for creating items |
-| `gql::resolver::update` | Collection | Resolver for updating items |
-| `gql::resolver::delete` | Collection | Resolver for deleting items |
-| `gql::resolver` | Field | Resolver for field value |
-| `gql::resolver` | Relation | Resolver for relation |
-| `gql::type` | Field | Override GraphQL type |
-
+```php
+interface GraphQLResolverInterface
+{
+    public function resolveCollection(Collection $collection, array $args = []): array;
+    public function resolveById(Collection $collection, string $id): ?object;
+    public function resolveCreate(Collection $collection, array $input): ?object;
+    public function resolveUpdate(Collection $collection, string $id, array $input): ?object;
+    public function resolveDelete(Collection $collection, string $id): bool;
+    public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object;
+    public function resolveRelation(mixed $source, RelationInterface $relation): mixed;
+}
+```
 
 ---
 
 ## See Also
 
-- [ORM Entity Definition](../orm-entity-definition.md) - How to define entities with metadata
+- [ORM Entity Definition](../orm-entity-definition.md) - How to define entities
+- [DataLoader](graphql-dataloader.md) - Solving the N+1 problem
 - [GraphQL PHP Library](https://webonyx.github.io/graphql-php/) - Reference documentation
 - [GraphQL Specification](https://graphql.org/) - Official GraphQL spec

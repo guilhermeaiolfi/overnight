@@ -27,6 +27,13 @@ $registry = new Registry();
 $collection = $registry->collection("user");
 ```
 
+### Getting a Collection
+
+```php
+// Returns ?CollectionInterface (null if not found)
+$collection = $registry->getCollection("user");
+```
+
 ---
 
 ## Collection Definition
@@ -56,6 +63,13 @@ $registry->collection("user")
 | `mapper(string)` | Mapper class | `Cycle\ORM\Mapper\StdMapper` |
 | `source(string)` | Source class | `ON\ORM\Select\Source` |
 | `hidden(bool)` | Hide from schema generation | `false` |
+
+Primitive properties are protected with getters/setters. The `fields` and `relations` maps are public:
+
+```php
+$collection->fields;    // FieldMap (public)
+$collection->relations; // RelationMap (public)
+```
 
 ---
 
@@ -98,10 +112,52 @@ $registry->collection("user")
 | `comment(string)` | Set column comment |
 | `hidden(bool)` | Hide from output |
 | `typecast(string\|callable)` | Set typecast handler |
+| `validation(string)` | Set validation rules (pipe syntax) |
+
+### Field Validation
+
+Fields support validation rules using `somnambulist/validation` pipe syntax:
+
+```php
+$registry->collection("user")
+    ->field("name", "string")->validation('required|max:255')->end()
+    ->field("email", "string")->validation('required|email|max:255')->end()
+    ->field("age", "int")->validation('min:0|max:150')->end()
+    ->end();
+```
+
+Validation is used by the [GraphQL extension](extensions/graphql.md) to validate mutation input.
+
+### Field Type Shorthand
+
+The `field()` method accepts an optional type as the second argument:
+
+```php
+// These are equivalent:
+->field('name', 'string')
+->field('name')->type('string')
+```
 
 ---
 
 ## Relation Definition
+
+### Convenience Relation Methods
+
+The `Collection` class provides shorthand methods for defining relations without importing relation classes:
+
+```php
+$registry->collection("user")
+    ->hasMany("posts", "post")       // HasManyRelation
+    ->hasOne("profile", "profile")   // HasOneRelation
+    ->end();
+
+$registry->collection("post")
+    ->belongsTo("author", "user")    // BelongsToRelation
+    ->end();
+```
+
+Each method takes the relation name and target collection name, and returns the relation object for further configuration.
 
 ### HasMany
 
@@ -131,9 +187,9 @@ $registry->collection("user")
 
 ```php
 $registry->collection("post")
-    ->belongsTo("category", "category")
+    ->belongsTo("author", "user")
         ->nullable(true)
-        ->innerKey('category_id')
+        ->innerKey('user_id')
         ->outerKey('id')
         ->end();
 ```
@@ -200,18 +256,17 @@ The Metadata system allows storing custom data on Collection, Field, or Relation
 
 ### API
 
+The `metadata()` method is both getter and setter:
+
 ```php
 // Set metadata (returns $this for chaining)
 $object->metadata('key', 'value');
 
-// Get metadata (no second argument returns the value)
+// Get metadata (pass only the key)
 $value = $object->metadata('key');
 
-// Get metadata with default
+// Get metadata with fallback
 $value = $object->metadata('key') ?? 'default_value';
-
-// Iterate (implements IteratorAggregate)
-foreach ($object as $key => $value) { ... }
 ```
 
 ### Usage with GraphQL
@@ -287,8 +342,8 @@ $registry = new Registry();
 $registry->collection("user")
     // Fields
     ->field("id", "int")->primaryKey(true)->autoIncrement(true)->end()
-    ->field("name", "string")->maxLength(255)->end()
-    ->field("email", "string")->maxLength(255)->unique(true)->end()
+    ->field("name", "string")->maxLength(255)->validation('required|max:255')->end()
+    ->field("email", "string")->maxLength(255)->unique(true)->validation('required|email|max:255')->end()
     ->field("password", "string")->hidden(true)->end()
     ->field("created_at", "datetime")->end()
     
@@ -300,43 +355,18 @@ $registry->collection("user")
         ->nullable(true)->cascade(true)->end()
         ->end()
     
-    // Metadata (GraphQL)
-    ->setMetadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\User::class)->findAll();
-    })->end()
-    ->setMetadata('gql::resolver::findById', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\User::class)->findByPK($args['id']);
-    })->end()
-    
     ->end();
 
 $registry->collection("post")
     ->field("id", "int")->primaryKey(true)->autoIncrement(true)->end()
-    ->field("title", "string")->maxLength(255)->end()
+    ->field("title", "string")->maxLength(255)->validation('required|max:255')->end()
     ->field("content", "text")->end()
     ->field("user_id", "int")->end()
     ->field("created_at", "datetime")->end()
     
-    ->belongsTo("user", "user")
+    ->belongsTo("author", "user")
         ->innerKey('user_id')->outerKey('id')->end()
         ->end()
-    
-    ->setMetadata('gql::resolver::findAll', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\Post::class)->findAll();
-    })->end()
-    ->setMetadata('gql::resolver::findById', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        return $orm->getRepository(\App\Models\Post::class)->findByPK($args['id']);
-    })->end()
-    ->setMetadata('gql::resolver::create', function($args, $container) {
-        $orm = $container->get(\Cycle\ORM\ORMInterface::class);
-        $post = new \App\Models\Post($args['input']);
-        $orm->persist($post);
-        return $post;
-    })->end()
     
     ->end();
 ```
@@ -361,8 +391,10 @@ $schema = (new \Cycle\ORM\Compiler())->compile($cycleRegistry, [
 
 // Convert to GraphQL Schema
 use ON\GraphQL\GraphQLRegistryGenerator;
+use ON\GraphQL\Resolver\SqlResolver;
 
-$graphqlGenerator = new GraphQLRegistryGenerator($ormRegistry, $container);
+$resolver = new SqlResolver($ormRegistry, $database);
+$graphqlGenerator = new GraphQLRegistryGenerator($ormRegistry, $container, $resolver);
 $graphqlSchema = $graphqlGenerator->generate();
 ```
 
@@ -409,7 +441,7 @@ class MySchemaGenerator
 
 ## See Also
 
-- [GraphQL Extension Documentation](./graphql.md)
+- [GraphQL Extension Documentation](extensions/graphql.md)
 - [Testing Guide](./testing.md)
 - [Cycle ORM Documentation](https://cycle-orm.dev/)
 - [GraphQL PHP Library](https://webonyx.github.io/graphql-php/)

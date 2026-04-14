@@ -6,6 +6,17 @@ A generic, reusable DataLoader for batching and caching to solve the N+1 problem
 
 The `GenericDataLoader` handles only **batching** and **caching** - it does not know how to load data from the database. Your resolver provides the loading function, and the DataLoader ensures efficient batch loading.
 
+### Constructor
+
+```php
+new GenericDataLoader(
+    Registry $registry,
+    int $maxCacheSize = 10000  // LRU eviction when exceeded
+);
+```
+
+The `$maxCacheSize` parameter controls the maximum number of cached entries. When the cache exceeds this limit, the oldest 10% of entries are evicted (LRU strategy).
+
 ### Why Use It?
 
 Without DataLoader (N+1 problem):
@@ -42,7 +53,8 @@ use ON\GraphQL\DataLoader\GenericDataLoader;
 
 $container->define(GenericDataLoader::class, function($c) {
     return new GenericDataLoader(
-        $c->get(\ON\ORM\Definition\Registry::class)
+        $c->get(\ON\ORM\Definition\Registry::class),
+        maxCacheSize: 10000  // default, LRU eviction when exceeded
     );
 });
 ```
@@ -67,7 +79,7 @@ $loader->clear();
 | `load($entity, $keys, $loaderFn)` | Load single entity; cached or batched |
 | `loadMany($entity, $keys, $loaderFn)` | Load multiple entities batched |
 | `results($entity)` | Get all cached results for entity |
-| `has($entity, $key)` | Check if key is cached |
+| `has($entity, $key)` | Check if key is cached (uses `array_key_exists`, handles `null` values) |
 | `get($entity, $key)` | Get cached value |
 | `set($entity, $key, $value)` | Set cache value manually |
 | `clear()` | Clear entire cache |
@@ -427,6 +439,6 @@ Makes only 2 queries:
 
 ## See Also
 
-- [GraphQL Extension](extensions/graphql.md) - Integration with ORM
-- [ORM Entity Definition](orm-entity-definition.md) - Defining collections
+- [GraphQL Extension](graphql.md) - Integration with ORM
+- [ORM Entity Definition](../orm-entity-definition.md) - Defining collections
 - [webonyx/graphql-php Deferred](https://webonyx.github.io/graphql-php/data-fetching/) - Deferred resolution

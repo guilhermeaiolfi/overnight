@@ -4,38 +4,37 @@ Overnight supports multiple template engines through a common interface.
 
 ## Supported Engines
 
-- **Plates** (default) - League's native PHP templates
-- **Latte** - Nette's powerful template engine
+- **Plates** (built-in) - League's native PHP templates, included in `ViewExtension`
+- **Latte** (separate extension) - Nette's powerful template engine, provided by `LatteExtension`
 
 ## Configuration
 
-### Plates
+### Plates (Built-in)
+
+Plates is included in the core `ViewExtension`. No additional extension needed:
 
 ```php
-use ON\View\ViewConfig;
+use ON\View\ViewExtension;
 
-$config = new ViewConfig([
-    'engine' => 'plates',
-    'path' => 'templates',
-    'layouts' => 'templates/layouts',
-]);
-
-$app->install($config);
+$app->install(ViewExtension::class);
 ```
 
-### Latte
+### Latte (Separate Extension)
+
+Latte is a separate extension that requires the `view` and `container` extensions:
 
 ```php
-use ON\View\ViewConfig;
+use ON\View\ViewExtension;
+use ON\View\Latte\LatteExtension;
 
-$config = new ViewConfig([
-    'engine' => 'latte',
-    'path' => 'templates',
-    'tempPath' => 'temp/latte',
-]);
+// Install the base view extension first
+$app->install(ViewExtension::class);
 
-$app->install($config);
+// Then install Latte
+$app->install(LatteExtension::class);
 ```
+
+`LatteExtension` (`ON\View\Latte\LatteExtension`) registers the `LatteRenderer` factory in the container.
 
 ## Basic Usage
 
