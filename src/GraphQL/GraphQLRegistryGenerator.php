@@ -531,15 +531,9 @@ class GraphQLRegistryGenerator
 		$validation = $factory->validate($input, $rules);
 
 		if ($validation->fails()) {
-			$errors = $validation->errors();
-			$firstField = array_key_first($errors->toArray());
-			$firstMessage = $errors->first($firstField);
+			$allErrors = $validation->errors()->toArray();
 
-			throw new GraphQLUserError(
-				$firstMessage,
-				'VALIDATION_ERROR',
-				$firstField
-			);
+			throw GraphQLUserError::validationFailed($allErrors);
 		}
 	}
 }

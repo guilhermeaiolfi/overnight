@@ -152,11 +152,16 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
 	{
+		$connection = $this->database->getConnection();
+
 		try {
+			$connection->beginTransaction();
+
 			// Create the parent record
 			$parent = $this->resolveCreate($collection, $input);
 
 			if ($parent === null) {
+				$connection->rollBack();
 				return null;
 			}
 
@@ -182,21 +187,24 @@ class SqlResolver implements GraphQLResolverInterface
 				$foreignKeyValue = $parent->{$outerKey} ?? $parentId;
 
 				if ($relation instanceof HasManyRelation) {
-					// relationData is an array of items
 					foreach ($relationData as $childInput) {
 						$childInput[$innerKey] = $foreignKeyValue;
 						$this->resolveCreate($targetCollection, $childInput);
 					}
 				} elseif ($relation instanceof HasOneRelation) {
-					// relationData is a single item
 					$relationData[$innerKey] = $foreignKeyValue;
 					$this->resolveCreate($targetCollection, $relationData);
 				}
 			}
 
+			$connection->commit();
+
 			// Re-fetch the parent to get fresh data
 			return $this->resolveById($collection, (string) $parentId);
 		} catch (\PDOException $e) {
+			if ($connection->inTransaction()) {
+				$connection->rollBack();
+			}
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}

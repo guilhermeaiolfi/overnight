@@ -2,11 +2,10 @@
 
 declare(strict_types=1);
 
-namespace ON\GraphQL\Extension;
+namespace ON\GraphQL;
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use ON\GraphQL\GraphQLSchemaFactory;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
 
 class GraphQLExtension extends AbstractExtension
@@ -32,18 +31,15 @@ class GraphQLExtension extends AbstractExtension
 
 	public function boot(): void
 	{
-		$path = $this->options['path'] ?? '/graphql';
 		$enabled = $this->options['enabled'] ?? true;
 
-		if (! $enabled) {
+		if (!$enabled) {
 			return;
 		}
 
 		$this->app->ext('container')->when('setup', function () {
 			$this->app->ext('container')->addDefinitions([
 				GraphQLSchemaFactory::class => function ($container) {
-					$config = $this->app->config;
-
 					return new GraphQLSchemaFactory($container);
 				},
 			]);
@@ -56,13 +52,12 @@ class GraphQLExtension extends AbstractExtension
 	public function onPipelineReady(): void
 	{
 		$path = $this->options['path'] ?? '/graphql';
+		$debug = $this->app->isDebug();
 
 		$schemaFactory = $this->app->container->get(GraphQLSchemaFactory::class);
 		$schema = $schemaFactory->create($this->app->config);
 
-		$this->app->pipe($path, new GraphQLMiddleware($schema), 10);
-
-		$this->setState('ready');
+		$this->app->pipe($path, new GraphQLMiddleware($schema, $debug), 10);
 	}
 
 	public function setup(): void

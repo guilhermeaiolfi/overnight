@@ -349,6 +349,12 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayHasKey('extensions', $error);
 		$this->assertSame('VALIDATION_ERROR', $error['extensions']['code']);
 		$this->assertNotNull($error['extensions']['field']);
+
+		// All validation errors should be included
+		$this->assertArrayHasKey('validationErrors', $error['extensions']);
+		$validationErrors = $error['extensions']['validationErrors'];
+		$this->assertArrayHasKey('name', $validationErrors);
+		$this->assertArrayHasKey('email', $validationErrors);
 	}
 
 	public function testValidationPassesWithValidInput(): void

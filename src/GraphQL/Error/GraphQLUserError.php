@@ -10,6 +10,8 @@ use RuntimeException;
 
 class GraphQLUserError extends RuntimeException implements ClientAware, ProvidesExtensions
 {
+	protected array $validationErrors = [];
+
 	public function __construct(
 		string $message,
 		protected string $errorCode = 'INTERNAL_ERROR',
@@ -17,6 +19,22 @@ class GraphQLUserError extends RuntimeException implements ClientAware, Provides
 		?\Throwable $previous = null
 	) {
 		parent::__construct($message, 0, $previous);
+	}
+
+	/**
+	 * Create a validation error with all field errors.
+	 *
+	 * @param array<string, string[]> $fieldErrors Field name => array of error messages
+	 */
+	public static function validationFailed(array $fieldErrors): self
+	{
+		$firstField = array_key_first($fieldErrors);
+		$firstMessage = $fieldErrors[$firstField][0] ?? 'Validation failed';
+
+		$error = new self($firstMessage, 'VALIDATION_ERROR', $firstField);
+		$error->validationErrors = $fieldErrors;
+
+		return $error;
 	}
 
 	public function isClientSafe(): bool
@@ -30,6 +48,10 @@ class GraphQLUserError extends RuntimeException implements ClientAware, Provides
 
 		if ($this->field !== null) {
 			$extensions['field'] = $this->field;
+		}
+
+		if (!empty($this->validationErrors)) {
+			$extensions['validationErrors'] = $this->validationErrors;
 		}
 
 		return $extensions;
