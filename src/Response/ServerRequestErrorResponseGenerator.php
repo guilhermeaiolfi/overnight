@@ -62,7 +62,6 @@ EOT;
 		if ($debug) {
 			$message .= "; stack trace:\n\n" . $this->prepareStackTrace($e);
 		}
-		dd("this message is coming from ServerRequestErrorResponseGenerator class");
 		$response->getBody()->write($message);
 
 		return $response;
