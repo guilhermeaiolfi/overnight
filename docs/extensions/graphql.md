@@ -554,6 +554,16 @@ $events->registerListener('graphql.mutation.before', function (BeforeMutation $e
 
 This approach keeps file handling out of the GraphQL extension and lets each module decide how to process its files.
 
+### Available Events
+
+| Event Name | Class | When | Can Modify |
+|------------|-------|------|------------|
+| `graphql.mutation.before` | `BeforeMutation` | Before create/update/delete | Yes — `$event->setInput(...)` |
+| `graphql.mutation.after` | `AfterMutation` | After create/update/delete | No |
+| `graphql.query.complete` | `QueryComplete` | After every query/batch execution | No |
+
+See [Events Extension](events.md) for how to register listeners and use `EventSubscriberInterface`.
+
 ---
 
 ## Enum Fields

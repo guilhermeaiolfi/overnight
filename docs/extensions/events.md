@@ -126,48 +126,65 @@ $dispatcher->addListener('app.boot', $callback, 0, true);
 
 ## Event Subscribers
 
-### Subscriber Interface
+Extensions and modules can implement `EventSubscriberInterface` to declare all their event listeners in one place. The events extension auto-discovers subscribers on all installed extensions during boot.
+
+### EventSubscriberInterface
 
 ```php
-use League\Event\EventSubscriberInterface;
+use ON\Event\EventSubscriberInterface;
+use ON\Extension\AbstractExtension;
 
-class ApplicationSubscriber implements EventSubscriberInterface
+class MyModule extends AbstractExtension implements EventSubscriberInterface
 {
-    public function __construct(
-        private LoggerInterface $logger,
-        private MailerInterface $mailer
-    ) {}
-
-    public static function subscribe($dispatcher): array
+    public static function getSubscribedEvents(): array
     {
         return [
-            'user.registered' => ['onUserRegistered', 0],
-            'user.deleted' => ['onUserDeleted', 0],
-            'order.placed' => 'onOrderPlaced',
+            // Simple: event name => method name
+            'user.registered' => 'onUserRegistered',
+
+            // With priority: event name => [method name, priority]
+            'order.placed' => ['onOrderPlaced', 10],
         ];
     }
 
-    public function onUserRegistered(UserRegistered $event): void
+    public function onUserRegistered($event): void
     {
-        $this->mailer->sendWelcome($event->getUser());
+        // Handle user registration
     }
 
-    public function onUserDeleted(UserDeleted $event): void
+    public function onOrderPlaced($event): void
     {
-        $this->logger->info('User deleted', ['id' => $event->getUserId()]);
-    }
-
-    public function onOrderPlaced(OrderPlaced $event): void
-    {
-        $this->logger->info('Order placed', ['order' => $event->order->id]);
+        // Handle order placement
     }
 }
 ```
 
-### Register Subscriber
+The events extension calls `loadEventSubscriber()` on every installed extension that implements `EventSubscriberInterface`. No manual registration needed.
+
+### Standalone Subscriber (non-extension)
+
+For classes that aren't extensions, register them manually:
 
 ```php
-$dispatcher->subscribeWith(new ApplicationSubscriber($container));
+$app->events->loadEventSubscriber(MySubscriber::class);
+// or with an instance:
+$app->events->loadEventSubscriber(new MySubscriber($dependency));
+```
+
+### Registering Individual Listeners
+
+For runtime listeners (e.g., when you need captured variables):
+
+```php
+$app->events->registerListener('event.name', function ($event) use ($dependency) {
+    // Handle event
+});
+
+// With priority
+$app->events->registerListener('event.name', [$instance, 'method'], priority: 10);
+
+// One-time listener
+$app->events->registerListener('event.name', $callback, once: true);
 ```
 
 ## Event Attributes (PHP 8)
