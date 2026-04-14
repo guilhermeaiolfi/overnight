@@ -38,6 +38,8 @@ class Field implements FieldInterface
 
 	protected ?string $validation = null;
 
+	protected ?string $description = null;
+
 	/**
 	 * @var callable-array|string|null
 	 */
@@ -199,6 +201,17 @@ class Field implements FieldInterface
 	public function getValidation(): ?string
 	{
 		return $this->validation;
+	}
+
+	public function description(?string $description): self
+	{
+		$this->description = $description;
+		return $this;
+	}
+
+	public function getDescription(): ?string
+	{
+		return $this->description;
 	}
 
 	public function end(): CollectionInterface

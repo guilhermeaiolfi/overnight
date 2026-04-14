@@ -14,6 +14,8 @@ use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\GraphQL\Resolver\SqlResolver;
 use ON\ORM\Definition\Registry;
+use ON\RateLimit\Middleware\RateLimitMiddleware;
+use ON\RateLimit\RateLimiterInterface;
 
 class GraphQLExtension extends AbstractExtension
 {
@@ -71,10 +73,12 @@ class GraphQLExtension extends AbstractExtension
 			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher);
 		$schema = $generator->generate();
 
-		// Wire up per-request cleanup
-		$onComplete = $resolver !== null
-			? fn() => $resolver->clearCache()
-			: null;
+		// Wire up per-request cleanup via event
+		if ($resolver !== null) {
+			$this->app->events->registerListener('graphql.query.complete', function () use ($resolver) {
+				$resolver->clearCache();
+			});
+		}
 
 		$middleware = new GraphQLMiddleware(
 			$schema,
@@ -82,8 +86,21 @@ class GraphQLExtension extends AbstractExtension
 			$allowIntrospection,
 			$maxDepth,
 			$maxComplexity,
-			$onComplete
+			$eventsExt->eventDispatcher
 		);
+
+		// Add rate limiting if the extension is installed
+		if ($this->app->hasExtension('ratelimit')) {
+			$rateLimiter = $container->get(RateLimiterInterface::class);
+			$maxRequests = $this->options['rateLimit'] ?? 60;
+			$windowSeconds = $this->options['rateLimitWindow'] ?? 60;
+
+			$this->app->pipe($path, new RateLimitMiddleware(
+				$rateLimiter,
+				$maxRequests,
+				$windowSeconds
+			), 11); // higher priority = runs before GraphQL middleware (priority 10)
+		}
 
 		$this->app->pipe($path, $middleware, 10);
 	}

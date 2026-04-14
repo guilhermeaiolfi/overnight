@@ -71,6 +71,10 @@ interface CollectionInterface
 
 	public function getNote(): ?string;
 
+	public function description(?string $description): self;
+
+	public function getDescription(): ?string;
+
 	public function end(): Registry;
 
 	public function getRegistry(): Registry;

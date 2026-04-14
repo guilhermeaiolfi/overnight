@@ -75,5 +75,9 @@ interface FieldInterface
 
 	public function getValidation(): ?string;
 
+	public function description(?string $description): self;
+
+	public function getDescription(): ?string;
+
 	public function end(): CollectionInterface;
 }

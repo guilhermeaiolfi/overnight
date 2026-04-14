@@ -23,6 +23,7 @@ class Collection implements CollectionInterface
 	use MetadataTrait;
 	protected string $name;
 	protected ?string $note = null;
+	protected ?string $description = null;
 	protected ?string $source = Source::class;
 	protected bool $hidden = false;
 	protected string $mapper = StdMapper::class;
@@ -157,6 +158,17 @@ class Collection implements CollectionInterface
 	public function getNote(): ?string
 	{
 		return $this->note;
+	}
+
+	public function description(?string $description): self
+	{
+		$this->description = $description;
+		return $this;
+	}
+
+	public function getDescription(): ?string
+	{
+		return $this->description;
 	}
 
 	public function source(string $source): self

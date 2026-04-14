@@ -443,4 +443,33 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 
 		$this->assertTrue($eventDispatched);
 	}
+
+	public function testEnumFieldGeneratesEnumType(): void
+	{
+		$this->registry->collection('post')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('status', 'string')->type('string')->nullable(true)
+				->metadata('enum', ['draft', 'published', 'archived'])
+				->end()
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$queryType = $schema->getQueryType();
+		$connectionType = $queryType->getField('post')->getType();
+		$postType = $connectionType->getField('items')->getType()->getWrappedType();
+
+		$statusField = $postType->getField('status');
+		$statusType = $statusField->getType();
+
+		// Should be an EnumType, not String
+		$this->assertInstanceOf(\GraphQL\Type\Definition\EnumType::class, $statusType);
+		$this->assertSame('StatusEnum', $statusType->name);
+
+		$enumValues = array_map(fn($v) => $v->value, $statusType->getValues());
+		$this->assertContains('draft', $enumValues);
+		$this->assertContains('published', $enumValues);
+		$this->assertContains('archived', $enumValues);
+	}
 }

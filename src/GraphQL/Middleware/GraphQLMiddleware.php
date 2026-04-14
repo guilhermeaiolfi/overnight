@@ -12,6 +12,9 @@ use GraphQL\Validator\Rules\DisableIntrospection;
 use GraphQL\Validator\Rules\QueryComplexity;
 use GraphQL\Validator\Rules\QueryDepth;
 use Laminas\Diactoros\Response\JsonResponse;
+use ON\GraphQL\Event\QueryComplete;
+use ON\GraphQL\GraphQLContext;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -25,7 +28,7 @@ class GraphQLMiddleware implements MiddlewareInterface
 		protected bool $allowIntrospection = true,
 		protected int $maxDepth = 10,
 		protected int $maxComplexity = 100,
-		protected ?\Closure $onComplete = null
+		protected ?EventDispatcherInterface $eventDispatcher = null
 	) {
 	}
 
@@ -42,13 +45,41 @@ class GraphQLMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$result = $this->executeGraphQL($request);
+		// Check for batch queries (JSON array)
+		if ($method === 'POST' && str_contains($contentType, 'application/json')) {
+			$rawBody = (string) $request->getBody();
+			$decoded = json_decode($rawBody, true);
 
-		if ($this->onComplete !== null) {
-			($this->onComplete)();
+			if (is_array($decoded) && isset($decoded[0])) {
+				$results = [];
+				foreach ($decoded as $operation) {
+					$results[] = $this->executeSingleQuery(
+						$request,
+						$operation['query'] ?? null,
+						$operation['variables'] ?? null,
+						$operation['operationName'] ?? null
+					);
+				}
+
+				$this->dispatchComplete($results);
+
+				return new JsonResponse($results);
+			}
 		}
 
+		// Single query
+		$result = $this->executeGraphQL($request);
+
+		$this->dispatchComplete($result);
+
 		return new JsonResponse($result);
+	}
+
+	protected function dispatchComplete(array $result): void
+	{
+		if ($this->eventDispatcher !== null) {
+			$this->eventDispatcher->dispatch(new QueryComplete($result));
+		}
 	}
 
 	protected function executeGraphQL(ServerRequestInterface $request): array
@@ -59,7 +90,6 @@ class GraphQLMiddleware implements MiddlewareInterface
 			$variables = isset($params['variables']) ? json_decode($params['variables'], true) : null;
 			$operationName = $params['operationName'] ?? null;
 		} elseif (str_contains($request->getHeaderLine('Content-Type'), 'multipart/form-data')) {
-			// GraphQL multipart request spec: https://github.com/jaydenseric/graphql-multipart-request-spec
 			$parsedBody = $request->getParsedBody();
 			$operations = json_decode($parsedBody['operations'] ?? '{}', true);
 			$map = json_decode($parsedBody['map'] ?? '{}', true);
@@ -69,7 +99,6 @@ class GraphQLMiddleware implements MiddlewareInterface
 			$variables = $operations['variables'] ?? null;
 			$operationName = $operations['operationName'] ?? null;
 
-			// Map uploaded files into variables
 			foreach ($map as $fileKey => $paths) {
 				$file = $uploadedFiles[$fileKey] ?? null;
 				if ($file === null) {
@@ -86,6 +115,15 @@ class GraphQLMiddleware implements MiddlewareInterface
 			$operationName = $body['operationName'] ?? null;
 		}
 
+		return $this->executeSingleQuery($request, $query, $variables, $operationName);
+	}
+
+	protected function executeSingleQuery(
+		ServerRequestInterface $request,
+		?string $query,
+		mixed $variables,
+		?string $operationName
+	): array {
 		if (!$query) {
 			return ['errors' => [['message' => 'No query provided']]];
 		}
@@ -107,11 +145,14 @@ class GraphQLMiddleware implements MiddlewareInterface
 			$validationRules[] = new QueryComplexity($this->maxComplexity);
 		}
 
+		// Create context from request
+		$context = new GraphQLContext($request);
+
 		$result = GraphQL::executeQuery(
 			$this->schema,
 			$query,
 			null,
-			null,
+			$context,
 			$variables,
 			$operationName,
 			null,

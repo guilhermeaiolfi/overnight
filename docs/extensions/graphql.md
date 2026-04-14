@@ -11,7 +11,8 @@ The GraphQL extension provides GraphQL API support for the Overnight framework. 
 5. [Mutations](#mutations)
 6. [File Uploads](#file-uploads)
 7. [Mutation Events](#mutation-events)
-8. [Validation](#validation)
+8. [Enum Fields](#enum-fields)
+9. [Validation](#validation)
 9. [Error Handling](#error-handling)
 10. [Schema Caching](#schema-caching)
 11. [Custom Resolvers](#custom-resolvers)
@@ -555,6 +556,42 @@ This approach keeps file handling out of the GraphQL extension and lets each mod
 
 ---
 
+## Enum Fields
+
+Fields with a fixed set of allowed values can use the `enum` metadata to auto-generate a GraphQL `EnumType`:
+
+```php
+$registry->collection('post')
+    ->field('status', 'string')
+        ->metadata('enum', ['draft', 'published', 'archived'])
+        ->end()
+    ->end();
+```
+
+This generates a `StatusEnum` type in the schema:
+
+```graphql
+enum StatusEnum {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+```
+
+Enum values are uppercased with spaces/hyphens converted to underscores. The underlying values remain as defined (`'draft'`, `'published'`, etc.).
+
+Enum fields work in both queries (filtering) and mutations (input validation by GraphQL itself):
+
+```graphql
+# Query with enum filter
+{ post(status: PUBLISHED) { items { id title status } totalCount } }
+
+# Create with enum value
+mutation { create_post(input: { title: "New Post", status: DRAFT }) { id status } }
+```
+
+---
+
 ## Validation
 
 Fields can have validation rules using `somnambulist/validation` pipe syntax:
@@ -753,6 +790,7 @@ $registry->collection("user")
 | `gql::resolver::delete` | Collection | Override delete mutation resolver |
 | `gql::resolver` | Field/Relation | Override field or relation resolver |
 | `gql::type` | Field | Override inferred GraphQL type |
+| `enum` | Field | Array of allowed values — generates EnumType |
 
 ---
 

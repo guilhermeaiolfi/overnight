@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\GraphQL;
 
+use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
@@ -27,6 +28,7 @@ class GraphQLRegistryGenerator
 {
 	protected array $types = [];
 	protected array $inputTypes = [];
+	protected array $enumTypes = [];
 	protected static ?UploadType $uploadType = null;
 
 	public function __construct(
@@ -40,6 +42,7 @@ class GraphQLRegistryGenerator
 	{
 		$this->types = [];
 		$this->inputTypes = [];
+		$this->enumTypes = [];
 
 		$this->buildTypes();
 		$queryFields = $this->buildQueryFields();
@@ -80,6 +83,7 @@ class GraphQLRegistryGenerator
 			$typeName = $this->getTypeName($collection->getName());
 			$this->types[$typeName] = new ObjectType([
 				'name' => $typeName,
+				'description' => $collection->getDescription(),
 				'fields' => fn() => $this->buildFieldsForCollection($collection),
 			]);
 		}
@@ -121,7 +125,7 @@ class GraphQLRegistryGenerator
 
 		return [
 			'type' => $graphqlType,
-			'description' => $field->getColumn(),
+			'description' => $field->getDescription() ?? $field->getColumn(),
 			'resolve' => $resolver !== null
 				? $this->wrapResolver($resolver)
 				: fn ($source) => $source->{$field->getColumn()} ?? null,
@@ -181,6 +185,7 @@ class GraphQLRegistryGenerator
 
 		return new ObjectType([
 			'name' => $typeName,
+			'description' => $collection->getDescription(),
 			'fields' => fn() => $this->buildFieldsForCollection($collection),
 		]);
 	}
@@ -200,22 +205,52 @@ class GraphQLRegistryGenerator
 		$type = $field->getType();
 		$isNonNull = ! $field->isNullable();
 
-		$graphqlType = match ($type) {
-			'string', 'text', 'varchar', 'char' => Type::string(),
-			'int', 'integer', 'smallint', 'bigint' => Type::int(),
-			'bool', 'boolean' => Type::boolean(),
-			'float', 'double', 'decimal' => Type::float(),
-			'datetime', 'date', 'time', 'timestamp' => Type::string(),
-			'id', 'uuid' => Type::id(),
-			'file', 'image', 'upload' => self::$uploadType ??= new UploadType(),
-			default => Type::string(),
-		};
+		// Check for enum values via metadata
+		$enumValues = $field->metadata('enum');
+		if (is_array($enumValues)) {
+			$graphqlType = $this->buildEnumType($field, $enumValues);
+		} else {
+			$graphqlType = match ($type) {
+				'string', 'text', 'varchar', 'char' => Type::string(),
+				'int', 'integer', 'smallint', 'bigint' => Type::int(),
+				'bool', 'boolean' => Type::boolean(),
+				'float', 'double', 'decimal' => Type::float(),
+				'datetime', 'date', 'time', 'timestamp' => Type::string(),
+				'id', 'uuid' => Type::id(),
+				'file', 'image', 'upload' => self::$uploadType ??= new UploadType(),
+				default => Type::string(),
+			};
+		}
 
 		if ($isNonNull) {
 			$graphqlType = Type::nonNull($graphqlType);
 		}
 
 		return $graphqlType;
+	}
+
+	protected function buildEnumType(Field $field, array $values): EnumType
+	{
+		// Use field name + collection context for unique enum name
+		$enumName = ucfirst($field->getName()) . 'Enum';
+
+		if (isset($this->enumTypes[$enumName])) {
+			return $this->enumTypes[$enumName];
+		}
+
+		$enumValues = [];
+		foreach ($values as $value) {
+			$enumValues[strtoupper(str_replace([' ', '-'], '_', $value))] = ['value' => $value];
+		}
+
+		$enumType = new EnumType([
+			'name' => $enumName,
+			'values' => $enumValues,
+		]);
+
+		$this->enumTypes[$enumName] = $enumType;
+
+		return $enumType;
 	}
 
 	protected function buildConnectionType(string $typeName, ObjectType $itemType): ObjectType
