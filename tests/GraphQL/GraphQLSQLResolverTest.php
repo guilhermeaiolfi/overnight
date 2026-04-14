@@ -29,7 +29,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createUserCollection($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$generator = new GraphQLRegistryGenerator($this->registry, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$queryType = $schema->getQueryType();
@@ -48,7 +48,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createUserWithPostsRelation($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$generator = new GraphQLRegistryGenerator($this->registry, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$query = '{ user { items { id name posts { id title } } totalCount } }';
@@ -89,7 +89,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createFullSchema($this->registry);
 		$database = $this->createFullDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$generator = new GraphQLRegistryGenerator($this->registry, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		// Query users filtered by name, with nested posts and comments
@@ -149,7 +149,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createFullSchema($this->registry);
 		$database = $this->createFullDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$generator = new GraphQLRegistryGenerator($this->registry, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		// Filter posts by title containing "Post" using LIKE
@@ -170,7 +170,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->createUserCollection($this->registry);
 		$database = $this->createTestDatabase();
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, new SqlResolver($this->registry, $database));
+		$generator = new GraphQLRegistryGenerator($this->registry, new SqlResolver($this->registry, $database));
 		$schema = $generator->generate();
 
 		$queryType = $schema->getQueryType();
@@ -184,7 +184,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$database = $this->createTestDatabase();
 		$resolver = new SqlResolver($this->registry, $database);
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$generator = new GraphQLRegistryGenerator($this->registry, $resolver);
 		$schema = $generator->generate();
 
 		// Create user with nested posts
@@ -241,7 +241,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		$database = $this->createTestDatabase();
 		$resolver = new SqlResolver($this->registry, $database);
 
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$generator = new GraphQLRegistryGenerator($this->registry, $resolver);
 		$schema = $generator->generate();
 
 		// Update John's name
@@ -291,7 +291,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		]);
 
 		$resolver = new SqlResolver($this->registry, $database);
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$generator = new GraphQLRegistryGenerator($this->registry, $resolver);
 		$schema = $generator->generate();
 
 		$query = '
@@ -327,7 +327,7 @@ final class GraphQLSQLResolverTest extends TestCase
 
 		$database = $this->createTestDatabase();
 		$resolver = new SqlResolver($this->registry, $database);
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$generator = new GraphQLRegistryGenerator($this->registry, $resolver);
 		$schema = $generator->generate();
 
 		// Try to create with invalid email and short name
@@ -371,7 +371,7 @@ final class GraphQLSQLResolverTest extends TestCase
 
 		$database = $this->createTestDatabase();
 		$resolver = new SqlResolver($this->registry, $database);
-		$generator = new GraphQLRegistryGenerator($this->registry, null, $resolver);
+		$generator = new GraphQLRegistryGenerator($this->registry, $resolver);
 		$schema = $generator->generate();
 
 		$query = '

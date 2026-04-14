@@ -5,8 +5,15 @@ declare(strict_types=1);
 namespace ON\GraphQL;
 
 use ON\Application;
+use ON\DB\Cycle\CycleDatabase;
+use ON\DB\DatabaseManager;
+use ON\DB\PdoDatabase;
 use ON\Extension\AbstractExtension;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
+use ON\GraphQL\Resolver\CycleResolver;
+use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\GraphQL\Resolver\SqlResolver;
+use ON\ORM\Definition\Registry;
 
 class GraphQLExtension extends AbstractExtension
 {
@@ -37,27 +44,86 @@ class GraphQLExtension extends AbstractExtension
 			return;
 		}
 
-		$this->app->ext('container')->when('setup', function () {
-			$this->app->ext('container')->addDefinitions([
-				GraphQLSchemaFactory::class => function ($container) {
-					return new GraphQLSchemaFactory($container);
-				},
-			]);
-		});
-
 		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
 		$this->setState('ready');
 	}
 
 	public function onPipelineReady(): void
 	{
+		$container = $this->app->container;
+
 		$path = $this->options['path'] ?? '/graphql';
 		$debug = $this->app->isDebug();
+		$allowIntrospection = $this->options['introspection'] ?? $debug;
+		$maxDepth = $this->options['maxDepth'] ?? 10;
+		$maxComplexity = $this->options['maxComplexity'] ?? 100;
 
-		$schemaFactory = $this->app->container->get(GraphQLSchemaFactory::class);
-		$schema = $schemaFactory->create($this->app->config);
+		// Build the resolver based on config
+		$resolver = $this->buildResolver();
 
-		$this->app->pipe($path, new GraphQLMiddleware($schema, $debug), 10);
+		// Build the schema
+		$registry = $container->get(Registry::class);
+		$generator = $debug
+			? new GraphQLRegistryGenerator($registry, $resolver)
+			: new CachedGraphQLRegistryGenerator($registry, $resolver);
+		$schema = $generator->generate();
+
+		// Wire up per-request cleanup
+		$onComplete = $resolver !== null
+			? fn() => $resolver->clearCache()
+			: null;
+
+		$middleware = new GraphQLMiddleware(
+			$schema,
+			$debug,
+			$allowIntrospection,
+			$maxDepth,
+			$maxComplexity,
+			$onComplete
+		);
+
+		$this->app->pipe($path, $middleware, 10);
+	}
+
+	protected function buildResolver(): ?GraphQLResolverInterface
+	{
+		$container = $this->app->container;
+		$resolverType = $this->options['resolver'] ?? 'auto';
+
+		// Custom resolver class from config
+		if ($resolverType !== 'auto' && $resolverType !== 'sql' && $resolverType !== 'cycle') {
+			return $container->get($resolverType);
+		}
+
+		$registry = $container->get(Registry::class);
+
+		if (!$container->has(DatabaseManager::class)) {
+			return null;
+		}
+
+		$manager = $container->get(DatabaseManager::class);
+		$database = $manager->getDatabase();
+
+		if ($database === null) {
+			return null;
+		}
+
+		if ($resolverType === 'sql') {
+			return new SqlResolver($registry, $database);
+		}
+
+		if ($resolverType === 'cycle') {
+			$orm = $database->getResource();
+			return new CycleResolver($orm, $registry);
+		}
+
+		// Auto-detect based on database class
+		if ($database instanceof CycleDatabase) {
+			$orm = $database->getResource();
+			return new CycleResolver($orm, $registry);
+		}
+
+		return new SqlResolver($registry, $database);
 	}
 
 	public function setup(): void

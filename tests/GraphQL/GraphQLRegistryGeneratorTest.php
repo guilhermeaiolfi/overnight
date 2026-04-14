@@ -366,6 +366,26 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$this->assertArrayNotHasKey('id', $postArgs);
 	}
 
+	public function testHiddenFieldIsNotInSchema(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->field('name', 'string')->type('string')->end()
+			->field('password', 'string')->type('string')->hidden(true)->end()
+			->end();
+
+		$generator = new GraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+
+		$queryType = $schema->getQueryType();
+		$connectionType = $queryType->getField('user')->getType();
+		$userType = $connectionType->getField('items')->getType()->getWrappedType();
+
+		$fieldNames = array_keys($userType->getFields());
+		$this->assertContains('name', $fieldNames);
+		$this->assertNotContains('password', $fieldNames);
+	}
+
 	public function testPrimaryKeyNotFilterable(): void
 	{
 		$this->registry->collection('user')

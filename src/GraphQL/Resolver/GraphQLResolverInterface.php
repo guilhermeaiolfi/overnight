@@ -31,9 +31,9 @@ interface GraphQLResolverInterface
 	public function resolveUpdate(Collection $collection, string $id, array $input): ?object;
 
 	/**
-	 * Delete an item by ID. Returns true if deleted.
+	 * Delete an item by ID. Returns the deleted object, or null if not found.
 	 */
-	public function resolveDelete(Collection $collection, string $id): bool;
+	public function resolveDelete(Collection $collection, string $id): ?object;
 
 	/**
 	 * Create a new item with nested relations and return it.
@@ -46,4 +46,9 @@ interface GraphQLResolverInterface
 	 * May return a Deferred for batching.
 	 */
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed;
+
+	/**
+	 * Clear any internal caches. Called after each request.
+	 */
+	public function clearCache(): void;
 }

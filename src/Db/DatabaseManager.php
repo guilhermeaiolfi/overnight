@@ -10,7 +10,7 @@ use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
-class Manager
+class DatabaseManager
 {
 	protected $instances = [];
 

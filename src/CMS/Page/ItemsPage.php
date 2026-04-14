@@ -19,7 +19,7 @@ use Cycle\Schema\Registry as CycleRegistry;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\CMS\DataHandler;
 use ON\DB\DatabaseConfig;
-use ON\DB\Manager;
+use ON\DB\DatabaseManager;
 use ON\ORM\Compiler\CycleRegistryGenerator;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -28,7 +28,7 @@ class ItemsPage
 {
 	public function __construct(
 		protected DatabaseConfig $dbCfg,
-		protected Manager $db,
+		protected DatabaseManager $db,
 		protected DataHandler $dataHandler
 	) {
 

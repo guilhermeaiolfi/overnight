@@ -17,7 +17,6 @@ use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
-use Psr\Container\ContainerInterface;
 use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 class GraphQLRegistryGenerator
@@ -27,7 +26,6 @@ class GraphQLRegistryGenerator
 
 	public function __construct(
 		protected Registry $ormRegistry,
-		protected ?ContainerInterface $container = null,
 		protected ?GraphQLResolverInterface $resolver = null
 	) {
 	}
@@ -86,6 +84,9 @@ class GraphQLRegistryGenerator
 		$fields = [];
 
 		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
 			$fields[$fieldName] = $this->convertField($field);
 		}
 
@@ -182,7 +183,6 @@ class GraphQLRegistryGenerator
 	{
 		return function ($source, array $args = [], ?object $context = null) use ($resolver, $includeSource) {
 			$params = $includeSource ? [$source, $args] : [$args];
-			$params[] = $this->container;
 			$params[] = $context;
 
 			return $resolver(...$params);
@@ -299,6 +299,9 @@ class GraphQLRegistryGenerator
 			if ($field->isPrimaryKey()) {
 				continue;
 			}
+			if ($field->isHidden()) {
+				continue;
+			}
 			$fieldType = $this->mapOrmTypeToGraphQL($field);
 			if ($forUpdate && $fieldType instanceof \GraphQL\Type\Definition\NonNull) {
 				$fieldType = $fieldType->getWrappedType();
@@ -400,7 +403,7 @@ class GraphQLRegistryGenerator
 
 			$deleteResolver = $collection->metadata('gql::resolver::delete');
 			$fields['delete_' . $collection->getName()] = [
-				'type' => Type::boolean(),
+				'type' => $type,
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $deleteResolver !== null
 					? $this->wrapResolver($deleteResolver, false)
@@ -420,6 +423,9 @@ class GraphQLRegistryGenerator
 	{
 		$args = [];
 		foreach ($this->getFilterableFields($collection) as $name => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
 			$baseType = $this->mapOrmTypeToGraphQL($field);
 			if (is_string($baseType)) {
 				$baseType = Type::string();
@@ -459,6 +465,9 @@ class GraphQLRegistryGenerator
 		$fields = [];
 		foreach ($collection->fields as $fieldName => $field) {
 			if ($field->isPrimaryKey()) {
+				continue;
+			}
+			if ($field->isHidden()) {
 				continue;
 			}
 			$fieldType = $this->mapOrmTypeToGraphQL($field);

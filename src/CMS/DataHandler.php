@@ -17,7 +17,7 @@ use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
 use ON\CMS\Parser\QueryParser;
 use ON\DB\DatabaseConfig;
-use ON\DB\Manager;
+use ON\DB\DatabaseManager;
 use ON\ORM\Definition\Registry as DefinitionRegistry;
 use ON\ORM\Factory;
 use ON\ORM\Select;
@@ -40,7 +40,7 @@ class DataHandler
 
 	public function __construct(
 		protected DatabaseConfig $dbCfg,
-		protected Manager $db
+		protected DatabaseManager $db
 	) {
 		$this->registry = $dbCfg->getRegistry();
 

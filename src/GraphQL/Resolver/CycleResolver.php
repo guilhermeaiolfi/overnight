@@ -94,20 +94,20 @@ class CycleResolver implements GraphQLResolverInterface
 		}
 	}
 
-	public function resolveDelete(Collection $collection, string $id): bool
+	public function resolveDelete(Collection $collection, string $id): ?object
 	{
 		try {
 			$entity = $this->resolveById($collection, $id);
 
 			if ($entity === null) {
-				return false;
+				return null;
 			}
 
 			$em = new EntityManager($this->orm);
 			$em->delete($entity);
 			$em->run();
 
-			return true;
+			return $entity;
 		} catch (\Throwable $e) {
 			throw new GraphQLUserError('Failed to delete record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
@@ -172,6 +172,11 @@ class CycleResolver implements GraphQLResolverInterface
 		} catch (\Throwable $e) {
 			throw new GraphQLUserError('Failed to create record with relations: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
+	}
+
+	public function clearCache(): void
+	{
+		// No internal cache to clear
 	}
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed

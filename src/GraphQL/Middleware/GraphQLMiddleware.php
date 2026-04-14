@@ -7,6 +7,10 @@ namespace ON\GraphQL\Middleware;
 use GraphQL\Error\DebugFlag;
 use GraphQL\GraphQL;
 use GraphQL\Type\Schema;
+use GraphQL\Validator\DocumentValidator;
+use GraphQL\Validator\Rules\DisableIntrospection;
+use GraphQL\Validator\Rules\QueryComplexity;
+use GraphQL\Validator\Rules\QueryDepth;
 use Laminas\Diactoros\Response\JsonResponse;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -17,7 +21,11 @@ class GraphQLMiddleware implements MiddlewareInterface
 {
 	public function __construct(
 		protected Schema $schema,
-		protected bool $debug = false
+		protected bool $debug = false,
+		protected bool $allowIntrospection = true,
+		protected int $maxDepth = 10,
+		protected int $maxComplexity = 100,
+		protected ?\Closure $onComplete = null
 	) {
 	}
 
@@ -34,6 +42,10 @@ class GraphQLMiddleware implements MiddlewareInterface
 		}
 
 		$result = $this->executeGraphQL($request);
+
+		if ($this->onComplete !== null) {
+			($this->onComplete)();
+		}
 
 		return new JsonResponse($result);
 	}
@@ -58,13 +70,30 @@ class GraphQLMiddleware implements MiddlewareInterface
 
 		$variables = is_array($variables) ? $variables : null;
 
+		// Always build custom validation rules for security
+		$validationRules = DocumentValidator::defaultRules();
+
+		if (!$this->allowIntrospection) {
+			$validationRules[] = new DisableIntrospection(DisableIntrospection::ENABLED);
+		}
+
+		if ($this->maxDepth > 0) {
+			$validationRules[] = new QueryDepth($this->maxDepth);
+		}
+
+		if ($this->maxComplexity > 0) {
+			$validationRules[] = new QueryComplexity($this->maxComplexity);
+		}
+
 		$result = GraphQL::executeQuery(
 			$this->schema,
 			$query,
 			null,
 			null,
 			$variables,
-			$operationName
+			$operationName,
+			null,
+			$validationRules
 		);
 
 		$debugFlag = $this->debug

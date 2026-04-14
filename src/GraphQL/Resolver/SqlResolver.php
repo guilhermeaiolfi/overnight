@@ -131,9 +131,16 @@ class SqlResolver implements GraphQLResolverInterface
 		}
 	}
 
-	public function resolveDelete(Collection $collection, string $id): bool
+	public function resolveDelete(Collection $collection, string $id): ?object
 	{
 		try {
+			// Fetch the object before deleting
+			$object = $this->resolveById($collection, $id);
+
+			if ($object === null) {
+				return null;
+			}
+
 			$table = $collection->getTable();
 			$pkColumn = $this->getPrimaryKeyColumn($collection);
 
@@ -144,7 +151,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$stmt = $this->database->getConnection()->prepare($sql);
 			$stmt->execute([$id]);
 
-			return $stmt->rowCount() > 0;
+			return $stmt->rowCount() > 0 ? $object : null;
 		} catch (\PDOException $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
@@ -211,11 +218,6 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
 	{
-		return $this->resolveRelationFromDatabase($source, $relation);
-	}
-
-	private function resolveRelationFromDatabase(mixed $source, RelationInterface $relation): mixed
-	{
 		$collectionName = $relation->getCollection();
 		$innerKey = $relation->getInnerKey();
 		$outerKey = $relation->getOuterKey();
@@ -273,6 +275,11 @@ class SqlResolver implements GraphQLResolverInterface
 
 			return $results;
 		});
+	}
+
+	public function clearCache(): void
+	{
+		$this->dataLoader->clear();
 	}
 
 	protected function quoteIdentifier(string $identifier): string
