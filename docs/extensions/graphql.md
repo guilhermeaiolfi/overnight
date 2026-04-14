@@ -494,6 +494,12 @@ use ON\GraphQL\Event\BeforeMutation;
 $events->registerListener('graphql.mutation.before', function (BeforeMutation $event) {
     $collection = $event->getCollection();
     $operation = $event->getOperation(); // 'create', 'update', or 'delete'
+
+    // Only handle your module's collections
+    if ($collection->getName() !== 'post') {
+        return;
+    }
+
     $input = $event->getInput();
 
     // Modify input before it reaches the resolver
@@ -530,8 +536,14 @@ use ON\GraphQL\Event\BeforeMutation;
 use Psr\Http\Message\UploadedFileInterface;
 
 $events->registerListener('graphql.mutation.before', function (BeforeMutation $event) {
-    $input = $event->getInput();
     $collection = $event->getCollection();
+
+    // Only handle collections that have file fields
+    if (!in_array($collection->getName(), ['post', 'document'])) {
+        return;
+    }
+
+    $input = $event->getInput();
     $modified = false;
 
     foreach ($input as $key => $value) {
