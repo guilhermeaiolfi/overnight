@@ -50,6 +50,11 @@ class HasOneRelation extends AbstractRelation
 		$registry = $parentCollection->getRegistry();
 
 		$targetCollection = $registry->getCollection($this->getCollection());
+
+		if ($targetCollection === null) {
+			return null;
+		}
+
 		$type = $targetCollection->fields->get($outer_key)->getType();
 
 		// not necessarly we are creating this field, it could exist already
