@@ -7,6 +7,7 @@ This guide walks through building a complete CRUD module from scratch using the 
 | Approach | Backend | Frontend | Status |
 |----------|---------|----------|--------|
 | [GraphQL API](#graphql-api-approach) | GraphQL extension | Vue.js / React | Documented |
+| [REST API](#rest-api-approach) | REST API extension | Vue.js / React / Any | Documented |
 | Server-rendered | Controller + Views | Plates / Latte | Coming soon |
 
 ---
@@ -647,9 +648,509 @@ The backend is ~50 lines of entity definitions. Everything else — schema gener
 
 ---
 
+# REST API Approach
+
+This approach uses the REST API extension for the backend. The same entity definitions generate a full Directus-style REST interface — no GraphQL, no controllers, just standard HTTP endpoints. The frontend uses plain `fetch()` calls.
+
+## What's Different from GraphQL
+
+| | GraphQL | REST API |
+|---|---------|----------|
+| Endpoint | Single `/graphql` | One per collection: `/items/post`, `/items/user` |
+| Query language | GraphQL queries/mutations | HTTP methods + query parameters |
+| Field selection | GraphQL field selection | `?fields=id,title,author.name` |
+| Filtering | GraphQL arguments | `?filter[status][_eq]=published` |
+| Frontend library | urql / Apollo | Plain `fetch()` or any HTTP client |
+| Learning curve | Need to learn GraphQL | Standard REST — familiar to everyone |
+| Aggregation | Not built-in | `?aggregate[count]=id&groupBy[]=status` |
+| Schema introspection | Built-in (`__schema`) | Via SchemaAddon (`/_schema`) |
+
+## Step 1: Define Your Entities
+
+Same entity definitions as the GraphQL approach — the ORM registry is shared:
+
+```php
+// config/orm.php (identical to GraphQL approach)
+// See Step 1 in the GraphQL section above
+```
+
+## Step 2: Install the Extension
+
+```php
+// config/extensions.php
+
+use ON\RestApi\RestApiExtension;
+use ON\RestApi\Addon\RevisionAddon;
+use ON\RestApi\Addon\SchemaAddon;
+
+return [
+    \ON\Config\ConfigExtension::class => [],
+    \ON\Container\ContainerExtension::class => [],
+    \ON\Event\EventsExtension::class => [],
+    \ON\DB\DatabaseExtension::class => [],
+    \ON\Middleware\PipelineExtension::class => [],
+    \ON\RateLimit\RateLimitExtension::class => [],
+    RestApiExtension::class => [
+        'path' => '/items',
+        'defaultLimit' => 50,
+        'maxLimit' => 500,
+        'rateLimit' => 100,
+        'addons' => [
+            SchemaAddon::class,
+            RevisionAddon::class => ['table' => 'revisions'],
+        ],
+    ],
+];
+```
+
+That's it. You now have:
+
+```
+GET    /items/post                → List posts
+GET    /items/post/1              → Get post by ID
+POST   /items/post                → Create post
+PATCH  /items/post/1              → Update post
+DELETE /items/post/1              → Delete post
+GET    /items/_schema             → List all collections
+GET    /items/_schema/post        → Get post schema
+```
+
+Same for `category`, `comment`, and every other collection.
+
+## Step 3: Add Events (Optional)
+
+Handle timestamps and file uploads via event listeners:
+
+```php
+// src/Blog/BlogEventSubscriber.php
+
+use ON\Event\EventSubscriberInterface;
+use ON\RestApi\Event\ItemCreate;
+use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Event\FileUpload;
+
+class BlogEventSubscriber implements EventSubscriberInterface
+{
+    public static function getSubscribedEvents(): array
+    {
+        return [
+            'restapi.item.create' => [0, 'onItemCreate'],
+            'restapi.item.update' => [0, 'onItemUpdate'],
+            'restapi.file.upload' => [0, 'onFileUpload'],
+        ];
+    }
+
+    public function onItemCreate(ItemCreate $event): void
+    {
+        $collection = $event->getCollection()->getName();
+        if (!in_array($collection, ['post', 'category', 'comment'])) {
+            return;
+        }
+
+        $input = $event->getInput();
+        $input['created_at'] = date('Y-m-d H:i:s');
+        $input['updated_at'] = date('Y-m-d H:i:s');
+        $event->setInput($input);
+    }
+
+    public function onItemUpdate(ItemUpdate $event): void
+    {
+        $collection = $event->getCollection()->getName();
+        if (!in_array($collection, ['post', 'category', 'comment'])) {
+            return;
+        }
+
+        $input = $event->getInput();
+        $input['updated_at'] = date('Y-m-d H:i:s');
+        $event->setInput($input);
+    }
+
+    public function onFileUpload(FileUpload $event): void
+    {
+        $file = $event->getFile();
+        $collection = $event->getCollection()->getName();
+        $ext = pathinfo($file->getClientFilename(), PATHINFO_EXTENSION);
+        $name = bin2hex(random_bytes(16)) . '.' . $ext;
+
+        $path = "uploads/{$collection}/{$name}";
+        $file->moveTo("public/{$path}");
+
+        $event->setStoredPath($path);
+        $event->preventDefault();
+    }
+}
+```
+
+## Step 4: Frontend — Plain JavaScript
+
+No special library needed. Just `fetch()`.
+
+### API Helper
+
+```javascript
+// src/api.js
+const BASE = '/items';
+
+export const api = {
+  async list(collection, params = {}) {
+    const query = new URLSearchParams();
+    if (params.limit) query.set('limit', params.limit);
+    if (params.offset) query.set('offset', params.offset);
+    if (params.page) query.set('page', params.page);
+    if (params.sort) query.set('sort', params.sort);
+    if (params.search) query.set('search', params.search);
+    if (params.fields) query.set('fields', params.fields);
+    if (params.meta) query.set('meta', params.meta);
+
+    // Filters: { status: { _eq: 'published' } }
+    if (params.filter) {
+      for (const [field, ops] of Object.entries(params.filter)) {
+        for (const [op, val] of Object.entries(ops)) {
+          query.set(`filter[${field}][${op}]`, val);
+        }
+      }
+    }
+
+    const res = await fetch(`${BASE}/${collection}?${query}`);
+    return res.json();
+  },
+
+  async get(collection, id, params = {}) {
+    const query = new URLSearchParams();
+    if (params.fields) query.set('fields', params.fields);
+    const res = await fetch(`${BASE}/${collection}/${id}?${query}`);
+    return res.json();
+  },
+
+  async create(collection, data) {
+    const res = await fetch(`${BASE}/${collection}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async update(collection, id, data) {
+    const res = await fetch(`${BASE}/${collection}/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    return res.json();
+  },
+
+  async remove(collection, id) {
+    return fetch(`${BASE}/${collection}/${id}`, { method: 'DELETE' });
+  },
+
+  async aggregate(collection, params = {}) {
+    const query = new URLSearchParams();
+    if (params.aggregate) {
+      for (const [func, field] of Object.entries(params.aggregate)) {
+        query.set(`aggregate[${func}]`, field);
+      }
+    }
+    if (params.groupBy) {
+      params.groupBy.forEach((f, i) => query.set(`groupBy[${i}]`, f));
+    }
+    const res = await fetch(`${BASE}/${collection}?${query}`);
+    return res.json();
+  },
+};
+```
+
+### Post List (Vue)
+
+```vue
+<template>
+  <div>
+    <h1>Posts</h1>
+
+    <div class="toolbar">
+      <input v-model="search" placeholder="Search posts..." @input="debouncedSearch" />
+      <select v-model="statusFilter" @change="page = 1; loadPosts()">
+        <option value="">All statuses</option>
+        <option value="draft">Draft</option>
+        <option value="published">Published</option>
+        <option value="archived">Archived</option>
+      </select>
+      <router-link to="/posts/create">+ New Post</router-link>
+    </div>
+
+    <div v-if="loading">Loading...</div>
+
+    <table v-else>
+      <thead>
+        <tr>
+          <th @click="toggleSort('title')">Title</th>
+          <th>Status</th>
+          <th>Category</th>
+          <th @click="toggleSort('created_at')">Created</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="post in posts" :key="post.id">
+          <td>{{ post.title }}</td>
+          <td>{{ post.status }}</td>
+          <td>{{ post.category?.name || '—' }}</td>
+          <td>{{ formatDate(post.created_at) }}</td>
+          <td>
+            <router-link :to="`/posts/${post.id}/edit`">Edit</router-link>
+            <button @click="removePost(post.id)">Delete</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="pagination">
+      <button :disabled="page <= 1" @click="page--; loadPosts()">Previous</button>
+      <span>Page {{ page }} of {{ totalPages }}</span>
+      <button :disabled="page >= totalPages" @click="page++; loadPosts()">Next</button>
+    </div>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import { api } from '../api';
+
+const posts = ref([]);
+const totalCount = ref(0);
+const loading = ref(false);
+const page = ref(1);
+const perPage = 20;
+const sort = ref('-created_at');
+const search = ref('');
+const statusFilter = ref('');
+
+const totalPages = computed(() => Math.ceil(totalCount.value / perPage));
+
+async function loadPosts() {
+  loading.value = true;
+  const filter = {};
+  if (statusFilter.value) filter.status = { _eq: statusFilter.value };
+
+  const result = await api.list('post', {
+    limit: perPage,
+    page: page.value,
+    sort: sort.value,
+    search: search.value || undefined,
+    filter: Object.keys(filter).length ? filter : undefined,
+    fields: 'id,title,status,created_at,category.name',
+    meta: 'total_count',
+  });
+
+  posts.value = result.data;
+  totalCount.value = result.meta?.total_count || 0;
+  loading.value = false;
+}
+
+function toggleSort(field) {
+  sort.value = sort.value === field ? `-${field}` : field;
+  loadPosts();
+}
+
+async function removePost(id) {
+  if (!confirm('Delete this post?')) return;
+  await api.remove('post', id);
+  loadPosts();
+}
+
+let searchTimer;
+function debouncedSearch() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { page.value = 1; loadPosts(); }, 300);
+}
+
+function formatDate(d) {
+  return d ? new Date(d).toLocaleDateString() : '—';
+}
+
+onMounted(loadPosts);
+</script>
+```
+
+### Post Form (Vue)
+
+```vue
+<template>
+  <div>
+    <h1>{{ isEdit ? 'Edit Post' : 'New Post' }}</h1>
+
+    <form @submit.prevent="save">
+      <div class="field">
+        <label>Title</label>
+        <input v-model="form.title" required />
+        <span class="error" v-if="errors.title">{{ errors.title[0] }}</span>
+      </div>
+
+      <div class="field">
+        <label>Content</label>
+        <textarea v-model="form.content" rows="10"></textarea>
+      </div>
+
+      <div class="field">
+        <label>Status</label>
+        <select v-model="form.status">
+          <option value="draft">Draft</option>
+          <option value="published">Published</option>
+          <option value="archived">Archived</option>
+        </select>
+      </div>
+
+      <div class="field">
+        <label>Category</label>
+        <select v-model="form.category_id">
+          <option value="">— Select —</option>
+          <option v-for="cat in categories" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+        </select>
+      </div>
+
+      <button type="submit" :disabled="saving">{{ saving ? 'Saving...' : 'Save' }}</button>
+      <button type="button" @click="$router.back()">Cancel</button>
+    </form>
+  </div>
+</template>
+
+<script setup>
+import { ref, computed, onMounted } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { api } from '../api';
+
+const route = useRoute();
+const router = useRouter();
+const isEdit = computed(() => !!route.params.id);
+
+const form = ref({ title: '', content: '', status: 'draft', category_id: '' });
+const categories = ref([]);
+const errors = ref({});
+const saving = ref(false);
+
+onMounted(async () => {
+  const catResult = await api.list('category', { fields: 'id,name' });
+  categories.value = catResult.data;
+
+  if (isEdit.value) {
+    const result = await api.get('post', route.params.id);
+    form.value = { ...result.data };
+  }
+});
+
+async function save() {
+  saving.value = true;
+  errors.value = {};
+
+  const data = { ...form.value };
+  if (data.category_id) data.category_id = Number(data.category_id);
+
+  try {
+    let result;
+    if (isEdit.value) {
+      delete data.id;
+      result = await api.update('post', route.params.id, data);
+    } else {
+      result = await api.create('post', data);
+    }
+
+    if (result.errors) {
+      const ext = result.errors[0]?.extensions;
+      if (ext?.validationErrors) {
+        errors.value = ext.validationErrors;
+        return;
+      }
+      throw new Error(result.errors[0].message);
+    }
+
+    router.push('/posts');
+  } catch (err) {
+    alert(err.message);
+  } finally {
+    saving.value = false;
+  }
+}
+</script>
+```
+
+## Step 5: Dashboard with Aggregation
+
+The REST API supports aggregation queries — perfect for dashboards:
+
+```javascript
+// Load dashboard stats
+const [postsByStatus, totalPosts, recentActivity] = await Promise.all([
+  api.aggregate('post', {
+    aggregate: { count: 'id' },
+    groupBy: ['status'],
+  }),
+  api.aggregate('post', {
+    aggregate: { count: 'id' },
+  }),
+  api.list('post', {
+    sort: '-updated_at',
+    limit: 5,
+    fields: 'id,title,status,updated_at',
+  }),
+]);
+
+// postsByStatus.data → [{ status: 'published', count: { id: 42 } }, ...]
+// totalPosts.data → [{ count: { id: 50 } }]
+// recentActivity.data → [{ id: 1, title: '...', ... }, ...]
+```
+
+## Step 6: Error Handling
+
+REST API errors follow a consistent format:
+
+```javascript
+const result = await api.create('post', data);
+
+if (result.errors) {
+  const error = result.errors[0];
+  const code = error.extensions?.code;
+
+  switch (code) {
+    case 'VALIDATION_ERROR':
+      // Per-field errors
+      errors.value = error.extensions.validationErrors;
+      break;
+    case 'DUPLICATE':
+      alert(`Duplicate: ${error.message}`);
+      break;
+    case 'NOT_FOUND':
+      router.push('/404');
+      break;
+    default:
+      alert(error.message);
+  }
+}
+```
+
+## Comparison: GraphQL vs REST API
+
+| Feature | GraphQL | REST API |
+|---------|---------|----------|
+| Backend setup | Same entity definitions | Same entity definitions |
+| Frontend complexity | Need urql/Apollo + GraphQL queries | Plain `fetch()` + query params |
+| Field selection | Built into GraphQL | `?fields=id,title,author.name` |
+| Nested relations | GraphQL nested queries | Dot notation in `fields` param |
+| Aggregation | Not built-in | `?aggregate[count]=id&groupBy[]=status` |
+| Batch operations | Single mutation per call | POST/PATCH/DELETE with arrays |
+| Caching | urql/Apollo cache | ETag + `If-None-Match` |
+| Schema discovery | GraphQL introspection | SchemaAddon (`/_schema`) |
+| Revision history | Via events | RevisionAddon (built-in) |
+| File uploads | Multipart spec + Upload scalar | Standard multipart/form-data |
+| Rate limiting | Via extension | Via extension |
+
+Both approaches share the same entity definitions, validation rules, and event system. Choose GraphQL for complex nested queries and type safety, REST for simplicity and standard HTTP tooling.
+
+---
+
 ## See Also
 
-- [GraphQL Extension](extensions/graphql.md) — Full API reference
+- [GraphQL Extension](extensions/graphql.md) — Full GraphQL API reference
+- [REST API Extension](extensions/rest-api.md) — Full REST API reference with filter operators, aggregation, addons
 - [ORM Entity Definition](orm-entity-definition.md) — Field types, relations, metadata
 - [Events Extension](extensions/events.md) — Event subscribers and listeners
-- [DataLoader](extensions/graphql-dataloader.md) — N+1 problem solutions
+- [DataLoader](extensions/graphql-dataloader.md) — N+1 problem solutions (GraphQL)
