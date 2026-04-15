@@ -34,6 +34,9 @@ class DiscoveryCache
 
 	public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
 	{
+		if ($location === null) {
+			return;
+		}
 		$adapter = $this->getAdapter($location);
 		$adapter->clear($discover, $location);
 	}

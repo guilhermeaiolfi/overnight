@@ -83,7 +83,8 @@ class DiscoveryItem
             $this->location,
             $this->tags,
             $this->file,
-            $this->className
+            $this->className,
+            $this->metadata,
         ];
     }
 
@@ -94,6 +95,7 @@ class DiscoveryItem
         $this->tags = $data[2];
         $this->file = $data[3];
         $this->className = $data[4];
+        $this->metadata = $data[5] ?? [];
         $this->fresh = false;
     }
 

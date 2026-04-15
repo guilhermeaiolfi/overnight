@@ -1,11 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Discovery\DiscoverInterface;
-use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryLocation;
-use Symfony\Component\Finder\Finder;
 
 interface CacheAdapterInterface {
 

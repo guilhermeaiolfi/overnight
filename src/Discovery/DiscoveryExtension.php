@@ -40,7 +40,7 @@ class DiscoveryExtension extends AbstractExtension
 		$this->cache = $this->app->container->get(DiscoveryCache::class);
 	}
 
-	public function get(string $className): DiscoverInterface
+	public function get(string $className): ?DiscoverInterface
 	{
 		return $this->discovers[$className] ?? null;
 	}
@@ -73,7 +73,7 @@ class DiscoveryExtension extends AbstractExtension
 
 		$discoverClassnames = array_keys($this->appCfg->get('discovery.discoverers', []));
 
-		$locations = $this->appCfg->get('discovery.locations');
+		$locations = $this->appCfg->get('discovery.locations', []);
 
 
 		// creates the discovers instances

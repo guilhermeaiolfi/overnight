@@ -235,7 +235,6 @@ class ImageManager implements MiddlewareInterface
 				// file found
 				return $image_path;
 			}
-			exit;
 		}
 
 		// file not found

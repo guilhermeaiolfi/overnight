@@ -40,6 +40,15 @@ class ClassFinder
 			}
 
 			if ($tokens[$i]->getTokenName() === 'T_CLASS') {
+				// Skip anonymous classes (preceded by 'new')
+				$prevIndex = $i - 1;
+				while ($prevIndex >= 0 && $tokens[$prevIndex]->getTokenName() === 'T_WHITESPACE') {
+					$prevIndex--;
+				}
+				if ($prevIndex >= 0 && $tokens[$prevIndex]->getTokenName() === 'T_NEW') {
+					continue;
+				}
+
 				for ($j = $i + 1; $j < count($tokens); $j++) {
 					if ($tokens[$j]->getTokenName() === 'T_WHITESPACE') {
 						continue;

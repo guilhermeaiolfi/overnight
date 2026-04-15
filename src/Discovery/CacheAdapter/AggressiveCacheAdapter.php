@@ -1,13 +1,14 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Discovery\DiscoverInterface;
-use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryLocation;
 use Symfony\Component\Finder\Finder;
 
-class AgressiveacheAdapter extends AbstractCacheAdapter {
+class AggressiveCacheAdapter extends AbstractCacheAdapter {
 
     public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface
     {

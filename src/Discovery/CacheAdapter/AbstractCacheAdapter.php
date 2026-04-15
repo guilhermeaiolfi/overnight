@@ -1,10 +1,11 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Config\AppConfig;
 use ON\Discovery\DiscoverInterface;
-use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryLocation;
 
 abstract class AbstractCacheAdapter implements CacheAdapterInterface {
@@ -20,25 +21,15 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 
     public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
 	{
-		$cacheFiles = [];
-		if (! isset($discover)) {
-			throw new \Exception("TODO: remove all files from a determined location or not (if not available)");
+		if ($discover === null || $location === null) {
+			// Cannot determine cache file without both discover and location
+			return;
 		}
 
-		if (!isset($location)) {
-			// TODO: get files from all locations
-			throw new \Exception("TODO: implement removing all files for all location to a defined discover.");
-		}
+		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		if (isset($discover) && isset($location)) {
-			$cacheFiles[] = $this->cacheFilenameFromDiscover($discover, $location);
-		}
-
-		foreach ($cacheFiles as $cacheFile)
-		{
-			if (file_exists($cacheFile)) {
-				unlink($cacheFile);
-			}
+		if (file_exists($cacheFile)) {
+			unlink($cacheFile);
 		}
 	}
 

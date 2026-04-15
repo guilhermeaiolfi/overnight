@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Config\AppConfig;

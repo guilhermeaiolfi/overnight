@@ -47,13 +47,13 @@ class DiscoveryItems implements IteratorAggregate, Countable
 
 	public function count(): int
 	{
-		return iterator_count($this->getIterator());
+		return count($this->items);
 	}
 
 	public function removeFromFile(string $file): void
 	{
-		$this->items = $this->filter(function ($item) use ($file) {
+		$this->items = array_values($this->filter(function ($item) use ($file) {
 			return $item->getFile() != $file;
-		});
+		}));
 	}
 }
