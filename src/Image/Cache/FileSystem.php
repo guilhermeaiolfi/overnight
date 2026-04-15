@@ -30,14 +30,14 @@ class FileSystem implements ImageCacheInterface
 		$basename = basename($path);
 		$filename = $this->filename($path, $token);
 
-
+		$publicPath = rtrim($this->config->get('publicPath', 'public/'), '/') . '/';
 		$pathinfo = pathinfo($filename);
 
-		@mkdir("public/" . $pathinfo["dirname"], 0777, true);
+		@mkdir($publicPath . $pathinfo["dirname"], 0777, true);
 
-		$manager->read($path)->modify($template)->save("public/" . $filename);
+		$manager->read($path)->modify($template)->save($publicPath . $filename);
 
-		return file_get_contents("public/" . $filename);
+		return file_get_contents($publicPath . $filename);
 	}
 
 	public function filename($path, $token)
@@ -45,8 +45,8 @@ class FileSystem implements ImageCacheInterface
 		$folders = explode("/", $path);
 
 		$filepath = array_pop($folders);
-		//$filepath = basename($path);
-		list($name, $extension) = explode(".", $filepath);
+		$dotPos = strrpos($filepath, '.');
+		$extension = $dotPos !== false ? substr($filepath, $dotPos + 1) : 'jpg';
 
 		return $this->config['basePath'] . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
 	}

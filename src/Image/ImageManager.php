@@ -35,7 +35,8 @@ class ImageManager implements MiddlewareInterface
 		protected ?EncrypterInterface $encrypter = null,
 		protected ?ImageCacheInterface $imageCache = null
 	) {
-		$signatureKey = $_ENV['APP_SALT'];
+		$signatureKey = $imageCfg->get('key', $_ENV['APP_SALT'] ?? '');
+
 		if (! isset($encrypter)) {
 			$this->encrypter = new OpenSSL($signatureKey);
 		}
@@ -63,7 +64,7 @@ class ImageManager implements MiddlewareInterface
 			//return $this->imageCfg->get("404ImagePath");
 			$path = $this->imageCfg->get("404ImagePath");
 		}
-		$token = $this->encrypter->encrypt(["path" => $path, "template" => $template, "options" => $options], $this->signatureKey);
+		$token = $this->encrypter->encrypt(["path" => $path, "template" => $template, "options" => $options]);
 		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
 		//$token = str_replace('/.', './', $token); //create folders for images
 
@@ -180,9 +181,9 @@ class ImageManager implements MiddlewareInterface
 	{
 		$response = $this->getOriginal($filename);
 
-		return $response->header(
+		return $response->withHeader(
 			'Content-Disposition',
-			'attachment; filename=' . $filename
+			'attachment; filename=' . basename($filename)
 		);
 	}
 
@@ -255,8 +256,13 @@ class ImageManager implements MiddlewareInterface
 		// respond with 304 not modified if browser has the image cached
 		$etag = md5($content);
 		$not_modified = isset($_SERVER['HTTP_IF_NONE_MATCH']) && $_SERVER['HTTP_IF_NONE_MATCH'] == $etag;
-		$content = $not_modified ? null : $content;
-		$status_code = $not_modified ? 304 : 200;
+
+		if ($not_modified) {
+			return (new Response())
+				->withStatus(304)
+				->withHeader('ETag', $etag)
+				->withHeader('Cache-Control', 'max-age=' . ($this->imageCfg->get("cache.lifetime") * 60) . ', public');
+		}
 
 		// return http response
 		$factory = new StreamFactory();
@@ -265,9 +271,10 @@ class ImageManager implements MiddlewareInterface
 
 		return $response
 			->withHeader('Content-Type', $mime)
+			->withHeader('ETag', $etag)
 			->withHeader('Cache-Control', 'max-age=' . ($this->imageCfg->get("cache.lifetime") * 60) . ', public')
 			->withBody($body)
-			->withHeader('Content-Length', strlen($content));
+			->withHeader('Content-Length', (string) strlen($content));
 
 	}
 }

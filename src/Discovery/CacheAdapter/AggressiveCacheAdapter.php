@@ -19,7 +19,13 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter {
         }
 
 		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
+		$data = unserialize($data, [
+			'allowed_classes' => [
+				\ON\Discovery\DiscoveryItem::class,
+				\ON\Discovery\DiscoveryItems::class,
+				\ON\Discovery\DiscoveryLocation::class,
+			],
+		]);
 		$discover->addData($data);
         return $discover;
     }

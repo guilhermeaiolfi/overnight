@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Discovery\CacheAdapter;
 
-use ON\Config\AppConfig;
 use ON\Discovery\DiscoverInterface;
-use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryLocation;
 use Symfony\Component\Finder\Finder;
 
@@ -22,7 +20,13 @@ class TimestampCacheAdapter extends AbstractCacheAdapter {
         }
 
 		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
+		$data = unserialize($data, [
+			'allowed_classes' => [
+				\ON\Discovery\DiscoveryItem::class,
+				\ON\Discovery\DiscoveryItems::class,
+				\ON\Discovery\DiscoveryLocation::class,
+			],
+		]);
 		$discover->addData($data);
         return $discover;
     }

@@ -101,10 +101,35 @@ class DiscoveryExtension extends AbstractExtension
 		$this->setState('ready');
 	}
 
-	public function clear(?string $location = null): void
+	public function clear(null|string|DiscoveryLocation $location = null): void
 	{
+		$resolved = $this->resolveLocation($location);
+
 		foreach ($this->discovers as $discover) {
-			$this->cache->clear($discover, $location);
+			if ($resolved === null) {
+				$locations = $this->appCfg->get('discovery.locations', []);
+				foreach ($locations as $loc) {
+					$this->cache->clear($discover, $loc);
+				}
+			} else {
+				$this->cache->clear($discover, $resolved);
+			}
 		}
+	}
+
+	protected function resolveLocation(null|string|DiscoveryLocation $location): ?DiscoveryLocation
+	{
+		if ($location === null || $location instanceof DiscoveryLocation) {
+			return $location;
+		}
+
+		$locations = $this->appCfg->get('discovery.locations', []);
+		foreach ($locations as $loc) {
+			if ($loc->name === $location) {
+				return $loc;
+			}
+		}
+
+		return null;
 	}
 }

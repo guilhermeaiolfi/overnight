@@ -16,7 +16,7 @@ class OpenSSL implements EncrypterInterface
 	{
 		$this->key = $key;
 		$this->options = $options;
-		$this->iv = isset($options['iv']) ? $options['iv'] : $_ENV["APP_SALT"];
+		$this->iv = $options['iv'] ?? $_ENV["APP_SALT"] ?? substr(md5((string) $key), 0, 16);
 	}
 
 	public function decrypt($token)

@@ -293,19 +293,15 @@ class SqlRestResolver extends AbstractRestResolver
 				$targetId = $created[$targetPkColumn] ?? null;
 
 				if ($targetId !== null) {
-					$sql = "INSERT OR IGNORE INTO {$quotedJunction} ({$quotedThroughInner}, {$quotedThroughOuter}) VALUES (?, ?)";
-					$stmt = $connection->prepare($sql);
-					$stmt->execute([$parentId, $targetId]);
+					$this->insertJunctionRow($connection, $quotedJunction, $quotedThroughInner, $quotedThroughOuter, $parentId, $targetId);
 				}
 			}
 		}
 
-		// Connect existing records
+		// Connect existing records (idempotent — duplicates are silently ignored)
 		if (!empty($operations['connect'])) {
 			foreach ($operations['connect'] as $targetId) {
-				$sql = "INSERT OR IGNORE INTO {$quotedJunction} ({$quotedThroughInner}, {$quotedThroughOuter}) VALUES (?, ?)";
-				$stmt = $connection->prepare($sql);
-				$stmt->execute([$parentId, $targetId]);
+				$this->insertJunctionRow($connection, $quotedJunction, $quotedThroughInner, $quotedThroughOuter, $parentId, $targetId);
 			}
 		}
 
@@ -315,6 +311,24 @@ class SqlRestResolver extends AbstractRestResolver
 				$sql = "DELETE FROM {$quotedJunction} WHERE {$quotedThroughInner} = ? AND {$quotedThroughOuter} = ?";
 				$stmt = $connection->prepare($sql);
 				$stmt->execute([$parentId, $targetId]);
+			}
+		}
+	}
+
+	/**
+	 * Insert a junction table row, silently ignoring duplicates (idempotent).
+	 * Works on all databases — catches constraint violations instead of using DB-specific syntax.
+	 */
+	protected function insertJunctionRow(\PDO $connection, string $table, string $innerCol, string $outerCol, mixed $parentId, mixed $targetId): void
+	{
+		try {
+			$sql = "INSERT INTO {$table} ({$innerCol}, {$outerCol}) VALUES (?, ?)";
+			$stmt = $connection->prepare($sql);
+			$stmt->execute([$parentId, $targetId]);
+		} catch (\PDOException $e) {
+			// Duplicate — ignore (idempotent connect)
+			if (!str_contains($e->getMessage(), 'UNIQUE') && !str_contains($e->getMessage(), 'Duplicate')) {
+				throw $e;
 			}
 		}
 	}

@@ -13,6 +13,7 @@ class ImageConfig extends Config
 	{
 		return [
 			"basePath" => "i/",
+			"publicPath" => "public/",
 			"404ImagePath" => "404i.png",
 			"templates" => [
 				"custom" => CustomTemplate::class,

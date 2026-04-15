@@ -11,7 +11,6 @@ use ON\Discovery\DiscoveryLocation;
 abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 
     public function __construct (
-        protected DiscoveryCache $cache,
 		protected AppConfig $appCfg
     ) {
 
