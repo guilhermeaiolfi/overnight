@@ -9,4 +9,9 @@ use ON\ORM\Select\Loader\HasManyLoader;
 class HasManyRelation extends AbstractRelation
 {
 	protected ?string $loader = HasManyLoader::class;
+
+	public function getCardinality(): string
+	{
+		return 'many';
+	}
 }

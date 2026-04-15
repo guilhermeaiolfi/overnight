@@ -87,7 +87,7 @@ $registry->collection('user')
     ->field('name', 'string')->validation('required|max:255')->end()
     ->field('email', 'string')->validation('required|email')->end()
     ->field('password', 'string')->hidden(true)->end()
-    ->hasMany('posts', 'post')->innerKey('user_id')->outerKey('id')->end()
+    ->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
     ->belongsTo('role', 'role')->innerKey('role_id')->outerKey('id')->end()
     ->end();
 ```
@@ -95,6 +95,10 @@ $registry->collection('user')
 Key rules:
 - `field('name', 'type')` — second arg is optional shorthand for `->type('type')`
 - `hasMany()`, `hasOne()`, `belongsTo()` — convenience methods, no need to import relation classes
+- `innerKey` = key on the **source** entity (the one defining the relation); `outerKey` = key on the **target** entity (Cycle ORM convention)
+- For hasMany/hasOne: `innerKey` is typically the PK (`id`), `outerKey` is the FK on the target (`user_id`)
+- For belongsTo: `innerKey` is the FK on the source (`user_id`), `outerKey` is the PK on the target (`id`)
+- `getCardinality()` returns `'single'` or `'many'`; `isJunction()` for M2M
 - `validation('rules')` — pipe-delimited rules using `somnambulist/validation`
 - `hidden(true)` — excludes from GraphQL schema
 - `metadata('key', value)` — both getter (1 arg) and setter (2 args)

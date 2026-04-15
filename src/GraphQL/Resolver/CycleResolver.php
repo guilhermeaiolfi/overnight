@@ -9,8 +9,6 @@ use Cycle\ORM\ORMInterface;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 
 class CycleResolver implements GraphQLResolverInterface
@@ -142,23 +140,24 @@ class CycleResolver implements GraphQLResolverInterface
 
 				$innerKey = $relation->getInnerKey();
 				$outerKey = $relation->getOuterKey();
-				$foreignKeyValue = $entity->{$outerKey} ?? null;
+				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
+				$parentKeyValue = $entity->{$innerKey} ?? null;
 				$targetEntityClass = $targetCollection->getEntity();
 
-				if ($relation instanceof HasManyRelation) {
+				if ($relation->getCardinality() === 'many') {
 					$em2 = new EntityManager($this->orm);
 					foreach ($relationData as $childInput) {
 						$child = new $targetEntityClass();
-						$childInput[$innerKey] = $foreignKeyValue;
+						$childInput[$outerKey] = $parentKeyValue;
 						foreach ($childInput as $key => $value) {
 							$child->{$key} = $value;
 						}
 						$em2->persist($child);
 					}
 					$em2->run();
-				} elseif ($relation instanceof HasOneRelation) {
+				} else {
 					$child = new $targetEntityClass();
-					$relationData[$innerKey] = $foreignKeyValue;
+					$relationData[$outerKey] = $parentKeyValue;
 					foreach ($relationData as $key => $value) {
 						$child->{$key} = $value;
 					}
@@ -187,11 +186,11 @@ class CycleResolver implements GraphQLResolverInterface
 		if (isset($source->{$relationName})) {
 			$value = $source->{$relationName};
 
-			if ($relation instanceof HasOneRelation) {
+			if ($relation->getCardinality() === 'single') {
 				return is_array($value) ? ($value[0] ?? null) : $value;
 			}
 
-			if ($relation instanceof HasManyRelation) {
+			if ($relation->getCardinality() === 'many') {
 				return is_iterable($value) ? iterator_to_array($value) : [];
 			}
 
@@ -202,25 +201,26 @@ class CycleResolver implements GraphQLResolverInterface
 		$targetCollection = $this->registry->getCollection($relation->getCollection());
 
 		if ($targetCollection === null) {
-			return $relation instanceof HasOneRelation ? null : [];
+			return $relation->getCardinality() === 'single' ? null : [];
 		}
 
 		$outerKey = $relation->getOuterKey();
 		$innerKey = $relation->getInnerKey();
 		$role = $targetCollection->getName();
 
+		// Cycle convention: innerKey is on source entity, outerKey is on target entity
 		$sourceId = is_array($source)
-			? ($source[$outerKey] ?? null)
-			: ($source->{$outerKey} ?? null);
+			? ($source[$innerKey] ?? null)
+			: ($source->{$innerKey} ?? null);
 
 		if ($sourceId === null) {
-			return $relation instanceof HasOneRelation ? null : [];
+			return $relation->getCardinality() === 'single' ? null : [];
 		}
 
 		$repo = $this->orm->getRepository($role);
-		$results = iterator_to_array($repo->findAll([$innerKey => $sourceId]));
+		$results = iterator_to_array($repo->findAll([$outerKey => $sourceId]));
 
-		if ($relation instanceof HasOneRelation) {
+		if ($relation->getCardinality() === 'single') {
 			return $results[0] ?? null;
 		}
 

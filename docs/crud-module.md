@@ -79,7 +79,7 @@ $registry->collection('post')
         ->innerKey('category_id')->outerKey('id')
         ->end()
     ->hasMany('comments', 'comment')
-        ->innerKey('post_id')->outerKey('id')
+        ->innerKey('id')->outerKey('post_id')
         ->end()
     ->end();
 

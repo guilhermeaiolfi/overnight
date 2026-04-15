@@ -10,8 +10,6 @@ use ON\GraphQL\Error\GraphQLUserError;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use PDO;
 
@@ -189,17 +187,18 @@ class SqlResolver implements GraphQLResolverInterface
 					continue;
 				}
 
+				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
 				$innerKey = $relation->getInnerKey();
 				$outerKey = $relation->getOuterKey();
-				$foreignKeyValue = $parent->{$outerKey} ?? $parentId;
+				$parentKeyValue = $parent->{$innerKey} ?? $parentId;
 
-				if ($relation instanceof HasManyRelation) {
+				if ($relation->getCardinality() === 'many') {
 					foreach ($relationData as $childInput) {
-						$childInput[$innerKey] = $foreignKeyValue;
+						$childInput[$outerKey] = $parentKeyValue;
 						$this->resolveCreate($targetCollection, $childInput);
 					}
-				} elseif ($relation instanceof HasOneRelation) {
-					$relationData[$innerKey] = $foreignKeyValue;
+				} else {
+					$relationData[$outerKey] = $parentKeyValue;
 					$this->resolveCreate($targetCollection, $relationData);
 				}
 			}
@@ -222,12 +221,13 @@ class SqlResolver implements GraphQLResolverInterface
 		$innerKey = $relation->getInnerKey();
 		$outerKey = $relation->getOuterKey();
 
+		// innerKey is on the source entity, outerKey is on the target entity (Cycle convention)
 		$sourceId = is_array($source)
-			? ($source[$outerKey] ?? null)
-			: ($source->{$outerKey} ?? null);
+			? ($source[$innerKey] ?? null)
+			: ($source->{$innerKey} ?? null);
 
 		if ($sourceId === null) {
-			return $relation instanceof HasOneRelation ? null : [];
+			return $relation->getCardinality() === 'single' ? null : [];
 		}
 
 		$collection = $this->ormRegistry->getCollection($collectionName);
@@ -236,11 +236,11 @@ class SqlResolver implements GraphQLResolverInterface
 		}
 
 		$table = $collection->getTable();
-		$isHasOne = $relation instanceof HasOneRelation;
+		$isSingle = $relation->getCardinality() === 'single';
 
-		$entityKey = $collectionName . ':' . $innerKey;
+		$entityKey = $collectionName . ':' . $outerKey;
 
-		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $innerKey, $isHasOne) {
+		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $outerKey, $isSingle) {
 			$placeholders = implode(', ', array_fill(0, count($batchKeys), '?'));
 			$flatKeys = [];
 			foreach ($batchKeys as $keySet) {
@@ -248,8 +248,8 @@ class SqlResolver implements GraphQLResolverInterface
 			}
 
 			$quotedTable = $this->quoteIdentifier($table);
-			$quotedInnerKey = $this->quoteIdentifier($innerKey);
-			$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedInnerKey} IN ({$placeholders})";
+			$quotedOuterKey = $this->quoteIdentifier($outerKey);
+			$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedOuterKey} IN ({$placeholders})";
 			$stmt = $this->database->getConnection()->prepare($sql);
 			$stmt->execute($flatKeys);
 
@@ -257,7 +257,7 @@ class SqlResolver implements GraphQLResolverInterface
 
 			$grouped = [];
 			foreach ($allResults as $row) {
-				$key = $row->{$innerKey} ?? null;
+				$key = $row->{$outerKey} ?? null;
 				if ($key !== null) {
 					$grouped[$key][] = $row;
 				}
@@ -266,7 +266,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$results = [];
 			foreach ($flatKeys as $i => $keyValue) {
 				$rows = $grouped[$keyValue] ?? [];
-				if ($isHasOne) {
+				if ($isSingle) {
 					$results[$i] = $rows[0] ?? null;
 				} else {
 					$results[$i] = $rows;

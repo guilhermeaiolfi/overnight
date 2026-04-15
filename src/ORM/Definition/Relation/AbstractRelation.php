@@ -169,6 +169,16 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->loader;
 	}
 
+	public function getCardinality(): string
+	{
+		return 'single';
+	}
+
+	public function isJunction(): bool
+	{
+		return false;
+	}
+
 	public function end(): CollectionInterface
 	{
 		return $this->parent;

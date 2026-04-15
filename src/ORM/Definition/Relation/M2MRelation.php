@@ -14,6 +14,16 @@ class M2MRelation extends AbstractRelation
 
 	protected ?string $loader = ManyToManyLoader::class;
 
+	public function getCardinality(): string
+	{
+		return 'many';
+	}
+
+	public function isJunction(): bool
+	{
+		return true;
+	}
+
 	public function through(string $collection): M2MThrough
 	{
 		$this->through = new M2MThrough($this);

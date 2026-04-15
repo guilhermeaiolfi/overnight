@@ -18,8 +18,6 @@ use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Somnambulist\Components\Validation\Factory as ValidationFactory;
@@ -142,9 +140,9 @@ class GraphQLRegistryGenerator
 			$this->types[$targetType] = $targetTypeObj;
 		}
 
-		if ($relation instanceof HasOneRelation) {
+		if ($relation->getCardinality() === 'single') {
 			$type = $targetTypeObj;
-		} elseif ($relation instanceof HasManyRelation) {
+		} elseif ($relation->getCardinality() === 'many') {
 			$type = Type::listOf($targetTypeObj);
 		} else {
 			$type = Type::string();
@@ -160,13 +158,13 @@ class GraphQLRegistryGenerator
 					if ($this->resolver !== null) {
 						return $this->resolver->resolveRelation($source, $relation);
 					}
-					// Fallback: property access
-					$property = $relation->getInnerKey();
+					// Fallback: property access using relation name
+					$property = $relation->getName();
 					$value = $source->{$property} ?? null;
-					if ($relation instanceof HasOneRelation) {
+					if ($relation->getCardinality() === 'single') {
 						return is_array($value) ? ($value[0] ?? null) : $value;
 					}
-					if ($relation instanceof HasManyRelation && is_array($value)) {
+					if ($relation->getCardinality() === 'many' && is_array($value)) {
 						return $value;
 					}
 					return $value;
@@ -366,9 +364,9 @@ class GraphQLRegistryGenerator
 				// Build a nested input type for the target collection (without its own relations to avoid infinite recursion)
 				$nestedInputType = $this->buildNestedInputType($targetCollection);
 
-				if ($relation instanceof HasManyRelation) {
+				if ($relation->getCardinality() === 'many') {
 					$fields[$relationName] = ['type' => Type::listOf($nestedInputType)];
-				} elseif ($relation instanceof HasOneRelation) {
+				} else {
 					$fields[$relationName] = ['type' => $nestedInputType];
 				}
 			}

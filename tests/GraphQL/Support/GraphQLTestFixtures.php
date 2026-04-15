@@ -37,8 +37,8 @@ trait GraphQLTestFixtures
 		$userCollection->field('name', 'string')->type('string')->nullable(true)->end();
 		$userCollection->relation('posts', HasManyRelation::class)
 			->collection('post')
-			->innerKey('user_id')
-			->outerKey('id')
+			->innerKey('id')
+			->outerKey('user_id')
 			->end();
 	}
 
@@ -58,8 +58,8 @@ trait GraphQLTestFixtures
 		$postCollection->field('status', 'string')->type('string')->nullable(true)->end();
 		$postCollection->relation('comments', HasManyRelation::class)
 			->collection('comment')
-			->innerKey('post_id')
-			->outerKey('id')
+			->innerKey('id')
+			->outerKey('post_id')
 			->end();
 
 		$userCollection = $registry->collection('user');
@@ -68,8 +68,8 @@ trait GraphQLTestFixtures
 		$userCollection->field('email', 'string')->type('string')->nullable(true)->end();
 		$userCollection->relation('posts', HasManyRelation::class)
 			->collection('post')
-			->innerKey('user_id')
-			->outerKey('id')
+			->innerKey('id')
+			->outerKey('user_id')
 			->end();
 	}
 

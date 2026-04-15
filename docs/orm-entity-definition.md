@@ -142,6 +142,24 @@ The `field()` method accepts an optional type as the second argument:
 
 ## Relation Definition
 
+### Key Convention (Cycle ORM)
+
+All relations follow the Cycle ORM key convention:
+
+- **`innerKey`** — the key column on the **source** entity (the one defining the relation)
+- **`outerKey`** — the key column on the **target** entity (the related entity)
+
+Think of it from the perspective of the entity you're writing the definition on:
+- "inner" = my table (the source)
+- "outer" = the other table (the target)
+
+| Relation | Source | Target | innerKey (source column) | outerKey (target column) |
+|----------|--------|--------|--------------------------|--------------------------|
+| User hasMany posts | `user` | `post` | `id` | `user_id` |
+| Post belongsTo user | `post` | `user` | `user_id` | `id` |
+| User hasOne profile | `user` | `profile` | `id` | `user_id` |
+| Post M2M tags | `post` | `tag` | `id` | `id` (via pivot) |
+
 ### Convenience Relation Methods
 
 The `Collection` class provides shorthand methods for defining relations without importing relation classes:
@@ -161,47 +179,58 @@ Each method takes the relation name and target collection name, and returns the 
 
 ### HasMany
 
+A user has many posts. The FK (`user_id`) lives on the **target** (post), so it's the `outerKey`:
+
 ```php
 $registry->collection("user")
     ->hasMany("posts", "post")
         ->load('eager')           // load strategy: 'lazy' or 'eager'
         ->cascade(true)           // cascade operations
-        ->innerKey('user_id')     // inner key (this side)
-        ->outerKey('id')          // outer key (target side)
+        ->innerKey('id')          // source key: user.id
+        ->outerKey('user_id')     // target key: post.user_id
         ->end();
 ```
 
 ### HasOne
+
+A user has one profile. The FK (`user_id`) lives on the **target** (profile), so it's the `outerKey`:
 
 ```php
 $registry->collection("user")
     ->hasOne("profile", "profile")
         ->nullable(true)
         ->cascade(true)
-        ->innerKey('user_id')
-        ->outerKey('id')
+        ->innerKey('id')          // source key: user.id
+        ->outerKey('user_id')     // target key: profile.user_id
         ->end();
 ```
 
 ### BelongsTo
 
+A post belongs to a user. The FK (`user_id`) lives on the **source** (post), so it's the `innerKey`:
+
 ```php
 $registry->collection("post")
     ->belongsTo("author", "user")
         ->nullable(true)
-        ->innerKey('user_id')
-        ->outerKey('id')
+        ->innerKey('user_id')     // source key: post.user_id
+        ->outerKey('id')          // target key: user.id
         ->end();
 ```
 
 ### ManyToMany (M2M)
 
+A post has many tags through a pivot table. The `through()` defines the junction table with its own inner/outer keys:
+
 ```php
 $registry->collection("post")
     ->manyToMany("tags", "tag")
-        ->through("post_tags")    // pivot table
-        ->innerKey('post_id')
-        ->outerKey('tag_id')
+        ->innerKey('id')              // source key: post.id
+        ->outerKey('id')              // target key: tag.id
+        ->through("post_tags")        // pivot table
+            ->innerKey('post_id')     // pivot FK to source: post_tags.post_id
+            ->outerKey('tag_id')      // pivot FK to target: post_tags.tag_id
+            ->end()
         ->end();
 ```
 
@@ -212,9 +241,11 @@ $registry->collection("post")
 | `load(string)` | Load strategy (`lazy` or `eager`) | `"lazy"` |
 | `cascade(bool)` | Cascade operations | `true` |
 | `nullable(bool)` | Allow nullable relation | `false` |
-| `innerKey(string)` | Key on the source side | Generated |
-| `outerKey(string)` | Key on the target side | Generated |
-| `exclusive(bool)` | Exclusive relation | `false` |
+| `innerKey(string)` | Key column on the **source** entity (the one defining the relation) | Generated |
+| `outerKey(string)` | Key column on the **target** entity (the related entity) | Generated |
+| `exclusive(bool)` | Exclusive relation (HasOne only) | `false` |
+| `getCardinality()` | Returns `'single'` or `'many'` | Varies by type |
+| `isJunction()` | Whether this is a M2M pivot relation | `false` |
 
 ---
 
@@ -349,9 +380,11 @@ $registry->collection("user")
     
     // Relations
     ->hasMany("posts", "post")
+        ->innerKey('id')->outerKey('user_id')
         ->cascade(true)->load('lazy')->end()
         ->end()
     ->hasOne("profile", "profile")
+        ->innerKey('id')->outerKey('user_id')
         ->nullable(true)->cascade(true)->end()
         ->end()
     
@@ -394,7 +427,7 @@ use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\SqlResolver;
 
 $resolver = new SqlResolver($ormRegistry, $database);
-$graphqlGenerator = new GraphQLRegistryGenerator($ormRegistry, $container, $resolver);
+$graphqlGenerator = new GraphQLRegistryGenerator($ormRegistry, $resolver);
 $graphqlSchema = $graphqlGenerator->generate();
 ```
 
