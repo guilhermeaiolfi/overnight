@@ -123,7 +123,10 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$config = $this->app->config->get(DatabaseConfig::class);
 
 		if ($database->getName() == $config->get("default")) {
-			$database->getConnection()->setEventDispatcher($this->app->container->get(EventDispatcherInterface::class));
+			// Set the event dispatcher on LoggingPDOStatement for query logging
+			\ON\DB\DebugPDO\LoggingPDOStatement::setDispatcher(
+				$this->app->container->get(EventDispatcherInterface::class)
+			);
 		}
 	}
 
