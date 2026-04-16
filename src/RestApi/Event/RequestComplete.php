@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 
-class RequestComplete implements HasEventName
+class RequestComplete implements HasEventNameInterface
 {
 	public function __construct(
 		protected mixed $data

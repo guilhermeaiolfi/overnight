@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Event;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 
-class QueryComplete implements HasEventName
+class QueryComplete implements HasEventNameInterface
 {
 	public function __construct(
 		protected array $result

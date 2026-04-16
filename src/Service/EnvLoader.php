@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\Service;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 use Symfony\Component\Dotenv\Dotenv;
 
-class EnvLoader implements HasEventName
+class EnvLoader implements HasEventNameInterface
 {
 	public function __invoke()
 	{

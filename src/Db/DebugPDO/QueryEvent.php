@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\DB\DebugPDO;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 
-class QueryEvent implements HasEventName
+class QueryEvent implements HasEventNameInterface
 {
 	public function __construct(
 		private string $name,

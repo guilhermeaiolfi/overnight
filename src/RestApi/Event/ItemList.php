@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 
-class ItemList implements HasEventName, PreventableEventInterface
+class ItemList implements HasEventNameInterface, PreventableEventInterface
 {
 	private bool $defaultPrevented = false;
 	private ?array $result = null;

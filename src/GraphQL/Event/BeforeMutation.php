@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Event;
 
-use League\Event\HasEventName;
+use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\Collection;
 
-class BeforeMutation implements HasEventName
+class BeforeMutation implements HasEventNameInterface
 {
 	public function __construct(
 		protected Collection $collection,
