@@ -88,7 +88,7 @@ class SqlFilterParser
 			return null;
 		}
 
-		$quotedField = $this->quoteIdentifier($field);
+		$quotedField = $this->quoteIdentifier($collection->fields->get($field)->getColumn());
 
 		return match ($operator) {
 			'_eq' => $this->comparisonOp($quotedField, '=', $value, $values),

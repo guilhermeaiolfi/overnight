@@ -6,8 +6,6 @@ namespace ON\RestApi;
 
 class RestDataLoader
 {
-	protected array $cache = [];
-
 	/**
 	 * Batch-load related records for a set of parent IDs.
 	 * Returns array keyed by parent ID value.
@@ -29,11 +27,6 @@ class RestDataLoader
 	): array {
 		if (empty($parentIds)) {
 			return [];
-		}
-
-		$cacheKey = $table . ':' . $foreignKey . ':' . implode(',', $parentIds);
-		if (isset($this->cache[$cacheKey])) {
-			return $this->cache[$cacheKey];
 		}
 
 		$sanitizedTable = $this->quoteIdentifier($table);
@@ -79,14 +72,11 @@ class RestDataLoader
 			}
 		}
 
-		$this->cache[$cacheKey] = $grouped;
-
 		return $grouped;
 	}
 
 	public function clear(): void
 	{
-		$this->cache = [];
 	}
 
 	protected function quoteIdentifier(string $identifier): string

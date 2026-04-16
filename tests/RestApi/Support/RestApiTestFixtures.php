@@ -51,6 +51,14 @@ trait RestApiTestFixtures
 			->end();
 	}
 
+	protected function createProfileCollection(Registry $registry): void
+	{
+		$registry->collection('profile')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('displayName', 'string')->type('string')->column('display_name')->nullable(true)->end()
+			->end();
+	}
+
 	protected function createFullSchema(Registry $registry): void
 	{
 		// Create tag collection first (no relations)
@@ -199,6 +207,22 @@ trait RestApiTestFixtures
 					['post_id' => 1, 'tag_id' => 2],
 					['post_id' => 3, 'tag_id' => 2],
 					['post_id' => 3, 'tag_id' => 3],
+				],
+			],
+		]);
+	}
+
+	protected function createProfileDatabase(): SqliteTestDatabase
+	{
+		return new SqliteTestDatabase([
+			'profile' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'display_name' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'display_name' => 'Alice'],
+					['id' => 2, 'display_name' => 'Bob'],
 				],
 			],
 		]);

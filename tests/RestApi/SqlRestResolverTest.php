@@ -200,6 +200,67 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayHasKey('body', $phpTips['comments'][0]);
 	}
 
+	public function testBelongsToRelationLoadsWithoutReturningUnrequestedForeignKey(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('post'), [
+			'fields' => [
+				'columns' => ['id', 'title'],
+				'relations' => [
+					'author' => ['columns' => ['id', 'name'], 'relations' => []],
+				],
+			],
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$item = $result['items'][0];
+		$this->assertArrayNotHasKey('user_id', $item);
+		$this->assertArrayHasKey('author', $item);
+		$this->assertSame('John', $item['author']['name']);
+	}
+
+	public function testRepeatedRelationLoadsCanUseDifferentFieldSelections(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$resolver->list($registry->getCollection('post'), [
+			'fields' => [
+				'columns' => ['id', 'title'],
+				'relations' => [
+					'comments' => ['columns' => ['id'], 'relations' => []],
+				],
+			],
+		]);
+
+		$result = $resolver->list($registry->getCollection('post'), [
+			'fields' => [
+				'columns' => ['id', 'title'],
+				'relations' => [
+					'comments' => ['columns' => ['id', 'body'], 'relations' => []],
+				],
+			],
+		]);
+
+		$phpTips = null;
+		foreach ($result['items'] as $item) {
+			if ($item['title'] === 'PHP Tips') {
+				$phpTips = $item;
+				break;
+			}
+		}
+
+		$this->assertNotNull($phpTips);
+		$this->assertArrayHasKey('body', $phpTips['comments'][0]);
+		$this->assertArrayNotHasKey('post_id', $phpTips['comments'][0]);
+	}
+
 	public function testListWithMeta(): void
 	{
 		$registry = new Registry();
@@ -272,6 +333,37 @@ final class SqlRestResolverTest extends TestCase
 		$fetched = $resolver->get($registry->getCollection('user'), (string) $created['id']);
 		$this->assertNotNull($fetched);
 		$this->assertSame('Alice', $fetched['name']);
+	}
+
+	public function testFilterCreateAndUpdateUseMappedColumns(): void
+	{
+		$registry = new Registry();
+		$this->createProfileCollection($registry);
+		$db = $this->createProfileDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$collection = $registry->getCollection('profile');
+
+		$filtered = $resolver->list($collection, [
+			'filter' => ['displayName' => ['_eq' => 'Alice']],
+		]);
+
+		$this->assertCount(1, $filtered['items']);
+		$this->assertSame('Alice', $filtered['items'][0]['display_name']);
+
+		$created = $resolver->create($collection, [
+			'displayName' => 'Charlie',
+		]);
+
+		$this->assertSame('Charlie', $created['display_name']);
+
+		$updated = $resolver->update($collection, (string) $created['id'], [
+			'displayName' => 'Charles',
+		]);
+
+		$this->assertSame('Charles', $updated['display_name']);
+		$stmt = $db->getConnection()->prepare('SELECT display_name FROM profile WHERE id = ?');
+		$stmt->execute([$created['id']]);
+		$this->assertSame('Charles', $stmt->fetchColumn());
 	}
 
 	// -------------------------------------------------------------------------

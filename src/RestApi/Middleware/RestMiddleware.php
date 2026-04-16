@@ -144,6 +144,8 @@ class RestMiddleware implements MiddlewareInterface
 		$event = new ItemList($collection, $params);
 		$this->dispatchEvent($event);
 
+		$result = ['meta' => []];
+
 		if (!$event->isDefaultPrevented()) {
 			$result = $this->resolver->list($collection, $params);
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
