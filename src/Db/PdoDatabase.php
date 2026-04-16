@@ -22,7 +22,12 @@ class PdoDatabase implements DatabaseInterface
 		$dsn = ! empty($parameters["dsn"]) ? $parameters["dsn"] : null;
 		$username = ! empty($parameters["username"]) ? $parameters["username"] : null;
 		$password = ! empty($parameters["password"]) ? $parameters["password"] : null;
-		$options = ! empty($parameters["options"]) ? $parameters["options"] : null;
+		$options = ! empty($parameters["options"]) ? $parameters["options"] : [];
+
+		// Persistent connections
+		if (!empty($parameters["persistent"])) {
+			$options[\PDO::ATTR_PERSISTENT] = true;
+		}
 
 		try {
 			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);

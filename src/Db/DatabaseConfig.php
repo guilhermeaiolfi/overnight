@@ -19,7 +19,9 @@ class DatabaseConfig extends Config
 		?string $password = "",
 		?string $class = PdoDatabase::class,
 		?string $wrapper_class = null,
-		?array $options = []
+		?array $options = [],
+		bool $persistent = false,
+		bool $debug = false
 	) {
 		$this->set("databases.{$name}", [
 			"dsn" => $dsn,
@@ -29,6 +31,8 @@ class DatabaseConfig extends Config
 			"class" => $class,
 			"wrapper_class" => $wrapper_class,
 			"options" => $options,
+			"persistent" => $persistent,
+			"debug" => $debug,
 		]);
 
 		if (! $this->get('default')) {

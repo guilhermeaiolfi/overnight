@@ -172,10 +172,13 @@ class Application
 		if (! class_exists($extension_class)) {
 			throw new Exception("Class {$extension_class} not found when loading as extension");
 		}
-		$interfaces = class_implements($extension_class);
 
-		if (! isset($interfaces['ON\Extension\ExtensionInterface'])) {
-			throw new Exception("Extensions must implement \ON\Extension\ExtensionInterface.");
+		if ($this->isDebug()) {
+			$interfaces = class_implements($extension_class);
+
+			if (! isset($interfaces['ON\Extension\ExtensionInterface'])) {
+				throw new Exception("Extensions must implement \ON\Extension\ExtensionInterface.");
+			}
 		}
 
 		$instance = $extension_class::install($this, $extension_options);
