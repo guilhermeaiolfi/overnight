@@ -64,7 +64,7 @@ use ON\Config\AppConfig;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Discovery\DiscoveryLocation;
 use ON\Discovery\CacheAdapter\TimestampCacheAdapter;
-use ON\Discovery\CacheAdapter\AgressiveCacheAdapter;
+use ON\Discovery\CacheAdapter\AggressiveCacheAdapter;
 use ON\Discovery\CacheAdapter\NeverCacheAdapter;
 
 return [
@@ -81,7 +81,7 @@ return [
                 new DiscoveryLocation(
                     name: 'vendor',
                     pattern: ['vendor/my-package/src/Pages'],
-                    strategy: AgressiveCacheAdapter::class
+                    strategy: AggressiveCacheAdapter::class
                 ),
             ],
 
@@ -123,7 +123,7 @@ new DiscoveryLocation(
 | `pattern` | array | Directory paths to scan (passed to Symfony Finder's `in()`) |
 | `strategy` | string | Cache adapter class name |
 
-You can define multiple locations with different cache strategies. For example, your app code uses `TimestampCacheAdapter` (re-scans changed files), while vendor code uses `AgressiveCacheAdapter` (scan once, cache forever).
+You can define multiple locations with different cache strategies. For example, your app code uses `TimestampCacheAdapter` (re-scans changed files), while vendor code uses `AggressiveCacheAdapter` (scan once, cache forever).
 
 ---
 
@@ -143,12 +143,12 @@ strategy: TimestampCacheAdapter::class
 - Subsequent runs: only scans files modified after the cache timestamp
 - Cache is invalidated per-file, not globally
 
-### AgressiveCacheAdapter (Recommended for vendor/production)
+### AggressiveCacheAdapter (Recommended for vendor/production)
 
 Scans once and caches forever. Never re-scans unless the cache is manually cleared.
 
 ```php
-strategy: AgressiveCacheAdapter::class
+strategy: AggressiveCacheAdapter::class
 ```
 
 - First run: scans all files, creates cache
