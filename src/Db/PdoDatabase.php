@@ -27,8 +27,16 @@ class PdoDatabase implements DatabaseInterface
 		try {
 			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
 
-			if ($parameters["wrapper_class"] && class_exists($parameters["wrapper_class"])) {
+			if (!empty($parameters["wrapper_class"]) && class_exists($parameters["wrapper_class"])) {
 				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
+			}
+
+			// Enable query logging via LoggingPDOStatement when debug is on
+			if (!empty($parameters["debug"])) {
+				$this->connection->setAttribute(
+					PDO::ATTR_STATEMENT_CLASS,
+					[DebugPDO\LoggingPDOStatement::class, []]
+				);
 			}
 
 			// default connection attributes
