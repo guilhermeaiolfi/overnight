@@ -10,12 +10,13 @@ use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 
 class CacheExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -46,7 +47,7 @@ class CacheExtension extends AbstractExtension
 				AdapterInterface::class => FilesystemAdapter::class,
 			]);*/
 
-			$this->setState('ready');
+			$this->dispatchStateChange('ready');
 		});
 	}
 

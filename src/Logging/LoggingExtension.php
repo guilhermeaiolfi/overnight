@@ -7,6 +7,7 @@ namespace ON\Logging;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Logging\Command\MonitorLogsCommand;
 use ON\Logging\Container\LoggerFactory;
 use Psr\Log\LoggerInterface;
@@ -26,7 +27,7 @@ class LoggingExtension extends AbstractExtension
 		$this->app = $app;
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('translation', $extension);
@@ -42,7 +43,7 @@ class LoggingExtension extends AbstractExtension
 				LoggerInterface::class => LoggerFactory::class,
 			]);
 
-			$this->setState('ready');
+			$this->dispatchStateChange('ready');
 		});
 
 		$this->app->ext('config')->when('setup', function () {

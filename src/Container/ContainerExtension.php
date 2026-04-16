@@ -17,6 +17,7 @@ use ON\Application;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use Psr\Container\ContainerInterface;
 use function rtrim;
 
@@ -37,7 +38,7 @@ class ContainerExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('container', $extension);
@@ -45,14 +46,13 @@ class ContainerExtension extends AbstractExtension
 		return $extension;
 	}
 
-	public function setup(): void
+	public function boot(): void
 	{
-		if (! $this->app->ext('config')->isReady()) {
-			// that way we don't need to rely on any event.
-			$this->nextTick([$this, 'setup']);
+		$this->app->ext('config')->when('ready', [$this, 'buildContainer']);
+	}
 
-			return;
-		}
+	public function buildContainer(): void
+	{
 
 		/** @var ConfigExtension $config_ext */
 		$config_ext = $this->app->config;
@@ -68,7 +68,11 @@ class ContainerExtension extends AbstractExtension
 		// we need to set it to the container in case other places need the instance of Application
 		$this->container->set(get_class($this->app), $this->app);
 
-		$this->setState('ready');
+		// let's open the window for extension to register what they want
+		$this->dispatchStateChange('setup');
+
+		// finally we can say it's ready
+		$this->dispatchStateChange('ready');
 	}
 
 	public function hasCache()

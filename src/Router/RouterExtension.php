@@ -9,6 +9,7 @@ use ON\Config\AppConfig;
 use ON\Container\ContainerConfig;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Router\Attribute\RouteAttributeProcessor;
 use ON\Router\Container\RouteMiddlewareFactory;
 use ON\Router\Middleware\RouteMiddleware;
@@ -31,7 +32,7 @@ class RouterExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -50,6 +51,7 @@ class RouterExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
 		$this->app->ext('container')->when('setup', [$this, 'onContainerSetup']);
 		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
 		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
@@ -58,6 +60,8 @@ class RouterExtension extends AbstractExtension
 
 	public function setup(): void
 	{
+		$this->dispatchStateChange('setup');
+
 		$this->app->registerMethod("get", [$this, 'get']);
 		$this->app->registerMethod("put", [$this, 'put']);
 		$this->app->registerMethod("patch", [$this, 'patch']);
@@ -92,7 +96,7 @@ class RouterExtension extends AbstractExtension
 		$this->app->router = $this;
 		$this->config = $container->get(RouterConfig::class);
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	protected function loadRoutes(string $file)

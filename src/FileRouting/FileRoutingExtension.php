@@ -6,6 +6,7 @@ namespace ON\FileRouting;
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Router\RouterConfig;
 
 class FileRoutingExtension extends AbstractExtension
@@ -17,7 +18,7 @@ class FileRoutingExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app);
 		$app->registerExtension('app', $extension);
@@ -27,6 +28,7 @@ class FileRoutingExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
 		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
 	}
 
@@ -47,6 +49,6 @@ class FileRoutingExtension extends AbstractExtension
 		// 101 because it should run just before the RouteMiddleware (100)
 		$this->app->pipe("/", FileRoutingMiddleware::class, 101);
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 }

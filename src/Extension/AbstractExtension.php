@@ -22,8 +22,6 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	protected array $__when = [];
 
-	protected mixed $__nextTick = null;
-
 	protected int $type = self::TYPE_MODULE;
 
 	public function getType(): int
@@ -41,34 +39,22 @@ abstract class AbstractExtension implements ExtensionInterface
 		return static::NAMESPACE;
 	}
 
-	public function setState(string $state): self
+	public function getState(): string
+	{
+		return $this->__currentState;
+	}
+
+	public function dispatchStateChange(string $state, mixed $data = null): self
 	{
 		$this->__stateHistory[] = $this->__currentState;
 		$this->__currentState = $state;
 		if (isset($this->__when[$state])) {
 			foreach ($this->__when[$state] as $callback) {
-				$callback($this);
+				$callback($this, $data);
 			}
 		}
 
 		return $this;
-	}
-
-	public function clearNextTick(): void
-	{
-		$this->__nextTick = null;
-	}
-
-	public function nextTick(callable $callback): self
-	{
-		$this->__nextTick = $callback;
-
-		return $this;
-	}
-
-	public function getNextTick(): ?callable
-	{
-		return $this->__nextTick;
 	}
 
 	public function when(string $state, callable $callback): self
@@ -77,7 +63,7 @@ abstract class AbstractExtension implements ExtensionInterface
 		$this->__when[$state][] = $callback;
 
 		if ($this->__currentState == $state || in_array($state, $this->__stateHistory)) {
-			$callback($this);
+			$callback($this, null);
 		}
 
 		return $this;
@@ -95,5 +81,10 @@ abstract class AbstractExtension implements ExtensionInterface
 	public function boot(): void
 	{
 
+	}
+
+	public function getHooks(): array
+	{
+		return [];
 	}
 }

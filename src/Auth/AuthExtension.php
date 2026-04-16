@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use Laminas\Session\ManagerInterface as LaminasManagerInterface;
 use ON\Application;
 use ON\Auth\Authenticator\DummyAuthenticator;
 use ON\Auth\Container\AuthenticationServiceFactory;
@@ -14,11 +13,11 @@ use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
-use ON\Session\Container\LaminasSessionManagerFactory;
+use ON\Extension\ExtensionInterface;
 
 class AuthExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -60,7 +59,7 @@ class AuthExtension extends AbstractExtension
 
 		$this->app->ext('pipeline')->when('ready', [$this, "onPipelineReady"]);
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onPipelineReady(): void
@@ -69,7 +68,7 @@ class AuthExtension extends AbstractExtension
 
 		$this->app->pipe("/", AuthorizationMiddleware::class, 1);
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function setup(): void

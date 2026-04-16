@@ -13,10 +13,11 @@ use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class DatabaseExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -31,6 +32,8 @@ class DatabaseExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		if ($this->app->isCli()) {
 			$this->app->ext('console')->when('ready', function ($console) {
 				$console->addCommand(MigrateCommand::class);
@@ -47,7 +50,7 @@ class DatabaseExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onContainerConfig(): void

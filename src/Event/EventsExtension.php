@@ -12,6 +12,7 @@ use ON\Discovery\AttributesDiscoverer;
 use ON\Event\Attribute\EventHandlerAttributeProcessor;
 use ON\Event\Event\ReadyEvent;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class EventsExtension extends AbstractExtension
@@ -32,7 +33,7 @@ class EventsExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		// we can't use the container since it may not be started yet
 		$extension = new self($app, $options);
@@ -44,6 +45,8 @@ class EventsExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		if ($this->app->hasExtension('container')) {
 			$this->app->ext('container')->when("ready", [ $this, 'onContainerReady' ]);
 			$this->app->ext('config')->when("setup", [ $this, 'onConfigSetup' ]);
@@ -64,7 +67,7 @@ class EventsExtension extends AbstractExtension
 		// register events for extensions
 		$this->registerEventSubscribersForExtensions();
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 
 	}
 

@@ -8,6 +8,7 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -23,7 +24,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -34,6 +35,8 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		$this->app->ext("config")->when('setup', function () {
 			$appCfg = $this->app->config->get(AppConfig::class);
 			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
@@ -59,7 +62,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 	public function setup(): void
 	{
 		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function injectMiddleware(): void

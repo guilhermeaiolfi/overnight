@@ -7,6 +7,7 @@ namespace ON\Discovery;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class DiscoveryExtension extends AbstractExtension
 {
@@ -32,12 +33,14 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('setup', [$this, 'setup']);
 		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
 	}
 
 	public function onContainerReady(): void
 	{
 		$this->cache = $this->app->container->get(DiscoveryCache::class);
+		$this->dispatchStateChange('setup');
 	}
 
 	public function get(string $className): ?DiscoverInterface
@@ -50,7 +53,7 @@ class DiscoveryExtension extends AbstractExtension
 		return isset($this->discovers[$className]);
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -63,12 +66,6 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		if (! $this->app->ext('config')->isReady() || ! isset($this->cache)) {
-			$this->nextTick([$this, 'setup']);
-
-			return;
-		}
-
 		$this->appCfg = $this->app->config->get(AppConfig::class);
 
 		$discoverClassnames = array_keys($this->appCfg->get('discovery.discoverers', []));
@@ -98,7 +95,7 @@ class DiscoveryExtension extends AbstractExtension
 
 
 		// we are now fully ready
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function clear(null|string|DiscoveryLocation $location = null): void

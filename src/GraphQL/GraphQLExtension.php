@@ -9,6 +9,7 @@ use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\DB\PdoDatabase;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
@@ -19,7 +20,7 @@ use ON\RateLimit\RateLimiterInterface;
 
 class GraphQLExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('graphql', $extension);
@@ -47,7 +48,7 @@ class GraphQLExtension extends AbstractExtension
 		}
 
 		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onPipelineReady(): void

@@ -9,6 +9,7 @@ use Exception;
 use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ReflectionFunction;
 
 class ConfigExtension extends AbstractExtension
@@ -30,7 +31,7 @@ class ConfigExtension extends AbstractExtension
 		}
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('config', $extension);
@@ -38,6 +39,11 @@ class ConfigExtension extends AbstractExtension
 		$app->config = $extension;
 
 		return $extension;
+	}
+
+	public function boot(): void
+	{
+		$this->when('installed', [$this, 'setup']);
 	}
 
 	public function has(string $className): bool
@@ -65,6 +71,8 @@ class ConfigExtension extends AbstractExtension
 
 	public function setup(): void
 	{
+		$this->dispatchStateChange('setup');
+
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
 		foreach ($files as $file) {
 			$obj = include_once($file);
@@ -106,6 +114,6 @@ class ConfigExtension extends AbstractExtension
 			}
 		}
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 }

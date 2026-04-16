@@ -9,6 +9,7 @@ use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\DB\PdoDatabase;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
@@ -21,7 +22,7 @@ use ON\RestApi\Resolver\SqlRestResolver;
 
 class RestApiExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('restapi', $extension);
@@ -49,7 +50,7 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onPipelineReady(): void

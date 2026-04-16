@@ -9,11 +9,12 @@ use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Router\RouterExtension;
 
 class CMSExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -28,6 +29,8 @@ class CMSExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		if ($this->app->isCli()) {
 			$this->app->ext('console')->when('ready', function ($console) {
 			});
@@ -43,7 +46,7 @@ class CMSExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onRouterSetup(RouterExtension $router): void

@@ -8,10 +8,11 @@ use ON\Application;
 use ON\Cache\CacheInterface;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class RateLimitExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('ratelimit', $extension);
@@ -50,7 +51,7 @@ class RateLimitExtension extends AbstractExtension
 			]);
 		});
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function setup(): void

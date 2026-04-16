@@ -7,6 +7,7 @@ namespace ON\View\Latte;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class LatteExtension extends AbstractExtension
 {
@@ -16,10 +17,10 @@ class LatteExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		if (php_sapi_name() == 'cli') {
-			return false;
+			return null;
 		}
 
 		$extension = new self($app, $options);
@@ -43,6 +44,6 @@ class LatteExtension extends AbstractExtension
 			]);
 		});
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 }

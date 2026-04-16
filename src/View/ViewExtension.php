@@ -8,6 +8,7 @@ use League\Plates\Engine;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
 
@@ -20,10 +21,10 @@ class ViewExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		if (php_sapi_name() == 'cli') {
-			return false;
+			return null;
 		}
 		$class = self::class;
 		$extension = new $class($app, $options);
@@ -35,6 +36,8 @@ class ViewExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		$this->app->ext('pipeline')->when('ready', function () {
 			$this->injectMiddleware();
 		});
@@ -51,7 +54,7 @@ class ViewExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function injectMiddleware(): void

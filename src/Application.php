@@ -20,8 +20,6 @@ class Application
 
 	protected array $extensions = [];
 
-	protected array $setupingExtensions = [];
-
 	protected array $__methods = [];
 
 	protected array $__properties = [];
@@ -136,10 +134,19 @@ class Application
 
 	protected function loadExtensions()
 	{
-		$this->setupingExtensions = [];
 		foreach ($this->extensionsToInstall as $ext_class => $ext_options) {
-			if ($this->install($ext_class, $ext_options)) {
-				$this->setupingExtensions[] = $ext_class;
+			$instance = $this->install($ext_class, $ext_options);
+			if ($instance != null) {
+				$instance->dispatchStateChange('installed');
+			}
+		}
+
+		foreach ($this->extensions as $ext_class => $ext_instance) {
+			foreach ($ext_instance->getHooks() as $hook => $method) {
+				[$targetExt, $event] = explode(':', $hook, 2);
+				if ($this->hasExtension($targetExt)) {
+					$this->getExtension($targetExt)->when($event, [$ext_instance, $method]);
+				}
 			}
 		}
 
@@ -154,37 +161,12 @@ class Application
 					}
 				}
 			}
+
 			$ext_instance->boot();
-		}
-
-		$nextTickQueue = [];
-		while ($ext_class = array_shift($this->setupingExtensions)) {
-			$ext_instance = $this->extensions[$ext_class];
-
-			if ($ext_instance) {
-				$ext_instance->setState('setup');
-				$ext_instance->setup();
-				if ($ext_instance->getNextTick()) {
-					$nextTickQueue[] = $ext_class;
-				}
-			}
-		}
-
-		while ($ext_class = array_shift($nextTickQueue)) {
-			$ext_instance = $this->extensions[$ext_class];
-
-			if ($ext_instance) {
-				$nextTick = $ext_instance->getNextTick();
-				$ext_instance->clearNextTick();
-				$nextTick();
-				if ($ext_instance->getNextTick()) {
-					$nextTickQueue[] = $ext_class;
-				}
-			}
 		}
 	}
 
-	public function install(string $extension_class, array $extension_options): mixed
+	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
 	{
 
 		if (! class_exists($extension_class)) {
@@ -200,10 +182,10 @@ class Application
 		if ($instance !== false) {
 			$this->extensions[$extension_class] = $instance;
 
-			return true;
+			return $instance;
 		}
 
-		return false;
+		return null;
 	}
 
 	public function registerExtension(string $name_or_class, ExtensionInterface $instance): void

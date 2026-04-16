@@ -12,6 +12,7 @@ use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use Symfony\Component\Console\Application as ConsoleApplication;
 use Symfony\Component\Console\Command\Command;
 
@@ -25,7 +26,7 @@ class ConsoleExtension extends AbstractExtension
 		ServeCommand::class,
 	];
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -42,8 +43,15 @@ class ConsoleExtension extends AbstractExtension
 	) {
 	}
 
+	public function boot(): void
+	{
+		$this->when('installed', [$this, 'setup']);
+	}
+
 	public function setup(): void
 	{
+		$this->dispatchStateChange("setup");
+		
 		if ($this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
@@ -51,7 +59,7 @@ class ConsoleExtension extends AbstractExtension
 
 		$this->consoleApp = new ConsoleApplication();
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	protected function addOvernightCommand(string $name, string $action, ?string $description = null): void

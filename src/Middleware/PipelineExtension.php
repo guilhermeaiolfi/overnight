@@ -33,6 +33,7 @@ use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Handler\NotFoundHandler;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
@@ -70,7 +71,7 @@ class PipelineExtension extends AbstractExtension
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app);
 		$app->registerExtension('pipeline', $extension);
@@ -156,7 +157,7 @@ class PipelineExtension extends AbstractExtension
 
 		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function registerMiddlewares(): void

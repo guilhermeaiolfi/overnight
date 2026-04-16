@@ -7,6 +7,7 @@ namespace ON\Translation;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class TranslationExtension extends AbstractExtension
 {
@@ -23,7 +24,7 @@ class TranslationExtension extends AbstractExtension
 		$this->app = $app;
 	}
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 		$app->registerExtension('translation', $extension);
@@ -43,7 +44,7 @@ class TranslationExtension extends AbstractExtension
 
 			$translationConfig = $config->get(TranslationConfig::class);
 
-			$this->setState('ready');
+			$this->dispatchStateChange('ready');
 		});
 	}
 

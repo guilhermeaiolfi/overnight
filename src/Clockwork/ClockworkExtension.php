@@ -17,6 +17,7 @@ use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Db\DatabaseConfig;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Router\Router;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
@@ -25,7 +26,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 {
 	protected Clockwork $clockwork;
 
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -68,6 +69,8 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
+
 		// that's the order they happen
 		//$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
 		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
@@ -83,7 +86,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	public function setup(): void
 	{
 		$this->app->pipe("/", ClockworkMiddleware::class, 900);
-		$this->setState("ready");
+		$this->dispatchStateChange("ready");
 	}
 
 	public function onContainerReady(): void

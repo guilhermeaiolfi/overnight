@@ -8,7 +8,7 @@ use ON\Application;
 
 interface ExtensionInterface
 {
-	public static function install(Application $app, ?array $options = []): mixed;
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface;
 
 	public function getType(): int;
 
@@ -19,4 +19,12 @@ interface ExtensionInterface
 	public function requires(): array;
 
 	public function getNamespace(): string;
+
+	public function isReady(): bool;
+
+	public function getState(): string;
+
+	public function dispatchStateChange(string $state, mixed $data = null): self;
+
+	public function getHooks(): array;
 }

@@ -8,13 +8,14 @@ use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 use ON\Image\Container\ImageManagerFactory;
 use ON\Image\Container\InterventionImageManagerFactory;
 use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -29,13 +30,14 @@ class ImageExtension extends AbstractExtension
 
 	public function boot(): void
 	{
+		$this->when('installed', [$this, 'setup']);
 		$this->app->ext('container')->when('setup', [$this, 'onContainerConfig']);
 		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
 	}
 
 	public function setup(): void
 	{
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onContainerConfig(): void

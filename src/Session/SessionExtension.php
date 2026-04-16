@@ -7,10 +7,11 @@ namespace ON\Session;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
+use ON\Extension\ExtensionInterface;
 
 class SessionExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): mixed
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
 	{
 		$extension = new self($app, $options);
 
@@ -41,6 +42,6 @@ class SessionExtension extends AbstractExtension
 			]);
 		});
 
-		$this->setState('ready');
+		$this->dispatchStateChange('ready');
 	}
 }
