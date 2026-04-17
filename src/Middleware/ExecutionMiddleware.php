@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Container\Executor\ExecutorInterface;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use ON\View\ViewBuilderTrait;
 use Psr\Container\ContainerInterface;
@@ -34,36 +33,25 @@ class ExecutionMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$middleware = $routeResult->getMatchedRoute()->getMiddleware();
+		$target = $routeResult->getTargetInstance();
+		$method = $routeResult->getMethod();
 
-		// ActionMiddlewareDecorator: run the page action + view builder
-		if ($middleware instanceof ActionMiddlewareDecorator) {
-			return $this->execute($middleware, $request, $handler);
+		// PSR-15 middleware: call process() directly
+		if ($method === 'process' && $target instanceof MiddlewareInterface) {
+			return $target->process($request, $handler);
 		}
 
-		// Regular PSR-15 middleware: delegate directly
-		if ($middleware instanceof MiddlewareInterface) {
-			return $middleware->process($request, $handler);
-		}
-
-		return $handler->handle($request);
-	}
-
-	protected function execute(ActionMiddlewareDecorator $decorator, ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
-	{
-		$page = $decorator->getPageInstance();
-		$method = $decorator->getMethod();
-
-		$args = $this->resolveRouteParams($page, $method, $request);
+		// Page/controller action: resolve route params, execute, build view
+		$args = $this->resolveRouteParams($target, $method, $request);
 		$args[ServerRequestInterface::class] = $request;
 		$args[RequestHandlerInterface::class] = $handler;
 
-		$actionResponse = $this->executor->execute([$page, $method], $args);
+		$actionResponse = $this->executor->execute([$target, $method], $args);
 
-		return $this->buildView($page, $method, $actionResponse, $request, $handler);
+		return $this->buildView($target, $method, $actionResponse, $request, $handler);
 	}
 
-	protected function resolveRouteParams(object $page, string $method, ServerRequestInterface $request): array
+	protected function resolveRouteParams(object $target, string $method, ServerRequestInterface $request): array
 	{
 		$args = [];
 		$result = $request->getAttribute(RouteResult::class);
@@ -73,7 +61,7 @@ class ExecutionMiddleware implements MiddlewareInterface
 		}
 
 		$routeParams = $result->getMatchedParams();
-		$reflection = new ReflectionMethod($page, $method);
+		$reflection = new ReflectionMethod($target, $method);
 
 		foreach ($reflection->getParameters() as $param) {
 			$paramName = $param->getName();

@@ -8,7 +8,6 @@ use Exception;
 use ON\Action;
 use ON\Application;
 use ON\RequestStack;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -42,10 +41,10 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 
 		$action = null;
 
-		if ($middleware instanceof ActionMiddlewareDecorator && strpos($middleware->middlewareName, "::") !== false) {
-			$action = new Action($middleware->middlewareName);
+		if ($routeResult->hasTargetInstance()) {
+			$action = new Action($routeResult->getMethod());
 
-			$instance = $this->container->get($action->getClassName());
+			$instance = $routeResult->getTargetInstance();
 
 			$action->setPageInstance($instance);
 

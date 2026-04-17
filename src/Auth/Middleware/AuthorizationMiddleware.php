@@ -8,7 +8,6 @@ use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Container\Executor\ExecutorInterface;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -32,15 +31,8 @@ class AuthorizationMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$route = $routeResult->getMatchedRoute();
-		$middleware = $route->getMiddleware();
-
-		if (! $middleware instanceof ActionMiddlewareDecorator) {
-			return $handler->handle($request);
-		}
-
-		$page = $middleware->getPageInstance();
-		$action = $middleware->getMethod();
+		$page = $routeResult->getTargetInstance();
+		$action = $routeResult->getMethod();
 
 		$checkMethod = $this->findCheckPermissionsMethod($page, $action);
 
@@ -69,18 +61,15 @@ class AuthorizationMiddleware implements MiddlewareInterface
 
 	protected function findCheckPermissionsMethod(object $page, string $action): ?string
 	{
-		// Try: {action}Permissions (e.g., checkCreatePermissions)
 		$method = 'check' . ucfirst($action) . 'Permissions';
 		if (method_exists($page, $method)) {
 			return $method;
 		}
 
-		// Try: checkPermissions
 		if (method_exists($page, 'checkPermissions')) {
 			return 'checkPermissions';
 		}
 
-		// Try: defaultCheckPermissions
 		if (method_exists($page, 'defaultCheckPermissions')) {
 			return 'defaultCheckPermissions';
 		}

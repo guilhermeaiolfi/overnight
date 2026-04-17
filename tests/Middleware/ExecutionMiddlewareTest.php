@@ -15,7 +15,6 @@ use ON\Container\Executor\Executor;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use PHPUnit\Framework\TestCase;
@@ -45,17 +44,6 @@ final class ExecutionMiddlewareTest extends TestCase
 		]);
 
 		$this->executor = new Executor($parameterResolver, $this->container);
-
-		$this->container->method('get')
-			->willReturnCallback(function (string $class) {
-				if ($class === ExecutorInterface::class) {
-					return $this->executor;
-				}
-				if ($class === TestPage::class) {
-					return $this->page;
-				}
-				return null;
-			});
 	}
 
 	public function testPassesThroughWhenNoRouteResult(): void
@@ -83,6 +71,8 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$route = new Route('/test', $innerMiddleware);
 		$routeResult = RouteResult::fromRoute($route);
+		$routeResult->setTargetInstance($innerMiddleware);
+		$routeResult->setMethod('process');
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -96,9 +86,10 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testIt');
-		$route = new Route('/test/{id}/{name}', $decorator);
+		$route = new Route('/test/{id}/{name}', 'TestPage::testIt');
 		$routeResult = RouteResult::fromRoute($route, ['id' => '42', 'name' => 'test']);
+		$routeResult->setTargetInstance($this->page);
+		$routeResult->setMethod('testIt');
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -114,9 +105,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testInt');
-		$route = new Route('/test/{id}', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['id' => '123']);
+		$routeResult = $this->createRouteResult('testInt', ['id' => '123']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -132,9 +121,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testFloat');
-		$route = new Route('/test/{price}', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['price' => '19.99']);
+		$routeResult = $this->createRouteResult('testFloat', ['price' => '19.99']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -150,9 +137,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testBool');
-		$route = new Route('/test/{active}', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['active' => '1']);
+		$routeResult = $this->createRouteResult('testBool', ['active' => '1']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -168,9 +153,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testItOptionalParam');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['other' => 'value']);
+		$routeResult = $this->createRouteResult('testItOptionalParam', ['other' => 'value']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -186,9 +169,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testItWithServerRequest');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route, []);
+		$routeResult = $this->createRouteResult('testItWithServerRequest', []);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -203,9 +184,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testItWithBoth');
-		$route = new Route('/test/{id}', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['id' => '100']);
+		$routeResult = $this->createRouteResult('testItWithBoth', ['id' => '100']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -221,9 +200,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$decorator = $this->createDecorator(TestPage::class . '::testItUntyped');
-		$route = new Route('/test/{id}', $decorator);
-		$routeResult = RouteResult::fromRoute($route, ['id' => '456']);
+		$routeResult = $this->createRouteResult('testItUntyped', ['id' => '456']);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -235,8 +212,12 @@ final class ExecutionMiddlewareTest extends TestCase
 		$this->assertSame('string', $this->page->testData['testItUntyped']['type']);
 	}
 
-	protected function createDecorator(string $middlewareName): ActionMiddlewareDecorator
+	protected function createRouteResult(string $method, array $params): RouteResult
 	{
-		return new ActionMiddlewareDecorator($this->container, $middlewareName);
+		$route = new Route('/test', 'TestPage::' . $method);
+		$routeResult = RouteResult::fromRoute($route, $params);
+		$routeResult->setTargetInstance($this->page);
+		$routeResult->setMethod($method);
+		return $routeResult;
 	}
 }

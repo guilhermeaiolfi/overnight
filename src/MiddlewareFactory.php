@@ -14,7 +14,6 @@ use Laminas\Stratigility\Middleware\RequestHandlerMiddleware;
 use Laminas\Stratigility\MiddlewarePipe;
 use ON\Exception\InvalidMiddlewareException;
 use ON\Middleware\LazyLoadingMiddleware;
-use ON\Router\ActionMiddlewareDecorator;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -58,10 +57,6 @@ class MiddlewareFactory implements MiddlewareFactoryInterface
 
 	public function prepare($middleware): MiddlewareInterface
 	{
-		if (is_string($middleware) && strpos($middleware, "::") !== false) {
-			return new ActionMiddlewareDecorator($this->container, $middleware);
-		}
-
 		if ($middleware instanceof MiddlewareInterface) {
 			return $middleware;
 		}

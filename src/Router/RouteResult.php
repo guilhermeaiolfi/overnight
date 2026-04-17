@@ -13,24 +13,15 @@ use Psr\Http\Server\RequestHandlerInterface;
 /**
  * Value object representing the results of routing.
  *
- * RouterInterface::match() is defined as returning a RouteResult instance,
- * which will contain the following state:
+ * Contains:
+ * - Whether routing succeeded or failed
+ * - The matched route, parameters, and route name
+ * - For "ClassName::method" routes: the resolved target instance and method
  *
- * - isSuccess()/isFailure() indicate whether routing succeeded or not.
- * - On success, it will contain:
- *   - the matched route name (typically the path)
- *   - the matched route middleware
- *   - any parameters matched by routing
- * - On failure:
- *   - isMethodFailure() further qualifies a routing failure to indicate that it
- *     was due to using an HTTP method not allowed for the given path.
- *   - If the failure was due to HTTP method negotiation, it will contain the
- *     list of allowed HTTP methods.
- *
- * RouteResult instances are consumed by the Application in the routing
- * middleware.
- *
- * @final
+ * The target instance and method are set by PipelineExtension when it
+ * resolves a "ClassName::method" string from the route definition.
+ * Downstream middleware (Execution, Validation, Security, Authorization)
+ * read these directly — no intermediate decorator needed.
  */
 class RouteResult implements MiddlewareInterface
 {
@@ -54,6 +45,17 @@ class RouteResult implements MiddlewareInterface
 	protected array $values = [];
 
 	/**
+	 * The resolved target instance (page, controller, etc.) for "ClassName::method" routes.
+	 * Null for regular PSR-15 middleware routes.
+	 */
+	private ?object $targetInstance = null;
+
+	/**
+	 * The method to call on the target instance.
+	 */
+	private string $method = 'index';
+
+	/**
 	 * Only allow instantiation via factory methods.
 	 *
 	 * @param bool $success Success state of routing.
@@ -73,7 +75,7 @@ class RouteResult implements MiddlewareInterface
 	}
 
 	/**
-	 * Create an instance representing a route succes from the matching route.
+	 * Create an instance representing a route success from the matching route.
 	 *
 	 * @param array<string, mixed> $params Parameters associated with the matched route, if any.
 	 */
@@ -206,5 +208,35 @@ class RouteResult implements MiddlewareInterface
 		}
 
 		return $this->allowedMethods;
+	}
+
+	// --- Target instance (page/controller) ---
+
+	public function setTargetInstance(object $instance): void
+	{
+		$this->targetInstance = $instance;
+	}
+
+	public function getTargetInstance(): ?object
+	{
+		return $this->targetInstance;
+	}
+
+	public function setMethod(string $method): void
+	{
+		$this->method = $method;
+	}
+
+	public function getMethod(): string
+	{
+		return $this->method;
+	}
+
+	/**
+	 * Whether this route result has a resolved target instance (page/controller).
+	 */
+	public function hasTargetInstance(): bool
+	{
+		return $this->targetInstance !== null;
 	}
 }

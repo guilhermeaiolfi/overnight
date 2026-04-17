@@ -53,34 +53,26 @@ use Psr\Http\Server\RequestHandlerInterface;
 /**
  * PipelineExtension manages the middleware pipeline and request execution.
  *
- * ## ActionMiddlewareDecorator Pattern
+ * ## Route Target Resolution
  *
  * When a route is defined with the syntax `PageClass::method` (e.g.,
- * `PageController::index`), the PipelineExtension converts this string into
- * an ActionMiddlewareDecorator instance. This decorator:
- *   - Holds the page/controller instance (retrieved from the container)
- *   - Knows which method to call
- *   - Can be accessed by downstream middleware for validation, auth, etc.
+ * `PageController::index`), PipelineExtension resolves it during request
+ * preparation:
+ *   - The class is resolved from the container
+ *   - The instance and method are stored on RouteResult via
+ *     setTargetInstance() and setMethod()
  *
  * ## Request Preparation Flow
  *
  * 1. Route matching occurs (RouterMiddleware / FileRoutingMiddleware)
  * 2. PipelineExtension::prepareRequestFromRouteResult() is called
  * 3. If route middleware is a string like "PageClass::method":
- *    - MiddlewareFactory creates ActionMiddlewareDecorator
- *    - It's stored on the Route via setMiddleware()
- * 4. The matched Route (with ActionMiddlewareDecorator) flows through
- *    the pipeline via RouteResult request attribute
- * 5. Downstream middleware (Validation, Security, Authorization) can
- *    access it via $routeResult->getMatchedRoute()->getMiddleware()
- * 6. ExecutionMiddleware retrieves and executes it
- *
- * ## Why This Pattern?
- *
- * - Single instance: Same page instance is used across all middleware
- * - Shared state: Validation, auth, and execution share the same object
- * - Clear separation: Middleware can inspect the page without executing it
- * - Syntax: "PageClass::method" is concise and readable in route definitions
+ *    - The class is resolved from the container
+ *    - Instance and method are set on RouteResult
+ * 4. RouteResult flows through the pipeline as a request attribute
+ * 5. Downstream middleware (Validation, Security, Authorization) access
+ *    the target via $routeResult->getTargetInstance() / getMethod()
+ * 6. ExecutionMiddleware calls the action and builds the view
  */
 class PipelineExtension extends AbstractExtension
 {
@@ -294,22 +286,7 @@ class PipelineExtension extends AbstractExtension
 		return $this->pipeline->process($request, $handler);
 	}
 
-	public function prepareRequestFromRoute(Route $route): RequestInterface
-	{
-		$route_result = RouteResult::fromRoute($route);
-
-		return $this->prepareRequestFromRouteResult($route_result);
-	}
-
-	public function prepareRequest($path, $controller, $methods, $route_name): RequestInterface
-	{
-		$route = new Route($path, $controller, $methods, $route_name);
-		$route_result = RouteResult::fromRoute($route);
-
-		return $this->prepareRequestFromRouteResult($route_result);
-	}
-
-	public function prepareRequestFromRouteResult($result, $request = null): RequestInterface
+	public function prepareRequestFromRouteResult($result, $request = null): ServerRequestInterface
 	{
 		if (! $request) {
 			$request = ServerRequestFactory::fromGlobals();
@@ -343,11 +320,18 @@ class PipelineExtension extends AbstractExtension
 
 		$middleware = $result->getMatchedRoute()->getMiddleware();
 
-		// Convert string middleware (e.g., "PageController::index") to ActionMiddlewareDecorator.
-		// This allows downstream middleware to inspect and act on the page instance before execution.
-		if (is_string($middleware)) {
-			$middleware = $this->prepareMiddleware($middleware);
-			$result->getMatchedRoute()->setMiddleware($middleware);
+		// Resolve middleware into a target instance + method on RouteResult.
+		// "ClassName::method" → page/controller with action method
+		// Everything else → resolved via prepareMiddleware() with method "process"
+		// Route::getMiddleware() retains the original definition.
+		if (is_string($middleware) && strpos($middleware, '::') !== false) {
+			[$className, $method] = explode('::', $middleware);
+			$result->setTargetInstance($this->app->container->get($className));
+			$result->setMethod($method);
+		} else {
+			$prepared = $this->prepareMiddleware($middleware);
+			$result->setTargetInstance($prepared);
+			$result->setMethod('process');
 		}
 
 		$this->requestStack->update($original_request, $request);
@@ -355,21 +339,12 @@ class PipelineExtension extends AbstractExtension
 		return $request;
 	}
 
-	public function processForward($middleware, $request): ResponseInterface
+	public function processForward(string $middleware, ServerRequestInterface $request): ResponseInterface
 	{
-		$result = $request->getAttribute(RouteResult::class);
+		$route = new Route($request->getUri()->getPath(), $middleware);
+		$result = RouteResult::fromRoute($route);
 
-		$path = "/";
-		$methods = [ "GET" ];
-		$name = "UNDEFINED";
-		if (isset($result)) {
-			$matched = $result->getMatchedRoute();
-			$path = $matched->getPath();
-			$name = $matched->getName();
-			$methods = $matched->getAllowedMethods();
-		}
-
-		$request = $this->prepareRequest($path, $middleware, $methods, $name);
+		$request = $this->prepareRequestFromRouteResult($result, $request);
 
 		return $this->handle($request);
 	}

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Container\Executor\ExecutorInterface;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use ON\View\ViewBuilderTrait;
 use Psr\Container\ContainerInterface;
@@ -32,15 +31,12 @@ class ValidationMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$route = $routeResult->getMatchedRoute();
-		$middleware = $route->getMiddleware();
+		$page = $routeResult->getTargetInstance();
+		$action = $routeResult->getMethod();
 
-		if (!$middleware instanceof ActionMiddlewareDecorator) {
+		if ($page === null) {
 			return $handler->handle($request);
 		}
-
-		$page = $middleware->getPageInstance();
-		$action = $middleware->getMethod();
 
 		$validateMethod = $this->findValidateMethod($page, $action);
 
@@ -72,18 +68,15 @@ class ValidationMiddleware implements MiddlewareInterface
 
 	protected function findValidateMethod(object $page, string $action): ?string
 	{
-		// Try: {action}Validate (e.g., createValidate)
 		$method = $action . 'Validate';
 		if (method_exists($page, $method)) {
 			return $method;
 		}
 
-		// Try: validate
 		if (method_exists($page, 'validate')) {
 			return 'validate';
 		}
 
-		// Try: defaultValidate
 		if (method_exists($page, 'defaultValidate')) {
 			return 'defaultValidate';
 		}

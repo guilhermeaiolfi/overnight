@@ -7,6 +7,7 @@ namespace ON\View\Plates;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Router\Route;
+use ON\Router\RouteResult;
 use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use Psr\Http\Message\ResponseInterface;
@@ -60,14 +61,15 @@ class PlatesRenderer implements RendererInterface
 		*/
 	public function runSection($section_path, $controller, $methods, $route_name): ResponseInterface
 	{
-		$request = $this->app->pipeline->prepareRequest($section_path, $controller, $methods, $route_name);
+		$route = new Route($section_path, $controller, $methods, $route_name);
+		$request = $this->app->pipeline->prepareRequestFromRouteResult(RouteResult::fromRoute($route));
 
 		return $this->app->handle($request);
 	}
 
 	public function runSectionFromRoute(Route $route): ResponseInterface
 	{
-		$request = $this->app->pipeline->prepareRequestFromRoute($route);
+		$request = $this->app->pipeline->prepareRequestFromRouteResult(RouteResult::fromRoute($route));
 
 		return $this->app->handle($request);
 	}

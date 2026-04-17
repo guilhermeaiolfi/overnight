@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Auth\Middleware;
 
-use Exception;
 use ON\Application;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Config\AppConfig;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -32,14 +30,7 @@ class SecurityMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$route = $routeResult->getMatchedRoute();
-		$middleware = $route->getMiddleware();
-
-		if (! $middleware instanceof ActionMiddlewareDecorator) {
-			return $handler->handle($request);
-		}
-
-		$page = $middleware->getPageInstance();
+		$page = $routeResult->getTargetInstance();
 
 		if (method_exists($page, 'isSecure') && $page->isSecure() && ! $this->auth->hasIdentity()) {
 			return $this->app->processForward($this->config->get('controllers.login'), $request);

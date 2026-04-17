@@ -9,7 +9,6 @@ use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Middleware\ValidationMiddleware;
-use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\View\ViewResult;
@@ -43,7 +42,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$this->assertSame($expectedResponse, $response);
 	}
 
-	public function testPassesThroughWhenMiddlewareIsNotActionDecorator(): void
+	public function testPassesThroughWhenNoTargetInstance(): void
 	{
 		$executor = $this->createMock(ExecutorInterface::class);
 		$middleware = new ValidationMiddleware($this->container, $executor);
@@ -75,10 +74,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'index');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$expectedResponse = new TextResponse('ok');
 
@@ -114,10 +110,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'create');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$expectedResponse = new TextResponse('ok');
 
@@ -145,18 +138,12 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->once())
 			->method('execute')
-			->with(
-				[$page, 'validate'],
-				$this->anything()
-			)
+			->with([$page, 'validate'], $this->anything())
 			->willReturn(true);
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'index');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 
 		$handler = $this->createHandler(new TextResponse('ok'));
@@ -181,18 +168,12 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->once())
 			->method('execute')
-			->with(
-				[$page, 'defaultValidate'],
-				$this->anything()
-			)
+			->with([$page, 'defaultValidate'], $this->anything())
 			->willReturn(true);
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'index');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 
 		$handler = $this->createHandler(new TextResponse('ok'));
@@ -222,14 +203,13 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->exactly(3))
 			->method('execute')
-			->willReturnCallback(function ($callable, $args) use ($page) {
+			->willReturnCallback(function ($callable, $args) {
 				if ($callable[1] === 'validate') {
 					return false;
 				}
 				if ($callable[1] === 'handleError') {
 					return 'Error';
 				}
-				// View method call from ViewBuilderTrait
 				if ($callable[1] === 'errorView') {
 					return new HtmlResponse('validation error');
 				}
@@ -238,10 +218,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'index');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 
 		$handler = $this->createHandler(new TextResponse('should not reach'));
@@ -272,10 +249,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'index');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$expectedResponse = new TextResponse('fallthrough');
 
@@ -308,18 +282,12 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->once())
 			->method('execute')
-			->with(
-				[$page, 'createValidate'],
-				$this->anything()
-			)
+			->with([$page, 'createValidate'], $this->anything())
 			->willReturn(true);
 
 		$middleware = new ValidationMiddleware($this->container, $executor);
 
-		$decorator = $this->createActionDecorator($page, 'create');
-		$route = new Route('/test', $decorator);
-		$routeResult = RouteResult::fromRoute($route);
-
+		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 
 		$handler = $this->createHandler(new TextResponse('ok'));
@@ -334,19 +302,12 @@ final class ValidationMiddlewareTest extends TestCase
 		return $handler;
 	}
 
-	protected function createActionDecorator(object $page, string $method): ActionMiddlewareDecorator
+	protected function createRouteResult(object $page, string $method): RouteResult
 	{
-		$ref = new \ReflectionClass(ActionMiddlewareDecorator::class);
-		$decorator = $ref->newInstanceWithoutConstructor();
-
-		$instanceProp = $ref->getProperty('instance');
-		$instanceProp->setAccessible(true);
-		$instanceProp->setValue($decorator, $page);
-
-		$methodProp = $ref->getProperty('method');
-		$methodProp->setAccessible(true);
-		$methodProp->setValue($decorator, $method);
-
-		return $decorator;
+		$route = new Route('/test', 'Page::' . $method);
+		$routeResult = RouteResult::fromRoute($route);
+		$routeResult->setTargetInstance($page);
+		$routeResult->setMethod($method);
+		return $routeResult;
 	}
 }
