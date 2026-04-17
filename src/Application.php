@@ -164,6 +164,35 @@ class Application
 
 			$ext_instance->boot();
 		}
+
+		if ($this->isDebug()) {
+			$notReady = [];
+			foreach ($this->extensions as $ext_class => $instance) {
+				if (! $instance->isReady()) {
+					$notReady[] = [
+						'class' => $ext_class,
+						'namespace' => $instance->getNamespace(),
+						'state' => $instance->getState(),
+						'history' => $instance->getStateHistory(),
+					];
+				}
+			}
+
+			if (! empty($notReady)) {
+				$details = array_map(fn($ext) => sprintf(
+					"  - %s\n    Namespace: %s\n    State: %s\n    History: %s",
+					$ext['class'],
+					$ext['namespace'],
+					$ext['state'],
+					implode(' -> ', $ext['history'])
+				), $notReady);
+
+				throw new Exception(sprintf(
+					"The following extensions failed to reach 'ready' state:\n\n%s",
+					implode("\n", $details)
+				));
+			}
+		}
 	}
 
 	public function install(string $extension_class, array $extension_options): ?ExtensionInterface

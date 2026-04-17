@@ -44,6 +44,11 @@ abstract class AbstractExtension implements ExtensionInterface
 		return $this->__currentState;
 	}
 
+	public function getStateHistory(): array
+	{
+		return $this->__stateHistory;
+	}
+
 	public function dispatchStateChange(string $state, mixed $data = null): self
 	{
 		$this->__stateHistory[] = $this->__currentState;

@@ -24,6 +24,8 @@ interface ExtensionInterface
 
 	public function getState(): string;
 
+	public function getStateHistory(): array;
+
 	public function dispatchStateChange(string $state, mixed $data = null): self;
 
 	public function getHooks(): array;
