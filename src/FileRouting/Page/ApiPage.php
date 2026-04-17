@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\FileRouting\Page;
 
 use Laminas\Diactoros\Response\JsonResponse;
-use ON\AbstractPage;
 use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRoutingConfig;
 use ON\Router\RouterInterface;
@@ -13,7 +12,7 @@ use ON\View\ViewConfig;
 use Psr\Http\Message\ServerRequestInterface;
 use Symfony\Component\Finder\Finder;
 
-class ApiPage extends AbstractPage
+class ApiPage
 {
 	protected FileRoutingCache $fileRoutingCache;
 
