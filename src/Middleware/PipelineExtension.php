@@ -50,6 +50,38 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
+/**
+ * PipelineExtension manages the middleware pipeline and request execution.
+ *
+ * ## ActionMiddlewareDecorator Pattern
+ *
+ * When a route is defined with the syntax `PageClass::method` (e.g.,
+ * `PageController::index`), the PipelineExtension converts this string into
+ * an ActionMiddlewareDecorator instance. This decorator:
+ *   - Holds the page/controller instance (retrieved from the container)
+ *   - Knows which method to call
+ *   - Can be accessed by downstream middleware for validation, auth, etc.
+ *
+ * ## Request Preparation Flow
+ *
+ * 1. Route matching occurs (RouterMiddleware / FileRoutingMiddleware)
+ * 2. PipelineExtension::prepareRequestFromRouteResult() is called
+ * 3. If route middleware is a string like "PageClass::method":
+ *    - MiddlewareFactory creates ActionMiddlewareDecorator
+ *    - It's stored on the Route via setMiddleware()
+ * 4. The matched Route (with ActionMiddlewareDecorator) flows through
+ *    the pipeline via RouteResult request attribute
+ * 5. Downstream middleware (Validation, Security, Authorization) can
+ *    access it via $routeResult->getMatchedRoute()->getMiddleware()
+ * 6. ExecutionMiddleware retrieves and executes it
+ *
+ * ## Why This Pattern?
+ *
+ * - Single instance: Same page instance is used across all middleware
+ * - Shared state: Validation, auth, and execution share the same object
+ * - Clear separation: Middleware can inspect the page without executing it
+ * - Syntax: "PageClass::method" is concise and readable in route definitions
+ */
 class PipelineExtension extends AbstractExtension
 {
 	public const NAMESPACE = "core.extensions.pipeline";
@@ -311,6 +343,8 @@ class PipelineExtension extends AbstractExtension
 
 		$middleware = $result->getMatchedRoute()->getMiddleware();
 
+		// Convert string middleware (e.g., "PageController::index") to ActionMiddlewareDecorator.
+		// This allows downstream middleware to inspect and act on the page instance before execution.
 		if (is_string($middleware)) {
 			$middleware = $this->prepareMiddleware($middleware);
 			$result->getMatchedRoute()->setMiddleware($middleware);

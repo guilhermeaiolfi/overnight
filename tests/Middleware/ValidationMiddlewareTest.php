@@ -14,16 +14,24 @@ use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 final class ValidationMiddlewareTest extends TestCase
 {
+	protected ContainerInterface $container;
+
+	protected function setUp(): void
+	{
+		$this->container = $this->createMock(ContainerInterface::class);
+	}
+
 	public function testPassesThroughWhenNoRouteResult(): void
 	{
 		$executor = $this->createMock(ExecutorInterface::class);
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$request = new ServerRequest();
 		$expectedResponse = new TextResponse('ok');
@@ -38,7 +46,7 @@ final class ValidationMiddlewareTest extends TestCase
 	public function testPassesThroughWhenMiddlewareIsNotActionDecorator(): void
 	{
 		$executor = $this->createMock(ExecutorInterface::class);
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$route = new Route('/test', $this->createMock(\Psr\Http\Server\MiddlewareInterface::class));
 		$routeResult = RouteResult::fromRoute($route);
@@ -65,7 +73,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->never())->method('execute');
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'index');
 		$route = new Route('/test', $decorator);
@@ -84,11 +92,8 @@ final class ValidationMiddlewareTest extends TestCase
 	public function testCallsActionSpecificValidateMethod(): void
 	{
 		$page = new class {
-			public bool $validateCalled = false;
-
 			public function createValidate(): bool
 			{
-				$this->validateCalled = true;
 				return true;
 			}
 
@@ -107,7 +112,7 @@ final class ValidationMiddlewareTest extends TestCase
 			)
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'create');
 		$route = new Route('/test', $decorator);
@@ -146,7 +151,7 @@ final class ValidationMiddlewareTest extends TestCase
 			)
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'index');
 		$route = new Route('/test', $decorator);
@@ -182,7 +187,7 @@ final class ValidationMiddlewareTest extends TestCase
 			)
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'index');
 		$route = new Route('/test', $decorator);
@@ -214,10 +219,8 @@ final class ValidationMiddlewareTest extends TestCase
 			}
 		};
 
-		$errorResponse = new HtmlResponse('validation error');
-
 		$executor = $this->createMock(ExecutorInterface::class);
-		$executor->expects($this->exactly(2))
+		$executor->expects($this->exactly(3))
 			->method('execute')
 			->willReturnCallback(function ($callable, $args) use ($page) {
 				if ($callable[1] === 'validate') {
@@ -226,10 +229,14 @@ final class ValidationMiddlewareTest extends TestCase
 				if ($callable[1] === 'handleError') {
 					return 'Error';
 				}
+				// View method call from ViewBuilderTrait
+				if ($callable[1] === 'errorView') {
+					return new HtmlResponse('validation error');
+				}
 				return null;
 			});
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'index');
 		$route = new Route('/test', $decorator);
@@ -241,7 +248,6 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$response = $middleware->process($request, $handler);
 
-		// buildView is called on the decorator, which processes the error response
 		$this->assertInstanceOf(ResponseInterface::class, $response);
 	}
 
@@ -264,7 +270,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->method('execute')
 			->willReturn(false);
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'index');
 		$route = new Route('/test', $decorator);
@@ -290,7 +296,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 			public function validate(): bool
 			{
-				return false; // should NOT be called
+				return false;
 			}
 
 			public function create(): string
@@ -308,7 +314,7 @@ final class ValidationMiddlewareTest extends TestCase
 			)
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($executor);
+		$middleware = new ValidationMiddleware($this->container, $executor);
 
 		$decorator = $this->createActionDecorator($page, 'create');
 		$route = new Route('/test', $decorator);
@@ -330,7 +336,6 @@ final class ValidationMiddlewareTest extends TestCase
 
 	protected function createActionDecorator(object $page, string $method): ActionMiddlewareDecorator
 	{
-		// Use reflection to set the internal state without going through the constructor
 		$ref = new \ReflectionClass(ActionMiddlewareDecorator::class);
 		$decorator = $ref->newInstanceWithoutConstructor();
 

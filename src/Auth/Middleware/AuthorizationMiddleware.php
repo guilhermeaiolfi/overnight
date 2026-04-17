@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace ON\Auth\Middleware;
 
+use Laminas\Diactoros\Response\EmptyResponse;
+use ON\Application;
+use ON\Config\AppConfig;
+use ON\Container\Executor\ExecutorInterface;
 use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
 use Psr\Http\Message\ResponseInterface;
@@ -13,14 +17,17 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class AuthorizationMiddleware implements MiddlewareInterface
 {
-	/**
-	* @param ServerRequestInterface $request
-	* @param RequestHandlerInterface $handler
-	* @return ResponseInterface
-	*/
+	public function __construct(
+		protected ExecutorInterface $executor,
+		protected Application $app,
+		protected AppConfig $config
+	) {
+	}
+
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
 		$routeResult = $request->getAttribute(RouteResult::class, false);
+
 		if (! $routeResult) {
 			return $handler->handle($request);
 		}
@@ -28,10 +35,56 @@ class AuthorizationMiddleware implements MiddlewareInterface
 		$route = $routeResult->getMatchedRoute();
 		$middleware = $route->getMiddleware();
 
-		if ($middleware instanceof ActionMiddlewareDecorator) {
-			return $middleware->loggedCheck($request, $handler);
+		if (! $middleware instanceof ActionMiddlewareDecorator) {
+			return $handler->handle($request);
 		}
 
-		return $handler->handle($request);
+		$page = $middleware->getPageInstance();
+		$action = $middleware->getMethod();
+
+		$checkMethod = $this->findCheckPermissionsMethod($page, $action);
+
+		if ($checkMethod === null) {
+			return $handler->handle($request);
+		}
+
+		$args = [
+			ServerRequestInterface::class => $request,
+		];
+
+		$ok = $this->executor->execute([$page, $checkMethod], $args);
+
+		if ($ok) {
+			return $handler->handle($request);
+		}
+
+		$errorMiddleware = $this->config->get('controllers.errors.403', false);
+
+		if (! $errorMiddleware) {
+			return new EmptyResponse(403);
+		}
+
+		return $this->app->processForward($errorMiddleware, $request);
+	}
+
+	protected function findCheckPermissionsMethod(object $page, string $action): ?string
+	{
+		// Try: {action}Permissions (e.g., checkCreatePermissions)
+		$method = 'check' . ucfirst($action) . 'Permissions';
+		if (method_exists($page, $method)) {
+			return $method;
+		}
+
+		// Try: checkPermissions
+		if (method_exists($page, 'checkPermissions')) {
+			return 'checkPermissions';
+		}
+
+		// Try: defaultCheckPermissions
+		if (method_exists($page, 'defaultCheckPermissions')) {
+			return 'defaultCheckPermissions';
+		}
+
+		return null;
 	}
 }

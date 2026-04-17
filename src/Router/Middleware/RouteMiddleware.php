@@ -35,8 +35,6 @@ class RouteMiddleware implements MiddlewareInterface
 	 */
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$original_request = $request;
-
 		if ($request->getAttribute(RouteResult::class)) {
 			return $handler->handle($request);
 		}

@@ -7,6 +7,8 @@ namespace ON\Middleware;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Router\ActionMiddlewareDecorator;
 use ON\Router\RouteResult;
+use ON\View\ViewBuilderTrait;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -14,7 +16,10 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class ValidationMiddleware implements MiddlewareInterface
 {
+	use ViewBuilderTrait;
+
 	public function __construct(
+		protected ContainerInterface $container,
 		protected ExecutorInterface $executor
 	) {
 	}
@@ -62,7 +67,7 @@ class ValidationMiddleware implements MiddlewareInterface
 
 		$response = $this->executor->execute([$page, $errorMethod], $args);
 
-		return $middleware->buildView($page, $action, $response, $request, $handler);
+		return $this->buildView($page, $action, $response, $request, $handler);
 	}
 
 	protected function findValidateMethod(object $page, string $action): ?string
