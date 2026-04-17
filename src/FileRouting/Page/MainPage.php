@@ -5,20 +5,22 @@ declare(strict_types=1);
 namespace ON\FileRouting\Page;
 
 use Laminas\Diactoros\Response\HtmlResponse;
-use ON\AbstractPage;
 use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRoutingConfig;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\ViewConfig;
+use ON\View\ViewInterface;
+use ON\View\ViewResult;
 use Psr\Http\Message\ServerRequestInterface;
 
-class MainPage extends AbstractPage
+class MainPage
 {
 	protected string $layout;
 	protected FileRoutingCache $fileRoutingCache;
 
 	public function __construct(
+		public ViewInterface $view,
 		protected RouterInterface $router,
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingCfg
@@ -27,17 +29,14 @@ class MainPage extends AbstractPage
 		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg);
 	}
 
-	public function index(ServerRequestInterface $request)
+	public function index(ServerRequestInterface $request): mixed
 	{
-
 		$result = $request->getAttribute(RouteResult::class);
 		$file = $result->get("_fileController");
 
 		$page = $this;
 
 		[$php_file, $template_file] = $this->fileRoutingCache->get($file);
-
-		$this->setAttribute("_templateFileName", $template_file);
 
 		if (isset($php_file)) {
 			$return = include_once($php_file);
@@ -46,7 +45,7 @@ class MainPage extends AbstractPage
 			}
 		}
 
-		return 'Success';
+		return new ViewResult('success', ['_templateFileName' => $template_file]);
 	}
 
 	protected function setLayout(string $layout): void
@@ -54,41 +53,10 @@ class MainPage extends AbstractPage
 		$this->layout = $layout;
 	}
 
-	public function successView(ServerRequestInterface $request)
+	public function successView(array $data, ServerRequestInterface $request = null, $delegate = null)
 	{
+		$template_file = $data['_templateFileName'] ?? '';
 
-		/*$template_name = $this->getTemplateFileFromRouteResult($request->getAttribute(RouteResult::class));
-		$template_path = $this->viewCfg->get("templates.paths.fileRouting")[0];
-		$template_name = str_replace([$template_path, ".phtml"], ["static::", ""], $template_name);*/
-
-		$template_file = $this->getAttribute("_templateFileName");
-
-		return new HtmlResponse($this->render($this->layout, str_replace(".phtml", "", $template_file)));
-	}
-
-	protected function getPhpFileFromRequest($request): ?string
-	{
-		$path = $request->getUri()->getPath();
-		$path = str_replace($this->router->getBasePath(), "", $path);
-
-		$possibilities = [
-			"src/Static/pages" . $path . ".php",
-			"src/Static/pages" . $path . "/index.php",
-		];
-
-		foreach ($possibilities as $file) {
-			if (file_exists($file)) {
-				return $file;
-			}
-		}
-
-		return null;
-	}
-
-	protected function getTemplateFileFromRouteResult(RouteResult $result): ?string
-	{
-		$controller_file = $result->get("_fileController");
-
-		return str_replace(".php", ".phtml", $controller_file);
+		return new HtmlResponse($this->view->render($data, str_replace(".phtml", "", $template_file), $this->layout));
 	}
 }
