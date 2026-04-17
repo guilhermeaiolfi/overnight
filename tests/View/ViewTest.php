@@ -110,6 +110,29 @@ final class ViewTest extends TestCase
 		$view->render([]);
 	}
 
+	public function testRenderResetsDefaultTemplateName(): void
+	{
+		$config = $this->createViewConfig();
+
+		$mockRenderer = new class {
+			public function render($layoutConfig, $templateName, $data)
+			{
+				return 'ok';
+			}
+		};
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')->willReturn($mockRenderer);
+
+		$view = new View($config, $container);
+		$view->setDefaultTemplateName('first-template');
+
+		// Render uses the default and then resets it
+		$view->render([]);
+
+		$this->assertNull($view->getDefaultTemplateName(), 'defaultTemplateName should be reset after render()');
+	}
+
 	public function testRenderThrowsForInvalidLayout(): void
 	{
 		$config = $this->createViewConfig();

@@ -36,36 +36,288 @@ $app->install(LatteExtension::class);
 
 `LatteExtension` (`ON\View\Latte\LatteExtension`) registers the `LatteRenderer` factory in the container.
 
+## Architecture
+
+The view system is decoupled from pages. Pages are plain classes — they don't need to extend any base class or implement any interface. Rendering is handled by `ViewInterface`, which pages request via constructor injection.
+
+### Key Classes
+
+- **`ViewInterface`** — interface for rendering templates. Methods: `render(array $data, ?string $templateName, ?string $layoutName)`, `setDefaultTemplateName()`, `getDefaultTemplateName()`.
+- **`View`** — concrete implementation. Resolves layouts, templates, and renderers from `ViewConfig`.
+- **`ViewResult`** — value object returned by action methods. Carries the view method name and data.
+- **`ViewBuilderTrait`** — used by `ActionMiddlewareDecorator` to dispatch action return values to view methods.
+
+### Data Flow
+
+```
+Request → Action Method → returns ViewResult → ViewBuilder → View Method → ViewInterface::render()
+```
+
+1. The action method runs business logic and returns a `ViewResult` (or a `Response` directly).
+2. `ViewBuilderTrait` reads the `ViewResult` and calls the corresponding view method on the page.
+3. The view method uses `ViewInterface::render()` to produce the HTML response.
+
 ## Basic Usage
 
-### In Pages (Controllers)
+### Page with View (HTML)
+
+Pages that need template rendering declare `ViewInterface` in their constructor:
 
 ```php
+use Laminas\Diactoros\Response\HtmlResponse;
+use ON\View\ViewInterface;
+use ON\View\ViewResult;
+
 class UserPage
 {
-    public function index(): Response
+    public function __construct(
+        public ViewInterface $view
+    ) {}
+
+    // Action method — returns ViewResult with data
+    public function index(): ViewResult
     {
         $users = User::all();
-        
-        return $this->render('users/index', [
-            'users' => $users,
-        ]);
+
+        return new ViewResult('success', ['users' => $users]);
+    }
+
+    // View method — receives data, renders template
+    public function successView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse(
+            $this->view->render($result->data, 'users/index')
+        );
     }
 }
 ```
 
-### With Layouts
+### Page without View (API)
+
+Pages that don't need rendering simply don't ask for `ViewInterface`:
 
 ```php
-public function show(int $id): Response
+use Laminas\Diactoros\Response\JsonResponse;
+
+class UserApiPage
 {
-    $user = User::find($id);
-    
-    return $this->render('users/show', [
-        'user' => $user,
-    ], 'layouts/main');
+    public function index(): JsonResponse
+    {
+        $users = User::all();
+
+        return new JsonResponse(['data' => $users]);
+    }
 }
 ```
+
+### Multiple View Outcomes
+
+Action methods can return different `ViewResult` names to handle different outcomes:
+
+```php
+class ContactPage
+{
+    public function __construct(
+        public ViewInterface $view
+    ) {}
+
+    public function create(ServerRequestInterface $request): ViewResult
+    {
+        $data = $request->getParsedBody();
+
+        if ($this->sendEmail($data)) {
+            return new ViewResult('success', ['message' => 'Message sent!']);
+        }
+
+        return new ViewResult('error', ['error' => 'Failed to send', 'form' => $data]);
+    }
+
+    public function successView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse($this->view->render($result->data, 'contact/success'));
+    }
+
+    public function errorView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse($this->view->render($result->data, 'contact/form'));
+    }
+}
+```
+
+### Returning a String (Shorthand)
+
+Returning a plain string from an action is a shorthand for `new ViewResult('string', [])`:
+
+```php
+public function index(): string
+{
+    return 'Success'; // calls successView() with empty data
+}
+```
+
+### Returning a Response Directly
+
+If an action returns a `ResponseInterface`, it's returned as-is — no view method is called:
+
+```php
+public function download(): ResponseInterface
+{
+    return new StreamResponse($fileStream, 200, ['Content-Type' => 'application/pdf']);
+}
+```
+
+## ViewResult
+
+`ViewResult` is an immutable value object that carries data from the action to the view method.
+
+```php
+$result = new ViewResult('success', ['user' => $user, 'message' => 'Updated']);
+
+// Access data
+$result->get('user');              // $user
+$result->get('missing', 'default'); // 'default'
+$result->has('user');              // true
+$result->toArray();                // ['user' => $user, 'message' => 'Updated']
+
+// ArrayAccess (read-only)
+$result['user'];                   // $user
+isset($result['user']);            // true
+```
+
+## View Methods
+
+View methods are called by the framework after the action method returns a `ViewResult`. The framework resolves the view method name using these conventions (in order):
+
+1. `{viewName}View` — e.g., `successView`
+2. `{action}{ViewName}View` — e.g., `createSuccessView`
+3. `{viewName}` — e.g., `success`
+
+### Parameter Injection via Executor
+
+When the `Executor` is available (default), view methods can declare whatever parameters they need. The framework injects them automatically:
+
+```php
+// Receive the full ViewResult
+public function successView(ViewResult $result): HtmlResponse { ... }
+
+// Receive individual data keys by name
+public function successView(array $user, string $message): HtmlResponse { ... }
+
+// Receive the request
+public function successView(ViewResult $result, ServerRequestInterface $request): HtmlResponse { ... }
+
+// Mix and match
+public function successView(string $message, ViewResult $result): HtmlResponse { ... }
+```
+
+Available parameters for injection:
+- `ViewResult $result` — the full ViewResult object
+- `ServerRequestInterface $request` — the current request
+- `RequestHandlerInterface $delegate` — the request handler
+- `array $data` — the raw data array
+- Any key from `$result->data` by name (e.g., `$user`, `$message`)
+
+### Cross-Page View References
+
+You can reference a view method on a different page using the `Page:method` syntax:
+
+```php
+public function create(): ViewResult
+{
+    // Calls successView() on SharedPage
+    return new ViewResult('SharedPage:success', ['message' => 'Done']);
+}
+```
+
+## Validation
+
+Validation is handled by `ValidationMiddleware`, separate from the view system. Pages define validation methods that the middleware calls before the action:
+
+```php
+class PostPage
+{
+    public function __construct(public ViewInterface $view) {}
+
+    // Called before create() — return true to proceed, false to stop
+    public function createValidate(ServerRequestInterface $request): bool
+    {
+        $body = $request->getParsedBody();
+        return !empty($body['title']);
+    }
+
+    // Called when validation fails
+    public function handleError(ServerRequestInterface $request): ViewResult
+    {
+        return new ViewResult('error', ['errors' => ['Title is required']]);
+    }
+
+    public function create(ServerRequestInterface $request): ViewResult
+    {
+        // Only reached if createValidate() returned true
+        $post = Post::create($request->getParsedBody());
+        return new ViewResult('success', ['post' => $post]);
+    }
+
+    public function successView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse($this->view->render($result->data, 'post/show'));
+    }
+
+    public function errorView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse($this->view->render($result->data, 'post/form'));
+    }
+}
+```
+
+Validation method resolution order:
+1. `{action}Validate` — e.g., `createValidate`
+2. `validate` — generic for all actions
+3. `defaultValidate` — fallback (defined in `AbstractPage`)
+
+Error handler resolution order:
+1. `handleError`
+2. `defaultHandleError` — fallback (defined in `AbstractPage`)
+
+## Forwarding Requests
+
+If you need to forward a request to another controller/page from within a page, inject `Application` and use its `processForward` method:
+
+```php
+use ON\Application;
+use ON\View\ViewInterface;
+
+class AdminPage
+{
+    public function __construct(
+        protected Application $app,
+        public ViewInterface $view
+    ) {}
+
+    public function dashboard(ServerRequestInterface $request): mixed
+    {
+        if (!$this->hasPermission()) {
+            return $this->app->processForward('App\Page\LoginPage::index', $request);
+        }
+
+        return new ViewResult('success', ['stats' => $this->getStats()]);
+    }
+}
+```
+
+## With Layouts
+
+```php
+public function successView(ViewResult $result): HtmlResponse
+{
+    // render(data, templateName, layoutName)
+    return new HtmlResponse(
+        $this->view->render($result->data, 'users/show', 'admin')
+    );
+}
+```
+
+When `layoutName` is omitted, the default layout from `ViewConfig` is used.
 
 ## Template Directory Structure
 
@@ -109,11 +361,11 @@ templates/
     <header>
         <nav><?= $this->section('nav') ?></nav>
     </header>
-    
+
     <main>
         <?= $this->section('content') ?>
     </main>
-    
+
     <footer>
         <?= $this->section('footer') ?>
     </footer>
@@ -138,9 +390,6 @@ templates/
 ```php
 // Escape output
 <?= $this->e($user->name) ?>
-
-// Raw output
-<?= $user->bio ?>
 
 // Conditionals
 <?php if ($user->isActive): ?>
@@ -209,36 +458,13 @@ templates/
 <span class="badge" n:if="$user->isActive">Active</span>
 ```
 
-## View Helpers
+## Custom Helpers
 
-### Built-in Functions
-
-```php
-// Escape
-<?= $this->e($var) ?>          // Plates
-{$var|noescape}                 // Latte
-
-// Format
-<?= $this->format($date) ?>
-{$date|date:'Y-m-d'}
-
-//Truncate
-<?= $this->truncate($text, 100) ?>
-{$text|truncate:100}
-
-// Url
-<a href="<?= $this->url()->current() ?>">Current URL</a>
-<a n:href="UserPage:show 5">Link</a>
-```
-
-### Custom Helpers
-
-#### Plates
+### Plates
 
 ```php
 $engine = $plates->getEngine();
 
-// Register function
 $engine->registerFunction('markdown', function($text) {
     return Markdown::parse($text);
 });
@@ -247,12 +473,11 @@ $engine->registerFunction('markdown', function($text) {
 <?= $this->markdown($post->content) ?>
 ```
 
-#### Latte
+### Latte
 
 ```php
 $latte = $latteEngine->getLatte();
 
-// Register filter
 $latte->addFilter('markdown', function($text) {
     return Markdown::parse($text);
 });
@@ -266,49 +491,26 @@ $latte->addFilter('markdown', function($text) {
 ### Custom 404
 
 ```php
-// In your NotFoundMiddleware or NotFoundHandler
-return $this->render('errors/404', [
-    'message' => 'Page not found',
-], 'layouts/error');
-```
-
-### Error Layout
-
-```php
-<!-- templates/layouts/error.php -->
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Error <?= $code ?></title>
-</head>
-<body>
-    <h1>Error <?= $code ?></h1>
-    <p><?= $this->e($message) ?></p>
-    <a href="/">Go home</a>
-</body>
-</html>
-```
-
-## JSON Responses
-
-For API endpoints:
-
-```php
-public function show(int $id): Response
+class NotFoundPage
 {
-    $user = User::find($id);
-    
-    if (!$user) {
-        return new JsonResponse(['error' => 'Not found'], 404);
+    public function __construct(public ViewInterface $view) {}
+
+    public function index(): ViewResult
+    {
+        return new ViewResult('success', ['message' => 'Page not found']);
     }
-    
-    return new JsonResponse($user->toArray());
+
+    public function successView(ViewResult $result): HtmlResponse
+    {
+        return new HtmlResponse(
+            $this->view->render($result->data, 'errors/404', 'error'),
+            404
+        );
+    }
 }
 ```
 
-## View Data
-
-### Sharing Data Across Views
+## Sharing Data Across Views
 
 ```php
 // In extension setup
@@ -318,22 +520,12 @@ $view->addData(['siteName' => 'My App']);
 // <?= $siteName ?>
 ```
 
-### Per-Request Data
-
-```php
-public function show(int $id): Response
-{
-    return $this->render('users/show', [
-        'user' => $user,
-        'pageTitle' => $user->name,
-    ]);
-}
-```
-
 ## Best Practices
 
-1. **Use layouts** - Keep templates DRY with layouts
-2. **Escape output** - Always escape user data with `e()` or `|escape`
-3. **Limit logic** - Keep templates focused on presentation
-4. **Use sections** - Organize content with named sections
-5. **Cache compiled** - Enable template caching in production
+1. **Use `ViewResult`** — return data explicitly from actions, don't use shared mutable state
+2. **Keep pages plain** — no required base class. Inject `ViewInterface` only when you need rendering
+3. **Use layouts** — keep templates DRY with layouts
+4. **Escape output** — always escape user data with `e()` or `|escape`
+5. **Limit logic** — keep templates focused on presentation
+6. **Use sections** — organize content with named sections
+7. **Cache compiled** — enable template caching in production

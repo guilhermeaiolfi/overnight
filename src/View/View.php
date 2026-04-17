@@ -59,7 +59,19 @@ class View implements ViewInterface
 
 		$layoutConfig["name"] = $layoutName;
 
+		// Reset state before rendering so the instance is clean for the next request
+		// (safe for long-lived processes like Swoole/RoadRunner)
+		$this->reset();
+		
 		return $renderer->render($layoutConfig, $templateName, $data);
+	}
+
+	/**
+	 * Clear request-scoped state so this instance can be safely reused.
+	 */
+	protected function reset(): void
+	{
+		$this->defaultTemplateName = null;
 	}
 
 	public function setDefaultTemplateName(string $templateName): void

@@ -103,39 +103,14 @@ class ActionMiddlewareDecorator implements MiddlewareInterface
 		return $this->className;
 	}
 
-	public function validate(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
+	public function getPageInstance(): mixed
 	{
+		return $this->instance;
+	}
 
-		$page = $this->instance;
-
-		$validateMethod = $this->method . 'Validate';
-		if (! method_exists($page, $validateMethod)) {
-			$validateMethod = 'validate';
-		}
-		if (! method_exists($page, $validateMethod)) {
-			$validateMethod = 'defaultValidate';
-		}
-
-		if (method_exists($page, $validateMethod)) {
-			$args = [
-				ServerRequestInterface::class => $request,
-			];
-			$valid = $this->executor->execute([$page, $validateMethod], $args);
-
-			if ($valid) {
-				return $handler->handle($request);
-			}
-			// if it's not validated, we need to handle the error response
-			$handleErrorMethod = "handleError";
-			if (! method_exists($page, $handleErrorMethod)) {
-				$handleErrorMethod = "defaultHandleError";
-			}
-			$response = $this->executor->execute([$page, $handleErrorMethod], $args);
-
-			return $this->buildView($page, $this->method, $response, $request, $handler);
-		}
-
-		return $handler->handle($request);
+	public function getMethod(): string
+	{
+		return $this->method;
 	}
 
 	public function loggedCheck(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface

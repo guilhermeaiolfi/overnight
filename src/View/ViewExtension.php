@@ -49,6 +49,12 @@ class ViewExtension extends AbstractExtension
 			$containerConfig->addFactories([
 				Engine::class => PlatesEngineFactory::class,
 			]);
+
+			// ViewInterface: registered via ViewFactory using make() — new instance every time.
+			// Pages inject ViewFactory and call create() to get a fresh View.
+			// This is safe for long-lived processes (Swoole, RoadRunner) where
+			// get() caches would leak state across requests.
+			$containerConfig->addAlias(ViewInterface::class, View::class);
 		});
 	}
 
