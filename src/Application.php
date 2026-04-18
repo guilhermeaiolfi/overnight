@@ -79,17 +79,7 @@ class Application
 		$this->environment = $_ENV["APP_ENV"] ?? "development";
 
 		foreach ($extensions as $ext_class => $ext_options) {
-			if (isset($ext_options["enabled"])) {
-				if (is_callable($ext_options["enabled"])) {
-					$ext_options["enabled"] = $ext_options["enabled"]($this);
-				}
-			} else {
-				$ext_options["enabled"] = true;
-			}
-
-			if ($ext_options["enabled"]) {
-				$this->extensionsToInstall[$ext_class] = $ext_options;
-			}
+			$this->extensionsToInstall[$ext_class] = $ext_options;
 		}
 
 		$this->loadExtensions();
@@ -136,9 +126,6 @@ class Application
 	{
 		foreach ($this->extensionsToInstall as $ext_class => $ext_options) {
 			$instance = $this->install($ext_class, $ext_options);
-			if ($instance != null) {
-				$instance->dispatchStateChange('installed');
-			}
 		}
 
 		foreach ($this->extensions as $ext_class => $ext_instance) {
@@ -198,6 +185,22 @@ class Application
 	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
 	{
 
+		if (isset($extension_options["enabled"])) {
+			if (is_callable($extension_options["enabled"])) {
+				$extension_options["enabled"] = $extension_options["enabled"]($this);
+			}
+
+			if (! $extension_options["enabled"]) {
+				return null;
+			}
+
+			unset($extension_options["enabled"]);
+		}
+
+		if ($this->hasExtension($extension_class)) {
+			throw new Exception("Extension {$extension_class} is already installed.");
+		}
+
 		if (! class_exists($extension_class)) {
 			throw new Exception("Class {$extension_class} not found when loading as extension");
 		}
@@ -211,8 +214,12 @@ class Application
 		}
 
 		$instance = $extension_class::install($this, $extension_options);
-		if ($instance !== false) {
+		if (isset($instance)) {
 			$this->extensions[$extension_class] = $instance;
+
+			// we are ok dispaching it here, because the callbacks are only registered in boot()
+			// which is not yet called
+			$instance->dispatchStateChange('installed');
 
 			return $instance;
 		}

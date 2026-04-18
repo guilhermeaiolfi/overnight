@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\ON\Extension;
 
+use FilesystemIterator;
 use ON\Application;
-use ON\Config\AppConfig;
 use ON\Config\ConfigExtension;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
@@ -15,6 +15,8 @@ use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 
 final class ExtensionLifecycleTest extends TestCase
 {
@@ -80,6 +82,20 @@ final class ExtensionLifecycleTest extends TestCase
 
 		$this->assertSame(0, NoAutomaticSetupExtension::$setupCalls);
 		$this->assertSame(1, InstalledSetupExtension::$setupCalls);
+	}
+
+	public function testDisabledExtensionsAreSkippedByInstall(): void
+	{
+		DisabledInstallExtension::$installCalls = 0;
+
+		$app = $this->createApplication([
+			DisabledInstallExtension::class => [
+				'enabled' => fn (Application $app): bool => $app->isDebug(),
+			],
+		]);
+
+		$this->assertFalse($app->hasExtension(DisabledInstallExtension::class));
+		$this->assertSame(0, DisabledInstallExtension::$installCalls);
 	}
 
 	/**
@@ -151,9 +167,9 @@ PHP
 			return;
 		}
 
-		$items = new \RecursiveIteratorIterator(
-			new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-			\RecursiveIteratorIterator::CHILD_FIRST
+		$items = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+			RecursiveIteratorIterator::CHILD_FIRST
 		);
 
 		foreach ($items as $item) {
@@ -208,5 +224,17 @@ final class InstalledSetupExtension extends AbstractExtension
 	public function setup(): void
 	{
 		self::$setupCalls++;
+	}
+}
+
+final class DisabledInstallExtension extends AbstractExtension
+{
+	public static int $installCalls = 0;
+
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	{
+		self::$installCalls++;
+
+		return new self();
 	}
 }

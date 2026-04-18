@@ -22,6 +22,7 @@ Extensions are modular components that extend the framework's functionality.
 | `ClockworkExtension` | Debug profiling | |
 | `FileRoutingExtension` | File-based routing | |
 | `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
+| `AutoWiringExtension` | Automatic application extension discovery | [auto-wiring.md](extensions/auto-wiring.md) |
 
 ## Extension Documentation
 
@@ -37,6 +38,7 @@ Detailed documentation for each extension is available in the `docs/extensions/`
 - [Events](extensions/events.md) - Event dispatcher
 - [Maintenance](extensions/maintenance.md) - Maintenance mode
 - [GraphQL](extensions/graphql.md) - GraphQL API support
+- [Auto-Wiring](extensions/auto-wiring.md) - Automatic application extension discovery
 
 ## Installing Extensions
 
