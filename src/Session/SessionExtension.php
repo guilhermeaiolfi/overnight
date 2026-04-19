@@ -40,8 +40,8 @@ class SessionExtension extends AbstractExtension
 			$containerConfig->addFactories([
 
 			]);
-		});
 
-		$this->dispatchStateChange('ready');
+			$this->dispatchStateChange('ready');
+		});
 	}
 }

@@ -42,8 +42,8 @@ class LatteExtension extends AbstractExtension
 			$containerConfig->addFactories([
 				LatteRenderer::class => LatteRendererFactory::class,
 			]);
-		});
 
-		$this->dispatchStateChange('ready');
+			$this->dispatchStateChange('ready');
+		});
 	}
 }

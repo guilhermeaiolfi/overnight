@@ -44,11 +44,11 @@ class GraphQLExtension extends AbstractExtension
 		$enabled = $this->options['enabled'] ?? true;
 
 		if (!$enabled) {
+			$this->dispatchStateChange('ready');
 			return;
 		}
 
 		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
-		$this->dispatchStateChange('ready');
 	}
 
 	public function onPipelineReady(): void

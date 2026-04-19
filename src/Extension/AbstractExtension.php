@@ -20,9 +20,9 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	protected array $__states = [];
 
-	protected array $__when = [];
-
 	protected int $type = self::TYPE_MODULE;
+
+	protected ?ExtensionLifecycle $__lifecycle = null;
 
 	public function getType(): int
 	{
@@ -51,27 +51,42 @@ abstract class AbstractExtension implements ExtensionInterface
 
 	public function dispatchStateChange(string $state, mixed $data = null): self
 	{
-		$this->__stateHistory[] = $this->__currentState;
-		$this->__currentState = $state;
-		if (isset($this->__when[$state])) {
-			foreach ($this->__when[$state] as $callback) {
-				$callback($this, $data);
-			}
-		}
-
-		return $this;
+		return $this->getLifecycle()->dispatchStateChange($this, $state, $data);
 	}
 
 	public function when(string $state, callable $callback): self
 	{
-		$this->__when[$state] = isset($this->__when[$state]) ? $this->__when[$state] : [];
-		$this->__when[$state][] = $callback;
+		return $this->getLifecycle()->when($this, $state, $callback);
+	}
 
-		if ($this->__currentState == $state || in_array($state, $this->__stateHistory)) {
-			$callback($this, null);
+	public function setLifecycle(ExtensionLifecycle $lifecycle): void
+	{
+		$this->__lifecycle = $lifecycle;
+	}
+
+	public function transitionTo(string $state): void
+	{
+		$this->__stateHistory[] = $this->__currentState;
+		$this->__currentState = $state;
+	}
+
+	public function isInState(string $state): bool
+	{
+		return $this->__currentState === $state;
+	}
+
+	public function wasInState(string $state): bool
+	{
+		return in_array($state, $this->__stateHistory, true);
+	}
+
+	protected function getLifecycle(): ExtensionLifecycle
+	{
+		if (! isset($this->__lifecycle)) {
+			$this->__lifecycle = new ExtensionLifecycle();
 		}
 
-		return $this;
+		return $this->__lifecycle;
 	}
 
 	public function setup(): void

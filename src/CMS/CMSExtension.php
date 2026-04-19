@@ -46,7 +46,6 @@ class CMSExtension extends AbstractExtension
 
 	public function setup(): void
 	{
-		$this->dispatchStateChange('ready');
 	}
 
 	public function onRouterSetup(RouterExtension $router): void
@@ -57,6 +56,7 @@ class CMSExtension extends AbstractExtension
 		$router->get("/collection", CollectionPage::class . "::all", "cms.collection.all");
 		$router->get("/collection/{id:\d+}", CollectionPage::class . "::getOne", "cms.collection.one");
 
+		$this->dispatchStateChange('ready');
 	}
 
 	public function onContainerConfig(): void

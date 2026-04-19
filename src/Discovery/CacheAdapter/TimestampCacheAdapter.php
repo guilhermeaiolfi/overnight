@@ -20,13 +20,7 @@ class TimestampCacheAdapter extends AbstractCacheAdapter {
         }
 
 		$data = file_get_contents($cacheFile);
-		$data = unserialize($data, [
-			'allowed_classes' => [
-				\ON\Discovery\DiscoveryItem::class,
-				\ON\Discovery\DiscoveryItems::class,
-				\ON\Discovery\DiscoveryLocation::class,
-			],
-		]);
+		$data = unserialize($data);
 		$discover->addData($data);
         return $discover;
     }
@@ -39,7 +33,7 @@ class TimestampCacheAdapter extends AbstractCacheAdapter {
 	{
 		$finder = new Finder();
 
-		$timestamp = $this->oldest($discovers, $location);
+		$timestamp = (int) $this->oldest($discovers, $location);
 		$finder->files()->in($location->pattern)->date(">= " . date("d.m.Y H:i:s", $timestamp));
 		foreach ($finder as $file) {
 			foreach ($discovers as $discover) {

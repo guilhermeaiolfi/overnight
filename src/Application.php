@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON;
 
 use Exception;
+use ON\Extension\ExtensionLifecycle;
 use ON\Extension\ExtensionInterface;
 use Symfony\Component\Dotenv\Dotenv;
 
@@ -30,6 +31,8 @@ class Application
 
 	public ?Dotenv $env = null;
 
+	protected ExtensionLifecycle $extensionLifecycle;
+
 	/**
 	 * @param array {
 	 *   debug?: ?bool,
@@ -54,6 +57,8 @@ class Application
 		if (! isset(self::$instance)) {
 			self::$instance = $this;
 		}
+
+		$this->extensionLifecycle = new ExtensionLifecycle();
 
 		$this->project_dir = $project_dir = $options["project_dir"] ?? dirname(getcwd(), 1);
 
@@ -152,34 +157,7 @@ class Application
 			$ext_instance->boot();
 		}
 
-		if ($this->isDebug()) {
-			$notReady = [];
-			foreach ($this->extensions as $ext_class => $instance) {
-				if (! $instance->isReady()) {
-					$notReady[] = [
-						'class' => $ext_class,
-						'namespace' => $instance->getNamespace(),
-						'state' => $instance->getState(),
-						'history' => $instance->getStateHistory(),
-					];
-				}
-			}
-
-			if (! empty($notReady)) {
-				$details = array_map(fn($ext) => sprintf(
-					"  - %s\n    Namespace: %s\n    State: %s\n    History: %s",
-					$ext['class'],
-					$ext['namespace'],
-					$ext['state'],
-					implode(' -> ', $ext['history'])
-				), $notReady);
-
-				throw new Exception(sprintf(
-					"The following extensions failed to reach 'ready' state:\n\n%s",
-					implode("\n", $details)
-				));
-			}
-		}
+		$this->extensionLifecycle->settle($this->extensions);
 	}
 
 	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
@@ -215,6 +193,8 @@ class Application
 
 		$instance = $extension_class::install($this, $extension_options);
 		if (isset($instance)) {
+			$instance->setLifecycle($this->extensionLifecycle);
+
 			$this->extensions[$extension_class] = $instance;
 
 			// we are ok dispaching it here, because the callbacks are only registered in boot()

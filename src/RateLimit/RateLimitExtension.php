@@ -49,9 +49,9 @@ class RateLimitExtension extends AbstractExtension
 					return new InMemoryRateLimiter();
 				},
 			]);
-		});
 
-		$this->dispatchStateChange('ready');
+			$this->dispatchStateChange('ready');
+		});
 	}
 
 	public function setup(): void

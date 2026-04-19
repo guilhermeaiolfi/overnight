@@ -26,7 +26,17 @@ interface ExtensionInterface
 
 	public function getStateHistory(): array;
 
+	public function when(string $state, callable $callback): self;
+
 	public function dispatchStateChange(string $state, mixed $data = null): self;
+
+	public function setLifecycle(ExtensionLifecycle $lifecycle): void;
+
+	public function transitionTo(string $state): void;
+
+	public function isInState(string $state): bool;
+
+	public function wasInState(string $state): bool;
 
 	public function getHooks(): array;
 }

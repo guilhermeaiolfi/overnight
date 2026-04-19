@@ -54,6 +54,14 @@ class ContainerExtension extends AbstractExtension
 	public function buildContainer(): void
 	{
 
+		// Let extensions mutate ContainerConfig before PHP-DI consumes it.
+		$this->dispatchStateChange('setup');
+
+		$this->when('setup', [$this, 'createConfiguredContainer']);
+	}
+
+	public function createConfiguredContainer(self $extension = null, mixed $data = null): void
+	{
 		/** @var ConfigExtension $config_ext */
 		$config_ext = $this->app->config;
 
@@ -67,9 +75,6 @@ class ContainerExtension extends AbstractExtension
 
 		// we need to set it to the container in case other places need the instance of Application
 		$this->container->set(get_class($this->app), $this->app);
-
-		// let's open the window for extension to register what they want
-		$this->dispatchStateChange('setup');
 
 		// finally we can say it's ready
 		$this->dispatchStateChange('ready');

@@ -13,6 +13,7 @@ use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryExtension;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
+use ON\Extension\ExtensionLifecycle;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use RecursiveDirectoryIterator;
@@ -47,6 +48,36 @@ final class ExtensionLifecycleTest extends TestCase
 		$this->assertInstanceOf(ContainerConfig::class, $app->container->get(ContainerConfig::class));
 	}
 
+	public function testConfigSetupRunsAfterAllExtensionsBoot(): void
+	{
+		BootOrderProbeExtension::$events = [];
+
+		$this->createApplication([
+			ConfigExtension::class => [],
+			BootOrderProbeExtension::class => [],
+		]);
+
+		$this->assertSame([
+			'probe.boot',
+			'probe.config.setup',
+		], BootOrderProbeExtension::$events);
+	}
+
+	public function testContainerSetupDefinitionsRegisteredByLaterExtensionAreUsed(): void
+	{
+		ContainerDefinitionProbeExtension::$containerSetupCalls = 0;
+
+		$app = $this->createApplication([
+			ConfigExtension::class => [],
+			ContainerExtension::class => [],
+			ContainerDefinitionProbeExtension::class => [],
+		]);
+
+		$this->assertTrue($app->ext('container')->isReady());
+		$this->assertSame(1, ContainerDefinitionProbeExtension::$containerSetupCalls);
+		$this->assertInstanceOf(ContainerProbeService::class, $app->container->get(ContainerProbeInterface::class));
+	}
+
 	public function testDiscoveryWaitsForConfigAndContainerReadyWithoutNextTick(): void
 	{
 		$app = $this->createApplication([
@@ -75,8 +106,13 @@ final class ExtensionLifecycleTest extends TestCase
 		NoAutomaticSetupExtension::$setupCalls = 0;
 		InstalledSetupExtension::$setupCalls = 0;
 
+		$lifecycle = new ExtensionLifecycle();
+		$extension = new NoAutomaticSetupExtension();
+		$extension->setLifecycle($lifecycle);
+		$extension->dispatchStateChange('installed');
+		$lifecycle->flushDeferredEvents();
+
 		$this->createApplication([
-			NoAutomaticSetupExtension::class => [],
 			InstalledSetupExtension::class => [],
 		]);
 
@@ -96,6 +132,21 @@ final class ExtensionLifecycleTest extends TestCase
 
 		$this->assertFalse($app->hasExtension(DisabledInstallExtension::class));
 		$this->assertSame(0, DisabledInstallExtension::$installCalls);
+	}
+
+	public function testLifecycleGuardReportsTheExtensionThatDoesNotSettle(): void
+	{
+		$lifecycle = new ExtensionLifecycle();
+		$extension = new NeverReadyExtension();
+		$extension->setLifecycle($lifecycle);
+		$extension->dispatchStateChange('installed');
+
+		$this->expectException(\RuntimeException::class);
+		$this->expectExceptionMessage(NeverReadyExtension::class);
+		$this->expectExceptionMessage('State: installed');
+		$this->expectExceptionMessage('empty deferred-event passes');
+
+		$lifecycle->settle([$extension], 1);
 	}
 
 	/**
@@ -224,6 +275,7 @@ final class InstalledSetupExtension extends AbstractExtension
 	public function setup(): void
 	{
 		self::$setupCalls++;
+		$this->dispatchStateChange('ready');
 	}
 }
 
@@ -237,4 +289,68 @@ final class DisabledInstallExtension extends AbstractExtension
 
 		return new self();
 	}
+}
+
+final class NeverReadyExtension extends AbstractExtension
+{
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	{
+		return new self();
+	}
+}
+
+final class BootOrderProbeExtension extends AbstractExtension
+{
+	public static array $events = [];
+
+	public function __construct(private Application $app)
+	{
+	}
+
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	{
+		return new self($app);
+	}
+
+	public function boot(): void
+	{
+		self::$events[] = 'probe.boot';
+
+		$this->app->ext('config')->when('setup', function () {
+			self::$events[] = 'probe.config.setup';
+			$this->dispatchStateChange('ready');
+		});
+	}
+}
+
+final class ContainerDefinitionProbeExtension extends AbstractExtension
+{
+	public static int $containerSetupCalls = 0;
+
+	public function __construct(private Application $app)
+	{
+	}
+
+	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	{
+		return new self($app);
+	}
+
+	public function boot(): void
+	{
+		$this->app->ext('container')->when('setup', function () {
+			self::$containerSetupCalls++;
+			$containerConfig = $this->app->config->get(ContainerConfig::class);
+			$containerConfig->addAlias(ContainerProbeInterface::class, ContainerProbeService::class);
+			$this->dispatchStateChange('ready');
+		});
+	}
+}
+
+interface ContainerProbeInterface
+{
+}
+
+final class ContainerProbeService implements ContainerProbeInterface
+{
 }
