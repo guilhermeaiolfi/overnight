@@ -34,18 +34,42 @@ class MainPage
 		$result = $request->getAttribute(RouteResult::class);
 		$file = $result->get("_fileController");
 
-		$page = $this;
-
 		[$php_file, $template_file] = $this->fileRoutingCache->get($file);
 
+		$data = [];
+
 		if (isset($php_file)) {
-			$return = include_once($php_file);
-			if (isset($return)) {
+			[$return, $data] = $this->includeControllerFile($php_file);
+			if ($return !== 1 && $return !== null) {
 				return $return;
 			}
 		}
 
-		return new ViewResult('success', ['_templateFileName' => $template_file]);
+		$data['_templateFileName'] = $template_file;
+		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file);
+
+		return new ViewResult('success', $data);
+	}
+
+	protected function includeControllerFile(string $php_file): array
+	{
+		$include = function (string $php_file): array {
+			$page = $this;
+			$defined_vars = array_flip(array_keys(get_defined_vars()));
+
+			ob_start();
+			$return = include $php_file;
+			ob_end_clean();
+
+			$data = array_diff_key(get_defined_vars(), $defined_vars, [
+				'defined_vars' => true,
+				'return' => true,
+			]);
+
+			return [$return, $data];
+		};
+
+		return $include->call($this, $php_file);
 	}
 
 	protected function setLayout(string $layout): void
@@ -56,7 +80,8 @@ class MainPage
 	public function successView(array $data, ServerRequestInterface $request = null, $delegate = null)
 	{
 		$template_file = $data['_templateFileName'] ?? '';
+		$template_name = $data['_templateName'] ?? str_replace([".phtml", ".php"], "", $template_file);
 
-		return new HtmlResponse($this->view->render($data, str_replace(".phtml", "", $template_file), $this->layout));
+		return new HtmlResponse($this->view->render($data, $template_name, $this->layout));
 	}
 }

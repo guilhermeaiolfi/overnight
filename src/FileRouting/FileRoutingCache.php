@@ -99,13 +99,23 @@ class FileRoutingCache
 	{
 		$path = $this->getPathFromFile($file);
 
-		return $this->fileRouterConfig->get("cachePath") . $path;
+		return $this->fileRouterConfig->get("cachePath") . preg_replace('/\.php$/', '.code.php', $path);
 	}
 
 	public function getCachedTemplateFilename($file): ?string
 	{
-		$filename = $this->getCachedPhpFilename($file);
+		$path = $this->getPathFromFile($file);
 
-		return str_replace(".php", ".phtml", $filename);
+		return $this->fileRouterConfig->get("cachePath") . $path;
+	}
+
+	public function getTemplateName(string $file): string
+	{
+		$cachePath = str_replace(["\\", "/"], [ DIRECTORY_SEPARATOR, DIRECTORY_SEPARATOR ], $this->fileRouterConfig->get("cachePath"));
+		$cachePath = rtrim($cachePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+		$templateName = str_replace($cachePath, "", $file);
+		$templateName = str_replace(DIRECTORY_SEPARATOR, "/", $templateName);
+
+		return "filerouting::" . preg_replace('/\.php$/', '', $templateName);
 	}
 }
