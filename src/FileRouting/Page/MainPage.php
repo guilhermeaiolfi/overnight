@@ -26,7 +26,7 @@ class MainPage
 		protected FileRoutingConfig $fileRoutingCfg
 	) {
 		$this->layout = $this->viewCfg->get("formats.html.default");
-		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg);
+		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg, $viewCfg);
 	}
 
 	public function index(ServerRequestInterface $request): mixed
@@ -34,7 +34,7 @@ class MainPage
 		$result = $request->getAttribute(RouteResult::class);
 		$file = $result->get("_fileController");
 
-		[$php_file, $template_file] = $this->fileRoutingCache->get($file);
+		[$php_file, $template_file, $template_lang] = $this->fileRoutingCache->get($file);
 
 		$data = [];
 
@@ -47,6 +47,7 @@ class MainPage
 
 		$data['_templateFileName'] = $template_file;
 		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file);
+		$data['_templateLang'] = $template_lang;
 
 		return new ViewResult('success', $data);
 	}

@@ -7,11 +7,13 @@ namespace Tests\ON\FileRouting;
 use FilesystemIterator;
 use League\Plates\Engine;
 use Laminas\Diactoros\ServerRequest;
+use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRouter;
 use ON\FileRouting\FileRoutingConfig;
 use ON\FileRouting\Page\MainPage;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
+use ON\View\RendererInterface;
 use ON\View\Plates\PlatesRenderer;
 use ON\View\View;
 use ON\View\ViewConfig;
@@ -47,14 +49,18 @@ final class FileRoutingExtensionTest extends TestCase
 			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
 			'cachePath' => $cachePath,
 		]);
-		$viewConfig = $this->createViewConfig($cachePath);
-		$engine = new Engine($cachePath, 'php');
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
+		$engine = new Engine($cachePath, 'phtml');
 		$engine->addFolder('filerouting', $cachePath);
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
-			->willReturnCallback(function (string $class) use ($viewConfig, $engine) {
+			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
 				if ($class === PlatesRenderer::class) {
 					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+				}
+
+				if ($class === TestLatteRenderer::class) {
+					return new TestLatteRenderer($cachePath);
 				}
 
 				return null;
@@ -82,6 +88,126 @@ final class FileRoutingExtensionTest extends TestCase
 		$this->assertSame('<div>sucesso absoluto</div>', (string) $response->getBody());
 	}
 
+	public function testTemplateLangUsesRendererExtensionFromViewConfig(): void
+	{
+		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'success.php';
+		$this->writeLatteFileRoutePage($pageFile);
+
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$this->writeDefaultLayout($cachePath);
+
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+			'cachePath' => $cachePath,
+		]);
+		$viewConfig = $this->createViewConfig($cachePath, 'latte');
+		$engine = new Engine($cachePath, 'phtml');
+		$engine->addFolder('filerouting', $cachePath);
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')
+			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
+				if ($class === PlatesRenderer::class) {
+					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+				}
+
+				if ($class === TestLatteRenderer::class) {
+					return new TestLatteRenderer($cachePath);
+				}
+
+				return null;
+			});
+
+		$request = new ServerRequest(uri: '/success', method: 'GET');
+		$routeResult = (new FileRouter($config, ''))->match($request);
+
+		$this->assertFalse($routeResult->isFailure());
+
+		$request = $request->withAttribute(RouteResult::class, $routeResult);
+		$page = new MainPage(
+			new View($viewConfig, $container),
+			$this->createMock(RouterInterface::class),
+			$viewConfig,
+			$config
+		);
+
+		$result = $page->index($request);
+
+		$this->assertInstanceOf(ViewResult::class, $result);
+		$this->assertSame('latte', $result->data['_templateLang']);
+		$this->assertFileExists($cachePath . 'success.latte');
+
+		$response = $page->successView($result->data, $request);
+
+		$this->assertSame('<div>sucesso absoluto</div>', (string) $response->getBody());
+	}
+
+	public function testNestedRoutesWriteControllerTemplateAndMetadataToMatchingCacheFolder(): void
+	{
+		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages'
+			. DIRECTORY_SEPARATOR . 'a'
+			. DIRECTORY_SEPARATOR . 'b'
+			. DIRECTORY_SEPARATOR . 'c.php';
+		$this->writeFileRoutePage($pageFile);
+
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+			'cachePath' => $cachePath,
+		]);
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
+
+		$cache = new FileRoutingCache($config, $viewConfig);
+		$result = $cache->get($pageFile);
+
+		$nestedCachePath = $cachePath . 'a' . DIRECTORY_SEPARATOR . 'b' . DIRECTORY_SEPARATOR;
+
+		$this->assertSame($nestedCachePath . 'c.code.php', $result[0]);
+		$this->assertSame($nestedCachePath . 'c.phtml', $result[1]);
+		$this->assertNull($result[2]);
+		$this->assertFileExists($nestedCachePath . 'c.code.php');
+		$this->assertFileExists($nestedCachePath . 'c.phtml');
+		$this->assertFileExists($nestedCachePath . 'c.meta.php');
+
+		$metadata = include $nestedCachePath . 'c.meta.php';
+
+		$this->assertSame($nestedCachePath . 'c.code.php', $metadata['controller']);
+		$this->assertSame($nestedCachePath . 'c.phtml', $metadata['template']);
+	}
+
+	public function testStaleMetadataRegeneratesWhenSourceChanges(): void
+	{
+		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'success.php';
+		$this->writeFileRoutePage($pageFile);
+
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+			'cachePath' => $cachePath,
+		]);
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
+
+		$cache = new FileRoutingCache($config, $viewConfig);
+		$cache->get($pageFile);
+
+		file_put_contents(
+			$pageFile,
+			<<<'PHP'
+<?php
+
+    $ok = "cache atualizado";
+
+?>
+
+<div><?php echo $ok; ?></div>
+PHP
+		);
+		touch($pageFile, time() + 2);
+
+		$cache->get($pageFile);
+
+		$this->assertStringContainsString('cache atualizado', file_get_contents($cachePath . 'success.code.php'));
+	}
+
 	private function writeFileRoutePage(string $path): void
 	{
 		if (! is_dir(dirname($path))) {
@@ -102,6 +228,28 @@ PHP
 		);
 	}
 
+	private function writeLatteFileRoutePage(string $path): void
+	{
+		if (! is_dir(dirname($path))) {
+			mkdir(dirname($path), 0777, true);
+		}
+
+		file_put_contents(
+			$path,
+			<<<'PHP'
+<?php
+
+    $ok = "sucesso absoluto";
+
+?>
+
+<template lang="latte">
+<div>{$ok}</div>
+</template>
+PHP
+		);
+	}
+
 	private function writeDefaultLayout(string $cachePath): void
 	{
 		if (! is_dir($cachePath)) {
@@ -109,17 +257,18 @@ PHP
 		}
 
 		file_put_contents(
-			$cachePath . 'default.php',
+			$cachePath . 'default.phtml',
 			<<<'PHP'
 <?= $this->section('content') ?>
 PHP
 		);
 	}
 
-	private function createViewConfig(string $cachePath): ViewConfig
+	private function createViewConfig(string $cachePath, string $defaultRenderer): ViewConfig
 	{
 		return new ViewConfig([
 			'templates' => [
+				'extension' => 'phtml',
 				'paths' => [
 					$cachePath,
 					'filerouting' => $cachePath,
@@ -130,13 +279,19 @@ PHP
 					'default' => 'default',
 					'layouts' => [
 						'default' => [
-							'renderer' => 'plates',
+							'renderer' => $defaultRenderer,
 							'sections' => [],
 						],
 					],
 					'renderers' => [
 						'plates' => [
 							'class' => PlatesRenderer::class,
+							'extension' => 'phtml',
+							'inject' => [],
+						],
+						'latte' => [
+							'class' => TestLatteRenderer::class,
+							'extension' => 'latte',
 							'inject' => [],
 						],
 					],
@@ -173,5 +328,21 @@ PHP
 		}
 
 		rmdir($dir);
+	}
+}
+
+final class TestLatteRenderer implements RendererInterface
+{
+	public function __construct(
+		private string $cachePath
+	) {
+	}
+
+	public function render($layout, $template_name, $data, $params = [])
+	{
+		$templatePath = $this->cachePath . str_replace('filerouting::', '', $template_name) . '.latte';
+		$content = file_get_contents($templatePath);
+
+		return trim(str_replace('{$ok}', $data['ok'], $content));
 	}
 }

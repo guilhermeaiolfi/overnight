@@ -38,8 +38,9 @@ class FileRoutingExtension extends AbstractExtension
 		$filerouting_cfg = $this->app->config->get(FileRoutingConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);
 		$view_cfg = $this->app->config->get(ViewConfig::class);
+		$template_namespace = $filerouting_cfg->get('template.namespace', 'filerouting');
 
-		$view_cfg->set('templates.paths.filerouting', $filerouting_cfg->get('cachePath'));
+		$view_cfg->set("templates.paths.{$template_namespace}", $filerouting_cfg->get('cachePath'));
 		$router_cfg->addRoute(
 			'/' . $filerouting_cfg->get('url', "__fileRouting"),
 			"ON\FileRouting\Page\ApiPage::index",

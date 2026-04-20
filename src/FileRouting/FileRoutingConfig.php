@@ -14,6 +14,9 @@ class FileRoutingConfig extends Config
 			"pagesPath" => "src" . DIRECTORY_SEPARATOR . "Pages",
 			"cachePath" => "var" . DIRECTORY_SEPARATOR . "cache" . DIRECTORY_SEPARATOR . "filerouting" . DIRECTORY_SEPARATOR,
 			"controller" => "ON\FileRouting\Page\MainPage::index",
+			"template" => [
+				"namespace" => "filerouting",
+			],
 		];
 	}
 }

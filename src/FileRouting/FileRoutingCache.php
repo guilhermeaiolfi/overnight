@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
+use ON\View\ViewConfig;
+
 class FileRoutingCache
 {
 	protected string $pagesPath;
 
 	public function __construct(
-		protected FileRoutingConfig $fileRouterConfig
+		protected FileRoutingConfig $fileRouterConfig,
+		protected ViewConfig $viewConfig
 	) {
 		$this->pagesPath = str_replace(["\\", "/"], [ DIRECTORY_SEPARATOR, DIRECTORY_SEPARATOR ], $fileRouterConfig->get('pagesPath'));
 		$this->pagesPath = rtrim($this->pagesPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
@@ -17,31 +20,34 @@ class FileRoutingCache
 
 	public function get(string $file): array
 	{
-		$php_cache_filename = $this->getCachedPhpFilename($file);
-
-		$template_cache_filename = $this->getCachedTemplateFilename($file);
-
-		$file_timestamp = filemtime($file);
-
-		if (true || ! file_exists($template_cache_filename) || $file_timestamp >= filemtime($template_cache_filename)) {
-			$this->generate($file);
+		$metadata = $this->getFreshMetadata($file);
+		if ($metadata !== null) {
+			return [
+				$metadata['controller'] ?? null,
+				$metadata['template'],
+				$metadata['lang'],
+			];
 		}
 
+		$generated = $this->generate($file);
+
 		return [
-			file_exists($php_cache_filename) ? $php_cache_filename : null,
-			$template_cache_filename,
+			$generated['controller'],
+			$generated['template'],
+			$generated['lang'],
 		];
 	}
 
-	public function generate(string $file): bool
+	public function generate(string $file): array
 	{
 		$content = file_get_contents($file);
-
 		$code = $this->split($content);
+		$template = $this->parseTemplate($code[1]);
 
 		$php_cache_filename = $this->getCachedPhpFilename($file);
 
-		$template_cache_filename = $this->getCachedTemplateFilename($file);
+		$template_cache_filename = $this->getCachedTemplateFilename($file, $template['lang']);
+		$metadata_cache_filename = $this->getCachedMetadataFilename($file);
 
 		$relative = $this->getPathFromFile($file);
 
@@ -57,9 +63,54 @@ class FileRoutingCache
 
 
 		@unlink($template_cache_filename);
-		file_put_contents($template_cache_filename, $code[1]);
+		file_put_contents($template_cache_filename, $template['content']);
 
-		return true;
+		clearstatcache(true, $file);
+		$metadata = [
+			'source_mtime' => filemtime($file),
+			'source_size' => filesize($file),
+			'controller' => file_exists($php_cache_filename) ? $php_cache_filename : null,
+			'template' => $template_cache_filename,
+			'lang' => $template['lang'],
+		];
+		file_put_contents($metadata_cache_filename, "<?php\n\nreturn " . var_export($metadata, true) . ";\n");
+
+		return $metadata;
+	}
+
+	protected function getFreshMetadata(string $file): ?array
+	{
+		$metadata_cache_filename = $this->getCachedMetadataFilename($file);
+		clearstatcache(true, $metadata_cache_filename);
+		if (! file_exists($metadata_cache_filename)) {
+			return null;
+		}
+
+		$metadata = include $metadata_cache_filename;
+		if (! is_array($metadata)) {
+			return null;
+		}
+
+		clearstatcache(true, $file);
+		if (($metadata['source_mtime'] ?? null) !== filemtime($file)) {
+			return null;
+		}
+
+		if (($metadata['source_size'] ?? null) !== filesize($file)) {
+			return null;
+		}
+
+		clearstatcache(true, $metadata['template'] ?? '');
+		if (empty($metadata['template']) || ! file_exists($metadata['template'])) {
+			return null;
+		}
+
+		clearstatcache(true, $metadata['controller'] ?? '');
+		if (! empty($metadata['controller']) && ! file_exists($metadata['controller'])) {
+			return null;
+		}
+
+		return $metadata;
 	}
 
 	public function split($content): array
@@ -90,6 +141,7 @@ class FileRoutingCache
 
 	public function getPathFromFile($file): ?string
 	{
+		$file = realpath($file) ?: $file;
 		$path = str_replace([realpath($this->pagesPath) . DIRECTORY_SEPARATOR], [""], $file);
 
 		return $path;
@@ -102,11 +154,20 @@ class FileRoutingCache
 		return $this->fileRouterConfig->get("cachePath") . preg_replace('/\.php$/', '.code.php', $path);
 	}
 
-	public function getCachedTemplateFilename($file): ?string
+	public function getCachedTemplateFilename($file, ?string $lang = null): ?string
+	{
+		$path = $this->getPathFromFile($file);
+		$extension = $this->getTemplateExtension($lang);
+		$path = preg_replace('/\.php$/', '.' . $extension, $path);
+
+		return $this->fileRouterConfig->get("cachePath") . $path;
+	}
+
+	public function getCachedMetadataFilename($file): ?string
 	{
 		$path = $this->getPathFromFile($file);
 
-		return $this->fileRouterConfig->get("cachePath") . $path;
+		return $this->fileRouterConfig->get("cachePath") . preg_replace('/\.php$/', '.meta.php', $path);
 	}
 
 	public function getTemplateName(string $file): string
@@ -116,6 +177,30 @@ class FileRoutingCache
 		$templateName = str_replace($cachePath, "", $file);
 		$templateName = str_replace(DIRECTORY_SEPARATOR, "/", $templateName);
 
-		return "filerouting::" . preg_replace('/\.php$/', '', $templateName);
+		return $this->fileRouterConfig->get("template.namespace", "filerouting") . "::" . preg_replace('/\.[^.]+$/', '', $templateName);
+	}
+
+	protected function parseTemplate(string $content): array
+	{
+		if (preg_match('/^\s*<template\s+lang=(["\'])([a-zA-Z0-9_-]+)\1\s*>(.*)<\/template>\s*$/s', $content, $matches)) {
+			return [
+				'lang' => strtolower($matches[2]),
+				'content' => trim($matches[3]),
+			];
+		}
+
+		return [
+			'lang' => null,
+			'content' => $content,
+		];
+	}
+
+	protected function getTemplateExtension(?string $lang): string
+	{
+		if (is_string($lang) && $lang !== '') {
+			return $this->viewConfig->get("formats.html.renderers.{$lang}.extension", $lang);
+		}
+
+		return $this->viewConfig->get('templates.extension', 'phtml');
 	}
 }

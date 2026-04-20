@@ -8,6 +8,7 @@ use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
+use ON\View\ViewConfig;
 
 class LatteExtension extends AbstractExtension
 {
@@ -38,6 +39,9 @@ class LatteExtension extends AbstractExtension
 	{
 		$this->app->ext('container')->when('setup', function () {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
+			$viewConfig = $this->app->config->get(ViewConfig::class);
+
+			$viewConfig->add('latte.extension', 'latte');
 
 			$containerConfig->addFactories([
 				LatteRenderer::class => LatteRendererFactory::class,
