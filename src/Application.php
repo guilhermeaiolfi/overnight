@@ -48,6 +48,7 @@ class Application
 	 *   env_var_name?: string,
 	 *   debug_var_name?: string,
 	 *   dotenv_overload?: ?bool,
+	 *   error_reporting?: ?int,
 	 * } $options
 	 */
 	public function __construct(
@@ -78,8 +79,10 @@ class Application
 		$this->env = new Dotenv();
 		$this->env->load('.env');
 
+		$debug = $options["debug"] ?? $_ENV["APP_DEBUG"] ?? $_SERVER["APP_DEBUG"] ?? false;
+		$this->debug = $_ENV["APP_DEBUG"] = filter_var($debug, FILTER_VALIDATE_BOOLEAN);
 
-		$this->debug = $_ENV["APP_DEBUG"] = $options["debug"] ?? "true" === $_ENV["APP_DEBUG"];
+		$this->configureErrorDisplay();
 
 		$this->environment = $_ENV["APP_ENV"] ?? "development";
 
@@ -88,6 +91,13 @@ class Application
 		}
 
 		$this->loadExtensions();
+	}
+
+	protected function configureErrorDisplay(): void
+	{
+		ini_set('display_errors', $this->debug ? '1' : '0');
+		ini_set('display_startup_errors', $this->debug ? '1' : '0');
+		error_reporting($this->options["error_reporting"] ?? E_ALL);
 	}
 
 	public function isDebug(): bool
