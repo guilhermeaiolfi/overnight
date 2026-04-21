@@ -6,6 +6,8 @@ namespace ON\View;
 
 use Exception;
 use ON\Container\Executor\ExecutorInterface;
+use ON\Http\RequestContext;
+use ON\RequestStackInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -13,17 +15,17 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class ViewManager
 {
-	protected ?ViewResult $activeViewResult = null;
-
 	public function __construct(
 		protected ViewConfig $config,
-		protected ContainerInterface $container
+		protected ContainerInterface $container,
+		protected RequestStackInterface $requestStack
 	) {
 	}
 
 	public function render(array $data, ?string $templateName = null, ?string $layoutName = null): string
 	{
-		$viewResult = $this->getActiveViewResult();
+		$request = $this->requestStack->getCurrentRequest();
+		$viewResult = $this->getCurrentViewResult();
 
 		if ($templateName === null) {
 			$templateName = $viewResult?->getTemplateName();
@@ -49,7 +51,7 @@ class ViewManager
 		if (! empty($rendererConfig['inject'])) {
 			$renderContext = new RenderContext(
 				$this->container,
-				$viewResult?->getRequest() ?? null,
+				$request,
 				$data,
 				['layout' => $layoutConfig, 'template' => $templateName]
 			);
@@ -62,7 +64,7 @@ class ViewManager
 		$layoutConfig["name"] = $layoutName;
 
 		return $renderer->render($layoutConfig, $templateName, $data, [
-			'request' => $viewResult?->getRequest() ?? null,
+			'request' => $request,
 		]);
 	}
 
@@ -88,12 +90,16 @@ class ViewManager
 			$result->setTargetObject($targetObject);
 		}
 
-		$result->setRequest($request);
+		return $this->requestStack->usingRequest($request, function (ServerRequestInterface $request) use (
+			$result,
+			$delegate,
+			$executor
+		): mixed {
+			$requestContext = $request->getAttribute(RequestContext::class);
+			if ($requestContext instanceof RequestContext) {
+				$requestContext->set(ViewResult::class, $result);
+			}
 
-		$previousViewResult = $this->activeViewResult;
-		$this->activeViewResult = $result;
-
-		try {
 			return $executor->execute([
 				$result->getTargetObject(),
 				$result->getViewMethod(),
@@ -103,9 +109,7 @@ class ViewManager
 				$request,
 				$delegate
 			));
-		} finally {
-			$this->activeViewResult = $previousViewResult;
-		}
+		});
 	}
 
 	protected function resolveViewResult(mixed $response): mixed
@@ -144,7 +148,6 @@ class ViewManager
 
 		foreach ($this->config->get('helpers', []) as $name => $class) {
 			$helper = $this->resolveInjectedValue($class, $renderContext);
-			//$parameters[$name] = $helper;
 			$parameters[$class] ??= $helper;
 		}
 
@@ -160,12 +163,18 @@ class ViewManager
 		return $this->container->get($class);
 	}
 
-	protected function getActiveViewResult(): ?ViewResult
+	protected function getCurrentViewResult(): ?ViewResult
 	{
-		if ($this->activeViewResult === null) {
+		$requestContext = $this->requestStack
+			->getCurrentRequest()
+			?->getAttribute(RequestContext::class);
+
+		if (! $requestContext instanceof RequestContext) {
 			return null;
 		}
 
-		return $this->activeViewResult;
+		$viewResult = $requestContext->get(ViewResult::class);
+
+		return $viewResult instanceof ViewResult ? $viewResult : null;
 	}
 }

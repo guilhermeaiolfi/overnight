@@ -35,11 +35,11 @@ use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 use ON\Handler\NotFoundHandler;
-use ON\Http\RequestContext;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
 use ON\MiddlewareFactoryInterface;
 use ON\RequestStack;
+use ON\RequestStackInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
 use ON\Router\Route;
 use ON\Router\RouteResult;
@@ -146,6 +146,7 @@ class PipelineExtension extends AbstractExtension
 			EmitterInterface::class => EmitterFactory::class,
 			ErrorHandler::class => ErrorHandlerFactory::class,
 			MiddlewareContainer::class => MiddlewareContainerFactory::class,
+			RequestStack::class => fn () => new RequestStack(),
 
 			// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
 			ErrorResponseGenerator::class => ErrorResponseGeneratorFactory::class,
@@ -166,6 +167,7 @@ class PipelineExtension extends AbstractExtension
 			//MiddlewarePipeInterface::class => MiddlewarePipe::class,
 			MiddlewarePipeInterface::class => MiddlewarePriorityPipe::class,
 			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
+			RequestStackInterface::class => RequestStack::class,
 			ResponseFactoryInterface::class => ResponseFactory::class,
 		]);
 	}
@@ -209,9 +211,9 @@ class PipelineExtension extends AbstractExtension
 
 	protected function setupPipeline(): void
 	{
-		$this->app->requestStack = $this->requestStack = new RequestStack();
-
 		$container = $this->app->container;
+
+		$this->app->requestStack = $this->requestStack = $container->get(RequestStack::class);
 
 		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
 
@@ -292,10 +294,8 @@ class PipelineExtension extends AbstractExtension
 		if (! $request) {
 			$request = ServerRequestFactory::fromGlobals();
 		}
-		$subrequest = $request->withAttribute(RequestContext::class, new RequestContext($request));
-			
 		// Inject the actual route result, as well as individual matched parameters.
-		$subrequest = $subrequest->withAttribute(RouteResult::class, $result);
+		$subrequest = $request->withAttribute(RouteResult::class, $result);
 
 		foreach ($result->getMatchedParams() as $param => $value) {
 			$subrequest = $subrequest->withAttribute($param, $value);

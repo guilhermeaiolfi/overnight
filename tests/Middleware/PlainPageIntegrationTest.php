@@ -22,6 +22,7 @@ use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\ValidationMiddleware;
+use ON\RequestStack;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -273,7 +274,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$container->method('get')
 			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
 
-		return new ViewManager(new ViewConfig(), $container);
+		return new ViewManager(new ViewConfig(), $container, new RequestStack());
 	}
 
 	// --- isSecure (SecurityMiddleware) ---

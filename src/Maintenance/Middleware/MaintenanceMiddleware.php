@@ -15,21 +15,24 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class MaintenanceMiddleware implements MiddlewareInterface
 {
+	protected AppConfig $appConfig;
+
 	public function __construct(
-		protected MaintenanceModeInterface $app,
-		protected ContainerInterface $container
+		protected MaintenanceModeInterface $maintenance,
+		protected ContainerInterface $container,
+		?AppConfig $appConfig = null
 	) {
+		$this->appConfig = $appConfig ?? $container->get(AppConfig::class);
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		if ($this->app->isMaintenanceMode()) {
+		if ($this->maintenance->isMaintenanceMode()) {
 			if ($this->isIpAllowed($request)) {
 				return $handler->handle($request);
 			}
 
-			$appCfg = $this->app->config;
-			$middleware = $appCfg->get("controllers.maintenance");
+			$middleware = $this->appConfig->get("controllers.maintenance");
 			$method = 'handle';
 			if (str_contains($middleware, "::")) {
 				[$middleware, $method] = explode("::", $middleware);
@@ -72,9 +75,7 @@ class MaintenanceMiddleware implements MiddlewareInterface
 
 	private function getAllowedIps(): array
 	{
-		$config = $this->app->config;
-
-		$ips = $config->get('maintenance.allow_ips', '');
+		$ips = $this->appConfig->get('maintenance.allow_ips', '');
 
 		if (empty($ips)) {
 			$ips = $_ENV['MAINTENANCE_ALLOW_IPS'] ?? '';

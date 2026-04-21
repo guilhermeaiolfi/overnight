@@ -8,6 +8,7 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use ON\Container\Executor\ExecutorInterface;
+use ON\RequestStack;
 use ON\Router\RouterInterface;
 use ON\Router\UrlHelper;
 use ON\View\ViewConfig;
@@ -131,7 +132,7 @@ final class ViewBuilderTraitTest extends TestCase
 			->with(RouterInterface::class)
 			->willReturn($router);
 
-		(new ViewManager(new ViewConfig(), $container))->runView(
+		(new ViewManager(new ViewConfig(), $container, new RequestStack()))->runView(
 			$page,
 			'index',
 			new ViewResult('success'),
@@ -208,7 +209,7 @@ final class ViewBuilderTraitTest extends TestCase
 		$container->method('get')
 			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
 
-		return new ViewManager(new ViewConfig(), $container);
+		return new ViewManager(new ViewConfig(), $container, new RequestStack());
 	}
 
 	private function createExecutor(): ExecutorInterface

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use Laminas\Stratigility\Exception\MiddlewarePipeNextHandlerAlreadyCalledException;
+use ON\RequestStackInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -28,13 +29,27 @@ final class NextPriority implements RequestHandlerInterface
 	 * @param RequestHandlerInterface $fallbackHandler Fallback handler to
 	 *     invoke when the queue is exhausted.
 	 */
-	public function __construct(SplPriorityQueue $queue, RequestHandlerInterface $fallbackHandler)
+	public function __construct(
+		SplPriorityQueue $queue,
+		RequestHandlerInterface $fallbackHandler,
+		private RequestStackInterface $requestStack
+	)
 	{
 		$this->queue = clone $queue;
 		$this->fallbackHandler = $fallbackHandler;
 	}
 
 	public function handle(ServerRequestInterface $request): ResponseInterface
+	{
+		return $this->requestStack->usingRequest(
+			$request,
+			function (ServerRequestInterface $request): ResponseInterface {
+				return $this->handleWithCurrentRequest($request);
+			}
+		);
+	}
+
+	private function handleWithCurrentRequest(ServerRequestInterface $request): ResponseInterface
 	{
 		if ($this->queue === null) {
 			throw MiddlewarePipeNextHandlerAlreadyCalledException::create();

@@ -9,6 +9,7 @@ use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Middleware\ValidationMiddleware;
+use ON\RequestStack;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -318,7 +319,7 @@ final class ValidationMiddlewareTest extends TestCase
 	{
 		return new ValidationMiddleware(
 			$executor,
-			new ViewManager(new ViewConfig(), $this->createViewContainer())
+			new ViewManager(new ViewConfig(), $this->createViewContainer(), new RequestStack())
 		);
 	}
 

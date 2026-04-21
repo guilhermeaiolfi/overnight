@@ -30,7 +30,6 @@ class ViewResult implements \ArrayAccess
 	protected ?string $viewName = null; // eg.: 'success', 'error'
 	protected ?string $actionName = null;
 	protected ?object $targetObject = null;
-	protected ?RequestInterface $request = null;
 
 	public function __construct(
 		protected readonly string $view,
@@ -43,16 +42,6 @@ class ViewResult implements \ArrayAccess
 		} else {
 			$this->viewName = strtolower($this->view);
 		}
-	}
-
-	public function setRequest(RequestInterface $request): void
-	{
-		$this->request = $request;
-	}
-
-	public function getRequest(): ?RequestInterface
-	{
-		return $this->request;
 	}
 
 	public function getTargetObject(): ?object

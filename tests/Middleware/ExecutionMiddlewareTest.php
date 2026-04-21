@@ -15,6 +15,7 @@ use ON\Container\Executor\Executor;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
+use ON\RequestStack;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -229,7 +230,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		return new ExecutionMiddleware(
 			$this->createMock(RouterInterface::class),
 			$this->executor,
-			new ViewManager(new ViewConfig(), $this->container)
+			new ViewManager(new ViewConfig(), $this->container, new RequestStack())
 		);
 	}
 }

@@ -8,6 +8,7 @@ use ArrayIterator;
 use function iterator_to_array;
 use Laminas\Stratigility\EmptyPipelineHandler;
 use Laminas\Stratigility\IterableMiddlewarePipeInterface;
+use ON\RequestStackInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -39,7 +40,9 @@ final class MiddlewarePriorityPipe implements IterableMiddlewarePipeInterface
 	/**
 	 * Initializes the queue.
 	 */
-	public function __construct()
+	public function __construct(
+		private RequestStackInterface $requestStack
+	)
 	{
 		/** @psalm-var SplPriorityQueue<MiddlewareInterface> */
 		$this->pipeline = new SplPriorityQueue();
@@ -70,7 +73,10 @@ final class MiddlewarePriorityPipe implements IterableMiddlewarePipeInterface
 	 */
 	public function handle(ServerRequestInterface $request): ResponseInterface
 	{
-		return $this->process($request, new EmptyPipelineHandler(self::class));
+		return $this->requestStack->beginRequest(
+			$request,
+			fn (ServerRequestInterface $request): ResponseInterface => $this->process($request, new EmptyPipelineHandler(self::class))
+		);
 	}
 
 	/**
@@ -81,7 +87,7 @@ final class MiddlewarePriorityPipe implements IterableMiddlewarePipeInterface
 	 */
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		return (new NextPriority($this->pipeline, $handler))->handle($request);
+		return (new NextPriority($this->pipeline, $handler, $this->requestStack))->handle($request);
 	}
 
 	/**

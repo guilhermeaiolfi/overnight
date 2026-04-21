@@ -11,7 +11,9 @@ use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateDownCommand;
 use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
+use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
+use ON\DB\DatabaseManager;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 
@@ -45,6 +47,7 @@ class DatabaseExtension extends AbstractExtension
 		$this->app->ext('config')->when('setup', function (ConfigExtension $configExt) {
 			$containerConfig = $configExt->get(ContainerConfig::class);
 			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
+			$containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
 		});
 	}
 

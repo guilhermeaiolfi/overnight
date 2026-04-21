@@ -4,15 +4,17 @@ declare(strict_types=1);
 
 namespace ON;
 
+use function array_key_last;
 use function count;
+use ON\Http\RequestContext;
 use Psr\Http\Message\ServerRequestInterface;
 
-class RequestStack
+class RequestStack implements RequestStackInterface
 {
 	/**
-	 * @var ServerRequestInterface[]
+	 * @var RequestStackFrame[]
 	 */
-	private array $requests = [];
+	private array $frames = [];
 
 	/**
 	 * @param ServerRequestInterface[] $requests
@@ -24,6 +26,36 @@ class RequestStack
 		}
 	}
 
+	public function beginRequest(ServerRequestInterface $request, callable $callback): mixed
+	{
+		$request = $this->normalizeRequest($request);
+		$this->push($request);
+
+		try {
+			return $callback($request);
+		} finally {
+			$this->pop();
+		}
+	}
+
+	public function usingRequest(ServerRequestInterface $request, callable $callback): mixed
+	{
+		$request = $this->normalizeRequest($request);
+		$frame = $this->getCurrentFrame();
+		if (! $frame) {
+			return $this->beginRequest($request, $callback);
+		}
+
+		$previousRequest = $frame->currentRequest;
+		$frame->currentRequest = $request;
+
+		try {
+			return $callback($request);
+		} finally {
+			$frame->currentRequest = $previousRequest;
+		}
+	}
+
 	public function isMainRequest(ServerRequestInterface $request): bool
 	{
 		return $this->getMainRequest() === $request;
@@ -31,71 +63,74 @@ class RequestStack
 
 	public function isCurrentMainRequest(): bool
 	{
-		return count($this->requests) === 1;
+		return count($this->frames) === 1;
 	}
 
-	/**
-	 * Pushes a Request on the stack.
-	 *
-	 * This method should generally not be called directly as the stack
-	 * management should be taken care of by the application itself.
-	 */
 	public function push(ServerRequestInterface $request): void
 	{
-		$this->requests[] = $request;
+		$request = $this->normalizeRequest($request);
+		$this->frames[] = new RequestStackFrame(
+			$request,
+			$this->getCurrentRequest()
+		);
 	}
 
-	/**
-	 * Pops the current request from the stack.
-	 *
-	 * This operation lets the current request go out of scope.
-	 *
-	 * This method should generally not be called directly as the stack
-	 * management should be taken care of by the application itself.
-	 */
 	public function pop(): ?ServerRequestInterface
 	{
-		if (! $this->requests) {
+		if (! $this->frames) {
 			return null;
 		}
 
-		return array_pop($this->requests);
+		return array_pop($this->frames)->currentRequest;
 	}
 
 	public function getCurrentRequest(): ?ServerRequestInterface
 	{
-		return end($this->requests) ?: null;
+		return $this->getCurrentFrame()?->currentRequest;
 	}
 
-	/**
-	 * Gets the main request.
-	 *
-	 * Be warned that making your code aware of the main request
-	 * might make it un-compatible with other features of your framework
-	 * like ESI support.
-	 */
 	public function getMainRequest(): ?ServerRequestInterface
 	{
-		if (! $this->requests) {
+		return $this->frames[0]->currentRequest ?? null;
+	}
+
+	public function getParentRequest(): ?ServerRequestInterface
+	{
+		return $this->getCurrentFrame()?->parentRequest;
+	}
+
+	private function getCurrentFrame(): ?RequestStackFrame
+	{
+		if (! $this->frames) {
 			return null;
 		}
 
-		return $this->requests[0];
+		return $this->frames[array_key_last($this->frames)];
 	}
 
-	/**
-	 * Returns the parent request of the current.
-	 *
-	 * Be warned that making your code aware of the parent request
-	 * might make it un-compatible with other features of your framework
-	 * like ESI support.
-	 *
-	 * If current Request is the main request, it returns null.
-	 */
-	public function getParentRequest(): ?ServerRequestInterface
+	private function normalizeRequest(ServerRequestInterface $request): ServerRequestInterface
 	{
-		$pos = count($this->requests) - 2;
+		if ($request->getAttribute(RequestContext::class) instanceof RequestContext) {
+			return $request;
+		}
 
-		return $this->requests[$pos] ?? null;
+		$parentRequest = $this->getCurrentRequest();
+
+		return $request->withAttribute(
+			RequestContext::class,
+			new RequestContext(
+				$parentRequest,
+				$parentRequest?->getAttribute(RequestContext::class)
+			)
+		);
+	}
+}
+
+final class RequestStackFrame
+{
+	public function __construct(
+		public ServerRequestInterface $currentRequest,
+		public readonly ?ServerRequestInterface $parentRequest = null
+	) {
 	}
 }

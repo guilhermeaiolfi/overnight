@@ -7,6 +7,7 @@ namespace ON\Maintenance;
 use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
@@ -40,6 +41,11 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 		$this->app->ext("config")->when('setup', function () {
 			$appCfg = $this->app->config->get(AppConfig::class);
 			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
+		});
+
+		$this->app->ext("container")->when('setup', function () {
+			$containerConfig = $this->app->config->get(ContainerConfig::class);
+			$containerConfig->set("definitions.services." . MaintenanceModeInterface::class, $this);
 		});
 
 

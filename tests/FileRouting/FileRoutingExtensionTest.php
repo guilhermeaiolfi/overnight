@@ -11,6 +11,7 @@ use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRouter;
 use ON\FileRouting\FileRoutingConfig;
 use ON\FileRouting\Page\MainPage;
+use ON\RequestStack;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\RendererInterface;
@@ -73,7 +74,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$request = $request->withAttribute(RouteResult::class, $routeResult);
 		$page = new MainPage(
-			new ViewManager($viewConfig, $container),
+			new ViewManager($viewConfig, $container, new RequestStack()),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
 			$config
@@ -124,7 +125,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$request = $request->withAttribute(RouteResult::class, $routeResult);
 		$page = new MainPage(
-			new ViewManager($viewConfig, $container),
+			new ViewManager($viewConfig, $container, new RequestStack()),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
 			$config
