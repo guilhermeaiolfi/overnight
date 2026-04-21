@@ -12,7 +12,7 @@ class RenderContext
 	public function __construct(
 		public readonly ContainerInterface $container,
 		public readonly ?ServerRequestInterface $request = null,
-		public readonly array $data = [],
+		public readonly ?array $data = [],
 		public readonly array $params = []
 	) {
 	}

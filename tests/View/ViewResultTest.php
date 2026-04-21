@@ -13,16 +13,16 @@ final class ViewResultTest extends TestCase
 	{
 		$result = new ViewResult('success', ['post' => ['id' => 1], 'message' => 'Created']);
 
-		$this->assertSame('success', $result->view);
-		$this->assertSame(['post' => ['id' => 1], 'message' => 'Created'], $result->data);
+		$this->assertSame('success', $result->getViewName());
+		$this->assertSame(['post' => ['id' => 1], 'message' => 'Created'], $result->toArray());
 	}
 
 	public function testConstructWithViewOnly(): void
 	{
 		$result = new ViewResult('error');
 
-		$this->assertSame('error', $result->view);
-		$this->assertSame([], $result->data);
+		$this->assertSame('error', $result->getViewName());
+		$this->assertSame([], $result->toArray());
 	}
 
 	public function testGet(): void

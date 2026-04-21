@@ -34,7 +34,7 @@ final class ViewBuilderTraitTest extends TestCase
 		$response = $this->runView($page, 'create', new ViewResult('success', ['post' => ['id' => 1]]));
 
 		$this->assertInstanceOf(HtmlResponse::class, $response);
-		$this->assertSame(['post' => ['id' => 1]], $page->receivedResult->data);
+		$this->assertSame(['post' => ['id' => 1]], $page->receivedResult->toArray());
 	}
 
 	public function testViewResultDataAccessibleViaGet(): void
@@ -86,8 +86,8 @@ final class ViewBuilderTraitTest extends TestCase
 
 		$this->runView($page, 'index', 'Success');
 
-		$this->assertSame([], $page->receivedResult->data);
-		$this->assertSame('Success', $page->receivedResult->view);
+		$this->assertSame([], $page->receivedResult->toArray());
+		$this->assertSame('success', $page->receivedResult->getViewName());
 	}
 
 	public function testResponseReturnedAsIs(): void
@@ -140,8 +140,7 @@ final class ViewBuilderTraitTest extends TestCase
 			$executor
 		);
 
-		$this->assertInstanceOf(UrlHelper::class, $executor->args['url']);
-		$this->assertSame($executor->args['url'], $executor->args[UrlHelper::class]);
+		$this->assertInstanceOf(UrlHelper::class, $executor->args[UrlHelper::class]);
 	}
 
 	public function testThrowsWhenViewMethodNotFound(): void

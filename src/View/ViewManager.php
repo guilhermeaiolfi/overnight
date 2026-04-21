@@ -6,18 +6,14 @@ namespace ON\View;
 
 use Exception;
 use ON\Container\Executor\ExecutorInterface;
-use ON\Router\UrlHelper;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use ReflectionNamedType;
-use ReflectionObject;
-use ReflectionProperty;
 
 class ViewManager
 {
-	protected ?array $activeViewContext = null;
+	protected ?ViewResult $activeViewResult = null;
 
 	public function __construct(
 		protected ViewConfig $config,
@@ -25,17 +21,12 @@ class ViewManager
 	) {
 	}
 
-	public function createView(): ViewInterface
+	public function render(array $data, ?string $templateName = null, ?string $layoutName = null): string
 	{
-		return new View($this);
-	}
-
-	public function render(View $view, array $data, ?string $templateName = null, ?string $layoutName = null): string
-	{
-		$activeContext = $this->getActiveViewContext();
+		$viewResult = $this->getActiveViewResult();
 
 		if ($templateName === null) {
-			$templateName = $activeContext['templateName'] ?? $view->getDefaultTemplateName();
+			$templateName = $viewResult?->getTemplateName();
 			if ($templateName === null) {
 				throw new Exception('No template name provided and no default template name set.');
 			}
@@ -58,7 +49,7 @@ class ViewManager
 		if (! empty($rendererConfig['inject'])) {
 			$renderContext = new RenderContext(
 				$this->container,
-				$activeContext['request'] ?? null,
+				$viewResult?->getRequest() ?? null,
 				$data,
 				['layout' => $layoutConfig, 'template' => $templateName]
 			);
@@ -71,7 +62,7 @@ class ViewManager
 		$layoutConfig["name"] = $layoutName;
 
 		return $renderer->render($layoutConfig, $templateName, $data, [
-			'request' => $activeContext['request'] ?? null,
+			'request' => $viewResult?->getRequest() ?? null,
 		]);
 	}
 
@@ -86,48 +77,34 @@ class ViewManager
 		if ($response instanceof ResponseInterface) {
 			return $response;
 		}
-		$response = $this->resolveViewResult($response);
+		$result = $this->resolveViewResult($response);
 
-		$viewPage = $actionPage;
-		$viewName = $response->view;
-
-		// TODO: better handling of that convention for specifying view page, maybe with a special syntax or something else
-		if (strpos($viewName, ":") !== false) {
-			$parts = explode(":", $viewName);
-			$pageClass = $parts[0] . 'Page';
-			$viewName = strtolower($parts[1]);
-
-			if ($pageClass !== get_class($actionPage)) {
-				$viewPage = $this->container->get($pageClass);
-			}
+		$result->setActionName($actionName);
+		
+		if ($result->getPageClass() === null) {
+			$result->setTargetObject($actionPage);
 		} else {
-			$viewName = strtolower($viewName);
+			$targetObject = $this->container->get($result->getPageClass());
+			$result->setTargetObject($targetObject);
 		}
 
-		$templateName = null;
+		$result->setRequest($request);
 
-		$path = explode("\\", get_class($viewPage));
-		$templateName = strtolower($path[0] . "::" . str_replace("Page", "", array_pop($path)) . "-" . $actionName . "-" . strtolower($viewName));
-
-		$absoluteViewMethod = $this->resolveViewMethod($viewPage, $viewName, $actionName);
-		$previousContext = $this->activeViewContext;
-		$this->activeViewContext = [
-			'request' => $request,
-			'templateName' => $templateName,
-		];
+		$previousViewResult = $this->activeViewResult;
+		$this->activeViewResult = $result;
 
 		try {
 			return $executor->execute([
-				$viewPage,
-				$absoluteViewMethod,
+				$result->getTargetObject(),
+				$result->getViewMethod(),
 			],
 			$this->resolveViewParameters(
-				$response,
+				$result,
 				$request,
 				$delegate
 			));
 		} finally {
-			$this->activeViewContext = $previousContext;
+			$this->activeViewResult = $previousViewResult;
 		}
 	}
 
@@ -149,49 +126,29 @@ class ViewManager
 		ServerRequestInterface $request,
 		RequestHandlerInterface $delegate
 	): array {
-		$parameters = array_merge($result->data, [
+
+		$data = $result->toArray();
+		$parameters = array_merge($data, [
 			ViewResult::class => $result,
-			'result' => $result,
 			'request' => $request,
 			'delegate' => $delegate,
-			'data' => $result->data,
+			'data' => $data,
 		]);
 
 		$renderContext = new RenderContext(
 			$this->container,
 			$request,
-			$result->data,
-			['result' => $result]
+			$data,
+			[ "resultView" => $result ]
 		);
 
 		foreach ($this->config->get('helpers', []) as $name => $class) {
 			$helper = $this->resolveInjectedValue($class, $renderContext);
-			$parameters[$name] = $helper;
+			//$parameters[$name] = $helper;
 			$parameters[$class] ??= $helper;
 		}
 
 		return $parameters;
-	}
-
-	protected function resolveViewMethod(object $page, string $viewName, string $actionName): string
-	{
-		$method = strtolower($viewName) . 'View';
-		if (method_exists($page, $method)) {
-			return $method;
-		}
-
-		$method = $actionName . ucfirst($viewName) . 'View';
-		if (method_exists($page, $method)) {
-			return $method;
-		}
-
-		$method = strtolower($viewName);
-		if (method_exists($page, $method)) {
-			return $method;
-		}
-
-		$className = get_class($page);
-		throw new Exception("No view method found for '{$viewName}' in class {$className}");
 	}
 
 	protected function resolveInjectedValue(string $class, RenderContext $context): mixed
@@ -203,12 +160,12 @@ class ViewManager
 		return $this->container->get($class);
 	}
 
-	protected function getActiveViewContext(): ?array
+	protected function getActiveViewResult(): ?ViewResult
 	{
-		if ($this->activeViewContext === null) {
+		if ($this->activeViewResult === null) {
 			return null;
 		}
 
-		return $this->activeViewContext;
+		return $this->activeViewResult;
 	}
 }

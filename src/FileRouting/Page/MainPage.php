@@ -10,7 +10,6 @@ use ON\FileRouting\FileRoutingConfig;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\ViewConfig;
-use ON\View\ViewInterface;
 use ON\View\ViewManager;
 use ON\View\ViewResult;
 use Psr\Http\Message\ServerRequestInterface;
@@ -19,15 +18,13 @@ class MainPage
 {
 	protected string $layout;
 	protected FileRoutingCache $fileRoutingCache;
-	public ViewInterface $view;
 
 	public function __construct(
-		ViewManager $viewManager,
+		protected ViewManager $viewManager,
 		protected RouterInterface $router,
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingCfg
 	) {
-		$this->view = $viewManager->createView();
 		$this->layout = $this->viewCfg->get("formats.html.default");
 		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg, $viewCfg);
 	}
@@ -86,6 +83,6 @@ class MainPage
 		$template_file = $data['_templateFileName'] ?? '';
 		$template_name = $data['_templateName'] ?? str_replace([".phtml", ".php"], "", $template_file);
 
-		return new HtmlResponse($this->view->render($data, $template_name, $this->layout));
+		return new HtmlResponse($this->viewManager->render($data, $template_name, $this->layout));
 	}
 }

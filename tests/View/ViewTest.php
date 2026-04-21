@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Tests\ON\View;
 
 use Exception;
-use ON\View\View;
+use ON\View\GenericView;
 use ON\View\ViewConfig;
 use ON\View\ViewInterface;
 use ON\View\ViewManager;
@@ -199,11 +199,11 @@ final class ViewTest extends TestCase
 		return $config;
 	}
 
-	protected function createView(?ViewConfig $config = null, ?ContainerInterface $container = null): View
+	protected function createView(?ViewConfig $config = null, ?ContainerInterface $container = null): GenericView
 	{
 		$config ??= $this->createViewConfig();
 		$container ??= $this->createMock(ContainerInterface::class);
 
-		return new View(new ViewManager($config, $container));
+		return new GenericView(new ViewManager($config, $container));
 	}
 }

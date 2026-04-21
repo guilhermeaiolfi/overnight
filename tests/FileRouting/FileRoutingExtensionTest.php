@@ -83,7 +83,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$this->assertInstanceOf(ViewResult::class, $result);
 
-		$response = $page->successView($result->data, $request);
+		$response = $page->successView($result->toArray(), $request);
 
 		$this->assertSame('<div>sucesso absoluto</div>', (string) $response->getBody());
 	}
@@ -133,10 +133,10 @@ final class FileRoutingExtensionTest extends TestCase
 		$result = $page->index($request);
 
 		$this->assertInstanceOf(ViewResult::class, $result);
-		$this->assertSame('latte', $result->data['_templateLang']);
+		$this->assertSame('latte', $result->toArray()['_templateLang']);
 		$this->assertFileExists($cachePath . 'success.latte');
 
-		$response = $page->successView($result->data, $request);
+		$response = $page->successView($result->toArray(), $request);
 
 		$this->assertSame('<div>sucesso absoluto</div>', (string) $response->getBody());
 	}

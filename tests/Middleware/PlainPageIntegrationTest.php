@@ -227,7 +227,7 @@ final class PlainPageIntegrationTest extends TestCase
 
 			public function successView(ViewResult $result): HtmlResponse
 			{
-				return new HtmlResponse($this->view->render($result->data, 'page/index'));
+				return new HtmlResponse($this->view->render($result->toArray(), 'page/index'));
 			}
 		};
 
