@@ -24,7 +24,10 @@ use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\ValidationMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
+use ON\Router\RouterInterface;
+use ON\View\ViewConfig;
 use ON\View\ViewInterface;
+use ON\View\ViewManager;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -69,7 +72,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$response = $middleware->process($request, $handler);
 
 		$this->assertInstanceOf(JsonResponse::class, $response);
@@ -94,7 +97,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$response = $middleware->process($request, $handler);
 
 		$this->assertInstanceOf(HtmlResponse::class, $response);
@@ -117,7 +120,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertSame(42, $page->receivedId);
@@ -148,7 +151,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->method('handle')->willReturn($actionResponse);
 
-		$validationMiddleware = new ValidationMiddleware($this->container, $this->executor);
+		$validationMiddleware = $this->createValidationMiddleware();
 		$response = $validationMiddleware->process($request, $handler);
 
 		// Validation passed → handler was called → action response returned
@@ -178,7 +181,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->method('handle')->willReturn($fallthrough);
 
-		$validationMiddleware = new ValidationMiddleware($this->container, $this->executor);
+		$validationMiddleware = $this->createValidationMiddleware();
 		$response = $validationMiddleware->process($request, $handler);
 
 		// No error handler → passes through to handler
@@ -203,7 +206,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$response = $middleware->process($request, $handler);
 
 		$this->assertStringContainsString('rendered success', (string) $response->getBody());
@@ -213,7 +216,6 @@ final class PlainPageIntegrationTest extends TestCase
 	{
 		$mockView = $this->createMock(ViewInterface::class);
 		$mockView->method('render')->willReturn('<html>rendered</html>');
-		$mockView->expects($this->once())->method('setDefaultTemplateName');
 
 		$page = new class($mockView) {
 			public function __construct(public ViewInterface $view) {}
@@ -233,7 +235,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$response = $middleware->process($request, $handler);
 
 		$this->assertStringContainsString('rendered', (string) $response->getBody());
@@ -246,6 +248,32 @@ final class PlainPageIntegrationTest extends TestCase
 		$routeResult->setTargetInstance($page);
 		$routeResult->setMethod($method);
 		return $routeResult;
+	}
+
+	protected function createExecutionMiddleware(): ExecutionMiddleware
+	{
+		return new ExecutionMiddleware(
+			$this->createMock(RouterInterface::class),
+			$this->executor,
+			$this->createViewManager()
+		);
+	}
+
+	protected function createValidationMiddleware(): ValidationMiddleware
+	{
+		return new ValidationMiddleware($this->executor, $this->createViewManager());
+	}
+
+	protected function createViewManager(): ViewManager
+	{
+		$router = $this->createMock(RouterInterface::class);
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('has')
+			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+		$container->method('get')
+			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
+
+		return new ViewManager(new ViewConfig(), $container);
 	}
 
 	// --- isSecure (SecurityMiddleware) ---
@@ -437,7 +465,7 @@ final class PlainPageIntegrationTest extends TestCase
 			public function index(): JsonResponse { return new JsonResponse(['ok']); }
 		};
 
-		$middleware = new ValidationMiddleware($this->container, $this->executor);
+		$middleware = $this->createValidationMiddleware();
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -461,7 +489,7 @@ final class PlainPageIntegrationTest extends TestCase
 			}
 		};
 
-		$middleware = new ValidationMiddleware($this->container, $this->executor);
+		$middleware = $this->createValidationMiddleware();
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -480,7 +508,7 @@ final class PlainPageIntegrationTest extends TestCase
 			public function create(): JsonResponse { return new JsonResponse(['created']); }
 		};
 
-		$middleware = new ValidationMiddleware($this->container, $this->executor);
+		$middleware = $this->createValidationMiddleware();
 
 		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);

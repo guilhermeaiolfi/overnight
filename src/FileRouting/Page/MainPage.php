@@ -11,6 +11,7 @@ use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\ViewConfig;
 use ON\View\ViewInterface;
+use ON\View\ViewManager;
 use ON\View\ViewResult;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -18,13 +19,15 @@ class MainPage
 {
 	protected string $layout;
 	protected FileRoutingCache $fileRoutingCache;
+	public ViewInterface $view;
 
 	public function __construct(
-		public ViewInterface $view,
+		ViewManager $viewManager,
 		protected RouterInterface $router,
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingCfg
 	) {
+		$this->view = $viewManager->createView();
 		$this->layout = $this->viewCfg->get("formats.html.default");
 		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg, $viewCfg);
 	}

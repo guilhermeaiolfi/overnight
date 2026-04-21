@@ -11,6 +11,9 @@ use ON\Container\Executor\ExecutorInterface;
 use ON\Middleware\ValidationMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
+use ON\Router\RouterInterface;
+use ON\View\ViewConfig;
+use ON\View\ViewManager;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -30,7 +33,7 @@ final class ValidationMiddlewareTest extends TestCase
 	public function testPassesThroughWhenNoRouteResult(): void
 	{
 		$executor = $this->createMock(ExecutorInterface::class);
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$request = new ServerRequest();
 		$expectedResponse = new TextResponse('ok');
@@ -45,7 +48,7 @@ final class ValidationMiddlewareTest extends TestCase
 	public function testPassesThroughWhenNoTargetInstance(): void
 	{
 		$executor = $this->createMock(ExecutorInterface::class);
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$route = new Route('/test', $this->createMock(\Psr\Http\Server\MiddlewareInterface::class));
 		$routeResult = RouteResult::fromRoute($route);
@@ -72,7 +75,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->never())->method('execute');
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -108,7 +111,7 @@ final class ValidationMiddlewareTest extends TestCase
 			)
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -141,7 +144,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->with([$page, 'validate'], $this->anything())
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -171,7 +174,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->with([$page, 'defaultValidate'], $this->anything())
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -216,7 +219,7 @@ final class ValidationMiddlewareTest extends TestCase
 				return null;
 			});
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -247,7 +250,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->method('execute')
 			->willReturn(false);
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -285,7 +288,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->with([$page, 'createValidate'], $this->anything())
 			->willReturn(true);
 
-		$middleware = new ValidationMiddleware($this->container, $executor);
+		$middleware = $this->createValidationMiddleware($executor);
 
 		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -309,5 +312,25 @@ final class ValidationMiddlewareTest extends TestCase
 		$routeResult->setTargetInstance($page);
 		$routeResult->setMethod($method);
 		return $routeResult;
+	}
+
+	protected function createValidationMiddleware(ExecutorInterface $executor): ValidationMiddleware
+	{
+		return new ValidationMiddleware(
+			$executor,
+			new ViewManager(new ViewConfig(), $this->createViewContainer())
+		);
+	}
+
+	protected function createViewContainer(): ContainerInterface
+	{
+		$router = $this->createMock(RouterInterface::class);
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('has')
+			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+		$container->method('get')
+			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
+
+		return $container;
 	}
 }

@@ -44,6 +44,7 @@ class PhpDebugBarMiddleware implements MiddlewareInterface
 
 		$this->responseFactory = $responseFactory;
 		$this->streamFactory = $streamFactory;
+		$this->stack = $stack;
 		$this->parent = new DebugBarMiddleware($debugbarRenderer, $responseFactory, $streamFactory);
 	}
 

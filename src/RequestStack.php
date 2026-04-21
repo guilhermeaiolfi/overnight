@@ -26,15 +26,12 @@ class RequestStack
 
 	public function isMainRequest(ServerRequestInterface $request): bool
 	{
-		return $this->getMainRequest() == $request;
+		return $this->getMainRequest() === $request;
 	}
 
-	public function update(ServerRequestInterface $old, ServerRequestInterface $new)
+	public function isCurrentMainRequest(): bool
 	{
-		$index = array_search($old, $this->requests);
-		if ($index !== false) {
-			$this->requests[$index] = $new;
-		}
+		return count($this->requests) === 1;
 	}
 
 	/**

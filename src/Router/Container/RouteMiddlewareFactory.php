@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Router\Container;
 
 use ON\Application;
-use ON\RequestStack;
 use ON\Router\Exception\MissingDependencyException;
 use ON\Router\Middleware\ImplicitHeadMiddleware;
 use ON\Router\Middleware\RouteMiddleware;
@@ -56,7 +55,6 @@ class RouteMiddlewareFactory
 
 		return new RouteMiddleware(
 			$container->get(RouterInterface::class),
-			$container->get(RequestStack::class),
 			$container->get(Application::class)
 		);
 	}

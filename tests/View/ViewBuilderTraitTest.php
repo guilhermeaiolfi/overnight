@@ -6,30 +6,32 @@ namespace Tests\ON\View;
 
 use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\Response\JsonResponse;
-use ON\View\ViewBuilderTrait;
-use ON\View\ViewInterface;
+use Laminas\Diactoros\ServerRequest;
+use ON\Container\Executor\ExecutorInterface;
+use ON\Router\RouterInterface;
+use ON\Router\UrlHelper;
+use ON\View\ViewConfig;
+use ON\View\ViewManager;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
+use Psr\Http\Server\RequestHandlerInterface;
 
 final class ViewBuilderTraitTest extends TestCase
 {
 	public function testViewResultCallsViewMethodWithResult(): void
 	{
-		$builder = $this->createBuilder();
-
 		$page = new class {
 			public ?ViewResult $receivedResult = null;
 
-			public function successView(ViewResult $result, $request = null, $delegate = null)
+			public function successView(ViewResult $result)
 			{
 				$this->receivedResult = $result;
 				return new HtmlResponse('<h1>Success</h1>');
 			}
 		};
 
-		$result = new ViewResult('success', ['post' => ['id' => 1]]);
-
-		$response = $builder->buildView($page, 'create', $result, null, null);
+		$response = $this->runView($page, 'create', new ViewResult('success', ['post' => ['id' => 1]]));
 
 		$this->assertInstanceOf(HtmlResponse::class, $response);
 		$this->assertSame(['post' => ['id' => 1]], $page->receivedResult->data);
@@ -37,39 +39,34 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testViewResultDataAccessibleViaGet(): void
 	{
-		$builder = $this->createBuilder();
-
 		$page = new class {
-			public function successView(ViewResult $result, $request = null, $delegate = null)
+			public function successView(ViewResult $result)
 			{
 				return new HtmlResponse('post id: ' . $result->get('post')['id']);
 			}
 		};
 
-		$result = new ViewResult('success', ['post' => ['id' => 42]]);
-		$response = $builder->buildView($page, 'create', $result, null, null);
+		$response = $this->runView($page, 'create', new ViewResult('success', ['post' => ['id' => 42]]));
 
 		$this->assertStringContainsString('post id: 42', (string) $response->getBody());
 	}
 
 	public function testViewResultDifferentViews(): void
 	{
-		$builder = $this->createBuilder();
-
 		$page = new class {
-			public function successView(ViewResult $result, $request = null, $delegate = null)
+			public function successView(ViewResult $result)
 			{
 				return new HtmlResponse('success: ' . $result->get('message'));
 			}
 
-			public function errorView(ViewResult $result, $request = null, $delegate = null)
+			public function errorView(ViewResult $result)
 			{
 				return new HtmlResponse('error: ' . $result->get('error'));
 			}
 		};
 
-		$successResponse = $builder->buildView($page, 'create', new ViewResult('success', ['message' => 'Created!']), null, null);
-		$errorResponse = $builder->buildView($page, 'create', new ViewResult('error', ['error' => 'Failed']), null, null);
+		$successResponse = $this->runView($page, 'create', new ViewResult('success', ['message' => 'Created!']));
+		$errorResponse = $this->runView($page, 'create', new ViewResult('error', ['error' => 'Failed']));
 
 		$this->assertStringContainsString('success: Created!', (string) $successResponse->getBody());
 		$this->assertStringContainsString('error: Failed', (string) $errorResponse->getBody());
@@ -77,19 +74,17 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testStringReturnCreatesEmptyViewResult(): void
 	{
-		$builder = $this->createBuilder();
-
 		$page = new class {
 			public ?ViewResult $receivedResult = null;
 
-			public function successView(ViewResult $result, $request = null, $delegate = null)
+			public function successView(ViewResult $result)
 			{
 				$this->receivedResult = $result;
 				return new HtmlResponse('ok');
 			}
 		};
 
-		$builder->buildView($page, 'index', 'Success', null, null);
+		$this->runView($page, 'index', 'Success');
 
 		$this->assertSame([], $page->receivedResult->data);
 		$this->assertSame('Success', $page->receivedResult->view);
@@ -97,55 +92,64 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testResponseReturnedAsIs(): void
 	{
-		$builder = $this->createBuilder();
-		$page = new class {};
-
 		$jsonResponse = new JsonResponse(['status' => 'ok']);
 
-		$response = $builder->buildView($page, 'index', $jsonResponse, null, null);
+		$response = $this->runView(new class {}, 'index', $jsonResponse);
 
 		$this->assertSame($jsonResponse, $response);
 	}
 
-	public function testSetsDefaultTemplateNameOnView(): void
+	public function testDefaultUrlHelperIsResolvedFromViewConfig(): void
 	{
-		$builder = $this->createBuilder();
-
-		$mockView = $this->createMock(ViewInterface::class);
-		$mockView->expects($this->once())
-			->method('setDefaultTemplateName')
-			->with($this->stringContains('success'));
-
-		// Property named 'renderer' — not 'view' — to prove reflection finds it by type
-		$page = new class($mockView) {
-			public ViewInterface $renderer;
-
-			public function __construct(ViewInterface $renderer)
-			{
-				$this->renderer = $renderer;
-			}
-
-			public function successView(ViewResult $result, $request = null, $delegate = null)
+		$page = new class {
+			public function successView(): HtmlResponse
 			{
 				return new HtmlResponse('ok');
 			}
 		};
+		$executor = new class implements ExecutorInterface {
+			public array $args = [];
 
-		$result = new ViewResult('success', []);
-		$builder->buildView($page, 'index', $result, null, null);
+			public function execute($callableOrMethodStr, array $args = [])
+			{
+				$this->args = $args;
+
+				return $callableOrMethodStr();
+			}
+
+			public function getContainer(): ?ContainerInterface
+			{
+				return null;
+			}
+		};
+		$container = $this->createMock(ContainerInterface::class);
+		$router = $this->createMock(RouterInterface::class);
+		$container->method('has')
+			->with(RouterInterface::class)
+			->willReturn(true);
+		$container->method('get')
+			->with(RouterInterface::class)
+			->willReturn($router);
+
+		(new ViewManager(new ViewConfig(), $container))->runView(
+			$page,
+			'index',
+			new ViewResult('success'),
+			new ServerRequest(),
+			$this->createMock(RequestHandlerInterface::class),
+			$executor
+		);
+
+		$this->assertInstanceOf(UrlHelper::class, $executor->args['url']);
+		$this->assertSame($executor->args['url'], $executor->args[UrlHelper::class]);
 	}
 
 	public function testThrowsWhenViewMethodNotFound(): void
 	{
-		$builder = $this->createBuilder();
-		$page = new class {};
-
-		$result = new ViewResult('nonexistent', []);
-
 		$this->expectException(\Exception::class);
 		$this->expectExceptionMessage('No view method found');
 
-		$builder->buildView($page, 'index', $result, null, null);
+		$this->runView(new class {}, 'index', new ViewResult('nonexistent', []));
 	}
 
 	public function testViewResultArrayAccess(): void
@@ -184,18 +188,41 @@ final class ViewBuilderTraitTest extends TestCase
 		$this->assertSame($data, $result->toArray());
 	}
 
-	protected function createBuilder(): object
+	private function runView(object $page, string $actionName, mixed $result): mixed
 	{
-		return new class {
-			use ViewBuilderTrait;
+		return $this->createViewManager()->runView(
+			$page,
+			$actionName,
+			$result,
+			new ServerRequest(),
+			$this->createMock(RequestHandlerInterface::class),
+			$this->createExecutor()
+		);
+	}
 
-			public $container;
-			public $executor;
+	private function createViewManager(): ViewManager
+	{
+		$router = $this->createMock(RouterInterface::class);
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('has')
+			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+		$container->method('get')
+			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
 
-			public function __construct()
+		return new ViewManager(new ViewConfig(), $container);
+	}
+
+	private function createExecutor(): ExecutorInterface
+	{
+		return new class implements ExecutorInterface {
+			public function execute($callableOrMethodStr, array $args = [])
 			{
-				$this->container = null;
-				$this->executor = null;
+				return $callableOrMethodStr($args[ViewResult::class]);
+			}
+
+			public function getContainer(): ?ContainerInterface
+			{
+				return null;
 			}
 		};
 	}

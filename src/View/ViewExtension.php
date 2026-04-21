@@ -26,9 +26,9 @@ class ViewExtension extends AbstractExtension
 		if (php_sapi_name() == 'cli') {
 			return null;
 		}
-		$class = self::class;
-		$extension = new $class($app, $options);
-		$app->registerExtension('view', $extension); // register shortcut
+
+		$extension = new self($app, $options);
+		$app->registerExtension('view', $extension);
 		$app->view = $extension;
 
 		return $extension;
@@ -45,16 +45,10 @@ class ViewExtension extends AbstractExtension
 		$this->app->ext('container')->when('setup', function () {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 
-			// TODO: plates and lattes should be an extension by its own
 			$containerConfig->addFactories([
 				Engine::class => PlatesEngineFactory::class,
 			]);
 
-			// ViewInterface: registered via ViewFactory using make() — new instance every time.
-			// Pages inject ViewFactory and call create() to get a fresh View.
-			// This is safe for long-lived processes (Swoole, RoadRunner) where
-			// get() caches would leak state across requests.
-			$containerConfig->addAlias(ViewInterface::class, View::class);
 		});
 	}
 

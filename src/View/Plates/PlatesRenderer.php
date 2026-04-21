@@ -11,6 +11,7 @@ use ON\Router\RouteResult;
 use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
 
 class PlatesRenderer implements RendererInterface
 {
@@ -24,31 +25,37 @@ class PlatesRenderer implements RendererInterface
 	public function render($layout, $template_name = null, $data = null, $params = [])
 	{
 		$engine = $this->engine;
+		$request = $params['request'] ?? null;
 
 		$template = $engine->make($template_name);
 
 		if (isset($layout["sections"])) {
-			foreach ($layout["sections"] as $section_name => $section_config) {
-				if ($section_config instanceof Route) {
-					$response = $this->runSectionFromRoute($section_config);
+			foreach ($layout["sections"] as $section_name => $section_value) {
+				$type = "text";
+				$content = null;
 
-					// create section
-					$template->start($section_name);
-					echo $response->getBody();
-					$template->end();
-				} elseif (is_array($section_config)) {
-					$response = $this->runSection(...$section_config);
-
-					// create section
-					$template->start($section_name);
-					echo $response->getBody();
-					$template->end();
-				} else {
-					// create section
-					$template->start($section_name);
-					include $section_config;
-					$template->end();
+				if (is_array($section_value)) {
+					// array format: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
+					$section_value = new Route(...$section_value);
 				}
+
+				if ($section_value instanceof Route) {
+					$response = $this->runSection($section_value, $request);
+
+					$content = (string) $response->getBody();
+				} else if (is_string($section_value)) {
+					if (strpos($section_value, ".php") !== false) {
+						ob_start();              // Start capturing output
+						include $section_value;    // Execute the file
+						$content = ob_get_clean();
+					} else {
+						$content = $section_value;
+					}
+				}
+
+				$template->start($section_name);
+				echo $content;
+				$template->end();
 			}
 		}
 		$template->layout($layout["name"], $data);
@@ -56,21 +63,25 @@ class PlatesRenderer implements RendererInterface
 		return $template->render($data);
 	}
 
-	/*
-		$section_config example: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
-		*/
-	public function runSection($section_path, $controller, $methods, $route_name): ResponseInterface
+	public function runSection(Route $route, ?ServerRequestInterface $parentRequest = null): ResponseInterface
 	{
-		$route = new Route($section_path, $controller, $methods, $route_name);
-		$request = $this->app->pipeline->prepareRequestFromRouteResult(RouteResult::fromRoute($route));
+		$request = $this->createSectionRequest($route, $parentRequest);
 
 		return $this->app->handle($request);
 	}
 
-	public function runSectionFromRoute(Route $route): ResponseInterface
+	protected function createSectionRequest(Route $route, ?ServerRequestInterface $parentRequest = null): ServerRequestInterface
 	{
-		$request = $this->app->pipeline->prepareRequestFromRouteResult(RouteResult::fromRoute($route));
+		$result = RouteResult::fromRoute($route);
 
-		return $this->app->handle($request);
+		if (! $parentRequest) {
+			return $this->app->pipeline->prepareRequestFromRouteResult($result);
+		}
+
+		$request = $parentRequest->withUri(
+			$parentRequest->getUri()->withPath($route->getPath())
+		);
+
+		return $this->app->pipeline->prepareRequestFromRouteResult($result, $request);
 	}
 }

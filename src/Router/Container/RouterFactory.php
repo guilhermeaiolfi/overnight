@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Router\Container;
 
-use ON\RequestStack;
 use ON\Router\Router;
 use ON\Router\RouterConfig;
 use Psr\Container\ContainerInterface;
@@ -17,6 +16,6 @@ class RouterFactory
 		? $c->get(RouterConfig::class)
 		: [];
 
-		return new Router($config, $c->get(RequestStack::class));
+		return new Router($config);
 	}
 }

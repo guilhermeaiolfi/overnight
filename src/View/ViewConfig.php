@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\View;
 
 use ON\Config\Config;
+use ON\Router\UrlHelper;
 
 class Node
 {
@@ -173,6 +174,15 @@ class LayoutNode extends CollectionNode
 class ViewConfig extends Config
 {
 	protected array $formats = [];
+
+	public static function getDefaults(): array
+	{
+		return [
+			'helpers' => [
+				'url' => UrlHelper::class,
+			],
+		];
+	}
 
 	public function format(string $name): FormatNode
 	{

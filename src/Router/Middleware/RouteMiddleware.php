@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Router\Middleware;
 
 use ON\Application;
-use ON\RequestStack;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -23,7 +22,6 @@ class RouteMiddleware implements MiddlewareInterface
 {
 	public function __construct(
 		protected RouterInterface $router,
-		protected RequestStack $stack,
 		protected Application $app
 	) {
 	}

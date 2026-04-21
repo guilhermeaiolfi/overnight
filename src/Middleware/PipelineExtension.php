@@ -35,6 +35,7 @@ use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 use ON\Handler\NotFoundHandler;
+use ON\Http\RequestContext;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
 use ON\MiddlewareFactoryInterface;
@@ -291,14 +292,13 @@ class PipelineExtension extends AbstractExtension
 		if (! $request) {
 			$request = ServerRequestFactory::fromGlobals();
 		}
-
-		$original_request = $request;
-
+		$subrequest = $request->withAttribute(RequestContext::class, new RequestContext($request));
+			
 		// Inject the actual route result, as well as individual matched parameters.
-		$request = $request->withAttribute(RouteResult::class, $result);
+		$subrequest = $subrequest->withAttribute(RouteResult::class, $result);
 
 		foreach ($result->getMatchedParams() as $param => $value) {
-			$request = $request->withAttribute($param, $value);
+			$subrequest = $subrequest->withAttribute($param, $value);
 		}
 
 
@@ -311,10 +311,10 @@ class PipelineExtension extends AbstractExtension
 		}
 
 		// We need to update the params again, since it may have entered callbacks that changed it
-		$request = $request->withAttribute(RouteResult::class, $result);
+		$subrequest = $subrequest->withAttribute(RouteResult::class, $result);
 
 		foreach ($result->getMatchedParams() as $param => $value) {
-			$request = $request->withAttribute($param, $value);
+			$subrequest = $subrequest->withAttribute($param, $value);
 		}
 
 
@@ -334,9 +334,7 @@ class PipelineExtension extends AbstractExtension
 			$result->setMethod('process');
 		}
 
-		$this->requestStack->update($original_request, $request);
-
-		return $request;
+		return $subrequest;
 	}
 
 	public function processForward(string $middleware, ServerRequestInterface $request): ResponseInterface

@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Container\Executor\ExecutorInterface;
+use ON\Router\RouterInterface;
 use ON\Router\RouteResult;
-use ON\View\ViewBuilderTrait;
-use Psr\Container\ContainerInterface;
+use ON\Router\UrlHelper;
+use ON\View\ViewManager;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -17,11 +18,10 @@ use ReflectionNamedType;
 
 class ExecutionMiddleware implements MiddlewareInterface
 {
-	use ViewBuilderTrait;
-
 	public function __construct(
-		protected ContainerInterface $container,
-		protected ExecutorInterface $executor
+		protected RouterInterface $router,
+		protected ExecutorInterface $executor,
+		protected ViewManager $viewManager
 	) {
 	}
 
@@ -48,7 +48,7 @@ class ExecutionMiddleware implements MiddlewareInterface
 
 		$actionResponse = $this->executor->execute([$target, $method], $args);
 
-		return $this->buildView($target, $method, $actionResponse, $request, $handler);
+		return $this->viewManager->runView($target, $method, $actionResponse, $request, $handler, $this->executor);
 	}
 
 	protected function resolveRouteParams(object $target, string $method, ServerRequestInterface $request): array

@@ -61,11 +61,7 @@ class ClockworkMiddleware implements MiddlewareInterface
 	// Process the middleware
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$original_request = $request;
-
 		$request = $request->withAttribute('clockwork', $this->clockwork);
-
-		$this->stack->update($original_request, $request);
 
 		$this->clockwork->event('Controller')->begin();
 
@@ -78,7 +74,7 @@ class ClockworkMiddleware implements MiddlewareInterface
 
 		$response = $handler->handle($request);
 
-		if ($this->stack->isMainRequest($request)) {
+		if ($this->stack->isCurrentMainRequest()) {
 			return $this->clockwork->usePsrMessage($request, $response)->requestProcessed();
 		}
 		$this->clockwork->event('Controller')->end();

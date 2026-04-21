@@ -17,6 +17,9 @@ use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
+use ON\Router\RouterInterface;
+use ON\View\ViewConfig;
+use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -48,7 +51,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 	public function testPassesThroughWhenNoRouteResult(): void
 	{
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 
 		$request = new ServerRequest();
 		$expectedResponse = new TextResponse('ok');
@@ -63,7 +66,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 	public function testDelegatesToPsr15Middleware(): void
 	{
-		$executionMiddleware = new ExecutionMiddleware($this->container, $this->executor);
+		$executionMiddleware = $this->createExecutionMiddleware();
 
 		$expectedResponse = new TextResponse('from psr15');
 		$innerMiddleware = $this->createMock(MiddlewareInterface::class);
@@ -94,7 +97,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertSame(42, $this->page->testData['testIt']['id']);
@@ -110,7 +113,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertSame(123, $this->page->testData['testInt']['id']);
@@ -126,7 +129,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertEqualsWithDelta(19.99, $this->page->testData['testFloat']['price'], 0.001);
@@ -142,7 +145,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertTrue($this->page->testData['testBool']['active']);
@@ -158,7 +161,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertArrayHasKey('testItOptionalParam', $this->page->testData);
@@ -174,7 +177,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertInstanceOf(ServerRequestInterface::class, $this->page->testData['testItWithServerRequest']['request']);
@@ -189,7 +192,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertSame(100, $this->page->testData['testItWithBoth']['id']);
@@ -205,7 +208,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
-		$middleware = new ExecutionMiddleware($this->container, $this->executor);
+		$middleware = $this->createExecutionMiddleware();
 		$middleware->process($request, $handler);
 
 		$this->assertSame('456', $this->page->testData['testItUntyped']['id']);
@@ -219,5 +222,14 @@ final class ExecutionMiddlewareTest extends TestCase
 		$routeResult->setTargetInstance($this->page);
 		$routeResult->setMethod($method);
 		return $routeResult;
+	}
+
+	protected function createExecutionMiddleware(): ExecutionMiddleware
+	{
+		return new ExecutionMiddleware(
+			$this->createMock(RouterInterface::class),
+			$this->executor,
+			new ViewManager(new ViewConfig(), $this->container)
+		);
 	}
 }

@@ -7,7 +7,6 @@ namespace ON\Middleware;
 use Exception;
 use ON\Action;
 use ON\Application;
-use ON\RequestStack;
 use ON\Router\RouteResult;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -19,8 +18,7 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 {
 	public function __construct(
 		protected Application $app,
-		protected ContainerInterface $container,
-		protected RequestStack $stack
+		protected ContainerInterface $container
 	) {
 	}
 
@@ -47,12 +45,6 @@ class ActionInjectionMiddleware implements MiddlewareInterface
 			$instance = $routeResult->getTargetInstance();
 
 			$action->setPageInstance($instance);
-
-			/*$old_request = $request;
-
-			$request = $request->withAttribute(Action::class, $action);
-
-			$this->stack->update($old_request, $request);*/
 
 			$routeResult->set(Action::class, $action);
 		}

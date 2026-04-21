@@ -13,7 +13,6 @@ use function array_values;
 use function assert;
 use function dirname;
 use const E_WARNING;
-use Exception;
 use FastRoute\DataGenerator\GroupCountBased as RouteGenerator;
 use FastRoute\Dispatcher;
 use FastRoute\Dispatcher\GroupCountBased;
@@ -28,10 +27,8 @@ use function is_array;
 use function is_dir;
 use function is_string;
 use function is_writable;
-use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\Stdlib\ArrayUtils;
-use ON\RequestStack;
 use ON\Router\Exception\InvalidCacheDirectoryException;
 use ON\Router\Exception\InvalidCacheException;
 use ON\Router\Exception\RuntimeException;
@@ -146,7 +143,6 @@ class Router implements RouterInterface
 	 */
 	public function __construct(
 		protected RouterConfig $config,
-		public RequestStack $stack,
 		?RouteCollector $collection = null,
 		?callable $dispatcherFactory = null
 	) {
@@ -296,121 +292,6 @@ class Router implements RouterInterface
 			implode(',', $missingParameters),
 			implode(',', array_keys($substitutions))
 		));
-	}
-
-	/*
-	gen uses generateUri internally but adds extra functionalitties
-	*/
-	public function gen($routeName = null, $routeParams = [], $options = [])
-	{
-		$default_opts = [
-			"relative" => true,
-			"fragment" => null,
-			"absolute" => false,
-			"port" => 80,
-			"scheme" => "http",
-		];
-
-		$basepath = $this->getBasePath();
-
-		$options = array_merge($default_opts, $options);
-
-		$request = $this->stack->getMainRequest();
-
-		$result = $request->getAttribute(RouteResult::class);
-
-		$uri = $request->getUri();
-
-		if ($routeName === null) {
-			if ($result->isFailure()) {
-				throw new RuntimeException(
-					'Attempting to use matched result when routing failed; aborting'
-				);
-			}
-
-			$name = $result->getMatchedRouteName();
-
-			$params = $result->getMatchedParams();
-
-			$queryParams = array_diff_key($routeParams, $params);
-
-			$params = array_merge($request->getQueryParams(), $params, $routeParams);
-
-			return $this->gen($name, $params, $options);
-		}
-
-		if ($routeName === null && $result === null) {
-			// get current URL
-			throw new RuntimeException(
-				'Attempting to use matched result when none was injected; aborting'
-			);
-		}
-
-		// Get the options to be passed to the router
-		$routerOptions = array_key_exists('router', $options) ? $options['router'] : [];
-
-		$reuseResultParams = ! isset($options['reuse_result_params']) || (bool) $options['reuse_result_params'];
-
-		$params = [];
-		if ($result && $reuseResultParams) {
-			// Merge RouteResult with the route parameters
-			$params = $this->mergeParams($routeName, $result, $routeParams);
-		}
-
-		try {
-			// Generate the route
-			$path = $this->generateUri($routeName, $routeParams, $routerOptions);
-			$result = $this->match(new ServerRequest([], [], $path));
-			$params = $result->getMatchedParams();
-		} catch (Exception $e) {
-			$path = $routeName;
-			$params = [];
-		}
-
-		$uri = $request->getUri()->withPath($basepath . "/" . ltrim($path, "\\/"));
-
-		$queryParams = array_diff_key($routeParams, $params);
-
-		// Append query parameters if there are any
-		if (count($queryParams) > 0) {
-			//$path .= '?' . http_build_query($queryParams);
-			$uri = $uri->withQuery(http_build_query($queryParams));
-		} else {
-			$uri = $uri->withQuery('');
-		}
-
-		// Append the fragment identifier
-		if ($options["fragment"] !== null) {
-			if (! preg_match(self::FRAGMENT_IDENTIFIER_REGEX, $options["fragment"])) {
-				throw new InvalidArgumentException('Fragment identifier must conform to RFC 3986', 400);
-			}
-			//$path .= '#' . $options["fragment"];
-			$uri = $uri->withFragment($options["fragment"]);
-		}
-
-
-		if (! $options["absolute"]) {
-			$uri = $uri->withHost("");
-		}
-		if ($options["scheme"] != "http") {
-			$uri = $uri->withScheme($options["scheme"]);
-		} else {
-			if ($options["absolute"]) {
-				$uri = $uri->withScheme('http');
-			} else {
-				$uri = $uri->withScheme('');
-			}
-		}
-		if ($options["port"] != 80) {
-			$uri = $uri->withPort($options["port"]);
-		} else {
-			$uri = $uri->withPort(80);
-		}
-
-		$uri = (string) $uri;
-
-
-		return $uri;
 	}
 
 	/**
@@ -731,19 +612,6 @@ class Router implements RouterInterface
 	public static function normalizePath($href)
 	{
 		return rtrim($href, "/");
-	}
-
-	protected function mergeParams($route, RouteResult $result, array $params)
-	{
-		if ($result->isFailure()) {
-			return $params;
-		}
-
-		if ($result->getMatchedRouteName() !== $route) {
-			return $params;
-		}
-
-		return array_merge($result->getMatchedParams(), $params);
 	}
 
 	public function getBasePath()

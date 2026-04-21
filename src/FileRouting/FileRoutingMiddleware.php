@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\FileRouting;
 
 use ON\Application;
-use ON\RequestStack;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\ViewConfig;
@@ -20,7 +19,6 @@ class FileRoutingMiddleware implements MiddlewareInterface
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingConfig,
 		protected RouterInterface $router,
-		protected RequestStack $stack,
 		protected Application $app
 	) {
 	}

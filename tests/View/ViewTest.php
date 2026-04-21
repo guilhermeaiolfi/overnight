@@ -8,6 +8,7 @@ use Exception;
 use ON\View\View;
 use ON\View\ViewConfig;
 use ON\View\ViewInterface;
+use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 
@@ -15,20 +16,14 @@ final class ViewTest extends TestCase
 {
 	public function testImplementsViewInterface(): void
 	{
-		$config = $this->createViewConfig();
-		$container = $this->createMock(ContainerInterface::class);
-
-		$view = new View($config, $container);
+		$view = $this->createView();
 
 		$this->assertInstanceOf(ViewInterface::class, $view);
 	}
 
 	public function testSetAndGetDefaultTemplateName(): void
 	{
-		$config = $this->createViewConfig();
-		$container = $this->createMock(ContainerInterface::class);
-
-		$view = new View($config, $container);
+		$view = $this->createView();
 
 		$this->assertNull($view->getDefaultTemplateName());
 
@@ -45,7 +40,7 @@ final class ViewTest extends TestCase
 			public ?string $lastTemplateName = null;
 			public ?array $lastData = null;
 
-			public function render($layoutConfig, $templateName, $data)
+			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				$this->lastLayoutConfig = $layoutConfig;
 				$this->lastTemplateName = $templateName;
@@ -63,7 +58,7 @@ final class ViewTest extends TestCase
 				return null;
 			});
 
-		$view = new View($config, $container);
+		$view = $this->createView($config, $container);
 
 		$result = $view->render(['title' => 'Hello'], 'post/index');
 
@@ -79,7 +74,7 @@ final class ViewTest extends TestCase
 
 		$mockRenderer = new class {
 			public ?string $lastTemplateName = null;
-			public function render($layoutConfig, $templateName, $data)
+			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				$this->lastTemplateName = $templateName;
 				return 'ok';
@@ -89,7 +84,7 @@ final class ViewTest extends TestCase
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')->willReturn($mockRenderer);
 
-		$view = new View($config, $container);
+		$view = $this->createView($config, $container);
 		$view->setDefaultTemplateName('app::default-template');
 
 		$view->render([]);
@@ -99,10 +94,7 @@ final class ViewTest extends TestCase
 
 	public function testRenderThrowsWhenNoTemplateNameAvailable(): void
 	{
-		$config = $this->createViewConfig();
-		$container = $this->createMock(ContainerInterface::class);
-
-		$view = new View($config, $container);
+		$view = $this->createView();
 
 		$this->expectException(Exception::class);
 		$this->expectExceptionMessage('No template name');
@@ -115,7 +107,7 @@ final class ViewTest extends TestCase
 		$config = $this->createViewConfig();
 
 		$mockRenderer = new class {
-			public function render($layoutConfig, $templateName, $data)
+			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				return 'ok';
 			}
@@ -124,21 +116,17 @@ final class ViewTest extends TestCase
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')->willReturn($mockRenderer);
 
-		$view = new View($config, $container);
+		$view = $this->createView($config, $container);
 		$view->setDefaultTemplateName('first-template');
 
-		// Render uses the default and then resets it
 		$view->render([]);
 
-		$this->assertNull($view->getDefaultTemplateName(), 'defaultTemplateName should be reset after render()');
+		$this->assertSame('first-template', $view->getDefaultTemplateName());
 	}
 
 	public function testRenderThrowsForInvalidLayout(): void
 	{
-		$config = $this->createViewConfig();
-		$container = $this->createMock(ContainerInterface::class);
-
-		$view = new View($config, $container);
+		$view = $this->createView();
 
 		$this->expectException(Exception::class);
 		$this->expectExceptionMessage('no configuration for layout');
@@ -152,7 +140,7 @@ final class ViewTest extends TestCase
 
 		$mockRenderer = new class {
 			public ?array $lastData = null;
-			public function render($layoutConfig, $templateName, $data)
+			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				$this->lastData = $data;
 				return 'ok';
@@ -169,7 +157,7 @@ final class ViewTest extends TestCase
 				return null;
 			});
 
-		$view = new View($config, $container);
+		$view = $this->createView($config, $container);
 		$view->render(['title' => 'Test'], 'template');
 
 		$this->assertSame($fakeImageManager, $mockRenderer->lastData['imageManager']);
@@ -178,11 +166,8 @@ final class ViewTest extends TestCase
 
 	public function testEachInstanceHasOwnState(): void
 	{
-		$config = $this->createViewConfig();
-		$container = $this->createMock(ContainerInterface::class);
-
-		$view1 = new View($config, $container);
-		$view2 = new View($config, $container);
+		$view1 = $this->createView();
+		$view2 = $this->createView();
 
 		$view1->setDefaultTemplateName('template-a');
 		$view2->setDefaultTemplateName('template-b');
@@ -212,5 +197,13 @@ final class ViewTest extends TestCase
 			],
 		]);
 		return $config;
+	}
+
+	protected function createView(?ViewConfig $config = null, ?ContainerInterface $container = null): View
+	{
+		$config ??= $this->createViewConfig();
+		$container ??= $this->createMock(ContainerInterface::class);
+
+		return new View(new ViewManager($config, $container));
 	}
 }

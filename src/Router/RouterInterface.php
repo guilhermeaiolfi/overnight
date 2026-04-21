@@ -8,8 +8,6 @@ use Psr\Http\Message\ServerRequestInterface;
 
 interface RouterInterface
 {
-	public function gen($name = null, $params = [], $options = []);
-
 	public function getBasePath();
 
 	/**

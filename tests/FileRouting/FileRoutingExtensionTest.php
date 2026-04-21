@@ -15,8 +15,8 @@ use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\RendererInterface;
 use ON\View\Plates\PlatesRenderer;
-use ON\View\View;
 use ON\View\ViewConfig;
+use ON\View\ViewManager;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -73,7 +73,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$request = $request->withAttribute(RouteResult::class, $routeResult);
 		$page = new MainPage(
-			new View($viewConfig, $container),
+			new ViewManager($viewConfig, $container),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
 			$config
@@ -124,7 +124,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$request = $request->withAttribute(RouteResult::class, $routeResult);
 		$page = new MainPage(
-			new View($viewConfig, $container),
+			new ViewManager($viewConfig, $container),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
 			$config
