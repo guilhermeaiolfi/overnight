@@ -32,9 +32,10 @@ class RegisterRequestMiddleware implements MiddlewareInterface
 		if ($this->app->hasExtension('events')) {
 			$this->app->ext('events')->dispatch(new NamedEvent('core.request', $request));
 		}
-		$response = $handler->handle($request);
-		$this->stack->pop();
-
-		return $response;
+		try {
+			return $handler->handle($request);
+		} finally {
+			$this->stack->pop();
+		}
 	}
 }
