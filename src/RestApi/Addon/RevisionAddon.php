@@ -6,11 +6,10 @@ namespace ON\RestApi\Addon;
 
 use ON\DB\DatabaseManager;
 use ON\Event\EventsExtension;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\ItemCreate;
 use ON\RestApi\Event\ItemDelete;
 use ON\RestApi\Event\ItemUpdate;
-use ON\RestApi\Resolver\RestResolverInterface;
+use ON\RestApi\RestApiService;
 
 /**
  * Tracks create/update/delete operations in a revisions table.
@@ -37,14 +36,14 @@ class RevisionAddon implements RestApiAddonInterface
 
 	public function __construct(
 		protected EventsExtension $events,
-		protected Registry $registry,
 		protected DatabaseManager $databaseManager,
-		protected ?RestResolverInterface $resolver = null
+		protected RestApiService $restApi
 	) {
 	}
 
-	public function register(array $options = []): void
+	public function register(RestApiService $restApi, array $options = []): void
 	{
+		$this->restApi = $restApi;
 		$this->table = $options['table'] ?? 'revisions';
 		$this->collections = $options['collections'] ?? null;
 
@@ -72,7 +71,7 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->resolver?->get($event->getCollection(), $event->getId());
+		$currentItem = $this->restApi->get($event->getCollection(), $event->getId(), ['dispatchEvents' => false]);
 
 		$this->writeRevision($collectionName, $event->getId(), 'update', $currentItem, $event->getInput());
 	}
@@ -85,7 +84,7 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->resolver?->get($event->getCollection(), $event->getId());
+		$currentItem = $this->restApi->get($event->getCollection(), $event->getId(), ['dispatchEvents' => false]);
 
 		$this->writeRevision($collectionName, $event->getId(), 'delete', $currentItem, null);
 	}

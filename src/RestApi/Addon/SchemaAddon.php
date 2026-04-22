@@ -6,7 +6,8 @@ namespace ON\RestApi\Addon;
 
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\RestApi\Error\RestApiError;
+use ON\RestApi\RestApiService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -24,12 +25,13 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 	protected string $basePath = '/items';
 
 	public function __construct(
-		protected Registry $registry
+		protected RestApiService $restApi
 	) {
 	}
 
-	public function register(array $options = []): void
+	public function register(RestApiService $restApi, array $options = []): void
 	{
+		$this->restApi = $restApi;
 		$this->basePath = $options['basePath'] ?? '/items';
 	}
 
@@ -62,7 +64,7 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 	{
 		$collections = [];
 
-		foreach ($this->registry->getCollections() as $collection) {
+		foreach ($this->restApi->getCollections() as $collection) {
 			if ($collection->isHidden()) {
 				continue;
 			}
@@ -80,9 +82,9 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 
 	protected function getCollection(string $name): JsonResponse
 	{
-		$collection = $this->registry->getCollection($name);
-
-		if ($collection === null || $collection->isHidden()) {
+		try {
+			$collection = $this->restApi->getCollection($name);
+		} catch (RestApiError) {
 			return new JsonResponse(
 				['errors' => [['message' => "Collection '{$name}' not found.", 'extensions' => ['code' => 'COLLECTION_NOT_FOUND']]]],
 				404

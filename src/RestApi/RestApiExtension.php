@@ -5,20 +5,17 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Application;
-use ON\DB\Cycle\CycleDatabase;
-use ON\DB\DatabaseManager;
-use ON\DB\PdoDatabase;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
-use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
+use ON\RestApi\Container\RestApiServiceFactory;
+use ON\RestApi\Container\RestResolverFactory;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Resolver\CycleRestResolver;
 use ON\RestApi\Resolver\RestResolverInterface;
-use ON\RestApi\Resolver\SqlFilterParser;
-use ON\RestApi\Resolver\SqlRestResolver;
+use Psr\Http\Server\MiddlewareInterface;
 
 class RestApiExtension extends AbstractExtension
 {
@@ -38,46 +35,45 @@ class RestApiExtension extends AbstractExtension
 
 	public function requires(): array
 	{
-		return ['container', 'events'];
+		return ['config', 'container', 'events'];
 	}
 
 	public function boot(): void
 	{
-		$enabled = $this->options['enabled'] ?? true;
-
-		if (!$enabled) {
-			$this->dispatchStateChange('ready');
-			return;
-		}
-
+		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
 		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+	}
+
+	public function onConfigSetup(): void
+	{
+		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig->addFactories([
+			RestApiService::class => RestApiServiceFactory::class,
+			RestResolverInterface::class => RestResolverFactory::class,
+		]);
 	}
 
 	public function onPipelineReady(): void
 	{
 		$container = $this->app->container;
+		$config = $container->get(RestApiConfig::class);
 
-		$path = $this->options['path'] ?? '/items';
+		$path = $config->get('path', '/items');
 		$debug = $this->app->isDebug();
-		$defaultLimit = $this->options['defaultLimit'] ?? 100;
-		$maxLimit = $this->options['maxLimit'] ?? 1000;
+		$defaultLimit = $config->get('defaultLimit', 100);
+		$maxLimit = $config->get('maxLimit', 1000);
 
-		$resolver = $this->buildResolver();
-
-		$eventsExt = $this->app->events;
-		$registry = $container->get(Registry::class);
+		$service = $container->get(RestApiService::class);
 
 		// Wire up per-request cleanup via event
-		if ($resolver !== null) {
-			$eventsExt->registerListener('restapi.request.complete', function () use ($resolver) {
-				$resolver->clearCache();
+		if ($service->getResolver() !== null) {
+			$this->app->events->registerListener('restapi.request.complete', function () use ($service) {
+				$service->clearCache();
 			});
 		}
 
 		$middleware = new RestMiddleware(
-			$registry,
-			$resolver,
-			$eventsExt->eventDispatcher,
+			$service,
 			[
 				'path' => $path,
 				'defaultLimit' => $defaultLimit,
@@ -89,8 +85,8 @@ class RestApiExtension extends AbstractExtension
 		// Add rate limiting if the extension is installed
 		if ($this->app->hasExtension('ratelimit')) {
 			$rateLimiter = $container->get(RateLimiterInterface::class);
-			$maxRequests = $this->options['rateLimit'] ?? 100;
-			$windowSeconds = $this->options['rateLimitWindow'] ?? 60;
+			$maxRequests = $config->get('rateLimit', 100);
+			$windowSeconds = $config->get('rateLimitWindow', 60);
 
 			$this->app->pipe($path, new RateLimitMiddleware(
 				$rateLimiter,
@@ -100,7 +96,7 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		// Load addons
-		$this->loadAddons($registry, $resolver, $eventsExt->eventDispatcher, $path);
+		$this->loadAddons($service, $path);
 
 		$this->app->pipe($path, $middleware, 10);
 
@@ -108,12 +104,10 @@ class RestApiExtension extends AbstractExtension
 	}
 
 	protected function loadAddons(
-		Registry $registry,
-		?RestResolverInterface $resolver,
-		?\Psr\EventDispatcher\EventDispatcherInterface $eventDispatcher,
-		string $basePath
+		RestApiService $service,
+		string $apiEndpointPath
 	): void {
-		$addons = $this->options['addons'] ?? [];
+		$addons = $this->app->container->get(RestApiConfig::class)->get('addons', []);
 		$container = $this->app->container;
 
 		foreach ($addons as $key => $value) {
@@ -128,77 +122,21 @@ class RestApiExtension extends AbstractExtension
 				$addonOptions = is_array($value) ? $value : [];
 			}
 
-			if (!class_exists($addonClass)) {
+			if (! class_exists($addonClass)) {
 				continue;
 			}
 
-			// Pass basePath to addons that need it (like SchemaAddon)
-			$addonOptions['basePath'] = $addonOptions['basePath'] ?? $basePath;
+			// Pass apiEndpointPath to addons that need it (like SchemaAddon)
+			$addonOptions['apiEndpointPath'] = $addonOptions['apiEndpointPath'] ?? $apiEndpointPath;
 
 			/** @var RestApiAddonInterface $addon */
 			$addon = $container->get($addonClass);
-			$addon->register($addonOptions);
+			$addon->register($service, $addonOptions);
 
-			if ($addon instanceof \Psr\Http\Server\MiddlewareInterface) {
-				$this->app->pipe($basePath, $addon, 12);
+			if ($addon instanceof MiddlewareInterface) {
+				$this->app->pipe($apiEndpointPath, $addon, 12);
 			}
 		}
-	}
-
-	protected function buildResolver(): ?RestResolverInterface
-	{
-		$container = $this->app->container;
-		$resolverType = $this->options['resolver'] ?? 'auto';
-
-		// Custom resolver class from config
-		if ($resolverType !== 'auto' && $resolverType !== 'sql' && $resolverType !== 'cycle') {
-			return $container->get($resolverType);
-		}
-
-		$registry = $container->get(Registry::class);
-
-		if (!$container->has(DatabaseManager::class)) {
-			return null;
-		}
-
-		$manager = $container->get(DatabaseManager::class);
-		$database = $manager->getDatabase();
-
-		if ($database === null) {
-			return null;
-		}
-
-		$defaultLimit = $this->options['defaultLimit'] ?? 100;
-		$maxLimit = $this->options['maxLimit'] ?? 1000;
-
-		if ($resolverType === 'cycle') {
-			$orm = $database->getResource();
-			return new CycleRestResolver($orm, $registry, $defaultLimit, $maxLimit);
-		}
-
-		if ($resolverType === 'sql') {
-			return new SqlRestResolver(
-				$registry,
-				$database,
-				new SqlFilterParser(),
-				$defaultLimit,
-				$maxLimit
-			);
-		}
-
-		// Auto-detect based on database class
-		if ($database instanceof CycleDatabase) {
-			$orm = $database->getResource();
-			return new CycleRestResolver($orm, $registry, $defaultLimit, $maxLimit);
-		}
-
-		return new SqlRestResolver(
-			$registry,
-			$database,
-			new SqlFilterParser(),
-			$defaultLimit,
-			$maxLimit
-		);
 	}
 
 	public function setup(): void

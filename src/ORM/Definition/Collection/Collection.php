@@ -163,6 +163,7 @@ class Collection implements CollectionInterface
 	public function description(?string $description): self
 	{
 		$this->description = $description;
+
 		return $this;
 	}
 
@@ -236,6 +237,7 @@ class Collection implements CollectionInterface
 		/** @var HasManyRelation $relation */
 		$relation = $this->relation($name, HasManyRelation::class);
 		$relation->collection($targetCollection);
+
 		return $relation;
 	}
 
@@ -244,6 +246,7 @@ class Collection implements CollectionInterface
 		/** @var HasOneRelation $relation */
 		$relation = $this->relation($name, HasOneRelation::class);
 		$relation->collection($targetCollection);
+
 		return $relation;
 	}
 
@@ -252,16 +255,17 @@ class Collection implements CollectionInterface
 		/** @var BelongsToRelation $relation */
 		$relation = $this->relation($name, BelongsToRelation::class);
 		$relation->collection($targetCollection);
+
 		return $relation;
 	}
 
 	/** @return FieldInterface[]|FieldInterface */
-	public function getPrimaryKey(bool $parse = false): mixed
+	public function getPrimaryKey(): mixed
 	{
 		$pk = [];
 		foreach ($this->fields as $name => $field) {
 			if ($field->isPrimaryKey()) {
-				$pk[] = $parse ? $field->getName() : $field;
+				$pk[] = $field;
 			}
 		}
 		if (count($pk) == 1) {

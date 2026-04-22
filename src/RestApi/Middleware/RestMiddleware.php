@@ -7,18 +7,9 @@ namespace ON\RestApi\Middleware;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\FileUpload;
-use ON\RestApi\Event\ItemCreate;
-use ON\RestApi\Event\ItemDelete;
-use ON\RestApi\Event\ItemGet;
-use ON\RestApi\Event\ItemList;
-use ON\RestApi\Event\ItemUpdate;
 use ON\RestApi\Event\RequestComplete;
-use ON\RestApi\FieldSelector;
-use ON\RestApi\Resolver\RestResolverInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
+use ON\RestApi\RestApiService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -28,9 +19,7 @@ use Somnambulist\Components\Validation\Factory as ValidationFactory;
 class RestMiddleware implements MiddlewareInterface
 {
 	public function __construct(
-		protected Registry $registry,
-		protected ?RestResolverInterface $resolver,
-		protected ?EventDispatcherInterface $eventDispatcher,
+		protected RestApiService $restApi,
 		protected array $options = []
 	) {
 	}
@@ -82,14 +71,7 @@ class RestMiddleware implements MiddlewareInterface
 		$collectionName = $segments[0];
 		$id = $segments[1] ?? null;
 
-		$collection = $this->registry->getCollection($collectionName);
-		if ($collection === null || $collection->isHidden()) {
-			throw RestApiError::collectionNotFound($collectionName);
-		}
-
-		if ($this->resolver === null) {
-			throw RestApiError::serviceUnavailable();
-		}
+		$collection = $this->restApi->getCollection($collectionName);
 
 		$method = strtoupper($request->getMethod());
 
@@ -114,8 +96,7 @@ class RestMiddleware implements MiddlewareInterface
 		$query = $request->getQueryParams();
 
 		// Parse fields once in the middleware — resolvers receive the normalized structure
-		$fieldSelector = new FieldSelector();
-		$parsedFields = $fieldSelector->parse($collection, $query['fields'] ?? null);
+		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null);
 
 		// Parse meta param: "total_count,filter_count" → ['total_count', 'filter_count']
 		$rawMeta = $query['meta'] ?? null;
@@ -137,28 +118,17 @@ class RestMiddleware implements MiddlewareInterface
 
 		// Aggregate shortcut — no event, just return data
 		if ($params['aggregate'] !== null) {
-			$rows = $this->resolver->aggregate($collection, $params);
+			$rows = $this->restApi->aggregate($collection, $params);
 			return $this->jsonResponse(['data' => $rows]);
 		}
 
-		$event = new ItemList($collection, $params);
-		$this->dispatchEvent($event);
-
-		$result = ['meta' => []];
-
-		if (!$event->isDefaultPrevented()) {
-			$result = $this->resolver->list($collection, $params);
-			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
-		}
+		$result = $this->restApi->list($collection, $params);
 
 		$body = [
-			'data' => $event->getResult() ?? [],
+			'data' => $result['items'] ?? [],
 		];
 
 		$meta = $result['meta'] ?? [];
-		if ($event->getTotalCount() !== null) {
-			$meta['filter_count'] = $event->getTotalCount();
-		}
 		if (!empty($meta)) {
 			$body['meta'] = $meta;
 		}
@@ -176,23 +146,14 @@ class RestMiddleware implements MiddlewareInterface
 	{
 		$query = $request->getQueryParams();
 
-		$fieldSelector = new FieldSelector();
-		$parsedFields = $fieldSelector->parse($collection, $query['fields'] ?? null);
+		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null);
 
 		$params = [
 			'fields'       => $parsedFields,
 			'deep'         => $query['deep'] ?? null,
 		];
 
-		$event = new ItemGet($collection, $id, $params);
-		$this->dispatchEvent($event);
-
-		if (!$event->isDefaultPrevented()) {
-			$item = $this->resolver->get($collection, $id, $params);
-			$event->setResult($item);
-		}
-
-		$item = $event->getResult();
+		$item = $this->restApi->get($collection, $id, $params);
 		if ($item === null) {
 			throw RestApiError::notFound();
 		}
@@ -219,21 +180,14 @@ class RestMiddleware implements MiddlewareInterface
 
 		$this->validateInput($collection, $body);
 
-		$body = $this->handleFileUploads($request, $collection, $body);
-
 		[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $body);
+		$options = $this->getMutationOptions($request);
 
-		$event = new ItemCreate($collection, $scalarInput);
-		$this->dispatchEvent($event);
+		$created = !empty($nestedInput)
+			? $this->restApi->createWithRelations($collection, $scalarInput, $nestedInput, $options)
+			: $this->restApi->create($collection, $scalarInput, $options);
 
-		if (!$event->isDefaultPrevented()) {
-			$created = !empty($nestedInput)
-				? $this->resolver->createWithRelations($collection, $event->getInput(), $nestedInput)
-				: $this->resolver->create($collection, $event->getInput());
-			$event->setResult($created);
-		}
-
-		return $this->jsonResponse(['data' => $event->getResult()]);
+		return $this->jsonResponse(['data' => $created]);
 	}
 
 	// ------------------------------------------------------------------
@@ -247,21 +201,13 @@ class RestMiddleware implements MiddlewareInterface
 
 		$this->validateInput($collection, $body, true);
 
-		$this->checkIfMatch($request, $collection, $id);
-
 		[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $body);
+		$options = $this->getMutationOptions($request);
 
-		$event = new ItemUpdate($collection, $id, $scalarInput);
-		$this->dispatchEvent($event);
+		$result = !empty($nestedInput)
+			? $this->restApi->updateWithRelations($collection, $id, $scalarInput, $nestedInput, $options)
+			: $this->restApi->update($collection, $id, $scalarInput, $options);
 
-		if (!$event->isDefaultPrevented()) {
-			$updated = !empty($nestedInput)
-				? $this->resolver->updateWithRelations($collection, $id, $event->getInput(), $nestedInput)
-				: $this->resolver->update($collection, $id, $event->getInput());
-			$event->setResult($updated ?? []);
-		}
-
-		$result = $event->getResult();
 		if (empty($result)) {
 			throw RestApiError::notFound();
 		}
@@ -275,16 +221,9 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleDelete(ServerRequestInterface $request, CollectionInterface $collection, string $id): ResponseInterface
 	{
-		$this->checkIfMatch($request, $collection, $id);
-
-		$event = new ItemDelete($collection, $id);
-		$this->dispatchEvent($event);
-
-		if (!$event->isDefaultPrevented()) {
-			$deleted = $this->resolver->delete($collection, $id);
-			if (!$deleted) {
-				throw RestApiError::notFound();
-			}
+		$deleted = $this->restApi->delete($collection, $id, $this->getMutationOptions($request));
+		if (!$deleted) {
+			throw RestApiError::notFound();
 		}
 
 		return new EmptyResponse(204, ['Cache-Control' => 'no-cache']);
@@ -300,21 +239,12 @@ class RestMiddleware implements MiddlewareInterface
 		foreach ($items as $item) {
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item);
-			$item = $this->handleFileUploads($request, $collection, $item);
-
 			[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $item);
+			$options = $this->getMutationOptions($request);
 
-			$event = new ItemCreate($collection, $scalarInput);
-			$this->dispatchEvent($event);
-
-			if (!$event->isDefaultPrevented()) {
-				$created = !empty($nestedInput)
-					? $this->resolver->createWithRelations($collection, $event->getInput(), $nestedInput)
-					: $this->resolver->create($collection, $event->getInput());
-				$event->setResult($created);
-			}
-
-			$results[] = $event->getResult();
+			$results[] = !empty($nestedInput)
+				? $this->restApi->createWithRelations($collection, $scalarInput, $nestedInput, $options)
+				: $this->restApi->create($collection, $scalarInput, $options);
 		}
 
 		return $this->jsonResponse(['data' => $results]);
@@ -328,8 +258,7 @@ class RestMiddleware implements MiddlewareInterface
 			throw new RestApiError('Batch update expects an array of objects with primary keys.', 'INVALID_PAYLOAD', null, 400);
 		}
 
-		$pk = $collection->getPrimaryKey(true);
-		$pkName = is_array($pk) ? $pk[0] : $pk;
+		$pkName = $this->restApi->getPrimaryKeyName($collection);
 
 		$results = [];
 		foreach ($body as $item) {
@@ -343,18 +272,13 @@ class RestMiddleware implements MiddlewareInterface
 			$this->validateInput($collection, $item, true);
 
 			[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $item);
+			$options = $this->getMutationOptions($request);
 
-			$event = new ItemUpdate($collection, $id, $scalarInput);
-			$this->dispatchEvent($event);
+			$updated = !empty($nestedInput)
+				? $this->restApi->updateWithRelations($collection, $id, $scalarInput, $nestedInput, $options)
+				: $this->restApi->update($collection, $id, $scalarInput, $options);
 
-			if (!$event->isDefaultPrevented()) {
-				$updated = !empty($nestedInput)
-					? $this->resolver->updateWithRelations($collection, $id, $event->getInput(), $nestedInput)
-					: $this->resolver->update($collection, $id, $event->getInput());
-				$event->setResult($updated ?? []);
-			}
-
-			$results[] = $event->getResult();
+			$results[] = $updated ?? [];
 		}
 
 		return $this->jsonResponse(['data' => $results]);
@@ -371,12 +295,7 @@ class RestMiddleware implements MiddlewareInterface
 		foreach ($body as $id) {
 			$id = (string) $id;
 
-			$event = new ItemDelete($collection, $id);
-			$this->dispatchEvent($event);
-
-			if (!$event->isDefaultPrevented()) {
-				$this->resolver->delete($collection, $id);
-			}
+			$this->restApi->delete($collection, $id, $this->getMutationOptions($request));
 		}
 
 		return new EmptyResponse(204, ['Cache-Control' => 'no-cache']);
@@ -386,15 +305,10 @@ class RestMiddleware implements MiddlewareInterface
 	// ETag handling
 	// ------------------------------------------------------------------
 
-	protected function computeETag(string $jsonBody): string
-	{
-		return 'W/"' . md5($jsonBody) . '"';
-	}
-
 	protected function handleConditionalGet(ServerRequestInterface $request, JsonResponse $response): ResponseInterface
 	{
 		$body = (string) $response->getBody();
-		$etag = $this->computeETag($body);
+		$etag = $this->restApi->computeETag($body);
 		$response = $response->withHeader('ETag', $etag);
 
 		$ifNoneMatch = $request->getHeaderLine('If-None-Match');
@@ -406,24 +320,6 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		return $response;
-	}
-
-	protected function checkIfMatch(ServerRequestInterface $request, CollectionInterface $collection, string $id): void
-	{
-		$ifMatch = $request->getHeaderLine('If-Match');
-		if ($ifMatch === '') {
-			return;
-		}
-
-		$current = $this->resolver->get($collection, $id);
-		if ($current === null) {
-			throw RestApiError::notFound();
-		}
-
-		$currentETag = $this->computeETag(json_encode(['data' => $current]));
-		if ($ifMatch !== $currentETag) {
-			throw RestApiError::preconditionFailed();
-		}
 	}
 
 	// ------------------------------------------------------------------
@@ -459,42 +355,6 @@ class RestMiddleware implements MiddlewareInterface
 		if ($validation->fails()) {
 			throw RestApiError::validationFailed($validation->errors()->toArray());
 		}
-	}
-
-	// ------------------------------------------------------------------
-	// File upload handling
-	// ------------------------------------------------------------------
-
-	protected function handleFileUploads(ServerRequestInterface $request, CollectionInterface $collection, array $input): array
-	{
-		$contentType = $request->getHeaderLine('Content-Type');
-		if (!str_contains($contentType, 'multipart/form-data')) {
-			return $input;
-		}
-
-		$uploadedFiles = $request->getUploadedFiles();
-		$fileFieldTypes = ['file', 'image', 'upload'];
-
-		foreach ($collection->fields as $name => $field) {
-			if (!in_array($field->getType(), $fileFieldTypes, true)) {
-				continue;
-			}
-
-			if (!isset($uploadedFiles[$name])) {
-				continue;
-			}
-
-			$event = new FileUpload($collection, $name, $uploadedFiles[$name]);
-			$this->dispatchEvent($event);
-
-			if ($event->getStoredPath() !== null) {
-				$input[$name] = $event->getStoredPath();
-			} else {
-				throw RestApiError::fileHandlerMissing($name);
-			}
-		}
-
-		return $input;
 	}
 
 	// ------------------------------------------------------------------
@@ -592,9 +452,21 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function dispatchEvent(object $event): void
 	{
-		if ($this->eventDispatcher !== null) {
-			$this->eventDispatcher->dispatch($event);
+		$this->restApi->dispatchEvent($event);
+	}
+
+	protected function getMutationOptions(ServerRequestInterface $request): array
+	{
+		$options = [
+			'ifMatch' => $request->getHeaderLine('If-Match') ?: null,
+			'files'   => [],
+		];
+
+		if (str_contains($request->getHeaderLine('Content-Type'), 'multipart/form-data')) {
+			$options['files'] = $request->getUploadedFiles();
 		}
+
+		return $options;
 	}
 
 	protected function resolveLimit(array $query): int
