@@ -134,8 +134,11 @@ class ViewManager
 		$data = $result->toArray();
 		$parameters = array_merge($data, [
 			ViewResult::class => $result,
+			ServerRequestInterface::class => $request,
+			RequestHandlerInterface::class => $delegate,
 			'request' => $request,
 			'delegate' => $delegate,
+			'handler' => $delegate,
 			'data' => $data,
 		]);
 

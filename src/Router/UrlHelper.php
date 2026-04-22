@@ -35,6 +35,11 @@ class UrlHelper implements RenderContextAwareHelperInterface
 		);
 	}
 
+	public function getBasePath(): string
+	{
+		return rtrim((string) $this->router->getBasePath(), '/');
+	}
+
 	public function gen($routeName = null, $routeParams = [], $options = []): string
 	{
 		$defaultOptions = [

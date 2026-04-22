@@ -103,6 +103,8 @@ class RestApiExtension extends AbstractExtension
 		$this->loadAddons($registry, $resolver, $eventsExt->eventDispatcher, $path);
 
 		$this->app->pipe($path, $middleware, 10);
+
+		$this->dispatchStateChange('ready');
 	}
 
 	protected function loadAddons(

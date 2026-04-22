@@ -60,7 +60,7 @@ class ImageManager implements MiddlewareInterface
 		// If we simply return the image, it won't be the size needed
 		// for the moment, converting the base image to what we need
 		// seems the best approach
-		if (! file_exists($path)) {
+		if (! $this->imageExists($path)) {
 			//return $this->imageCfg->get("404ImagePath");
 			$path = $this->imageCfg->get("404ImagePath");
 		}
@@ -69,6 +69,11 @@ class ImageManager implements MiddlewareInterface
 		//$token = str_replace('/.', './', $token); //create folders for images
 
 		return $this->imageCache->filename($path, $token);
+	}
+
+	protected function imageExists(string $filename): bool
+	{
+		return $this->getImagePath($filename) !== null;
 	}
 
 	/**

@@ -9,6 +9,7 @@ use ON\Extension\AbstractExtension;
 use ON\Extension\ExtensionInterface;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
+use RuntimeException;
 
 class FileRoutingExtension extends AbstractExtension
 {
@@ -39,8 +40,13 @@ class FileRoutingExtension extends AbstractExtension
 		$router_cfg = $this->app->config->get(RouterConfig::class);
 		$view_cfg = $this->app->config->get(ViewConfig::class);
 		$template_namespace = $filerouting_cfg->get('template.namespace', 'filerouting');
+		$cache_path = $filerouting_cfg->get('cachePath');
 
-		$view_cfg->set("templates.paths.{$template_namespace}", $filerouting_cfg->get('cachePath'));
+		if (! is_dir($cache_path) && ! mkdir($cache_path, 0777, true) && ! is_dir($cache_path)) {
+			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cache_path));
+		}
+
+		$view_cfg->set("templates.paths.{$template_namespace}", $cache_path);
 		$router_cfg->addRoute(
 			'/' . $filerouting_cfg->get('url', "__fileRouting"),
 			"ON\FileRouting\Page\ApiPage::index",

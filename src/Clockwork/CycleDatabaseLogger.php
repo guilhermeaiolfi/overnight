@@ -105,7 +105,7 @@ class CycleDatabaseLogger implements LoggerInterface
 
 		$trace = StackTrace::get()->resolveViewName()->skip($filter);
 
-		clock()->addDatabaseQuery(
+		$this->clockwork->addDatabaseQuery(
 			$message,
 			$context["parameters"] ?? null,
 			floor($context["elapsed"] * 1000),
