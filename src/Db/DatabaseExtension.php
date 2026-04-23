@@ -49,7 +49,7 @@ class DatabaseExtension extends AbstractExtension
 	{
 	}
 
-	public function onContainerConfig(): void
+	public function onContainerConfigure(): void
 	{
 
 	}

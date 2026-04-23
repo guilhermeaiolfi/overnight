@@ -26,7 +26,7 @@ class ImageExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerConfig']);
+		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
 	}
 
@@ -34,7 +34,7 @@ class ImageExtension extends AbstractExtension
 	{
 	}
 
-	public function onContainerConfig(): void
+	public function onContainerConfigure(): void
 	{
 		$containerConfig = $this->app->config->get(ContainerConfig::class);
 

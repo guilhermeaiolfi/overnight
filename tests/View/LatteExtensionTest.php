@@ -8,7 +8,7 @@ use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 use ON\Container\Init\ContainerInitEvents;
-use ON\Container\Init\Event\ContainerSetupEvent;
+use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Config\ConfigExtension;
 use ON\Init\Init;
 use ON\View\Latte\LatteExtension;
@@ -37,8 +37,8 @@ final class LatteExtensionTest extends TestCase
 		$init = new Init();
 		$extension->register($init);
 		$init->emit(
-			ContainerInitEvents::SETUP,
-			new ContainerSetupEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
+			ContainerInitEvents::CONFIGURE,
+			new ConfigureContainerEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
 		);
 
 		$this->assertSame('latte', $viewConfig->get('latte.extension'));
@@ -62,8 +62,8 @@ final class LatteExtensionTest extends TestCase
 		$init = new Init();
 		$extension->register($init);
 		$init->emit(
-			ContainerInitEvents::SETUP,
-			new ContainerSetupEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
+			ContainerInitEvents::CONFIGURE,
+			new ConfigureContainerEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
 		);
 
 		$this->assertSame('custom-latte', $viewConfig->get('latte.extension'));

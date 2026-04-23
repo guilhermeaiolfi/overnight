@@ -12,7 +12,7 @@ use ON\Config\Init\Event\ConfigSetupEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 use ON\Container\Init\ContainerInitEvents;
-use ON\Container\Init\Event\ContainerSetupEvent;
+use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryExtension;
 use ON\Extension\AbstractExtension;
@@ -271,7 +271,7 @@ final class ContainerDefinitionProbeExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::SETUP, function (ContainerSetupEvent $event): void {
+		$init->on(ContainerInitEvents::CONFIGURE, function (ConfigureContainerEvent $event): void {
 			self::$containerSetupCalls++;
 			$event->container->addAlias(ContainerProbeInterface::class, ContainerProbeService::class);
 		});

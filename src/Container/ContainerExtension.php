@@ -21,8 +21,8 @@ use ON\Extension\AbstractExtension;
 use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Container\Init\ContainerInitEvents;
+use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
-use ON\Container\Init\Event\ContainerSetupEvent;
 use ON\Init\Init;
 use Psr\Container\ContainerInterface;
 use function rtrim;
@@ -61,8 +61,8 @@ class ContainerExtension extends AbstractExtension
 		$containerConfig = $configs[ContainerConfig::class] ?? $event->config->get(ContainerConfig::class);
 
 		$context->emit(
-			ContainerInitEvents::SETUP,
-			new ContainerSetupEvent($this, $event->config, $containerConfig)
+			ContainerInitEvents::CONFIGURE,
+			new ConfigureContainerEvent($this, $event->config, $containerConfig)
 		);
 
 		$this->createConfiguredContainer($event->config);

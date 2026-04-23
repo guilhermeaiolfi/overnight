@@ -38,7 +38,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
 		});
 
-		$init->on(ContainerInitEvents::SETUP, function (): void {
+		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 			$containerConfig->set("definitions.services." . MaintenanceModeInterface::class, $this);
 		});

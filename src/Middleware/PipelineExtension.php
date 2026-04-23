@@ -128,11 +128,11 @@ class PipelineExtension extends AbstractExtension
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
-		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerConfig']);
+		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 	}
 
-	public function onContainerConfig(): void
+	public function onContainerConfigure(): void
 	{
 		$containerConfig = $this->app->config->get(ContainerConfig::class);
 

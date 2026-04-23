@@ -53,7 +53,7 @@ class CMSExtension extends AbstractExtension
 
 	}
 
-	public function onContainerConfig(): void
+	public function onContainerConfigure(): void
 	{
 
 	}

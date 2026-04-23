@@ -8,7 +8,7 @@ use ON\Config\ConfigExtension;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 
-final class ContainerSetupEvent
+final class ConfigureContainerEvent
 {
 	public function __construct(
 		public ContainerExtension $containerExtension,

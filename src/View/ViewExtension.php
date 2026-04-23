@@ -37,7 +37,7 @@ class ViewExtension extends AbstractExtension
 			$this->injectMiddleware();
 		});
 
-		$init->on(ContainerInitEvents::SETUP, function (): void {
+		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 
 			$containerConfig->addFactories([

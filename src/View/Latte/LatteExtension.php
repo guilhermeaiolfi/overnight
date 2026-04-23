@@ -28,7 +28,7 @@ class LatteExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::SETUP, function (): void {
+		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 			$viewConfig = $this->app->config->get(ViewConfig::class);
 

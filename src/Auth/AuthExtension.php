@@ -37,11 +37,11 @@ class AuthExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerSetup']);
+		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
 	}
 
-	public function onContainerSetup(): void
+	public function onContainerConfigure(): void
 	{
 		$containerConfig = $this->app->config->get(ContainerConfig::class);
 		$containerConfig->addAliases([

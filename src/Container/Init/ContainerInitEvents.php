@@ -6,6 +6,6 @@ namespace ON\Container\Init;
 
 final class ContainerInitEvents
 {
-	public const SETUP = 'init.container.setup';
+	public const CONFIGURE = 'init.container.configure';
 	public const READY = 'init.container.ready';
 }

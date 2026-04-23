@@ -21,7 +21,7 @@ class SessionExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::SETUP, function (): void {
+		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
 			$config = $this->app->config;
 
 			$containerConfig = $config->get(ContainerConfig::class);
