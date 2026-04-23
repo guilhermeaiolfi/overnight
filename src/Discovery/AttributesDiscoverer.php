@@ -7,6 +7,7 @@ namespace ON\Discovery;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Scanner\AttributeReader;
+use Psr\Container\ContainerInterface;
 use ReflectionClass;
 
 class AttributesDiscoverer implements DiscoverInterface
@@ -22,6 +23,7 @@ class AttributesDiscoverer implements DiscoverInterface
 
 	public function __construct(
 		protected Application $app,
+		protected ContainerInterface $container,
 		protected ClassFinder $classFinder,
 	) {
 		$this->reader = new AttributeReader();
@@ -41,7 +43,7 @@ class AttributesDiscoverer implements DiscoverInterface
 		}
 
 		foreach ($this->processors as $className => $options) {
-			$processor = new $className($this->app, $options);
+			$processor = new $className($this->app, $this->container, $options);
 			$processor($this->reader);
 		}
 

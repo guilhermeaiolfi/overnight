@@ -7,11 +7,14 @@ namespace ON\Console\Attribute;
 use Attribute;
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
+use Psr\Container\ContainerInterface;
 
 class ConsoleAttributeProcessor
 {
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected ContainerInterface $container,
+		protected array $options = []
 	) {
 	}
 

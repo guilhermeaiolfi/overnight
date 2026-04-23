@@ -7,6 +7,7 @@ namespace ON\Router\Attribute;
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
 use ON\Router\RouterConfig;
+use Psr\Container\ContainerInterface;
 
 class RouteAttributeProcessor
 {
@@ -14,6 +15,7 @@ class RouteAttributeProcessor
 
 	public function __construct(
 		protected Application $app,
+		protected ContainerInterface $container,
 		protected array $options = []
 	) {
 		$this->config = $app->config->get(RouterConfig::class);
