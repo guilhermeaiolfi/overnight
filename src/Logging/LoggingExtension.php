@@ -41,7 +41,7 @@ class LoggingExtension extends AbstractExtension
 
 		});
 
-		$init->on(ConfigInitEvents::SETUP, function (): void {
+		$init->on(ConfigInitEvents::CONFIGURE, function (): void {
 			$translationConfig = $this->app->config->get(LoggingConfig::class);
 			$translationConfig->mergeConfig([
 				"default" => [

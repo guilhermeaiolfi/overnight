@@ -27,7 +27,7 @@ class ImageExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
-		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
+		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 	}
 
 	public function start(\ON\Init\InitContext $context): void
@@ -42,7 +42,7 @@ class ImageExtension extends AbstractExtension
 		$containerConfig->addFactory(InterventionImageManager::class, InterventionImageManagerFactory::class);
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 		$image_cfg = $this->app->config->get(ImageConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);

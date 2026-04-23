@@ -37,11 +37,11 @@ class RestApiExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
+		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 		$containerConfig = $this->app->config->get(ContainerConfig::class);
 		$containerConfig->addFactories([

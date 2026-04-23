@@ -44,11 +44,11 @@ class EventsExtension extends AbstractExtension
 	{
 		if ($this->app->hasExtension('container')) {
 			$init->on(ContainerInitEvents::READY, [ $this, 'onContainerReady' ]);
-			$init->on(ConfigInitEvents::SETUP, [ $this, 'onConfigSetup' ]);
+			$init->on(ConfigInitEvents::CONFIGURE, [ $this, 'onConfigConfigure' ]);
 		}
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 		$appCfg = $this->app->config->get(AppConfig::class);
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . EventHandlerAttributeProcessor::class, []);

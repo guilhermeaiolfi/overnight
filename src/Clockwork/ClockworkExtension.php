@@ -152,7 +152,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 			"core.end" => "onEnd",
 
 			/*"core.extensions.container.ready" => 'onContainerReady',
-			"core.extensions.config.setup" => 'onConfigSetup',
+			"core.extensions.config.configure" => 'onConfigConfigure',
 			"core.extensions.pipeline.ready" => 'onPipelineReady',*/
 		];
 	}

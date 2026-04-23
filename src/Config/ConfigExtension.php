@@ -12,7 +12,7 @@ use ON\Extension\AbstractExtension;
 use ON\Init\InitContext;
 use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigReadyEvent;
-use ON\Config\Init\Event\ConfigSetupEvent;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ReflectionFunction;
 
 class ConfigExtension extends AbstractExtension
@@ -60,7 +60,7 @@ class ConfigExtension extends AbstractExtension
 
 	public function start(InitContext $context): void
 	{
-		$context->emit(ConfigInitEvents::SETUP, new ConfigSetupEvent($this));
+		$context->emit(ConfigInitEvents::CONFIGURE, new ConfigConfigureEvent($this));
 
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
 		foreach ($files as $file) {

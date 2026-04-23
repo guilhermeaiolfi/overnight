@@ -25,10 +25,10 @@ class FileRoutingExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
+		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 		$filerouting_cfg = $this->app->config->get(FileRoutingConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);

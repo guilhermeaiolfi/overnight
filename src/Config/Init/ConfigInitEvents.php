@@ -6,6 +6,6 @@ namespace ON\Config\Init;
 
 final class ConfigInitEvents
 {
-	public const SETUP = 'init.config.setup';
+	public const CONFIGURE = 'init.config.configure';
 	public const READY = 'init.config.ready';
 }

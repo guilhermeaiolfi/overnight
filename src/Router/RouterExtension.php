@@ -63,10 +63,10 @@ class RouterExtension extends AbstractExtension
 
 		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
-		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
+		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 		$appCfg = $this->app->config->get(AppConfig::class);
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . RouteAttributeProcessor::class, []);

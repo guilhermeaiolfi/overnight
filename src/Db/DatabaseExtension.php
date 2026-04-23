@@ -38,7 +38,7 @@ class DatabaseExtension extends AbstractExtension
 			});
 		}
 
-		$init->on(ConfigInitEvents::SETUP, function (object $event): void {
+		$init->on(ConfigInitEvents::CONFIGURE, function (object $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 			$containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
@@ -54,7 +54,7 @@ class DatabaseExtension extends AbstractExtension
 
 	}
 
-	public function onConfigSetup(): void
+	public function onConfigConfigure(): void
 	{
 
 	}

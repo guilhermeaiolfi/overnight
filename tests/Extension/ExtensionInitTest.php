@@ -8,7 +8,7 @@ use FilesystemIterator;
 use ON\Application;
 use ON\Config\ConfigExtension;
 use ON\Config\Init\ConfigInitEvents;
-use ON\Config\Init\Event\ConfigSetupEvent;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 use ON\Container\Init\ContainerInitEvents;
@@ -50,7 +50,7 @@ final class ExtensionInitTest extends TestCase
 		$this->assertInstanceOf(ContainerConfig::class, $app->ext('container')->getContainer()->get(ContainerConfig::class));
 	}
 
-	public function testConfigSetupListenersRunBeforeConfigFilesLoad(): void
+	public function testConfigConfigureListenersRunBeforeConfigFilesLoad(): void
 	{
 		ConfigSetupProbeExtension::$events = [];
 
@@ -255,7 +255,7 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 	{
 		self::$events[] = 'probe.register';
 
-		$init->on(ConfigInitEvents::SETUP, function (ConfigSetupEvent $event): void {
+		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
 			self::$events[] = 'probe.config.setup';
 		});
 	}
