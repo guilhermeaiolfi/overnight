@@ -18,6 +18,7 @@ use ON\Router\Attribute\RouteAttributeProcessor;
 use ON\Router\Container\RouteMiddlewareFactory;
 use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Container\RouterFactory;
+use ON\Router\Container\UrlHelperFactory;
 use ON\Router\Init\RouterInitEvents;
 use ON\Router\Init\Event\RouterReadyEvent;
 use ON\Router\Init\Event\RouterSetupEvent;
@@ -80,6 +81,7 @@ class RouterExtension extends AbstractExtension
 			Router::class => RouterFactory::class,
 			RouteMiddleware::class => RouteMiddlewareFactory::class,
 			RouterInterface::class => RouterFactory::class,
+			UrlHelper::class => UrlHelperFactory::class,
 		]);
 	}
 

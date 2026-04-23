@@ -7,7 +7,6 @@ namespace ON\Middleware;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Router\RouterInterface;
 use ON\Router\RouteResult;
-use ON\Router\UrlHelper;
 use ON\View\ViewManager;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;

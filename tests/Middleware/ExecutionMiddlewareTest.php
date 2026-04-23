@@ -16,9 +16,12 @@ use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
 use ON\RequestStack;
+use ON\RequestStackInterface;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
+use ON\Router\UrlHelper;
+use ON\Router\Container\UrlHelperFactory;
 use ON\View\ViewConfig;
 use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
@@ -38,6 +41,25 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page = new TestPage();
 		$this->container = $this->createMock(ContainerInterface::class);
+		$router = $this->createMock(RouterInterface::class);
+		$requestStack = new RequestStack();
+		$urlHelperFactory = new UrlHelperFactory();
+
+		$this->container->method('has')
+			->willReturnCallback(fn(string $class): bool => in_array($class, [
+				UrlHelper::class,
+				RouterInterface::class,
+				RequestStackInterface::class,
+			], true));
+		$this->container->method('get')
+			->willReturnCallback(function (string $class) use ($router, $requestStack, $urlHelperFactory): mixed {
+				return match ($class) {
+					RouterInterface::class => $router,
+					RequestStackInterface::class => $requestStack,
+					UrlHelper::class => $urlHelperFactory($this->container),
+					default => null,
+				};
+			});
 
 		$parameterResolver = new ResolverChain([
 			new TypeHintResolver(),
@@ -198,6 +220,42 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$this->assertSame(100, $this->page->testData['testItWithBoth']['id']);
 		$this->assertInstanceOf(ServerRequestInterface::class, $this->page->testData['testItWithBoth']['request']);
+	}
+
+	public function testRenderContextAwareHelpersAreInjectedIntoActions(): void
+	{
+		$router = $this->createMock(RouterInterface::class);
+		$router->method('getBasePath')->willReturn('');
+
+		$route = new Route('/logout', 'Page::index');
+		$routeResult = RouteResult::fromRoute($route);
+
+		$page = new class {
+			public ?UrlHelper $url = null;
+
+			public function index(UrlHelper $url): TextResponse
+			{
+				$this->url = $url;
+
+				return new TextResponse('ok');
+			}
+		};
+
+		$routeResult->setTargetInstance($page);
+		$routeResult->setMethod('index');
+
+		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$handler = $this->createMock(RequestHandlerInterface::class);
+
+		$stack = $this->container->get(RequestStackInterface::class);
+		$stack->push($request);
+
+		$middleware = new ExecutionMiddleware($router, $this->executor, new ViewManager(new ViewConfig(), $this->container, $stack));
+		$response = $middleware->process($request, $handler);
+		$stack->pop();
+
+		$this->assertSame('ok', (string) $response->getBody());
+		$this->assertInstanceOf(UrlHelper::class, $page->url);
 	}
 
 	public function testUntypedParameterGetsStringValue(): void
