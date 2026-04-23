@@ -31,9 +31,14 @@ use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
+use ON\Container\Init\ContainerInitEvents;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use ON\Init\InitContext;
+use ON\Middleware\Init\PipelineInitEvents;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Handler\NotFoundHandler;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
@@ -43,6 +48,7 @@ use ON\RequestStackInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
 use ON\Router\Route;
 use ON\Router\RouteResult;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -77,6 +83,8 @@ use Psr\Http\Server\RequestHandlerInterface;
  */
 class PipelineExtension extends AbstractExtension
 {
+	public const ID = 'pipeline';
+
 	public const NAMESPACE = "core.extensions.pipeline";
 	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
@@ -85,6 +93,7 @@ class PipelineExtension extends AbstractExtension
 
 	protected MiddlewarePipeInterface $pipeline;
 	public MiddlewareFactory $factory;
+	protected ContainerInterface $container;
 
 	protected array $controllerCache = [];
 
@@ -92,19 +101,9 @@ class PipelineExtension extends AbstractExtension
 
 	public function __construct(
 		protected Application $app,
-		protected ?array $options = []
+		protected array $options = []
 	) {
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app);
-		$app->registerExtension('pipeline', $extension);
-		$app->pipeline = $extension;
-
-		return $extension;
-	}
-
 	public function getController($class_name)
 	{
 		return $this->controllerCache[$class_name];
@@ -118,7 +117,7 @@ class PipelineExtension extends AbstractExtension
 		];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
 		$this->app->registerMethod("pipe", [$this, "pipe"]);
 		$this->app->registerMethod("processForward", [$this, "processForward"]);
@@ -129,13 +128,8 @@ class PipelineExtension extends AbstractExtension
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
-		$this->app->ext('container')->when('setup', [$this, 'onContainerConfig']);
-		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
-	}
-
-	public function setup(): void
-	{
-
+		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerConfig']);
+		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 	}
 
 	public function onContainerConfig(): void
@@ -172,9 +166,10 @@ class PipelineExtension extends AbstractExtension
 		]);
 	}
 
-	public function onContainerReady(): void
+	public function onContainerReady(ContainerReadyEvent $event, InitContext $context): void
 	{
-		$this->setupPipeline();
+		$this->container = $event->container;
+		$this->setupPipeline($event->container);
 
 		$this->registerMiddlewares();
 
@@ -184,7 +179,7 @@ class PipelineExtension extends AbstractExtension
 
 		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
 
-		$this->dispatchStateChange('ready');
+		$context->emit(PipelineInitEvents::READY, new PipelineReadyEvent($this, $this->container));
 	}
 
 	public function registerMiddlewares(): void
@@ -209,10 +204,8 @@ class PipelineExtension extends AbstractExtension
 		$this->pipe("/", NotFoundMiddleware::class, -1);
 	}
 
-	protected function setupPipeline(): void
+	protected function setupPipeline(ContainerInterface $container): void
 	{
-		$container = $this->app->container;
-
 		$this->app->requestStack = $this->requestStack = $container->get(RequestStack::class);
 
 		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
@@ -305,7 +298,7 @@ class PipelineExtension extends AbstractExtension
 		$options = $result->getMatchedRoute()->getOptions();
 		if (! empty($options) && ! empty($options["callbacks"]) && is_array($options["callbacks"])) {
 			foreach ($options["callbacks"] as $callback) {
-				$callback = $this->app->container->get($callback);
+				$callback = $this->container->get($callback);
 				$result = $callback->onMatched($result);
 			}
 		}
@@ -326,7 +319,7 @@ class PipelineExtension extends AbstractExtension
 		// Route::getMiddleware() retains the original definition.
 		if (is_string($middleware) && strpos($middleware, '::') !== false) {
 			[$className, $method] = explode('::', $middleware);
-			$result->setTargetInstance($this->app->container->get($className));
+			$result->setTargetInstance($this->container->get($className));
 			$result->setMethod($method);
 		} else {
 			$prepared = $this->prepareMiddleware($middleware);

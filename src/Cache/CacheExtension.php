@@ -9,29 +9,24 @@ use ON\Application;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 
 class CacheExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		return $extension;
-	}
-
+	public const ID = 'cache';
 	public function __construct(
 		protected Application $app,
-		protected array $options
+		protected array $options = []
 	) {
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('container')->when('setup', function () {
+		$init->on(ContainerInitEvents::SETUP, function (): void {
 			$config = $this->app->config;
 
 			if (! isset($config)) {
@@ -47,12 +42,7 @@ class CacheExtension extends AbstractExtension
 				AdapterInterface::class => FilesystemAdapter::class,
 			]);*/
 
-			$this->dispatchStateChange('ready');
 		});
 	}
 
-	public function setup(): void
-	{
-
-	}
 }

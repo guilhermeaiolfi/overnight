@@ -14,25 +14,23 @@ use ON\Application;
 use ON\Benchmark;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use ON\Clockwork\Middleware\ClockworkMiddleware;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Db\DatabaseConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\Router\Router;
+use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Log\LoggerInterface;
 
 class ClockworkExtension extends AbstractExtension implements EventSubscriberInterface
 {
+	public const ID = 'clockwork';
+
 	protected Clockwork $clockwork;
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		return $extension;
-	}
-
+	protected ContainerInterface $container;
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -67,31 +65,23 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->when('installed', [$this, 'setup']);
-
-		// that's the order they happen
-		//$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
-		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 
 		foreach ($this->app->getInstalledExtensions() as $extClassName) {
 			clock()->event($extClassName)->begin();
-			$this->app->ext($extClassName)->when('ready', function () use ($extClassName) {
-				clock()->event($extClassName)->end();
-			});
 		}
 	}
 
-	public function setup(): void
+	public function start(\ON\Init\InitContext $context): void
 	{
 		$this->app->pipe("/", ClockworkMiddleware::class, 900);
-		$this->dispatchStateChange("ready");
 	}
 
-	public function onContainerReady(): void
+	public function onContainerReady(ContainerReadyEvent $event): void
 	{
-		$container = $this->app->container;
+		$container = $this->container = $event->container;
 		$container->set(Clockwork::class, $this->clockwork);
 		$logger = $container->get(LoggerInterface::class);
 		$loggerDataSource = new PsrLoggerDatasource($logger);
@@ -128,7 +118,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		if ($database->getName() == $config->get("default")) {
 			// Set the event dispatcher on LoggingPDOStatement for query logging
 			\ON\DB\DebugPDO\LoggingPDOStatement::setDispatcher(
-				$this->app->container->get(EventDispatcherInterface::class)
+				$this->container->get(EventDispatcherInterface::class)
 			);
 		}
 	}

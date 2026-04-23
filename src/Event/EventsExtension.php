@@ -8,20 +8,28 @@ use Exception;
 use League\Event\ListenerPriority;
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Event\Attribute\EventHandlerAttributeProcessor;
 use ON\Event\Event\ReadyEvent;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use ON\Init\InitContext;
+use ON\Container\Init\Event\ContainerReadyEvent;
+use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class EventsExtension extends AbstractExtension
 {
+	public const ID = 'events';
+
 	public const NAMESPACE = "core.extensions.events";
 	protected int $type = self::TYPE_EXTENSION;
 
 	/** @var EventDispatcher */
 	public EventDispatcherInterface $eventDispatcher;
+	protected ContainerInterface $container;
 
 	protected array $q = [];
 
@@ -32,26 +40,12 @@ class EventsExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function register(Init $init): void
 	{
-		// we can't use the container since it may not be started yet
-		$extension = new self($app, $options);
-		$app->registerExtension('events', $extension); // register shortcut
-		$app->events = $extension;
-
-		return $extension;
-	}
-
-	public function boot(): void
-	{
-		$this->when('installed', [$this, 'setup']);
-
 		if ($this->app->hasExtension('container')) {
-			$this->app->ext('container')->when("ready", [ $this, 'onContainerReady' ]);
-			$this->app->ext('config')->when("setup", [ $this, 'onConfigSetup' ]);
+			$init->on(ContainerInitEvents::READY, [ $this, 'onContainerReady' ]);
+			$init->on(ConfigInitEvents::SETUP, [ $this, 'onConfigSetup' ]);
 		}
-		$this->when('ready', [$this, 'flush']);
 	}
 
 	public function onConfigSetup(): void
@@ -60,20 +54,20 @@ class EventsExtension extends AbstractExtension
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . EventHandlerAttributeProcessor::class, []);
 	}
 
-	public function setup(): void
+	public function start(InitContext $context): void
 	{
 		$this->eventDispatcher = new EventDispatcher();
 
 		// register events for extensions
 		$this->registerEventSubscribersForExtensions();
 
-		$this->dispatchStateChange('ready');
-
+		$this->flush();
 	}
 
-	public function onContainerReady(): void
+	public function onContainerReady(ContainerReadyEvent $event): void
 	{
-		$this->app->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
+		$this->container = $event->container;
+		$this->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
 		$this->dispatch(new ReadyEvent());
 	}
 
@@ -143,7 +137,7 @@ class EventsExtension extends AbstractExtension
 						$callback = $callback[0];
 					}
 					if (is_string($callback)) {
-						$instance = $this->app->container->get($callback);
+						$instance = $this->container->get($callback);
 						if (! is_callable($instance)) {
 							throw new Exception("Event manager can't handle class of type {$callback}");
 
@@ -167,7 +161,7 @@ class EventsExtension extends AbstractExtension
 			if (! class_exists($class)) {
 				throw new Exception("Class {$class} doesn't exist when trying to register events");
 			}
-			$instance = $this->app->container->get($class);
+			$instance = $this->container->get($class);
 		}
 
 		if ($instance instanceof EventSubscriberInterface) {

@@ -7,11 +7,13 @@ namespace ON\Event\Attribute;
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
 use ON\Event\LazyListener;
+use Psr\Container\ContainerInterface;
 
 class EventHandlerAttributeProcessor
 {
 	public function __construct(
 		protected Application $app,
+		protected ContainerInterface $container,
 		protected array $options = []
 	) {
 
@@ -30,7 +32,7 @@ class EventHandlerAttributeProcessor
 			}
 
 			$callable = new LazyListener(
-				$this->app,
+				$this->container,
 				[
 					$attribute->__declaringClass,
 					$attribute->__methodName,

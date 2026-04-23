@@ -12,23 +12,17 @@ use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use ON\Middleware\Init\PipelineInitEvents;
 
 class AuthExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		$app->registerExtension('auth', $extension);
-
-		return $extension;
-	}
-
+	public const ID = 'auth';
 	public function __construct(
 		protected Application $app,
-		protected array $options
+		protected array $options = []
 	) {
 	}
 
@@ -37,27 +31,27 @@ class AuthExtension extends AbstractExtension
 		return [
 			'config',
 			'container',
+			'pipeline',
 		];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('container')->when('setup', function () {
-			$config = $this->app->config;
+		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerSetup']);
+		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
+	}
 
-			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->addAliases([
-				StorageInterface::class => SessionStorage::class,
-				AuthenticatorInterface::class => DummyAuthenticator::class,
-				AuthorizationServiceInterface::class => AuthorizationService::class,
-			]);
-			$containerConfig->addFactories([
-				AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,
-				//LaminasManagerInterface::class => LaminasSessionManagerFactory::class,
-			]);
-		});
-
-		$this->app->ext('pipeline')->when('ready', [$this, "onPipelineReady"]);
+	public function onContainerSetup(): void
+	{
+		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig->addAliases([
+			StorageInterface::class => SessionStorage::class,
+			AuthenticatorInterface::class => DummyAuthenticator::class,
+			AuthorizationServiceInterface::class => AuthorizationService::class,
+		]);
+		$containerConfig->addFactories([
+			AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,
+		]);
 	}
 
 	public function onPipelineReady(): void
@@ -66,11 +60,6 @@ class AuthExtension extends AbstractExtension
 
 		$this->app->pipe("/", AuthorizationMiddleware::class, 1);
 
-		$this->dispatchStateChange('ready');
 	}
 
-	public function setup(): void
-	{
-
-	}
 }

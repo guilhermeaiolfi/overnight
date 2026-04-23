@@ -5,38 +5,20 @@ declare(strict_types=1);
 namespace ON\Extension;
 
 use ON\Application;
+use ON\Init\Init;
+use ON\Init\InitContext;
 
 interface ExtensionInterface
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface;
+	public function __construct(Application $app, array $options = []);
+
+	public function id(): string;
+
+	public function register(Init $init): void;
 
 	public function getType(): int;
-
-	public function setup(): void;
-
-	public function boot(): void;
 
 	public function requires(): array;
 
 	public function getNamespace(): string;
-
-	public function isReady(): bool;
-
-	public function getState(): string;
-
-	public function getStateHistory(): array;
-
-	public function when(string $state, callable $callback): self;
-
-	public function dispatchStateChange(string $state, mixed $data = null): self;
-
-	public function setLifecycle(ExtensionLifecycle $lifecycle): void;
-
-	public function transitionTo(string $state): void;
-
-	public function isInState(string $state): bool;
-
-	public function wasInState(string $state): bool;
-
-	public function getHooks(): array;
 }

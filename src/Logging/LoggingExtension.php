@@ -6,14 +6,19 @@ namespace ON\Logging;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Console\Init\ConsoleInitEvents;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\Logging\Command\MonitorLogsCommand;
 use ON\Logging\Container\LoggerFactory;
 use Psr\Log\LoggerInterface;
 
 class LoggingExtension extends AbstractExtension
 {
+	public const ID = 'logging';
+
 	protected int $type = self::TYPE_EXTENSION;
 	protected Application $app;
 	protected array $options;
@@ -26,27 +31,17 @@ class LoggingExtension extends AbstractExtension
 		$this->options = $options;
 		$this->app = $app;
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function register(Init $init): void
 	{
-		$extension = new self($app, $options);
-		$app->registerExtension('translation', $extension);
-
-		return $extension;
-	}
-
-	public function boot(): void
-	{
-		$this->app->ext('container')->when('setup', function () {
+		$init->on(ContainerInitEvents::SETUP, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 			$containerConfig->addFactories([
 				LoggerInterface::class => LoggerFactory::class,
 			]);
 
-			$this->dispatchStateChange('ready');
 		});
 
-		$this->app->ext('config')->when('setup', function () {
+		$init->on(ConfigInitEvents::SETUP, function (): void {
 			$translationConfig = $this->app->config->get(LoggingConfig::class);
 			$translationConfig->mergeConfig([
 				"default" => [
@@ -58,13 +53,10 @@ class LoggingExtension extends AbstractExtension
 		});
 
 		if ($this->app->hasExtension('console')) {
-			$this->app->ext('console')->when('ready', function () {
+			$init->on(ConsoleInitEvents::READY, function (): void {
 				$this->app->console->addCommand(MonitorLogsCommand::class);
 			});
 		}
 	}
 
-	public function setup(): void
-	{
-	}
 }

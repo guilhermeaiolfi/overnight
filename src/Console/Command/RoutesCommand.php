@@ -13,7 +13,6 @@ declare(strict_types=1);
 
 namespace ON\Console\Command;
 
-use ON\Application;
 use ON\Router\RouterConfig;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
@@ -27,7 +26,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class RoutesCommand extends Command
 {
 	public function __construct(
-		protected Application $app
+		protected RouterConfig $routerCfg
 	) {
 		parent::__construct();
 	}
@@ -52,8 +51,7 @@ class RoutesCommand extends Command
 
 		$table = new Table($output);
 
-		$routerCfg = $this->app->container->get(RouterConfig::class);
-		$collection = $routerCfg->getRoutesToInject();
+		$collection = $this->routerCfg->getRoutesToInject();
 		$routes = [];
 		foreach ($collection as $route) {
 			$routes[] = [

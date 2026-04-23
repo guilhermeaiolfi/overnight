@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\DB\Command;
 
 use Cycle\Migrations;
-use ON\Application;
 use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseManager;
 use Symfony\Component\Console\Command\Command;
@@ -15,7 +14,7 @@ use Symfony\Component\Console\Output\OutputInterface;
 class MigrateUpCommand extends Command
 {
 	public function __construct(
-		protected Application $app,
+		protected DatabaseManager $databaseManager,
 		protected DatabaseConfig $dbCfg
 	) {
 		parent::__construct();
@@ -35,7 +34,7 @@ class MigrateUpCommand extends Command
 
 	protected function execute(InputInterface $input, OutputInterface $output): int
 	{
-		$db = $this->app->container->get(Manager::class);
+		$db = $this->databaseManager;
 		$dbal = $db->getDatabase("cycle")->getConnection();
 
 		$config = $this->dbCfg->get('migration');

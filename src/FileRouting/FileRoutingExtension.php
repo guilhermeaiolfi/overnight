@@ -5,33 +5,27 @@ declare(strict_types=1);
 namespace ON\FileRouting;
 
 use ON\Application;
+use ON\Config\Init\ConfigInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;
 
 class FileRoutingExtension extends AbstractExtension
 {
+	public const ID = 'app';
+
 	protected int $type = self::TYPE_EXTENSION;
 
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected array $options = []
 	) {
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function register(Init $init): void
 	{
-		$extension = new self($app);
-		$app->registerExtension('app', $extension);
-
-		return $extension;
-	}
-
-	public function boot(): void
-	{
-		$this->when('installed', [$this, 'setup']);
-		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
+		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
 	}
 
 	public function onConfigSetup(): void
@@ -55,11 +49,10 @@ class FileRoutingExtension extends AbstractExtension
 		);
 	}
 
-	public function setup(): void
+	public function start(\ON\Init\InitContext $context): void
 	{
 		// 101 because it should run just before the RouteMiddleware (100)
 		$this->app->pipe("/", FileRoutingMiddleware::class, 101);
 
-		$this->dispatchStateChange('ready');
 	}
 }

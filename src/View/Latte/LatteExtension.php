@@ -6,28 +6,19 @@ namespace ON\View\Latte;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\View\ViewConfig;
 
 class LatteExtension extends AbstractExtension
 {
+	public const ID = 'latte';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
-	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		if (php_sapi_name() == 'cli') {
-			return null;
-		}
-
-		$extension = new self($app, $options);
-		$app->registerExtension('latte', $extension);
-
-		return $extension;
 	}
 
 	public function requires(): array
@@ -35,9 +26,9 @@ class LatteExtension extends AbstractExtension
 		return ['view', 'container'];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('container')->when('setup', function () {
+		$init->on(ContainerInitEvents::SETUP, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 			$viewConfig = $this->app->config->get(ViewConfig::class);
 
@@ -47,7 +38,6 @@ class LatteExtension extends AbstractExtension
 				LatteRenderer::class => LatteRendererFactory::class,
 			]);
 
-			$this->dispatchStateChange('ready');
 		});
 	}
 }

@@ -76,7 +76,7 @@ final class AutoWiringExtensionTest extends TestCase
 		$this->assertFalse($app->hasExtension($extensionClass));
 	}
 
-	public function testAutoWiringExtensionDoesNotNeedSetupState(): void
+	public function testAutoWiringExtensionStartsWithoutLifecycleState(): void
 	{
 		$this->writeModuleExtension('StateExtension');
 
@@ -86,9 +86,7 @@ final class AutoWiringExtensionTest extends TestCase
 		]);
 
 		$extension = $app->getExtension(AutoWiringExtension::class);
-
-		$this->assertTrue($extension->isReady());
-		$this->assertSame(['start', 'installed'], $extension->getStateHistory());
+		$this->assertInstanceOf(AutoWiringExtension::class, $extension);
 	}
 
 	public function testAutoCacheWritesToFilesystemWhenDebugIsDisabled(): void
@@ -230,28 +228,19 @@ namespace {$namespace};
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\InitContext;
 
 final class {$className} extends AbstractExtension
 {
 	{$staticProperty}
 
-	public static function install(Application \$app, ?array \$options = []): ?ExtensionInterface
+	public function __construct(Application \$app, array \$options = [])
 	{
 		{$optionsAssignment}
-
-		return new self();
 	}
 
-	public function boot(): void
+	public function start(InitContext \$context): void
 	{
-		\$this->when('installed', [\$this, 'setup']);
-	}
-
-	public function setup(): void
-	{
-		\$this->dispatchStateChange('setup');
-		\$this->dispatchStateChange('ready');
 	}
 }
 PHP

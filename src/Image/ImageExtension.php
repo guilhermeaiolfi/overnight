@@ -7,37 +7,31 @@ namespace ON\Image;
 use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\Image\Container\ImageManagerFactory;
 use ON\Image\Container\InterventionImageManagerFactory;
 use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		return $extension;
-	}
-
+	public const ID = 'image';
 	public function __construct(
 		protected Application $app,
-		protected array $options
+		protected array $options = []
 	) {
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->when('installed', [$this, 'setup']);
-		$this->app->ext('container')->when('setup', [$this, 'onContainerConfig']);
-		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
+		$init->on(ContainerInitEvents::SETUP, [$this, 'onContainerConfig']);
+		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
 	}
 
-	public function setup(): void
+	public function start(\ON\Init\InitContext $context): void
 	{
-		$this->dispatchStateChange('ready');
 	}
 
 	public function onContainerConfig(): void

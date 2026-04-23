@@ -9,25 +9,21 @@ use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\DB\PdoDatabase;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\GraphQL\Resolver\SqlResolver;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
+use ON\Middleware\Init\PipelineInitEvents;
+use Psr\Container\ContainerInterface;
 
 class GraphQLExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-		$app->registerExtension('graphql', $extension);
-
-		return $extension;
-	}
-
+	public const ID = 'graphql';
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -39,21 +35,20 @@ class GraphQLExtension extends AbstractExtension
 		return ['container', 'events'];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
 		$enabled = $this->options['enabled'] ?? true;
 
 		if (!$enabled) {
-			$this->dispatchStateChange('ready');
 			return;
 		}
 
-		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
 	}
 
-	public function onPipelineReady(): void
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$container = $this->app->container;
+		$container = $event->container;
 
 		$path = $this->options['path'] ?? '/graphql';
 		$debug = $this->app->isDebug();
@@ -62,7 +57,7 @@ class GraphQLExtension extends AbstractExtension
 		$maxComplexity = $this->options['maxComplexity'] ?? 100;
 
 		// Build the resolver based on config
-		$resolver = $this->buildResolver();
+		$resolver = $this->buildResolver($container);
 
 		// Get event dispatcher from events extension
 		$eventsExt = $this->app->events;
@@ -106,9 +101,8 @@ class GraphQLExtension extends AbstractExtension
 		$this->app->pipe($path, $middleware, 10);
 	}
 
-	protected function buildResolver(): ?GraphQLResolverInterface
+	protected function buildResolver(ContainerInterface $container): ?GraphQLResolverInterface
 	{
-		$container = $this->app->container;
 		$resolverType = $this->options['resolver'] ?? 'auto';
 
 		// Custom resolver class from config
@@ -147,7 +141,4 @@ class GraphQLExtension extends AbstractExtension
 		return new SqlResolver($registry, $database);
 	}
 
-	public function setup(): void
-	{
-	}
 }

@@ -6,8 +6,11 @@ namespace ON\RestApi;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Config\Init\ConfigInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\Init\PipelineInitEvents;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
@@ -15,18 +18,12 @@ use ON\RestApi\Container\RestApiServiceFactory;
 use ON\RestApi\Container\RestResolverFactory;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Resolver\RestResolverInterface;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 
 class RestApiExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-		$app->registerExtension('restapi', $extension);
-
-		return $extension;
-	}
-
+	public const ID = 'restapi';
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -38,10 +35,10 @@ class RestApiExtension extends AbstractExtension
 		return ['config', 'container', 'events'];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('config')->when('setup', [$this, 'onConfigSetup']);
-		$this->app->ext('pipeline')->when('ready', [$this, 'onPipelineReady']);
+		$init->on(ConfigInitEvents::SETUP, [$this, 'onConfigSetup']);
+		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
 	}
 
 	public function onConfigSetup(): void
@@ -53,9 +50,9 @@ class RestApiExtension extends AbstractExtension
 		]);
 	}
 
-	public function onPipelineReady(): void
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$container = $this->app->container;
+		$container = $event->container;
 		$config = $container->get(RestApiConfig::class);
 
 		$path = $config->get('path', '/items');
@@ -96,19 +93,18 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		// Load addons
-		$this->loadAddons($service, $path);
+		$this->loadAddons($container, $service, $path);
 
 		$this->app->pipe($path, $middleware, 10);
 
-		$this->dispatchStateChange('ready');
 	}
 
 	protected function loadAddons(
+		ContainerInterface $container,
 		RestApiService $service,
 		string $apiEndpointPath
 	): void {
-		$addons = $this->app->container->get(RestApiConfig::class)->get('addons', []);
-		$container = $this->app->container;
+		$addons = $container->get(RestApiConfig::class)->get('addons', []);
 
 		foreach ($addons as $key => $value) {
 			// Support both formats:
@@ -139,7 +135,4 @@ class RestApiExtension extends AbstractExtension
 		}
 	}
 
-	public function setup(): void
-	{
-	}
 }

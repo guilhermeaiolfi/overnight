@@ -14,15 +14,23 @@ use function is_file;
 use function is_numeric;
 use function is_object;
 use ON\Application;
+use ON\Config\ConfigExtension;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigReadyEvent;
+use ON\Container\Init\ContainerInitEvents;
+use ON\Container\Init\Event\ContainerReadyEvent;
+use ON\Container\Init\Event\ContainerSetupEvent;
+use ON\Init\Init;
 use Psr\Container\ContainerInterface;
 use function rtrim;
 
 class ContainerExtension extends AbstractExtension
 {
+	public const ID = 'container';
+
 	public const NAMESPACE = "core.extensions.container";
 	protected int $type = self::TYPE_EXTENSION;
 	protected $container;
@@ -37,37 +45,36 @@ class ContainerExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function requires(): array
 	{
-		$extension = new self($app, $options);
-		$app->registerExtension('container', $extension);
-
-		return $extension;
+		return ['config'];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('config')->when('ready', [$this, 'buildContainer']);
+		$init->on(ConfigInitEvents::READY, [$this, 'buildContainer']);
 	}
 
-	public function buildContainer(): void
+	public function buildContainer(ConfigReadyEvent $event, \ON\Init\InitContext $context): void
 	{
+		$configs = $event->config->get();
+		$containerConfig = $configs[ContainerConfig::class] ?? $event->config->get(ContainerConfig::class);
 
-		// Let extensions mutate ContainerConfig before PHP-DI consumes it.
-		$this->dispatchStateChange('setup');
+		$context->emit(
+			ContainerInitEvents::SETUP,
+			new ContainerSetupEvent($this, $event->config, $containerConfig)
+		);
 
-		$this->when('setup', [$this, 'createConfiguredContainer']);
+		$this->createConfiguredContainer($event->config);
+
+		$context->emit(ContainerInitEvents::READY, new ContainerReadyEvent($this, $this->container));
 	}
 
-	public function createConfiguredContainer(self $extension = null, mixed $data = null): void
+	public function createConfiguredContainer(ConfigExtension $config_ext): void
 	{
-		/** @var ConfigExtension $config_ext */
-		$config_ext = $this->app->config;
-
 		$configs = $config_ext->get();
 
-		$this->app->container = $this->container = $this->createContainer($configs[ContainerConfig::class]);
+		$this->container = $this->createContainer($configs[ContainerConfig::class]);
 
 		foreach ($configs as $class => $config) {
 			$this->container->set($class, $config);
@@ -76,8 +83,11 @@ class ContainerExtension extends AbstractExtension
 		// we need to set it to the container in case other places need the instance of Application
 		$this->container->set(get_class($this->app), $this->app);
 
-		// finally we can say it's ready
-		$this->dispatchStateChange('ready');
+	}
+
+	public function getContainer(): ContainerInterface
+	{
+		return $this->container;
 	}
 
 	public function hasCache()

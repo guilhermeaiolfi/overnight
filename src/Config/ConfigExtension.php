@@ -9,11 +9,16 @@ use Exception;
 use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\InitContext;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigReadyEvent;
+use ON\Config\Init\Event\ConfigSetupEvent;
 use ReflectionFunction;
 
 class ConfigExtension extends AbstractExtension
 {
+	public const ID = 'config';
+
 	public const NAMESPACE = "core.extensions.config";
 	protected int $type = self::TYPE_EXTENSION;
 	protected Application $app;
@@ -30,22 +35,6 @@ class ConfigExtension extends AbstractExtension
 			$this->options['debug'] = $app->isDebug();
 		}
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-		$app->registerExtension('config', $extension);
-
-		$app->config = $extension;
-
-		return $extension;
-	}
-
-	public function boot(): void
-	{
-		$this->when('installed', [$this, 'setup']);
-	}
-
 	public function has(string $className): bool
 	{
 		return isset($this->configs[$className]);
@@ -69,9 +58,9 @@ class ConfigExtension extends AbstractExtension
 		$this->configs[$className] = $obj;
 	}
 
-	public function setup(): void
+	public function start(InitContext $context): void
 	{
-		$this->dispatchStateChange('setup');
+		$context->emit(ConfigInitEvents::SETUP, new ConfigSetupEvent($this));
 
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $_ENV['APP_ENV'] ?? 'production'), Glob::GLOB_BRACE, true);
 		foreach ($files as $file) {
@@ -114,6 +103,6 @@ class ConfigExtension extends AbstractExtension
 			}
 		}
 
-		$this->dispatchStateChange('ready');
+		$context->emit(ConfigInitEvents::READY, new ConfigReadyEvent($this));
 	}
 }

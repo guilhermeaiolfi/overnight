@@ -6,6 +6,11 @@ namespace Tests\ON\View;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Container\ContainerExtension;
+use ON\Container\Init\ContainerInitEvents;
+use ON\Container\Init\Event\ContainerSetupEvent;
+use ON\Config\ConfigExtension;
+use ON\Init\Init;
 use ON\View\Latte\LatteExtension;
 use ON\View\Latte\LatteRenderer;
 use ON\View\Latte\LatteRendererFactory;
@@ -29,7 +34,12 @@ final class LatteExtensionTest extends TestCase
 
 		$extension = new LatteExtension($this->createApplication($containerConfig, $viewConfig));
 
-		$extension->boot();
+		$init = new Init();
+		$extension->register($init);
+		$init->emit(
+			ContainerInitEvents::SETUP,
+			new ContainerSetupEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
+		);
 
 		$this->assertSame('latte', $viewConfig->get('latte.extension'));
 		$this->assertSame(
@@ -49,7 +59,12 @@ final class LatteExtensionTest extends TestCase
 
 		$extension = new LatteExtension($this->createApplication($containerConfig, $viewConfig));
 
-		$extension->boot();
+		$init = new Init();
+		$extension->register($init);
+		$init->emit(
+			ContainerInitEvents::SETUP,
+			new ContainerSetupEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
+		);
 
 		$this->assertSame('custom-latte', $viewConfig->get('latte.extension'));
 	}
@@ -77,32 +92,12 @@ final class LatteExtensionTest extends TestCase
 			}
 		};
 
-		$containerExtension = new class {
-			public function when(string $state, callable $callback): void
-			{
-				if ($state === 'setup') {
-					$callback();
-				}
-			}
-		};
-
-		return new class($config, $containerExtension) extends Application {
+		return new class($config) extends Application {
 			public object $config;
-			private object $containerExtension;
 
-			public function __construct(object $config, object $containerExtension)
+			public function __construct(object $config)
 			{
 				$this->config = $config;
-				$this->containerExtension = $containerExtension;
-			}
-
-			public function ext(string $name)
-			{
-				if ($name !== 'container') {
-					throw new \RuntimeException("Unexpected extension {$name}");
-				}
-
-				return $this->containerExtension;
 			}
 		};
 	}

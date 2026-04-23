@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON;
 
 use Exception;
-use ON\Extension\ExtensionLifecycle;
 use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -31,7 +31,7 @@ class Application
 
 	public ?Dotenv $env = null;
 
-	protected ExtensionLifecycle $extensionLifecycle;
+	protected Init $init;
 
 	/**
 	 * @param array {
@@ -59,7 +59,7 @@ class Application
 			self::$instance = $this;
 		}
 
-		$this->extensionLifecycle = new ExtensionLifecycle();
+		$this->init = new Init();
 
 		$this->project_dir = $project_dir = $options["project_dir"] ?? dirname(getcwd(), 1);
 
@@ -130,44 +130,75 @@ class Application
 		return array_keys($this->extensions);
 	}
 
-	public function isExtensionReady(string $ext_name_or_class): bool
+	public function init(): Init
 	{
-		$ext = $this->getExtension($ext_name_or_class);
-
-		return $ext->isReady();
+		return $this->init;
 	}
 
 	protected function loadExtensions()
 	{
 		foreach ($this->extensionsToInstall as $ext_class => $ext_options) {
-			$instance = $this->install($ext_class, $ext_options);
+			$this->install($ext_class, $ext_options);
 		}
 
-		foreach ($this->extensions as $ext_class => $ext_instance) {
-			foreach ($ext_instance->getHooks() as $hook => $method) {
-				[$targetExt, $event] = explode(':', $hook, 2);
-				if ($this->hasExtension($targetExt)) {
-					$this->getExtension($targetExt)->when($event, [$ext_instance, $method]);
-				}
+		foreach ($this->extensions as $ext_instance) {
+			$ext_instance->register($this->init);
+		}
+
+		foreach ($this->getStartupOrder() as $ext_instance) {
+			if (method_exists($ext_instance, 'start')) {
+				$ext_instance->start($this->init->context());
 			}
 		}
+	}
 
-		foreach ($this->extensions as $ext_class => $ext_instance) {
-			if ($this->isDebug()) {
-				$deps = $ext_instance->requires();
-				foreach ($deps as $dep) {
-					if (! $this->hasExtension($dep)) {
-						throw new Exception("Extension {$ext_class} depends on: \'{$dep}\' that is not installed.");
+	/** @return array<class-string, ExtensionInterface> */
+	protected function getStartupOrder(): array
+	{
+		$ordered = [];
+		$visiting = [];
+		$visited = [];
 
-						return;
-					}
-				}
-			}
-
-			$ext_instance->boot();
+		foreach ($this->extensions as $class => $extension) {
+			$this->visitExtension($class, $extension, $ordered, $visiting, $visited);
 		}
 
-		$this->extensionLifecycle->settle($this->extensions);
+		return $ordered;
+	}
+
+	private function visitExtension(
+		string $class,
+		ExtensionInterface $extension,
+		array &$ordered,
+		array &$visiting,
+		array &$visited
+	): void {
+		if (isset($visited[$class])) {
+			return;
+		}
+
+		if (isset($visiting[$class])) {
+			throw new Exception("Circular extension dependency detected for {$class}.");
+		}
+
+		$visiting[$class] = true;
+
+		foreach ($extension->requires() as $dependency) {
+			if (! $this->hasExtension($dependency)) {
+				if ($this->isDebug()) {
+					throw new Exception("Extension {$class} depends on: '{$dependency}' that is not installed.");
+				}
+
+				continue;
+			}
+
+			$dependencyExtension = $this->getExtension($dependency);
+			$this->visitExtension($dependencyExtension::class, $dependencyExtension, $ordered, $visiting, $visited);
+		}
+
+		unset($visiting[$class]);
+		$visited[$class] = true;
+		$ordered[$class] = $extension;
 	}
 
 	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
@@ -201,15 +232,11 @@ class Application
 			}
 		}
 
-		$instance = $extension_class::install($this, $extension_options);
+		$instance = new $extension_class($this, $extension_options);
 		if (isset($instance)) {
-			$instance->setLifecycle($this->extensionLifecycle);
-
 			$this->extensions[$extension_class] = $instance;
-
-			// we are ok dispaching it here, because the callbacks are only registered in boot()
-			// which is not yet called
-			$instance->dispatchStateChange('installed');
+			$this->registerExtension($instance->id(), $instance);
+			$this->registerExtensionShortcut($instance);
 
 			return $instance;
 		}
@@ -217,8 +244,21 @@ class Application
 		return null;
 	}
 
+	private function registerExtensionShortcut(ExtensionInterface $instance): void
+	{
+		$id = $instance->id();
+
+		if (! isset($this->__properties[$id])) {
+			$this->__properties[$id] = $instance;
+		}
+	}
+
 	public function registerExtension(string $name_or_class, ExtensionInterface $instance): void
 	{
+		if (isset($this->aliases[$name_or_class]) && $this->aliases[$name_or_class] !== $instance) {
+			throw new Exception("Extension alias {$name_or_class} is already registered.");
+		}
+
 		$this->aliases[$name_or_class] = $instance;
 	}
 

@@ -8,43 +8,38 @@ use ON\Application;
 use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
 use ON\Container\ContainerConfig;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Console\Init\ConsoleInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 use ON\Router\RouterExtension;
+use ON\Router\Init\RouterInitEvents;
 
 class CMSExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		return $extension;
-	}
-
+	public const ID = 'cms';
 	public function __construct(
 		protected Application $app,
-		protected array $options
+		protected array $options = []
 	) {
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->when('installed', [$this, 'setup']);
-
 		if ($this->app->isCli()) {
-			$this->app->ext('console')->when('ready', function ($console) {
+			$init->on(ConsoleInitEvents::READY, function (): void {
 			});
 		}
 
-		$this->app->ext('config')->when('setup', function ($configExt) {
-			$containerConfig = $configExt->get(ContainerConfig::class);
+		$init->on(ConfigInitEvents::SETUP, function (object $event): void {
+			$containerConfig = $event->config->get(ContainerConfig::class);
 			//			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 		});
 
-		$this->app->ext('router')->when('setup', [$this, 'onRouterSetup']);
+		$init->on(RouterInitEvents::SETUP, [$this, 'onRouterSetup']);
 	}
 
-	public function setup(): void
+	public function start(\ON\Init\InitContext $context): void
 	{
 	}
 
@@ -56,7 +51,6 @@ class CMSExtension extends AbstractExtension
 		$router->get("/collection", CollectionPage::class . "::all", "cms.collection.all");
 		$router->get("/collection/{id:\d+}", CollectionPage::class . "::getOne", "cms.collection.one");
 
-		$this->dispatchStateChange('ready');
 	}
 
 	public function onContainerConfig(): void

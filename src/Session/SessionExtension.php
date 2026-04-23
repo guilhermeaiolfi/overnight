@@ -6,29 +6,22 @@ namespace ON\Session;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
 
 class SessionExtension extends AbstractExtension
 {
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		$app->registerExtension('session', $extension);
-
-		return $extension;
-	}
-
+	public const ID = 'session';
 	public function __construct(
 		protected Application $app,
-		protected array $options
+		protected array $options = []
 	) {
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->app->ext('container')->when('setup', function () {
+		$init->on(ContainerInitEvents::SETUP, function (): void {
 			$config = $this->app->config;
 
 			$containerConfig = $config->get(ContainerConfig::class);
@@ -41,7 +34,6 @@ class SessionExtension extends AbstractExtension
 
 			]);
 
-			$this->dispatchStateChange('ready');
 		});
 	}
 }

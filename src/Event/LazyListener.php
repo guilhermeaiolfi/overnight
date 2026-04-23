@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace ON\Event;
 
-use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
+use Psr\Container\ContainerInterface;
 
 class LazyListener
 {
 	public function __construct(
-		protected Application $app,
+		protected ContainerInterface $container,
 		protected $callback
 	) {
 
@@ -20,8 +20,8 @@ class LazyListener
 	{
 
 		[ $className, $method ] = $this->callback;
-		$executor = $this->app->container->get(ExecutorInterface::class);
-		$instance = $this->app->container->get($className);
+		$executor = $this->container->get(ExecutorInterface::class);
+		$instance = $this->container->get($className);
 		$executor->execute(
 			[
 				$instance,

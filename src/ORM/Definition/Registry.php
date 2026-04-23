@@ -40,7 +40,8 @@ class Registry
 
 		// keep track of all files containing colletion definitions
 		// that info is useful when caching, to see if we are up to date
-		$collection->setFileDefinitionLocation(debug_backtrace(0, 1)[0]["file"]);
+		$trace = debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 2);
+		$collection->setFileDefinitionLocation($trace[1]["file"] ?? __FILE__);
 
 		$collection->name($name);
 

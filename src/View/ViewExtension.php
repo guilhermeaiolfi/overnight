@@ -7,42 +7,37 @@ namespace ON\View;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use ON\Middleware\Init\PipelineInitEvents;
 use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
 
 class ViewExtension extends AbstractExtension
 {
+	public const ID = 'view';
+
 	protected int $type = self::TYPE_EXTENSION;
 
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected array $options = []
 	) {
 	}
 
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function requires(): array
 	{
-		if (php_sapi_name() == 'cli') {
-			return null;
-		}
-
-		$extension = new self($app, $options);
-		$app->registerExtension('view', $extension);
-		$app->view = $extension;
-
-		return $extension;
+		return ['container', 'pipeline'];
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->when('installed', [$this, 'setup']);
-
-		$this->app->ext('pipeline')->when('ready', function () {
+		$init->on(PipelineInitEvents::READY, function (): void {
 			$this->injectMiddleware();
 		});
 
-		$this->app->ext('container')->when('setup', function () {
+		$init->on(ContainerInitEvents::SETUP, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
 
 			$containerConfig->addFactories([
@@ -52,9 +47,8 @@ class ViewExtension extends AbstractExtension
 		});
 	}
 
-	public function setup(): void
+	public function start(\ON\Init\InitContext $context): void
 	{
-		$this->dispatchStateChange('ready');
 	}
 
 	public function injectMiddleware(): void

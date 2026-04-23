@@ -13,6 +13,8 @@ use ReflectionClass;
 
 class AutoWiringExtension extends AbstractExtension
 {
+	public const ID = 'autowiring';
+
 	public const NAMESPACE = "core.extensions.autowiring";
 
 	protected int $type = self::TYPE_EXTENSION;
@@ -27,27 +29,11 @@ class AutoWiringExtension extends AbstractExtension
 		protected Application $app,
 		protected array $options = []
 	) {
+		$app->autowiring = $this;
+		$this->installDiscoveredExtensions();
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
+	public function start(\ON\Init\InitContext $context): void
 	{
-		$extension = new self($app, $options ?? []);
-		$app->registerExtension('autowiring', $extension);
-		$app->autowiring = $extension;
-
-		$extension->installDiscoveredExtensions();
-
-		return $extension;
-	}
-
-	public function boot(): void
-	{
-		$this->when('installed', [$this, 'setup']);
-	}
-
-	public function setup(): void
-	{
-		$this->dispatchStateChange('ready');
 	}
 
 	private function installDiscoveredExtensions(): void

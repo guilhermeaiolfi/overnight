@@ -6,11 +6,16 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Container\Init\ContainerInitEvents;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
-use ON\Extension\ExtensionInterface;
+use ON\Init\Init;
+use Psr\Container\ContainerInterface;
 
 class DiscoveryExtension extends AbstractExtension
 {
+	public const ID = 'discovery';
+
 	public const NAMESPACE = "core.extensions.discovery";
 	protected int $type = self::TYPE_EXTENSION;
 
@@ -23,6 +28,7 @@ class DiscoveryExtension extends AbstractExtension
 	protected AppConfig $appCfg;
 
 	protected DiscoveryCache $cache;
+	protected ContainerInterface $container;
 
 	public function __construct(
 		protected Application $app,
@@ -31,16 +37,21 @@ class DiscoveryExtension extends AbstractExtension
 		//$this->cache = $app->container->get(DiscoveryCache::class);
 	}
 
-	public function boot(): void
+	public function register(Init $init): void
 	{
-		$this->when('setup', [$this, 'setup']);
-		$this->app->ext('container')->when('ready', [$this, 'onContainerReady']);
+		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 	}
 
-	public function onContainerReady(): void
+	public function requires(): array
 	{
-		$this->cache = $this->app->container->get(DiscoveryCache::class);
-		$this->dispatchStateChange('setup');
+		return ['container'];
+	}
+
+	public function onContainerReady(ContainerReadyEvent $event): void
+	{
+		$this->container = $event->container;
+		$this->cache = $event->container->get(DiscoveryCache::class);
+		$this->runDiscovery();
 	}
 
 	public function get(string $className): ?DiscoverInterface
@@ -52,19 +63,7 @@ class DiscoveryExtension extends AbstractExtension
 	{
 		return isset($this->discovers[$className]);
 	}
-
-	public static function install(Application $app, ?array $options = []): ?ExtensionInterface
-	{
-		$extension = new self($app, $options);
-
-		$app->registerExtension('discovery', $extension);
-
-		$app->discovery = $extension;
-
-		return $extension;
-	}
-
-	public function setup(): void
+	public function runDiscovery(): void
 	{
 		$this->appCfg = $this->app->config->get(AppConfig::class);
 
@@ -75,7 +74,7 @@ class DiscoveryExtension extends AbstractExtension
 
 		// creates the discovers instances
 		foreach ($discoverClassnames as $className) {
-			$this->discovers[$className] = $this->app->container->get($className);
+			$this->discovers[$className] = $this->container->get($className);
 		}
 
 		foreach ($locations as $location) {
@@ -95,7 +94,6 @@ class DiscoveryExtension extends AbstractExtension
 
 
 		// we are now fully ready
-		$this->dispatchStateChange('ready');
 	}
 
 	public function clear(null|string|DiscoveryLocation $location = null): void
