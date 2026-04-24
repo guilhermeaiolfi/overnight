@@ -16,7 +16,6 @@ use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
 use ON\CMS\Parser\QueryParser;
-use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseManager;
 use ON\ORM\Definition\Registry as DefinitionRegistry;
 use ON\ORM\Factory;
@@ -24,8 +23,6 @@ use ON\ORM\Select;
 
 class DataHandler
 {
-	protected DefinitionRegistry $registry;
-
 	protected $modifiers = [
 		MergeRelationsNormalizer::class,
 		UpdateRelationNormalizer::class,
@@ -39,10 +36,9 @@ class DataHandler
 	protected QueryParser $queryParser;
 
 	public function __construct(
-		protected DatabaseConfig $dbCfg,
+		protected DefinitionRegistry $registry,
 		protected DatabaseManager $db
 	) {
-		$this->registry = $dbCfg->getRegistry();
 
 		foreach ($this->modifiers as $modifierClass) {
 			$this->modifierInstances[] = new $modifierClass($this->registry);

@@ -47,7 +47,7 @@ class AuthExtension extends AbstractExtension
 		$containerConfig->addAliases([
 			StorageInterface::class => SessionStorage::class,
 			AuthenticatorInterface::class => DummyAuthenticator::class,
-			AuthorizationServiceInterface::class => AuthorizationService::class,
+			//AuthorizationServiceInterface::class => AuthorizationService::class,
 		]);
 		$containerConfig->addFactories([
 			AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,

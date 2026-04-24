@@ -32,10 +32,9 @@ class CycleDatabaseFactory
 	public function __invoke(
 		Clockwork $clockwork,
 		DatabaseConfig $dbCfg,
+		Registry $registry,
 		string $name
 	): CycleDatabase {
-		$registry = $dbCfg->getRegistry();
-
 		$manager = new CycleDatabase($name, $dbCfg);
 
 		$dbal = $manager->getConnection();

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace ON\DB;
 
 use On\Config\Config;
-use ON\ORM\Definition\Registry;
 
 class DatabaseConfig extends Config
 {
-	protected Registry $registry;
 
 	public function addDatabase(
 		string $name,
@@ -74,12 +72,4 @@ class DatabaseConfig extends Config
 		return $this->get('default');
 	}
 
-	public function getRegistry(): Registry
-	{
-		if (! isset($this->registry)) {
-			$this->registry = new Registry();
-		}
-
-		return $this->registry;
-	}
 }

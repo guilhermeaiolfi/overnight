@@ -29,7 +29,7 @@ class RestMiddleware implements MiddlewareInterface
 		$basePath = $this->options['path'] ?? '/items';
 		$path = $request->getUri()->getPath();
 
-		if (!str_starts_with($path, $basePath)) {
+		if (!$this->matchesBasePath($path, $basePath)) {
 			return $handler->handle($request);
 		}
 
@@ -60,7 +60,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function route(ServerRequestInterface $request, RequestHandlerInterface $handler, string $basePath): ResponseInterface
 	{
-		$remainder = substr($request->getUri()->getPath(), strlen($basePath));
+		$remainder = $this->extractRemainder($request->getUri()->getPath(), $basePath);
 		$remainder = trim($remainder, '/');
 		$segments = $remainder !== '' ? explode('/', $remainder) : [];
 
@@ -477,5 +477,24 @@ class RestMiddleware implements MiddlewareInterface
 		$limit = isset($query['limit']) ? (int) $query['limit'] : $default;
 
 		return min(max($limit, 1), $max);
+	}
+
+	protected function matchesBasePath(string $path, string $basePath): bool
+	{
+		if (str_starts_with($path, $basePath)) {
+			return true;
+		}
+
+		// When mounted via path middleware, the matched prefix is removed.
+		return str_starts_with($path, '/');
+	}
+
+	protected function extractRemainder(string $path, string $basePath): string
+	{
+		if (str_starts_with($path, $basePath)) {
+			return substr($path, strlen($basePath));
+		}
+
+		return $path;
 	}
 }

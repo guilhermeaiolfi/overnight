@@ -18,16 +18,16 @@ use Cycle\Schema\Generator\ValidateEntities;
 use Cycle\Schema\Registry as CycleRegistry;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\CMS\DataHandler;
-use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseManager;
 use ON\ORM\Compiler\CycleRegistryGenerator;
+use ON\ORM\Definition\Registry;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 
 class ItemsPage
 {
 	public function __construct(
-		protected DatabaseConfig $dbCfg,
+		protected Registry $registry,
 		protected DatabaseManager $db,
 		protected DataHandler $dataHandler
 	) {
@@ -50,7 +50,7 @@ class ItemsPage
 
 		$dbal = $this->db->getDatabaseConnection("cycle");
 
-		$registry = $this->dbCfg->getRegistry();
+		$registry = $this->registry;
 
 		$cycleRegistry = new CycleRegistry($dbal);
 		$schema = (new Compiler())->compile($cycleRegistry, [
@@ -102,7 +102,7 @@ class ItemsPage
 
 		//$this->testUserRegistry();
 
-		$this->testUserRegistry($this->dbCfg->getRegistry());
+		$this->testUserRegistry($this->registry);
 
 
 		$query = $request->getQueryParams();

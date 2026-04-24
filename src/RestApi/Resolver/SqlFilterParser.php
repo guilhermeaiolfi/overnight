@@ -20,8 +20,9 @@ class SqlFilterParser
 			return ['sql' => '', 'values' => []];
 		}
 
+		$filters = $this->normalizeFilters($filters);
 		$values = [];
-		$conditions = $this->parseGroup($collection, $filters, $values);
+		$conditions = $this->parseGroup($collection, $filters, $values, $collection->getTable());
 
 		if (empty($conditions)) {
 			return ['sql' => '', 'values' => []];
@@ -33,24 +34,29 @@ class SqlFilterParser
 		];
 	}
 
-	protected function parseGroup(CollectionInterface $collection, array $filters, array &$values): array
+	protected function parseGroup(CollectionInterface $collection, array $filters, array &$values, string $tableAlias): array
 	{
 		$conditions = [];
 
 		foreach ($filters as $key => $value) {
 			if ($key === '_and' && is_array($value)) {
-				$sub = $this->parseLogicalGroup($collection, $value, $values, 'AND');
+				$sub = $this->parseLogicalGroup($collection, $value, $values, 'AND', $tableAlias);
 				if ($sub !== null) {
 					$conditions[] = $sub;
 				}
 			} elseif ($key === '_or' && is_array($value)) {
-				$sub = $this->parseLogicalGroup($collection, $value, $values, 'OR');
+				$sub = $this->parseLogicalGroup($collection, $value, $values, 'OR', $tableAlias);
 				if ($sub !== null) {
 					$conditions[] = $sub;
 				}
-			} elseif (is_array($value)) {
+			} elseif ($this->isRelationFilter($collection, $key, $value)) {
+				$condition = $this->parseRelationCondition($collection, $key, $value, $values, $tableAlias);
+				if ($condition !== null) {
+					$conditions[] = $condition;
+				}
+			} elseif (is_array($value) && $this->isOperatorArray($value)) {
 				foreach ($value as $operator => $operand) {
-					$condition = $this->parseCondition($collection, $key, $operator, $operand, $values);
+					$condition = $this->parseCondition($collection, $tableAlias, $key, $operator, $operand, $values);
 					if ($condition !== null) {
 						$conditions[] = $condition;
 					}
@@ -61,7 +67,7 @@ class SqlFilterParser
 		return $conditions;
 	}
 
-	protected function parseLogicalGroup(CollectionInterface $collection, array $groups, array &$values, string $logic): ?string
+	protected function parseLogicalGroup(CollectionInterface $collection, array $groups, array &$values, string $logic, string $tableAlias): ?string
 	{
 		$parts = [];
 
@@ -69,7 +75,7 @@ class SqlFilterParser
 			if (!is_array($group)) {
 				continue;
 			}
-			$sub = $this->parseGroup($collection, $group, $values);
+			$sub = $this->parseGroup($collection, $this->normalizeFilters($group), $values, $tableAlias);
 			if (!empty($sub)) {
 				$parts[] = '(' . implode(' AND ', $sub) . ')';
 			}
@@ -82,13 +88,13 @@ class SqlFilterParser
 		return '(' . implode(" {$logic} ", $parts) . ')';
 	}
 
-	protected function parseCondition(CollectionInterface $collection, string $field, string $operator, mixed $value, array &$values): ?string
+	protected function parseCondition(CollectionInterface $collection, string $tableAlias, string $field, string $operator, mixed $value, array &$values): ?string
 	{
 		if (!$this->isValidField($collection, $field)) {
 			return null;
 		}
 
-		$quotedField = $this->quoteIdentifier($collection->fields->get($field)->getColumn());
+		$quotedField = $this->qualifyColumn($tableAlias, $collection->fields->get($field)->getColumn());
 
 		return match ($operator) {
 			'_eq' => $this->comparisonOp($quotedField, '=', $value, $values),
@@ -111,6 +117,96 @@ class SqlFilterParser
 			'_nempty' => "({$quotedField} IS NOT NULL AND {$quotedField} != '')",
 			default => null,
 		};
+	}
+
+	protected function parseRelationCondition(
+		CollectionInterface $collection,
+		string $relationName,
+		mixed $value,
+		array &$values,
+		string $tableAlias
+	): ?string {
+		if (!$collection->relations->has($relationName) || !is_array($value)) {
+			return null;
+		}
+
+		$relation = $collection->relations->get($relationName);
+		$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
+
+		if ($targetCollection === null) {
+			return null;
+		}
+
+		$targetAlias = $this->buildAlias($tableAlias . '__' . $relationName);
+		$conditions = [];
+
+		if ($relation->isJunction() && $relation instanceof \ON\ORM\Definition\Relation\M2MRelation) {
+			$through = $relation->through;
+			$junctionAlias = $this->buildAlias($targetAlias . '__junction');
+			$parentColumn = $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey());
+			$targetColumn = $this->getPrimaryKeyColumn($targetCollection);
+			$junctionInnerColumn = (string) $through->getInnerKey();
+			$junctionOuterColumn = (string) $through->getOuterKey();
+
+			$conditions[] = $this->qualifyColumn($junctionAlias, $junctionInnerColumn)
+				. ' = '
+				. $this->qualifyColumn($tableAlias, $parentColumn);
+
+			$conditions[] = $this->qualifyColumn($junctionAlias, $junctionOuterColumn)
+				. ' = '
+				. $this->qualifyColumn($targetAlias, $targetColumn);
+
+			$relationConditions = $this->parseGroup($targetCollection, $this->normalizeFilters($value), $values, $targetAlias);
+			$relationConditions = array_merge($relationConditions, $this->parseRelationWhere($targetCollection, $relation->getWhere(), $values, $targetAlias));
+
+			if (empty($relationConditions)) {
+				return null;
+			}
+
+			$conditions = array_merge($conditions, $relationConditions);
+
+			return sprintf(
+				'EXISTS (SELECT 1 FROM %s %s INNER JOIN %s %s ON %s WHERE %s)',
+				$this->quoteIdentifier($through->getCollection()),
+				$this->quoteIdentifier($junctionAlias),
+				$this->quoteIdentifier($targetCollection->getTable()),
+				$this->quoteIdentifier($targetAlias),
+				$this->qualifyColumn($junctionAlias, $junctionOuterColumn) . ' = ' . $this->qualifyColumn($targetAlias, $targetColumn),
+				implode(' AND ', $conditions)
+			);
+		}
+
+		$parentColumn = $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey());
+		$targetColumn = $this->fieldOrColumnToColumn($targetCollection, (string) $relation->getOuterKey());
+
+		$conditions[] = $this->qualifyColumn($targetAlias, $targetColumn)
+			. ' = '
+			. $this->qualifyColumn($tableAlias, $parentColumn);
+
+		$relationConditions = $this->parseGroup($targetCollection, $this->normalizeFilters($value), $values, $targetAlias);
+		$relationConditions = array_merge($relationConditions, $this->parseRelationWhere($targetCollection, $relation->getWhere(), $values, $targetAlias));
+
+		if (empty($relationConditions)) {
+			return null;
+		}
+
+		$conditions = array_merge($conditions, $relationConditions);
+
+		return sprintf(
+			'EXISTS (SELECT 1 FROM %s %s WHERE %s)',
+			$this->quoteIdentifier($targetCollection->getTable()),
+			$this->quoteIdentifier($targetAlias),
+			implode(' AND ', $conditions)
+		);
+	}
+
+	protected function parseRelationWhere(CollectionInterface $collection, array $filters, array &$values, string $tableAlias): array
+	{
+		if ($filters === []) {
+			return [];
+		}
+
+		return $this->parseGroup($collection, $this->normalizeFilters($filters), $values, $tableAlias);
 	}
 
 	protected function comparisonOp(string $field, string $op, mixed $value, array &$values): string
@@ -160,12 +256,111 @@ class SqlFilterParser
 
 	public function quoteIdentifier(string $identifier): string
 	{
-		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
+		$sanitized = preg_replace('/[^a-zA-Z0-9_]/', '', $identifier);
 		return "`{$sanitized}`";
 	}
 
 	protected function isValidField(CollectionInterface $collection, string $fieldName): bool
 	{
 		return $collection->fields->has($fieldName);
+	}
+
+	protected function isOperatorArray(array $value): bool
+	{
+		if ($value === []) {
+			return false;
+		}
+
+		foreach (array_keys($value) as $key) {
+			if (!is_string($key) || !str_starts_with($key, '_')) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	protected function isRelationFilter(CollectionInterface $collection, string $key, mixed $value): bool
+	{
+		return is_array($value) && $collection->relations->has($key);
+	}
+
+	protected function normalizeFilters(array $filters): array
+	{
+		$normalized = [];
+
+		foreach ($filters as $key => $value) {
+			if (($key === '_and' || $key === '_or') && is_array($value)) {
+				$normalized[$key] = array_map(
+					fn(mixed $group) => is_array($group) ? $this->normalizeFilters($group) : $group,
+					$value
+				);
+				continue;
+			}
+
+			if (is_string($key) && str_contains($key, '.')) {
+				$this->mergeNestedFilter($normalized, explode('.', $key), $value);
+				continue;
+			}
+
+			$normalized[$key] = $value;
+		}
+
+		return $normalized;
+	}
+
+	protected function mergeNestedFilter(array &$target, array $segments, mixed $value): void
+	{
+		$segment = array_shift($segments);
+
+		if ($segment === null) {
+			return;
+		}
+
+		if ($segments === []) {
+			if (isset($target[$segment]) && is_array($target[$segment]) && is_array($value)) {
+				$target[$segment] = array_replace_recursive($target[$segment], $value);
+				return;
+			}
+
+			$target[$segment] = $value;
+			return;
+		}
+
+		if (!isset($target[$segment]) || !is_array($target[$segment])) {
+			$target[$segment] = [];
+		}
+
+		$this->mergeNestedFilter($target[$segment], $segments, $value);
+	}
+
+	protected function fieldOrColumnToColumn(CollectionInterface $collection, string $fieldOrColumn): string
+	{
+		if ($collection->fields->has($fieldOrColumn)) {
+			return $collection->fields->get($fieldOrColumn)->getColumn();
+		}
+
+		return $fieldOrColumn;
+	}
+
+	protected function getPrimaryKeyColumn(CollectionInterface $collection): string
+	{
+		$primary = $collection->getPrimaryKey();
+
+		if (is_array($primary)) {
+			$primary = reset($primary);
+		}
+
+		return $primary->getColumn();
+	}
+
+	protected function qualifyColumn(string $tableAlias, string $column): string
+	{
+		return $this->quoteIdentifier($tableAlias) . '.' . $this->quoteIdentifier($column);
+	}
+
+	protected function buildAlias(string $value): string
+	{
+		return preg_replace('/[^a-zA-Z0-9_]/', '_', $value);
 	}
 }
