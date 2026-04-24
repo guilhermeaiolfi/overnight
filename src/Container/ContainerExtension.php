@@ -25,6 +25,9 @@ use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Init\Init;
 use Psr\Container\ContainerInterface;
+use RuntimeException;
+use function getcwd;
+use function preg_match;
 use function rtrim;
 
 class ContainerExtension extends AbstractExtension
@@ -97,10 +100,12 @@ class ContainerExtension extends AbstractExtension
 
 	public function createContainer($config)
 	{
-
 		$builder = new ContainerBuilder();
 
-		$this->cache_path = $this->options["cache_path"] ?? $config->get('cache_path', "var/container/");
+		$this->cache_path = $this->resolveCachePath(
+			$this->options["cache_path"] ?? $config->get('cache_path', "var/container/")
+		);
+		$this->ensureCachePathExists($this->cache_path);
 
 		if ($config->get("enable_cache", false)) {
 			$builder->enableCompilation($this->cache_path);
@@ -152,11 +157,13 @@ class ContainerExtension extends AbstractExtension
 
 			$builder->addDefinitions($this->definitions);
 
-			$builder->addDefinitions(
-				new ConfigDefinitionSource(
-					$config
-				)
-			);
+			if (! $config->get("enable_cache", false)) {
+				$builder->addDefinitions(
+					new ConfigDefinitionSource(
+						$config
+					)
+				);
+			}
 		}
 
 		// default autowire is true
@@ -174,6 +181,34 @@ class ContainerExtension extends AbstractExtension
 		$container = $builder->build();
 
 		return $container;
+	}
+
+	private function ensureCachePathExists(string $cachePath): void
+	{
+		if (is_dir($cachePath)) {
+			return;
+		}
+
+		if (! mkdir($cachePath, 0777, true) && ! is_dir($cachePath)) {
+			throw new RuntimeException(sprintf(
+				'Unable to create container cache directory "%s".',
+				$cachePath
+			));
+		}
+	}
+
+	private function resolveCachePath(string $cachePath): string
+	{
+		if (preg_match('/^(?:[A-Za-z]:[\\\\\\/]|[\\\\\\/]{2}|\/)/', $cachePath) === 1) {
+			return $cachePath;
+		}
+
+		$root = getcwd();
+		if (! is_string($root) || $root === '') {
+			return $cachePath;
+		}
+
+		return rtrim($root, '/\\') . DIRECTORY_SEPARATOR . ltrim($cachePath, '/\\');
 	}
 
 	private function createDelegatorFactory(string $delegator, string $previous, string $name): DefinitionHelper

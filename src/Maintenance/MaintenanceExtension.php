@@ -13,6 +13,7 @@ use ON\Container\Init\ContainerInitEvents;
 use ON\Console\Init\ConsoleInitEvents;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Maintenance\Container\MaintenanceModeFactory;
 use ON\Middleware\Init\PipelineInitEvents;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
 use Psr\Http\Message\ResponseInterface;
@@ -40,7 +41,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 
 		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
 			$containerConfig = $this->app->config->get(ContainerConfig::class);
-			$containerConfig->set("definitions.services." . MaintenanceModeInterface::class, $this);
+			$containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
 		});
 
 		$init->on(PipelineInitEvents::READY, function (): void {
