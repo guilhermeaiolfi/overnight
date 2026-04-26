@@ -7,6 +7,7 @@ namespace ON\Logging;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Console\Init\ConsoleInitEvents;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
@@ -33,16 +34,16 @@ class LoggingExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
-			$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactories([
 				LoggerInterface::class => LoggerFactory::class,
 			]);
 
-		});
 
-		$init->on(ConfigInitEvents::CONFIGURE, function (): void {
-			$translationConfig = $this->app->config->get(LoggingConfig::class);
+
+
+			$translationConfig = $event->config->get(LoggingConfig::class);
 			$translationConfig->mergeConfig([
 				"default" => [
 					"type" => "rotating_file",

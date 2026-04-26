@@ -7,6 +7,7 @@ namespace ON\RestApi;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -24,6 +25,7 @@ use Psr\Http\Server\MiddlewareInterface;
 class RestApiExtension extends AbstractExtension
 {
 	public const ID = 'restapi';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -32,7 +34,7 @@ class RestApiExtension extends AbstractExtension
 
 	public function requires(): array
 	{
-		return ['config', 'container', 'events'];
+		return ['config', 'container', 'events', 'orm'];
 	}
 
 	public function register(Init $init): void
@@ -41,9 +43,9 @@ class RestApiExtension extends AbstractExtension
 		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
 	}
 
-	public function onConfigConfigure(): void
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig = $event->config->get(ContainerConfig::class);
 		$containerConfig->addFactories([
 			RestApiService::class => RestApiServiceFactory::class,
 			RestResolverInterface::class => RestResolverFactory::class,

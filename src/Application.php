@@ -141,11 +141,13 @@ class Application
 			$this->install($ext_class, $ext_options);
 		}
 
-		foreach ($this->extensions as $ext_instance) {
+		$orderedExtensions = $this->getStartupOrder();
+
+		foreach ($orderedExtensions as $ext_instance) {
 			$ext_instance->register($this->init);
 		}
 
-		foreach ($this->getStartupOrder() as $ext_instance) {
+		foreach ($orderedExtensions as $ext_instance) {
 			if (method_exists($ext_instance, 'start')) {
 				$ext_instance->start($this->init->context());
 			}

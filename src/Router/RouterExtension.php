@@ -7,6 +7,7 @@ namespace ON\Router;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ContainerReadyEvent;
@@ -62,20 +63,16 @@ class RouterExtension extends AbstractExtension
 
 		$this->app->pipe("/", RouteMiddleware::class, 100);
 
-		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 	}
 
-	public function onConfigConfigure(): void
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$appCfg = $this->app->config->get(AppConfig::class);
+		$appCfg = $event->config->get(AppConfig::class);
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . RouteAttributeProcessor::class, []);
-	}
 
-	public function onContainerConfigure(): void
-	{
-		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig = $event->config->get(ContainerConfig::class);
 		$containerConfig->addAlias(RouterInterface::class, Router::class);
 		$containerConfig->addFactories([
 			Router::class => RouterFactory::class,

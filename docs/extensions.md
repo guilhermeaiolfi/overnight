@@ -64,6 +64,8 @@ namespace App\Extensions;
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 
 class MyExtension extends AbstractExtension
 {
@@ -75,14 +77,22 @@ class MyExtension extends AbstractExtension
 
     public function setup(): void
     {
-        // Called during setup phase
-        // Register services, middleware, routes
+        // Called during setup phase.
+        // Register event listeners here.
+        $this->app->init()->on(ConfigInitEvents::CONFIGURE, function(ConfigConfigureEvent $event) {
+            $config = $event->getConfig();
+            
+            // Register services in the container
+            $config->set('container.my_service', function($container) {
+                return new MyService();
+            });
+        });
     }
 
     public function boot(): void
     {
         // Called during boot phase
-        // Final configuration, event listeners
+        // Final configuration or late-stage initialization
     }
 
     public function requires(): array
@@ -127,9 +137,11 @@ install()    → Called once when $app->install() is called
     ↓
 setup()      → Called during app setup phase
     ↓
+CONFIGURE    → (ConfigInitEvents) Register services and configuration
+    ↓
 boot()       → Called during app boot phase
     ↓
-READY        → App is ready to run
+READY        → (ConfigInitEvents) App is ready to run
 ```
 
 ### Lifecycle Callbacks
@@ -293,6 +305,7 @@ class DiscoveryExtension extends AbstractExtension
 
 1. **Keep extensions focused** - One extension, one responsibility
 2. **Declare dependencies** - Use `requires()` to specify what you need
-3. **Use lifecycle phases** - Setup for registration, boot for final config
-4. **Provide sensible defaults** - Accept options array for configuration
-5. **Test independently** - Extensions should be testable in isolation
+3. **Use lifecycle phases** - Use `setup()` for event registration, and `ConfigInitEvents::CONFIGURE` for service registration.
+4. **Prefer Config Registration** - Registering services via `ConfigInitEvents::CONFIGURE` ensures they are cached and can be overridden by user configuration files.
+5. **Provide sensible defaults** - Accept options array for configuration
+6. **Test independently** - Extensions should be testable in isolation

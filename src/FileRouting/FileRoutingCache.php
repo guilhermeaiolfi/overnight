@@ -26,6 +26,7 @@ class FileRoutingCache
 				$metadata['controller'] ?? null,
 				$metadata['template'],
 				$metadata['lang'],
+				$metadata['page_meta'] ?? [],
 			];
 		}
 
@@ -35,6 +36,7 @@ class FileRoutingCache
 			$generated['controller'],
 			$generated['template'],
 			$generated['lang'],
+			$generated['page_meta'] ?? [],
 		];
 	}
 
@@ -42,6 +44,7 @@ class FileRoutingCache
 	{
 		$content = file_get_contents($file);
 		$code = $this->split($content);
+		$page_meta = $this->extractPageMeta($code[0]);
 		$template = $this->parseTemplate($code[1]);
 
 		$php_cache_filename = $this->getCachedPhpFilename($file);
@@ -72,6 +75,7 @@ class FileRoutingCache
 			'controller' => file_exists($php_cache_filename) ? $php_cache_filename : null,
 			'template' => $template_cache_filename,
 			'lang' => $template['lang'],
+			'page_meta' => $page_meta,
 		];
 		file_put_contents($metadata_cache_filename, "<?php\n\nreturn " . var_export($metadata, true) . ";\n");
 
@@ -132,6 +136,22 @@ class FileRoutingCache
 			trim($php_code),
 			trim($template_code),
 		];
+	}
+
+	public function extractPageMeta(string &$php_code): array
+	{
+		if (! preg_match('/\/\*---\s*(.*?)\s*---\*\//s', $php_code, $matches)) {
+			return [];
+		}
+
+		$decoded = json_decode(trim($matches[1]), true);
+		if (! is_array($decoded)) {
+			throw new \RuntimeException('Invalid file routing page metadata JSON.');
+		}
+
+		$php_code = trim(str_replace($matches[0], '', $php_code));
+
+		return $decoded;
 	}
 
 	/*public function getRelativeFileFromAbsoluteFile(string $file): string

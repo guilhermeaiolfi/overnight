@@ -105,15 +105,14 @@ class ContainerExtension extends AbstractExtension
 		$this->cache_path = $this->resolveCachePath(
 			$this->options["cache_path"] ?? $config->get('cache_path', "var/container/")
 		);
-		$this->ensureCachePathExists($this->cache_path);
 
 		if ($config->get("enable_cache", false)) {
+			$this->ensureCachePathExists($this->cache_path);
 			$builder->enableCompilation($this->cache_path);
 		}
 
 		$write_proxies_to_file = $config->get("write_proxies", true);
 		$builder->writeProxiesToFile($write_proxies_to_file, $this->cache_path);
-
 
 		if (! $this->hasCache()) {
 			// lets build the container

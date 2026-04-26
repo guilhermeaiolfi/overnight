@@ -91,6 +91,28 @@ return [
 ];
 ```
 
+### Non-Serializable Objects (Cache Exceptions)
+
+Configuration files can return any PHP object (e.g., a Database connection, an ORM Registry, or a Closure). While most configuration is cached for performance, objects that cannot be serialized are treated as "Cache Exceptions".
+
+When a configuration file returns a non-serializable object:
+1. The object is stored in the `Config` instance.
+2. The file path is tracked by the framework.
+3. If configuration caching is enabled, these specific files are re-included and their objects re-hydrated on every request, even when the rest of the configuration is loaded from the cache.
+
+This allows you to maintain the performance of a cached configuration while still supporting dynamic or non-serializable service definitions.
+
+```php
+<?php
+// config/orm.all.php
+
+use ON\ORM\Definition\Registry;
+
+// This Registry object will be re-loaded on every request
+// even if the config is cached.
+return new Registry();
+```
+
 ## Config Class
 
 ### Dot Class
@@ -293,78 +315,42 @@ return [
 ];
 ```
 
-## Merging Configs
+### Extension Configuration & Service Registration
 
-### From Multiple Sources
-
-```php
-use ON\Config\ConfigBuilder;
-
-$builder = new ConfigBuilder();
-
-// Load base
-$builder->addConfig($baseConfig);
-
-// Load environment-specific
-$builder->addConfig($envConfig);
-
-// Add overrides
-$builder->add('debug', true);
-
-$config = $builder->build();
-```
-
-### Extension Configuration
-
-Extensions receive configuration during install:
+Extensions receive configuration during install, but the preferred way to register services into the container is by listening to the `ConfigInitEvents::CONFIGURE` event. This ensures that service definitions are correctly processed and can be overridden by user configuration.
 
 ```php
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 class MyExtension extends AbstractExtension
 {
-    public static function install(Application $app, ?array $options): mixed
+    public function setup(): void
     {
-        // Access config
-        $config = $app->ext('config');
-        
-        // Or receive options
-        $path = $options['path'] ?? 'default/path';
-        
-        return true;
+        $this->app->init()->on(ConfigInitEvents::CONFIGURE, function(ConfigConfigureEvent $event) {
+            $config = $event->getConfig();
+            
+            // Register a service in the container
+            $config->set('container.my_service', function($container) {
+                return new MyService();
+            });
+        });
     }
 }
-
-// Install with options
-$app->install(MyExtension::class, [
-    'path' => '/custom/path',
-]);
 ```
+
+Service registrations using `ConfigInitEvents::CONFIGURE` are automatically included in the configuration cache unless they return non-serializable objects.
 
 ## Caching Config
 
-In production, cache your configuration:
+In production, the framework automatically caches your configuration if enabled in the `ConfigExtension`. You typically don't need to implement manual caching.
 
-```php
-<?php
-// config/bootstrap.php
+The cache includes:
+- All static configuration arrays.
+- Service definitions registered via `ConfigInitEvents::CONFIGURE`.
+- Tracked file paths for "Cache Exceptions" (non-serializable objects).
 
-$config = new Dot();
-
-if ($app->isProduction()) {
-    $cachePath = __DIR__ . '/cache/config.php';
-    
-    if (file_exists($cachePath)) {
-        $config = unserialize(file_get_contents($cachePath));
-    } else {
-        // Build and cache
-        $config = buildConfig();
-        file_put_contents($cachePath, serialize($config));
-    }
-} else {
-    $config = buildConfig();
-}
-
-return $config;
-```
+To clear the cache, you can delete the `var/cache/config.php` file.
 
 ## Best Practices
 

@@ -31,6 +31,8 @@ use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\NamedEvent;
@@ -128,13 +130,13 @@ class PipelineExtension extends AbstractExtension
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
-		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
+		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
 	}
 
-	public function onContainerConfigure(): void
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig = $event->config->get(ContainerConfig::class);
 
 		$containerConfig->addFactories([
 			EmitterInterface::class => EmitterFactory::class,

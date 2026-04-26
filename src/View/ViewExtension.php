@@ -6,6 +6,8 @@ namespace ON\View;
 
 use League\Plates\Engine;
 use ON\Application;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
@@ -37,8 +39,8 @@ class ViewExtension extends AbstractExtension
 			$this->injectMiddleware();
 		});
 
-		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
-			$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+			$containerConfig = $event->config->get(ContainerConfig::class);
 
 			$containerConfig->addFactories([
 				Engine::class => PlatesEngineFactory::class,

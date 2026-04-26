@@ -8,15 +8,10 @@ use ON\Config\Config;
 
 class FileRoutingConfig extends Config
 {
-	public static function getDefaults(): array
-	{
-		return [
-			"pagesPath" => "src" . DIRECTORY_SEPARATOR . "Pages",
-			"cachePath" => "var" . DIRECTORY_SEPARATOR . "cache" . DIRECTORY_SEPARATOR . "filerouting" . DIRECTORY_SEPARATOR,
-			"controller" => "ON\FileRouting\Page\MainPage::index",
-			"template" => [
-				"namespace" => "filerouting",
-			],
-		];
-	}
+	public string $pagesPath = "src" . DIRECTORY_SEPARATOR . "Pages";
+	public string $cachePath = "var" . DIRECTORY_SEPARATOR . "cache" . DIRECTORY_SEPARATOR . "filerouting" . DIRECTORY_SEPARATOR;
+	public string $controller = "ON\FileRouting\Page\MainPage::index";
+	public array $template = [
+		"namespace" => "filerouting",
+	];
 }

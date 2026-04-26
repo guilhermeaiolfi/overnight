@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace ON\Init;
 
 use BackedEnum;
-use Closure;
-use ReflectionFunction;
-use ReflectionMethod;
 use Throwable;
 
 class Init
@@ -22,6 +19,9 @@ class Init
 
 	/** @var string[] */
 	private array $eventStack = [];
+
+	/** @var array<int, array{event: string, payload: object}> */
+	private array $eventHistory = [];
 
 	public function __construct()
 	{
@@ -50,6 +50,11 @@ class Init
 		$name = $this->normalizeEventName($event);
 		$listeners = $this->listeners[$name] ?? [];
 		$doneListeners = $this->doneListeners[$name] ?? [];
+
+		$this->eventHistory[] = [
+			'event' => $name,
+			'payload' => $payload
+		];
 
 		$this->eventStack[] = $name;
 
@@ -86,6 +91,14 @@ class Init
 		return $this->eventStack;
 	}
 
+	/** @return array<int, array{event: string, payload: object}> */
+	// this is different from the stack, stack is just the events that are currently being processed
+	// and the history is all the events that have been processed
+	public function getEventHistory(): array
+	{
+		return $this->eventHistory;
+	}
+
 	private function normalizeEventName(string|BackedEnum $event): string
 	{
 		return $event instanceof BackedEnum ? (string) $event->value : $event;
@@ -93,39 +106,6 @@ class Init
 
 	private function invoke(callable $listener, object $payload): mixed
 	{
-		return $listener(...$this->argumentsFor($listener, $payload));
-	}
-
-	/** @return object[] */
-	private function argumentsFor(callable $listener, object $payload): array
-	{
-		$parameters = $this->reflectionFor($listener)->getNumberOfParameters();
-
-		if ($parameters === 0) {
-			return [];
-		}
-
-		if ($parameters >= 2) {
-			return [$payload, $this->context];
-		}
-
-		return [$payload];
-	}
-
-	private function reflectionFor(callable $listener): ReflectionFunction|ReflectionMethod
-	{
-		if (is_array($listener)) {
-			return new ReflectionMethod($listener[0], $listener[1]);
-		}
-
-		if ($listener instanceof Closure) {
-			return new ReflectionFunction($listener);
-		}
-
-		if (is_object($listener) && method_exists($listener, '__invoke')) {
-			return new ReflectionMethod($listener, '__invoke');
-		}
-
-		return new ReflectionFunction($listener);
+		return $listener($payload, $this->context);
 	}
 }

@@ -53,10 +53,12 @@ $app->install(ViewExtension::class);
 ```
 
 Each extension provides:
-- `install()` - Static installer called during app bootstrap
-- `setup()` - Called during setup phase
-- `boot()` - Called during boot phase
-- `requires()` - Optional dependencies
+- `install()` - Static installer called during app bootstrap.
+- `setup()` - Called during setup phase. Use this to register event listeners.
+- `boot()` - Called during boot phase. Use this for late-stage initialization.
+- `requires()` - Optional dependencies.
+
+**Service Registration:** The standard way to register services into the container from an extension is by listening to `ConfigInitEvents::CONFIGURE`. This allows service definitions to be cached and easily overridden.
 
 ### Dependency Injection Container
 
@@ -207,29 +209,47 @@ Multiple template engine support (Plates, Latte) via `RendererInterface`.
 
 ### 5. Observer Pattern
 
-Events system for hooking into framework lifecycle:
+Events system for hooking into framework lifecycle. Overnight uses a layered event system:
+
+- **Init Events**: Framework lifecycle events (Setup, Configure, Boot, Ready).
+- **Domain Events**: Specific extension events (e.g., `orm.configure`, `rest.item.get`).
 
 ```php
-$app->ext('events')->registerListener('app.ready', function($event) {
-    // App is ready
+// Registering a listener during setup
+$extension->on(ConfigInitEvents::CONFIGURE, function($event) {
+    // Modify configuration or register services
 });
 ```
 
-## State Machine
+## State Machine & Initialization
 
-The application follows a lifecycle:
+The application follows a rigorous lifecycle managed by the `Init` system:
 
 ```
-BOOTING → SETUP → BOOTED → READY → RUNNING
+SETUP → CONFIGURE (Config/Container) → BOOT → READY → RUNNING
 ```
 
-Extensions can register callbacks for state transitions:
+Extensions can register callbacks for state transitions or listen to specific events:
 
 ```php
-$extension->when('ready', function() {
-    // Called when app reaches ready state
+$this->app->init()->on(ConfigInitEvents::READY, function() {
+    // Called when configuration is fully loaded and ready
 });
 ```
+
+### Initialization Debugging
+
+To help debug complex initialization sequences, the framework tracks all emitted events in an `eventHistory`. You can access this history through the `InitContext`:
+
+```php
+$history = $app->init()->getEventHistory();
+
+foreach ($history as $event) {
+    echo $event['name'] . " emitted at " . $event['time'] . "\n";
+}
+```
+
+This is particularly useful for identifying the exact order in which extensions are configuring themselves and detecting circular dependencies or late-binding issues.
 
 ## Error Handling
 

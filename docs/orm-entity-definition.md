@@ -15,15 +15,37 @@ This document describes how to define entities (collections) in the Overnight fr
 
 ---
 
-## Registry - Entry Point
+The `Registry` class is the main entry point for defining collections (entities). While you can instantiate it manually, the framework is designed to load a pre-configured `Registry` from your application configuration.
 
-The `Registry` class is the main entry point for defining collections (entities):
+### Configuration-Based Initialization (Recommended)
+
+In your application's `config` folder, create a file named `orm.all.php`. Return a new `Registry` instance from this file:
+
+```php
+<?php
+// config/orm.all.php
+
+use ON\ORM\Definition\Registry;
+
+$registry = new Registry();
+
+$registry->collection("user")
+    ->field("id", "int")->primaryKey(true)->end()
+    ->end();
+
+return $registry;
+```
+
+The framework's `RegistryFactory` will automatically detect this object. Even if you provide a registry via configuration, other modules can still attach collections to it by listening to the `OrmInitEvents::CONFIGURE` event.
+
+### Manual Initialization
+
+If you are using the Registry in a standalone script or test:
 
 ```php
 use ON\ORM\Definition\Registry;
 
 $registry = new Registry();
-
 $collection = $registry->collection("user");
 ```
 
@@ -363,8 +385,11 @@ function(mixed $source, array $args, Psr\Container\ContainerInterface $container
 
 ## Complete Example
 
+This example shows how a typical `config/orm.all.php` file might look:
+
 ```php
-// config/orm.php
+<?php
+// config/orm.all.php
 
 use ON\ORM\Definition\Registry;
 

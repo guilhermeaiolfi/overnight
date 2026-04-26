@@ -8,6 +8,7 @@ use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -26,7 +27,6 @@ class ImageExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::CONFIGURE, [$this, 'onContainerConfigure']);
 		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
 	}
 
@@ -34,18 +34,15 @@ class ImageExtension extends AbstractExtension
 	{
 	}
 
-	public function onContainerConfigure(): void
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $this->app->config->get(ContainerConfig::class);
+		$containerConfig = $event->config->get(ContainerConfig::class);
 
 		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
 		$containerConfig->addFactory(InterventionImageManager::class, InterventionImageManagerFactory::class);
-	}
 
-	public function onConfigConfigure(): void
-	{
-		$image_cfg = $this->app->config->get(ImageConfig::class);
-		$router_cfg = $this->app->config->get(RouterConfig::class);
+		$image_cfg = $event->config->get(ImageConfig::class);
+		$router_cfg = $event->config->get(RouterConfig::class);
 		$router_cfg->addRoute(
 			'/' . $image_cfg->get('basePath', "i/") . '{uri:\S+}',
 			"ON\Image\ImageManager::process",

@@ -23,4 +23,10 @@ final class InitContext
 	{
 		return $this->init->getEventStack();
 	}
+
+	/** @return array<int, array{event: string, payload: object}> */
+	public function getEventHistory(): array
+	{
+		return $this->init->getEventHistory();
+	}
 }

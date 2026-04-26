@@ -7,141 +7,65 @@ namespace ON\View;
 use ON\Config\Config;
 use ON\Router\UrlHelper;
 
-class Node
+class Node extends Config
 {
-	protected array $values = [];
-
-	public function __construct(
-		protected mixed $parent
-	) {
-
-	}
-
-	public function set(array $values): self
+	public function __construct(array &$items, protected mixed $parent)
 	{
-		$this->values = $values;
-
-		return $this;
+		$this->setReference($items);
 	}
 
-	public function get(?string $name = null): ?array
-	{
-		if ($name === null) {
-			return $this->values;
-		}
-		if (isset($this->values[$name])) {
-			return $this->values[$name];
-		}
-
-		return null;
-	}
-
-	public function serialize(): mixed
-	{
-		return $this->values;
-	}
-}
-
-class CollectionNode extends Node
-{
-	public function end()
+	public function end(): mixed
 	{
 		return $this->parent;
 	}
 }
 
-class RendererNode extends CollectionNode
+class RendererNode extends Node
 {
-	protected array $injects = [];
-
 	public function inject(string $name, string $class): self
 	{
-		$this->injects[$name] = $class;
+		$this->set("inject.{$name}", $class);
 
 		return $this;
 	}
-
-	public function end(): FormatNode
-	{
-		return $this->parent;
-	}
-
-	public function serialize(): mixed
-	{
-		$values = $this->values;
-		$values["inject"] = $this->injects;
-
-		return $values;
-	}
 }
 
-class TemplateNode extends CollectionNode
+class FormatNode extends Node
 {
-	public function end(): ViewConfig
+	public function layout(string $name, array $values = []): LayoutNode
 	{
-		return $this->parent;
-	}
-}
+		if (! isset($this->items['layouts'][$name])) {
+			$this->items['layouts'][$name] = [];
+		}
 
-class FormatNode extends CollectionNode
-{
-	protected array $layouts = [];
-	protected array $renderers = [];
-
-	public function layout(string $name, $values = null): LayoutNode
-	{
-		$layout = new LayoutNode($this);
+		$layout = new LayoutNode($this->items['layouts'][$name], $this);
 		$layout->set($values);
-		$this->layouts[$name] = $layout;
 
 		return $layout;
 	}
 
-	public function renderer(string $name, $class = null): RendererNode
+	public function renderer(string $name, string $class = null): RendererNode
 	{
-		$renderer = new RendererNode($this);
-		$renderer->set(["class" => $class]);
-		$this->renderers[$name] = $renderer;
+		if (! isset($this->items['renderers'][$name])) {
+			$this->items['renderers'][$name] = [];
+		}
+
+		$renderer = new RendererNode($this->items['renderers'][$name], $this);
+		$renderer->set('class', $class);
 
 		return $renderer;
-	}
-
-	public function serialize(): mixed
-	{
-		$values = $this->get();
-		$values["layouts"] = [];
-		foreach ($this->layouts as $key => $layout) {
-			$values["layouts"][$key] = $layout->serialize();
-		}
-
-		$values["renderers"] = [];
-		foreach ($this->renderers as $key => $renderer) {
-			$values["renderers"][$key] = $renderer->serialize();
-		}
-
-		return $values;
 	}
 }
 
 class SectionNode extends Node
 {
-	public function serialize(): array
-	{
-		return $this->values;
-	}
 }
 
-
-
-class LayoutNode extends CollectionNode
+class LayoutNode extends Node
 {
-	protected array $sections = [];
-
-	public function section(string $name, $path, $controller, $methods, $route_name): LayoutNode
+	public function section(string $name, $path, $controller, $methods, $route_name): self
 	{
-		$this->sections[$name] = new SectionNode($this);
-
-		$this->sections[$name]->set([
+		$this->set("sections.{$name}", [
 			$path,
 			$controller,
 			$methods,
@@ -150,58 +74,28 @@ class LayoutNode extends CollectionNode
 
 		return $this;
 	}
-
-	public function get(?string $name = null): ?array
-	{
-		$values = $this->values;
-		$values["sections"] = [];
-		foreach ($this->sections as $name => $section) {
-			$values["sections"][$name] = $section->get();
-		}
-
-		return $values;
-	}
-
-	public function end(): FormatNode
-	{
-		return $this->parent;
-	}
 }
-
-
-
 
 class ViewConfig extends Config
 {
-	protected array $formats = [];
-
-	public static function getDefaults(): array
-	{
-		return [
-			'helpers' => [
-				'url' => UrlHelper::class,
-			],
-		];
-	}
+	public array $helpers = [
+		'url' => UrlHelper::class,
+	];
 
 	public function format(string $name): FormatNode
 	{
-		$this->formats[$name] = new FormatNode($this);
+		if (! isset($this->items['formats'][$name])) {
+			$this->items['formats'][$name] = [];
+		}
 
-		return $this->formats[$name];
+		return new FormatNode($this->items['formats'][$name], $this);
 	}
 
-	public function done(): mixed
+	/**
+	 * No longer strictly needed for serialization, but kept for API compatibility.
+	 */
+	public function done(): array
 	{
-		$formats = [];
-		foreach ($this->formats as $name => $format) {
-			$formats[$name] = $format->serialize();
-		}
-		$values = [
-			"formats" => $formats,
-		];
-		$this->set($values);
-
-		return $values;
+		return $this->all();
 	}
 }

@@ -59,7 +59,7 @@ class AttributesDiscoverer implements DiscoverInterface
 	{
 		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
 		foreach ($classes as $className) {
-			if (preg_match('/(.*)Page$/', $className)) {
+			if (preg_match('/(.*)(Page|Controller)$/', $className)) {
 				$class = new ReflectionClass($className);
 
 				// remove current references loaded from cache

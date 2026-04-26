@@ -8,6 +8,8 @@ use Exception;
 use ON\Application;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
+use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
@@ -26,12 +28,9 @@ class CacheExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::CONFIGURE, function (): void {
-			$config = $this->app->config;
+		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+			$config = $event->config;
 
-			if (! isset($config)) {
-				throw new Exception("Cache Extension needs the config extension");
-			}
 			$containerConfig = $config->get(ContainerConfig::class);
 			$containerConfig->addFactories([
 				CacheInterface::class => CacheFactory::class,
