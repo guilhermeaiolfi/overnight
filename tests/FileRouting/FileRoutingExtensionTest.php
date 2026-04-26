@@ -7,6 +7,7 @@ namespace Tests\ON\FileRouting;
 use FilesystemIterator;
 use League\Plates\Engine;
 use Laminas\Diactoros\ServerRequest;
+use ON\FileRouting\Addon\BreadcrumbsAddon;
 use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRouter;
 use ON\FileRouting\FileRoutingConfig;
@@ -209,6 +210,59 @@ PHP
 		$this->assertStringContainsString('cache atualizado', file_get_contents($cachePath . 'success.code.php'));
 	}
 
+	public function testDashedPageMetadataIsExposedAndRemovedFromCachedController(): void
+	{
+		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'ordem-do-dia.php';
+		$this->writeFileRoutePageWithMetadata($pageFile);
+
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+			'cachePath' => $cachePath,
+			'addons' => [
+				BreadcrumbsAddon::class,
+			],
+		]);
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
+		$cache = new FileRoutingCache($config, $viewConfig);
+
+		$result = $cache->get($pageFile);
+
+		$this->assertSame('Ordem do Dia', $result[3]['title']);
+		$this->assertSame('auto', $result[3]['breadcrumbs']);
+		$this->assertStringNotContainsString('/*---', file_get_contents($cachePath . 'ordem-do-dia.code.php'));
+
+		$engine = new Engine($cachePath, 'phtml');
+		$engine->addFolder('filerouting', $cachePath);
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')
+			->willReturnCallback(function (string $class) use ($viewConfig, $engine) {
+				if ($class === PlatesRenderer::class) {
+					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+				}
+
+				return null;
+			});
+
+		$request = new ServerRequest(uri: '/ordem-do-dia', method: 'GET');
+		$routeResult = (new FileRouter($config, ''))->match($request);
+		$request = $request->withAttribute(RouteResult::class, $routeResult);
+		$page = new MainPage(
+			new ViewManager($viewConfig, $container, new RequestStack()),
+			$this->createMock(RouterInterface::class),
+			$viewConfig,
+			$config
+		);
+
+		$viewResult = $page->index($request);
+		$data = $viewResult->toArray();
+
+		$this->assertSame('Ordem do Dia', $data['_title']);
+		$this->assertSame('Ordem do Dia', $data['_pageMeta']['title']);
+		$this->assertSame('Inicio', $data['_breadcrumbs'][0]['label']);
+		$this->assertSame('Ordem do Dia', $data['_breadcrumbs'][1]['label']);
+	}
+
 	private function writeFileRoutePage(string $path): void
 	{
 		if (! is_dir(dirname($path))) {
@@ -247,6 +301,32 @@ PHP
 <template lang="latte">
 <div>{$ok}</div>
 </template>
+PHP
+		);
+	}
+
+	private function writeFileRoutePageWithMetadata(string $path): void
+	{
+		if (! is_dir(dirname($path))) {
+			mkdir(dirname($path), 0777, true);
+		}
+
+		file_put_contents(
+			$path,
+			<<<'PHP'
+<?php
+/*---
+{
+  "title": "Ordem do Dia",
+  "breadcrumbs": "auto"
+}
+---*/
+
+    $ok = "metadata";
+
+?>
+
+<div><?php echo $ok; ?></div>
 PHP
 		);
 	}
