@@ -4,25 +4,40 @@ declare(strict_types=1);
 
 namespace Tests\ON\Session;
 
-use ON\Session\NativeSession;
+use function dirname;
+use function is_dir;
+use function mkdir;
+use ON\Session\Native\NativeSession;
+use PHPUnit\Framework\Attributes\PreserveGlobalState;
+use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
+use function session_destroy;
+use function session_status;
 
-/**
- * @runTestsInSeparateProcesses
- * @preserveGlobalState disabled
- */
+#[RunTestsInSeparateProcesses]
+#[PreserveGlobalState(false)]
 class NativeSessionTest extends TestCase
 {
+	private function getSessionSavePath(): string
+	{
+		return dirname(__DIR__, 2) . '/.tmp/session-tests';
+	}
+
 	private function createSession(array $options = []): NativeSession
 	{
 		return new NativeSession(array_merge([
 			'use_cookies' => 0,
 			'cache_limiter' => '',
+			'save_path' => $this->getSessionSavePath(),
 		], $options));
 	}
 
 	protected function setUp(): void
 	{
+		if (! is_dir($this->getSessionSavePath())) {
+			mkdir($this->getSessionSavePath(), 0777, true);
+		}
+
 		if (session_status() === PHP_SESSION_ACTIVE) {
 			session_destroy();
 		}

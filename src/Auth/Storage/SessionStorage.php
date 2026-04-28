@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Auth\Storage;
 
 use ON\Session\SessionInterface;
-use ON\Session\SessionManagerInterface;
 
 class SessionStorage implements StorageInterface
 {
@@ -14,14 +13,14 @@ class SessionStorage implements StorageInterface
 	protected SessionInterface $session;
 
 	public function __construct(
-		protected SessionManagerInterface $manager,
+		SessionInterface $session,
 		protected ?string $namespace = null
 	) {
 		if (! isset($namespace)) {
 			$this->namespace = self::NAMESPACE_DEFAULT;
 		}
 
-		$this->session = $manager->resolve();
+		$this->session = $session;
 	}
 
 	public function isEmpty(): bool

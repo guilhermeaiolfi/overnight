@@ -5,16 +5,17 @@ declare(strict_types=1);
 namespace ON\Session;
 
 use ON\Application;
-use ON\Container\ContainerConfig;
 use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\Init\ContainerInitEvents;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Session\Container\SessionFactory;
 
 class SessionExtension extends AbstractExtension
 {
 	public const ID = 'session';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -24,18 +25,10 @@ class SessionExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
-			$config = $event->config;
-
-			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->addAliases([
-				SessionManagerInterface::class => SessionManager::class,
-				ResolverInterface::class => NativeResolver::class,
-
-			]);
+			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactories([
-
+				SessionInterface::class => SessionFactory::class,
 			]);
-
 		});
 	}
 }
