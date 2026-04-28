@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver;
+namespace ON\RestApi\Resolver\Sql;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 
@@ -14,7 +14,7 @@ class SqlFilterParser
 	 * Input format: ['field' => ['_operator' => 'value'], '_or' => [...]]
 	 * Output: ['sql' => 'WHERE ...', 'values' => [...]]
 	 */
-	public function parse(CollectionInterface $collection, array $filters): array
+	public function parse(CollectionInterface $collection, array $filters, ?string $rootAlias = null): array
 	{
 		if (empty($filters)) {
 			return ['sql' => '', 'values' => []];
@@ -22,7 +22,7 @@ class SqlFilterParser
 
 		$filters = $this->normalizeFilters($filters);
 		$values = [];
-		$conditions = $this->parseGroup($collection, $filters, $values, $collection->getTable());
+		$conditions = $this->parseGroup($collection, $filters, $values, $rootAlias ?? $collection->getTable());
 
 		if (empty($conditions)) {
 			return ['sql' => '', 'values' => []];

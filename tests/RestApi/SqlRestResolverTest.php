@@ -6,8 +6,8 @@ namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Resolver\SqlFilterParser;
-use ON\RestApi\Resolver\SqlRestResolver;
+use ON\RestApi\Resolver\Sql\SqlFilterParser;
+use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
@@ -457,6 +457,36 @@ final class SqlRestResolverTest extends TestCase
 		// Only "PHP Tips" matches both search=PHP and status=published
 		$this->assertCount(1, $result['items']);
 		$this->assertSame('PHP Tips', $result['items'][0]['title']);
+	}
+
+	public function testListWithBelongsToRelationFilter(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('post'), [
+			'filter' => ['author.name' => ['_eq' => 'John']],
+		]);
+
+		$this->assertCount(2, $result['items']);
+		$this->assertSame(['PHP Tips', 'Draft Post'], array_column($result['items'], 'title'));
+	}
+
+	public function testListWithManyToManyRelationFilter(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('post'), [
+			'filter' => ['tags.name' => ['_eq' => 'GraphQL']],
+		]);
+
+		$this->assertCount(2, $result['items']);
+		$this->assertSame(['PHP Tips', 'GraphQL Guide'], array_column($result['items'], 'title'));
 	}
 
 	// -------------------------------------------------------------------------

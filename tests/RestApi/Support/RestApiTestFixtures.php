@@ -4,10 +4,28 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi\Support;
 
+use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
+use Cycle\Database\DatabaseProviderInterface;
+use Cycle\ORM\Factory as CycleOrmFactory;
+use Cycle\ORM\ORM;
+use Cycle\ORM\Schema;
+use Cycle\Schema\Compiler;
+use Cycle\Schema\Generator\ForeignKeys;
+use Cycle\Schema\Generator\GenerateModifiers;
+use Cycle\Schema\Generator\GenerateRelations;
+use Cycle\Schema\Generator\GenerateTypecast;
+use Cycle\Schema\Generator\RenderModifiers;
+use Cycle\Schema\Generator\RenderRelations;
+use Cycle\Schema\Generator\RenderTables;
+use Cycle\Schema\Generator\ValidateEntities;
+use Cycle\Schema\Registry as CycleRegistry;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Compiler\CycleRegistryGenerator;
 use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Resolver\SqlFilterParser;
-use ON\RestApi\Resolver\SqlRestResolver;
+use ON\RestApi\Resolver\Cycle\CycleRestResolver;
+use ON\RestApi\Resolver\Sql\CycleDbalFactory;
+use ON\RestApi\Resolver\Sql\SqlFilterParser;
+use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
 
 trait RestApiTestFixtures
@@ -63,6 +81,11 @@ trait RestApiTestFixtures
 	{
 		// Create tag collection first (no relations)
 		$this->createTagCollection($registry);
+
+		$registry->collection('post_tag')
+			->field('post_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('tag_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->end();
 
 		// Create comment collection (no relations of its own)
 		$this->createCommentCollection($registry);
@@ -235,5 +258,37 @@ trait RestApiTestFixtures
 			$db,
 			new SqlFilterParser(),
 		);
+	}
+
+	protected function createCycleResolver(Registry $registry, SqliteTestDatabase $db): CycleRestResolver
+	{
+		$database = (new CycleDbalFactory())->fromPdo($db->getConnection(), 'default');
+		$provider = new class($database) implements DatabaseProviderInterface {
+			public function __construct(private CycleDatabaseInterface $database)
+			{
+			}
+
+			public function database(?string $database = null): CycleDatabaseInterface
+			{
+				return $this->database;
+			}
+		};
+
+		$cycleRegistry = new CycleRegistry($provider);
+		$schema = (new Compiler())->compile($cycleRegistry, [
+			new CycleRegistryGenerator($registry),
+			new GenerateRelations(),
+			new GenerateModifiers(),
+			new ValidateEntities(),
+			new RenderTables(),
+			new RenderRelations(),
+			new RenderModifiers(),
+			new ForeignKeys(),
+			new GenerateTypecast(),
+		]);
+
+		$orm = new ORM(new CycleOrmFactory($provider), new Schema($schema));
+
+		return new CycleRestResolver($orm, $registry);
 	}
 }

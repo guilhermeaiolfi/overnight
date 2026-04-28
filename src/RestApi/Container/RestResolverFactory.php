@@ -7,10 +7,10 @@ namespace ON\RestApi\Container;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Resolver\CycleRestResolver;
+use ON\RestApi\Resolver\Cycle\CycleRestResolver;
 use ON\RestApi\Resolver\RestResolverInterface;
-use ON\RestApi\Resolver\SqlFilterParser;
-use ON\RestApi\Resolver\SqlRestResolver;
+use ON\RestApi\Resolver\Sql\SqlFilterParser;
+use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
 

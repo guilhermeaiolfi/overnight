@@ -14,6 +14,7 @@ use Cycle\Schema\Table\Column;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ReflectionClass;
@@ -167,12 +168,19 @@ class CycleRegistryGenerator implements GeneratorInterface
 	protected function convertOptionMap(RelationInterface $on_relation, CycleRelation $cycle_relation): void
 	{
 		// reference: https://cycle-orm.dev/docs/relation-refers-to/current/en
-		$cycle_relation->getOptions()
+		$options = $cycle_relation->getOptions()
 			->set("load", $on_relation->getLoadStrategy())
 			->set("cascade", $on_relation->isCascade())
 			->set("nullable", $on_relation->isNullable())
 			->set("innerKey", $on_relation->getInnerKey())
 			->set("outerKey", $on_relation->getOuterKey());
+
+		if ($on_relation instanceof M2MRelation) {
+			$options
+				->set('through', $on_relation->through->getCollection())
+				->set('throughInnerKey', $on_relation->through->getInnerKey())
+				->set('throughOuterKey', $on_relation->through->getOuterKey());
+		}
 	}
 
 	/**
@@ -180,6 +188,10 @@ class CycleRegistryGenerator implements GeneratorInterface
 	 */
 	protected function resolveRelationType(RelationInterface $relation): string
 	{
+		if ($relation instanceof M2MRelation) {
+			return 'manyToMany';
+		}
+
 		$class = new ReflectionClass($relation);
 		$name = $class->getShortName();
 		$name = str_replace("Relation", "", $name);
