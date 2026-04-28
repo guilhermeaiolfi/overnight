@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Auth\Middleware;
 
+use Laminas\Diactoros\Response\EmptyResponse;
 use ON\Application;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Config\AppConfig;
@@ -33,7 +34,13 @@ class SecurityMiddleware implements MiddlewareInterface
 		$page = $routeResult->getTargetInstance();
 
 		if (method_exists($page, 'isSecure') && $page->isSecure() && ! $this->auth->hasIdentity()) {
-			return $this->app->processForward($this->config->get('controllers.login'), $request);
+			$loginMiddleware = $this->config->get('controllers.login', false);
+
+			if (! is_string($loginMiddleware) || $loginMiddleware === '') {
+				return new EmptyResponse(401);
+			}
+
+			return $this->app->processForward($loginMiddleware, $request);
 		}
 
 		return $handler->handle($request);

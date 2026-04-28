@@ -46,7 +46,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
 
 		$ok = $this->executor->execute([$page, $checkMethod], $args);
 
-		if ($ok) {
+		if ($ok === true) {
 			return $handler->handle($request);
 		}
 
@@ -61,6 +61,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
 
 	protected function findCheckPermissionsMethod(object $page, string $action): ?string
 	{
+		// Prefer action-specific permission hooks, then fall back to a page-wide one.
 		$method = 'check' . ucfirst($action) . 'Permissions';
 		if (method_exists($page, $method)) {
 			return $method;

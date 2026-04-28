@@ -1,16 +1,16 @@
 <?php
 
+declare(strict_types=1);
+
 namespace ON\Auth;
 
-use Psr\Container\ContainerInterface;
-use ON\Auth\AuthorizationServiceInterface;
-use ON\Auth\Exception\NotImplementedException;
-
+/**
+ * Optional base class for application-defined authorization services.
+ *
+ * Overnight does not provide a built-in authorization engine. Instead,
+ * pages and controllers expose permission hooks that may call whatever
+ * application-specific authorization API they need.
+ */
 class AuthorizationService implements AuthorizationServiceInterface
 {
-  protected $acl = null;
-  public function __construct (ContainerInterface $container) {
-
-    throw new NotImplementedException("This service handle permissions and should be implemented in your application. It should be linked to ON\Auth\AuthorizationServiceInterface in your container too.");
-  }
 }

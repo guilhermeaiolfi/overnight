@@ -6,7 +6,7 @@ namespace ON\Auth\Storage;
 
 use ON\Session\SessionInterface;
 
-class SessionStorage implements StorageInterface
+class SessionStorage implements StorageInterface, AuthLifecycleStorageInterface
 {
 	public const NAMESPACE_DEFAULT = 'ONAuth';
 
@@ -41,5 +41,15 @@ class SessionStorage implements StorageInterface
 	public function clear(): void
 	{
 		$this->session->remove($this->namespace);
+	}
+
+	public function onLogin(): void
+	{
+		$this->session->regenerateId(true);
+	}
+
+	public function onLogout(): void
+	{
+		$this->session->regenerateId(true);
 	}
 }

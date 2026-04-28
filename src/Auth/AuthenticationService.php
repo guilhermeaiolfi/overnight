@@ -5,13 +5,20 @@ declare(strict_types=1);
 namespace ON\Auth;
 
 use Exception;
+use ON\Auth\Event\AuthenticationFailedEvent;
+use ON\Auth\Event\AuthenticationSucceededEvent;
+use ON\Auth\Event\LogoutEvent;
+use ON\Auth\Storage\AuthLifecycleStorageInterface;
 use ON\Auth\Storage\StorageInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
+use RuntimeException;
 
 class AuthenticationService implements AuthenticationServiceInterface
 {
 	public function __construct(
 		protected ?StorageInterface $storage = null,
-		protected ?AuthenticatorInterface $authenticator = null
+		protected ?AuthenticatorInterface $authenticator = null,
+		protected ?EventDispatcherInterface $eventDispatcher = null
 	) {
 		if (null !== $storage) {
 			$this->setStorage($storage);
@@ -50,7 +57,11 @@ class AuthenticationService implements AuthenticationServiceInterface
 	 */
 	public function getStorage(): StorageInterface
 	{
-		assert($this->storage !== null);
+		if ($this->storage === null) {
+			throw new RuntimeException(
+				'Authentication storage has not been configured.'
+			);
+		}
 
 		return $this->storage;
 	}
@@ -91,8 +102,27 @@ class AuthenticationService implements AuthenticationServiceInterface
 		}
 
 		if ($result->isValid()) {
-			$this->getStorage()->write($result->getIdentity());
+			$storage = $this->getStorage();
+			$storage->write($result->getIdentity());
+
+			if ($storage instanceof AuthLifecycleStorageInterface) {
+				$storage->onLogin();
+			}
+
+			$this->eventDispatcher?->dispatch(
+				new AuthenticationSucceededEvent(
+					$result,
+					$result->getIdentity(),
+					$authenticator
+				)
+			);
+
+			return $result;
 		}
+
+		$this->eventDispatcher?->dispatch(
+			new AuthenticationFailedEvent($result, $authenticator)
+		);
 
 		return $result;
 	}
@@ -126,6 +156,14 @@ class AuthenticationService implements AuthenticationServiceInterface
 	*/
 	public function logout(): void
 	{
-		$this->getStorage()->clear();
+		$identity = $this->getIdentity();
+		$storage = $this->getStorage();
+		$storage->clear();
+
+		if ($storage instanceof AuthLifecycleStorageInterface) {
+			$storage->onLogout();
+		}
+
+		$this->eventDispatcher?->dispatch(new LogoutEvent($identity));
 	}
 }
