@@ -4,87 +4,110 @@ declare(strict_types=1);
 
 namespace ON\Session;
 
-use const PHP_SESSION_NONE;
+use function array_key_exists;
+use function is_dir;
+use const PHP_SESSION_ACTIVE;
 use RuntimeException;
+use function session_destroy;
+use function session_id;
+use function session_regenerate_id;
 use function session_start;
 use function session_status;
+use function session_write_close;
+use function sprintf;
 
 class NativeSession implements SessionInterface
 {
-	private array $data;
+	/**
+	 * @param array<string, mixed> $options Options forwarded to session_start()
+	 */
+	public function __construct(
+		private array $options = []
+	) {
+	}
 
 	/**
-	 * Constructor for NativeSession class.
+	 * Start the session if it is not already active.
 	 *
-	 * @param array $options Options for session start.
-	 *                      Possible options:
-	 *                      - 'name': Session name
-	 *                      - 'lifetime': Session lifetime
-	 *                      - 'path': Session save path
-	 *                      - 'domain': Session domain
-	 *                      - 'secure': Set to true for secure session
-	 *                      - 'httponly': Set to true to only allow HTTP access
-	 * @throws RuntimeException If session start fails.
+	 * @throws RuntimeException If the session cannot be started.
 	 */
-	public function __construct(array $options = [])
+	private function ensureStarted(): void
 	{
-		if (session_status() === PHP_SESSION_NONE) {
-			if (isset($options['save_path']) && ! is_dir($options['save_path'])) {
-				throw new RuntimeException(sprintf('Session save path "%s" does not exist.', $options['save_path']));
-			}
-			if (! session_start($options)) {
-				throw new RuntimeException('Failed to start the session.');
-			}
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			return;
 		}
 
-		$this->data = &$_SESSION;
+		if (isset($this->options['save_path']) && ! is_dir($this->options['save_path'])) {
+			throw new RuntimeException(
+				sprintf('Session save path "%s" does not exist.', $this->options['save_path'])
+			);
+		}
+
+		if (! session_start($this->options)) {
+			throw new RuntimeException('Failed to start the session.');
+		}
 	}
 
 	public function get(string $key, mixed $default = null): mixed
 	{
-		if ($this->has($key)) {
-			return $this->data[$key];
-		}
+		$this->ensureStarted();
 
-		return $default;
+		return array_key_exists($key, $_SESSION) ? $_SESSION[$key] : $default;
 	}
 
 	public function set(string $key, mixed $value = null): self
 	{
-		$this->data[$key] = $value;
+		$this->ensureStarted();
+		$_SESSION[$key] = $value;
 
 		return $this;
 	}
 
 	public function all(): array
 	{
-		return $this->data;
+		$this->ensureStarted();
+
+		return $_SESSION;
 	}
 
 	public function has(string $key): bool
 	{
-		return isset($this->data[$key]);
+		$this->ensureStarted();
+
+		return array_key_exists($key, $_SESSION);
 	}
 
 	public function remove(string $key): void
 	{
-		if ($this->has($key)) {
-			unset($this->data[$key]);
-		}
+		$this->ensureStarted();
+		unset($_SESSION[$key]);
 	}
 
 	public function destroy(): void
 	{
-		session_destroy();
+		if (session_status() === PHP_SESSION_ACTIVE) {
+			session_destroy();
+		}
+
+		$_SESSION = [];
 	}
 
 	public function getId(): ?string
 	{
 		$id = session_id();
-		if ($id !== false) {
-			return $id;
-		}
 
-		return null;
+		return ($id !== false && $id !== '') ? $id : null;
+	}
+
+	public function regenerateId(bool $deleteOldSession = false): bool
+	{
+		$this->ensureStarted();
+
+		return session_regenerate_id($deleteOldSession);
+	}
+
+	public function close(): bool
+	{
+		return session_write_close();
 	}
 }

@@ -6,9 +6,9 @@ namespace ON\Session;
 
 interface SessionInterface
 {
-	public function get(string $key,  $default = null);
+	public function get(string $key, mixed $default = null): mixed;
 
-	public function set(string $key, $value = null): self;
+	public function set(string $key, mixed $value = null): self;
 
 	public function all(): array;
 
@@ -19,4 +19,8 @@ interface SessionInterface
 	public function destroy(): void;
 
 	public function getId(): ?string;
+
+	public function regenerateId(bool $deleteOldSession = false): bool;
+
+	public function close(): bool;
 }
