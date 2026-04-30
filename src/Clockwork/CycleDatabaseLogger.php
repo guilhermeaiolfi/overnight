@@ -104,11 +104,12 @@ class CycleDatabaseLogger implements LoggerInterface
 			->isNotFunction([ 'profileCall', 'emitEvent' ]);
 
 		$trace = StackTrace::get()->resolveViewName()->skip($filter);
+		$elapsed = isset($context["elapsed"]) ? (float) $context["elapsed"] : 0.0;
 
 		$this->clockwork->addDatabaseQuery(
 			$message,
 			$context["parameters"] ?? null,
-			floor($context["elapsed"] * 1000),
+			(int) floor($elapsed * 1000),
 			[
 				"trace" => (new Serializer())->trace($trace),
 			]
