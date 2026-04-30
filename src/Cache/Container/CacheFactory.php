@@ -25,6 +25,6 @@ class CacheFactory
 
 		$enable = $config->get("enable", false);
 
-		return new Cache($adapter, $enable);
+		return new Cache($adapter, $enable, (string) $config->get("adapter.namespace", ""));
 	}
 }

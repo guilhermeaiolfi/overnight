@@ -22,4 +22,8 @@ interface CacheInterface
 	public function clear(): void;
 
 	public function isEnabled(): bool;
+
+	public function withNamespace(string $namespace): self;
+
+	public function getNamespace(): string;
 }

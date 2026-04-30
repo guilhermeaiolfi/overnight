@@ -9,12 +9,14 @@ use DateTimeInterface;
 use ON\Cache\Exception\UnableClearCacheException;
 use Psr\Cache\CacheItemInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
+use Symfony\Component\Cache\Adapter\ProxyAdapter;
 
 class Cache implements CacheInterface
 {
 	public function __construct(
 		protected AdapterInterface $adapter,
-		protected bool $enabled = false
+		protected bool $enabled = false,
+		protected string $namespace = ''
 	) {
 
 	}
@@ -84,5 +86,28 @@ class Cache implements CacheInterface
 		if (! $this->adapter->clear()) {
 			throw new UnableClearCacheException();
 		}
+	}
+
+	public function withNamespace(string $namespace): CacheInterface
+	{
+		$namespace = trim($namespace);
+		if ($namespace === '') {
+			return $this;
+		}
+
+		$scopedNamespace = $this->namespace === ''
+			? $namespace
+			: $this->namespace . ':' . $namespace;
+
+		return new self(
+			new ProxyAdapter($this->adapter, $namespace),
+			$this->enabled,
+			$scopedNamespace
+		);
+	}
+
+	public function getNamespace(): string
+	{
+		return $this->namespace;
 	}
 }
