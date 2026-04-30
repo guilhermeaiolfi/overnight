@@ -37,7 +37,8 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	) {
 		if (! function_exists('clock')) {
 			$settings = ArrayUtils::merge($this->getOptions(), $options);
-			$settings["api"] = Router::detectBaseUrl() . "/__clockwork/";
+			$basePath = rtrim(Router::detectBaseUrl(), '/');
+			$settings["api"] = ($basePath === '' ? '' : $basePath) . "/__clockwork/";
 			$this->clockwork = Clockwork::init($settings);
 			clock()->event("Booting")->begin();
 		} else {
