@@ -25,10 +25,10 @@ class MigrateDownCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('migrate:down')
+			->setName('db:migrate:down')
 			->setDefinition([
 			])
-			->setDescription('Rollback last migration')
+			->setDescription('Roll back the most recently executed migration.')
 		;
 	}
 

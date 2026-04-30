@@ -11,6 +11,7 @@ use ON\Config\Init\ConfigInitEvents;
 use ON\Console\Init\ConsoleInitEvents;
 use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateDownCommand;
+use ON\DB\Command\MigrateStatusCommand;
 use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
 use ON\DB\Container\DatabaseManagerFactory;
@@ -35,6 +36,7 @@ class DatabaseExtension extends AbstractExtension
 				$this->app->console->addCommand(MigrateCommand::class);
 				$this->app->console->addCommand(MigrateUpCommand::class);
 				$this->app->console->addCommand(MigrateDownCommand::class);
+				$this->app->console->addCommand(MigrateStatusCommand::class);
 			});
 		}
 

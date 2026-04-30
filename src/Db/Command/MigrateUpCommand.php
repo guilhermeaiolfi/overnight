@@ -25,10 +25,11 @@ class MigrateUpCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('migrate')
+			->setName('db:migrate:up')
+			->setAliases(['migrate'])
 			->setDefinition([
 			])
-			->setDescription('Migrate database')
+			->setDescription('Run the next pending migration. Alias: migrate')
 		;
 	}
 

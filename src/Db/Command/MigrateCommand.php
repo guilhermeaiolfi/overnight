@@ -25,10 +25,10 @@ class MigrateCommand extends Command
 		$this->ignoreValidationErrors();
 
 		$this
-			->setName('db:migrate')
+			->setName('db:migrate:init')
 			->setDefinition([
 			])
-			->setDescription('Migrate database')
+			->setDescription('Initialize or repair the migration tracking table.')
 		;
 	}
 
