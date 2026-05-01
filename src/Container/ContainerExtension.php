@@ -14,6 +14,7 @@ use function is_file;
 use function is_numeric;
 use function is_object;
 use ON\Application;
+use ON\Config\Config;
 use ON\Config\ConfigExtension;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
@@ -80,6 +81,10 @@ class ContainerExtension extends AbstractExtension
 		$this->container = $this->createContainer($configs[ContainerConfig::class]);
 
 		foreach ($configs as $class => $config) {
+			if (is_object($config) && ! ($config instanceof Config)) {
+				continue;
+			}
+
 			$this->container->set($class, $config);
 		}
 

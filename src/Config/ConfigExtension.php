@@ -52,7 +52,16 @@ class ConfigExtension extends AbstractExtension
 				}
 			}
 
-			return array_merge($this->data, $this->instances);
+			$data = array_filter(
+				$this->data,
+				static fn (mixed $value): bool => ! is_object($value) || $value instanceof Config
+			);
+			$instances = array_filter(
+				$this->instances,
+				static fn (mixed $value): bool => $value instanceof Config
+			);
+
+			return array_merge($data, $instances);
 		}
 
 		if (! isset($this->instances[$className])) {
