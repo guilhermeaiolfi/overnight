@@ -10,6 +10,7 @@ use ON\Container\ContainerConfig;
 use ON\Config\Init\ConfigInitEvents;
 use ON\Console\Init\ConsoleInitEvents;
 use ON\DB\Command\MigrateCommand;
+use ON\DB\Command\MigrateAllCommand;
 use ON\DB\Command\MigrateDownCommand;
 use ON\DB\Command\MigrateStatusCommand;
 use ON\DB\Command\MigrateUpCommand;
@@ -35,6 +36,7 @@ class DatabaseExtension extends AbstractExtension
 			$init->on(ConsoleInitEvents::READY, function (): void {
 				$this->app->console->addCommand(MigrateCommand::class);
 				$this->app->console->addCommand(MigrateUpCommand::class);
+				$this->app->console->addCommand(MigrateAllCommand::class);
 				$this->app->console->addCommand(MigrateDownCommand::class);
 				$this->app->console->addCommand(MigrateStatusCommand::class);
 			});
