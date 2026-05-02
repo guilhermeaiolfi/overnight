@@ -6,21 +6,19 @@ namespace ON\Router;
 
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
-use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Attribute\RouteAttributeProcessor;
 use ON\Router\Container\RouteMiddlewareFactory;
 use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Container\RouterFactory;
 use ON\Router\Container\UrlHelperFactory;
-use ON\Router\Init\RouterInitEvents;
 use ON\Router\Init\Event\RouterReadyEvent;
 use ON\Router\Init\Event\RouterSetupEvent;
 use Psr\Container\ContainerInterface;
@@ -44,14 +42,6 @@ class RouterExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
-	public function requires(): array
-	{
-		return [
-			'events',
-			'container',
-		];
-	}
-
 	public function register(Init $init): void
 	{
 		$this->app->registerMethod("get", [$this, 'get']);
@@ -61,10 +51,12 @@ class RouterExtension extends AbstractExtension
 		$this->app->registerMethod("post", [$this, 'post']);
 		$this->app->registerMethod("route", [$this, 'route']);
 
-		$this->app->pipe("/", RouteMiddleware::class, 100);
+		$init->on(PipelineReadyEvent::class, function () {
+			$this->app->pipe("/", RouteMiddleware::class, 100);
+		});
 
-		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
+		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
@@ -88,8 +80,8 @@ class RouterExtension extends AbstractExtension
 		$this->router = $container->get(RouterInterface::class);
 		$this->config = $container->get(RouterConfig::class);
 
-		$context->emit(RouterInitEvents::SETUP, new RouterSetupEvent($this));
-		$context->emit(RouterInitEvents::READY, new RouterReadyEvent($this));
+		$context->emit(new RouterSetupEvent($this));
+		$context->emit(new RouterReadyEvent($this));
 	}
 
 	protected function loadRoutes(string $file)

@@ -6,12 +6,10 @@ namespace ON\RestApi;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\Middleware\Init\PipelineInitEvents;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
@@ -32,15 +30,10 @@ class RestApiExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['config', 'container', 'events', 'orm'];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
-		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void

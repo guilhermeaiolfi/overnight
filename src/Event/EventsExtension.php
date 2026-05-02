@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace ON\Event;
 
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 use Exception;
 use League\Event\ListenerPriority;
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Config\Init\ConfigInitEvents;
-use ON\Container\Init\ContainerInitEvents;
+
+
 use ON\Discovery\AttributesDiscoverer;
 use ON\Event\Attribute\EventHandlerAttributeProcessor;
 use ON\Event\Event\ReadyEvent;
@@ -43,8 +45,8 @@ class EventsExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		if ($this->app->hasExtension('container')) {
-			$init->on(ContainerInitEvents::READY, [ $this, 'onContainerReady' ]);
-			$init->on(ConfigInitEvents::CONFIGURE, [ $this, 'onConfigConfigure' ]);
+			$init->on(ContainerReadyEvent::class, [ $this, 'onContainerReady' ]);
+			$init->on(ConfigConfigureEvent::class, [ $this, 'onConfigConfigure' ]);
 		}
 	}
 

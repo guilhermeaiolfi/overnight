@@ -7,7 +7,6 @@ namespace ON\ORM\Container;
 use ON\Application;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Init\Event\OrmConfigureEvent;
-use ON\ORM\Init\OrmInitEvents;
 use Psr\Container\ContainerInterface;
 
 class RegistryFactory
@@ -25,7 +24,7 @@ class RegistryFactory
 
 		// Emit the CONFIGURE event so modules can register their collections.
 		// This happens even if a registry was provided via config, allowing late-binding extensions to run.
-		$app->init()->emit(OrmInitEvents::CONFIGURE, new OrmConfigureEvent($registry));
+		$app->init()->emit(new OrmConfigureEvent($registry));
 
 		return $registry;
 	}

@@ -6,7 +6,7 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -39,12 +39,7 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
-	}
-
-	public function requires(): array
-	{
-		return ['container'];
+		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 	}
 
 	public function onContainerReady(ContainerReadyEvent $event): void

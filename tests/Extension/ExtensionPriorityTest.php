@@ -2,17 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Tests\ON\Extension;
+// Dummy events to test inference
+namespace Tests\ON\Extension\Base {
+    class BaseReadyEvent {}
+}
+
+namespace Tests\ON\Extension {
 
 use FilesystemIterator;
 use ON\Application;
 use ON\Config\Config;
 use ON\Config\ConfigExtension;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -39,12 +44,12 @@ final class ExtensionPriorityTest extends TestCase
 		$this->removeDirectory($this->projectDir);
 	}
 
-    private function createApplication(array $extensions): Application
+    private function createApplication(array $extensions, bool $debug = true): Application
 	{
 		return new Application([
 			'project_dir' => $this->projectDir,
 			'extensions' => $extensions,
-			'debug' => true,
+			'debug' => $debug,
 		]);
 	}
 
@@ -116,7 +121,7 @@ final class ExtensionPriorityTest extends TestCase
 
     public function testDependencyOrderShouldPrevailOverConfigOrder(): void
     {
-        // DependentExtension depends on BaseExtension
+        // DependentExtension depends on BaseExtension via event subscription
         // Even if listed first, it should register AFTER BaseExtension
         // and thus be able to override it.
         $app = $this->createApplication([
@@ -127,7 +132,7 @@ final class ExtensionPriorityTest extends TestCase
         ]);
 
         $container = $app->ext('container')->getContainer();
-        // register() now respects dependencies
+        // register() now respects inferred dependencies
         $this->assertEquals('dependent_override', $container->get('test_key'));
     }
 
@@ -176,9 +181,9 @@ final class ExtensionPriorityTest extends TestCase
         $app = $this->createApplication([
             ConfigExtension::class => ['cachePath' => $cacheFile],
             ExtensionWithDefaults::class => [],
-        ]);
+        ], false);
         
-        // Configuration is loaded/saved in the constructor
+        // Configuration is loaded/saved in start()
         $this->assertFileExists($cacheFile);
         $content = file_get_contents($cacheFile);
         $this->assertStringContainsString('extension_default', $content);
@@ -186,7 +191,7 @@ final class ExtensionPriorityTest extends TestCase
         // Verify it loads from cache
         $app2 = $this->createApplication([
             ConfigExtension::class => ['cachePath' => $cacheFile],
-        ]);
+        ], false);
         $config2 = $app2->ext('config')->get(TestConfig::class);
         $this->assertEquals('extension_default', $config2->some_key);
     }
@@ -199,11 +204,9 @@ class TestConfig extends Config
 
 class ExtensionWithDefaults extends AbstractExtension
 {
-    public function requires(): array { return ['config']; }
-
     public function register(Init $init): void
     {
-        $init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
             $config = $event->config->get(TestConfig::class);
             $config->some_key = 'extension_default';
         });
@@ -214,7 +217,7 @@ class BaseExtension extends AbstractExtension
 {
     public function register(Init $init): void
     {
-        $init->on(ContainerInitEvents::CONFIGURE, function (ConfigureContainerEvent $event): void {
+		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
             $event->container->set('test_key', 'base');
         });
     }
@@ -224,7 +227,7 @@ class OverridingExtension extends AbstractExtension
 {
     public function register(Init $init): void
     {
-        $init->on(ContainerInitEvents::CONFIGURE, function (ConfigureContainerEvent $event): void {
+		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
             $event->container->set('test_key', 'overridden');
         });
     }
@@ -232,15 +235,15 @@ class OverridingExtension extends AbstractExtension
 
 class DependentExtension extends AbstractExtension
 {
-    public function requires(): array
-    {
-        return [BaseExtension::class];
-    }
-
     public function register(Init $init): void
     {
-        $init->on(ContainerInitEvents::CONFIGURE, function (ConfigureContainerEvent $event): void {
+        // Inference: This extension listens to an event in BaseExtension's namespace
+        $init->on(\Tests\ON\Extension\Base\BaseReadyEvent::class, fn() => null);
+
+		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
             $event->container->set('test_key', 'dependent_override');
         });
     }
 }
+
+} // end namespace Tests\ON\Extension

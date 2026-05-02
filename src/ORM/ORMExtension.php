@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\ORM;
 
 use ON\Application;
-use ON\Config\Init\ConfigInitEvents;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -22,14 +22,9 @@ class ORMExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['config'];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
 	}
 
 	public function onConfigConfigure(object $event): void

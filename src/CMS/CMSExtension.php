@@ -4,16 +4,22 @@ declare(strict_types=1);
 
 namespace ON\CMS;
 
+use ON\Console\Init\Event\ConsoleReadyEvent;
+
+use ON\Router\Init\Event\RouterSetupEvent;
+
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 use ON\Application;
 use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
-use ON\Console\Init\ConsoleInitEvents;
+
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Router\RouterExtension;
-use ON\Router\Init\RouterInitEvents;
+
 
 class CMSExtension extends AbstractExtension
 {
@@ -27,16 +33,16 @@ class CMSExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		if ($this->app->isCli()) {
-			$init->on(ConsoleInitEvents::READY, function (): void {
+			$init->on(ConsoleReadyEvent::class, function (): void {
 			});
 		}
 
-		$init->on(ConfigInitEvents::CONFIGURE, function (object $event): void {
+		$init->on(ConfigConfigureEvent::class, function (object $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			//			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 		});
 
-		$init->on(RouterInitEvents::SETUP, [$this, 'onRouterSetup']);
+		$init->on(RouterSetupEvent::class, [$this, 'onRouterSetup']);
 	}
 
 	public function start(\ON\Init\InitContext $context): void

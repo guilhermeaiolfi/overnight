@@ -10,7 +10,6 @@ use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Init\InitContext;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use Laminas\Stdlib\ArrayUtils;
@@ -118,11 +117,11 @@ class ConfigExtension extends AbstractExtension
 			foreach ($this->cacheExceptions as $file) {
 				$this->processFile($file);
 			}
-			$context->emit(ConfigInitEvents::READY, new ConfigReadyEvent($this));
+			$context->emit(new ConfigReadyEvent($this));
 			return;
 		}
 
-		$context->emit(ConfigInitEvents::CONFIGURE, new ConfigConfigureEvent($this));
+		$context->emit(new ConfigConfigureEvent($this));
 
 		$env = $_ENV['APP_ENV'] ?? 'production';
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $env), Glob::GLOB_BRACE, true);
@@ -133,7 +132,7 @@ class ConfigExtension extends AbstractExtension
 
 		$this->saveCache();
 
-		$context->emit(ConfigInitEvents::READY, new ConfigReadyEvent($this));
+		$context->emit(new ConfigReadyEvent($this));
 	}
 
 	protected function processFile(string $file): void

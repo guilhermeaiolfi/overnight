@@ -16,7 +16,8 @@ use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Db\DatabaseConfig;
-use ON\Container\Init\ContainerInitEvents;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
+
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -47,14 +48,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	}
 
-	public function requires(): array
-	{
-		return [
-			'container',
-			'pipeline',
-		];
-	}
-
 	public function getOptions(): array
 	{
 		return [
@@ -68,14 +61,17 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
+		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+		$init->on(PipelineReadyEvent::class, function (): void {
+			$this->injectMiddleware();
+		});
 
 		foreach ($this->app->getInstalledExtensions() as $extClassName) {
 			clock()->event($extClassName)->begin();
 		}
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function injectMiddleware(): void
 	{
 		$this->app->pipe("/", ClockworkMiddleware::class, 900);
 	}

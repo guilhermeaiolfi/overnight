@@ -19,9 +19,7 @@ use ON\Config\ConfigExtension;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigReadyEvent;
-use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Init\Init;
@@ -49,14 +47,10 @@ class ContainerExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
-	public function requires(): array
-	{
-		return ['config'];
-	}
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::READY, [$this, 'buildContainer']);
+		$init->on(ConfigReadyEvent::class, [$this, 'buildContainer']);
 	}
 
 	public function buildContainer(ConfigReadyEvent $event, \ON\Init\InitContext $context): void
@@ -64,14 +58,11 @@ class ContainerExtension extends AbstractExtension
 		$configs = $event->config->get();
 		$containerConfig = $configs[ContainerConfig::class] ?? $event->config->get(ContainerConfig::class);
 
-		$context->emit(
-			ContainerInitEvents::CONFIGURE,
-			new ConfigureContainerEvent($this, $event->config, $containerConfig)
-		);
+		$context->emit(new ConfigureContainerEvent($this, $event->config, $containerConfig));
 
 		$this->createConfiguredContainer($event->config);
 
-		$context->emit(ContainerInitEvents::READY, new ContainerReadyEvent($this, $this->container));
+		$context->emit(new ContainerReadyEvent($this, $this->container));
 	}
 
 	public function createConfiguredContainer(ConfigExtension $config_ext): void

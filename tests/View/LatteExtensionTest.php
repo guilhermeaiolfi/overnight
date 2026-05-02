@@ -7,8 +7,9 @@ namespace Tests\ON\View;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
-use ON\Container\Init\ContainerInitEvents;
-use ON\Container\Init\Event\ConfigureContainerEvent;
+
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 use ON\Config\ConfigExtension;
 use ON\Init\Init;
 use ON\View\Latte\LatteExtension;
@@ -32,14 +33,16 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-		$extension = new LatteExtension($this->createApplication($containerConfig, $viewConfig));
+        $app = $this->createApplication($containerConfig, $viewConfig);
+		$extension = new LatteExtension($app);
+        
+        $configExt = new ConfigExtension($app);
+        $configExt->set(ViewConfig::class, $viewConfig);
+        $configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
 		$extension->register($init);
-		$init->emit(
-			ContainerInitEvents::CONFIGURE,
-			new ConfigureContainerEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
-		);
+		$init->emit(new ConfigConfigureEvent($configExt));
 
 		$this->assertSame('latte', $viewConfig->get('latte.extension'));
 		$this->assertSame(
@@ -57,14 +60,16 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-		$extension = new LatteExtension($this->createApplication($containerConfig, $viewConfig));
+        $app = $this->createApplication($containerConfig, $viewConfig);
+		$extension = new LatteExtension($app);
+
+        $configExt = new ConfigExtension($app);
+        $configExt->set(ViewConfig::class, $viewConfig);
+        $configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
 		$extension->register($init);
-		$init->emit(
-			ContainerInitEvents::CONFIGURE,
-			new ConfigureContainerEvent($this->createMock(ContainerExtension::class), $this->createMock(ConfigExtension::class), $containerConfig)
-		);
+		$init->emit(new ConfigConfigureEvent($configExt));
 
 		$this->assertSame('custom-latte', $viewConfig->get('latte.extension'));
 	}

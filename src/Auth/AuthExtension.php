@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
+use ON\Middleware\Init\Event\PipelineReadyEvent;
+
 use ON\Application;
 use ON\Auth\Authenticator\DummyAuthenticator;
 use ON\Auth\Container\AuthenticationServiceFactory;
@@ -11,12 +13,12 @@ use ON\Auth\Middleware\AuthorizationMiddleware;
 use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-use ON\Middleware\Init\PipelineInitEvents;
+
 
 class AuthExtension extends AbstractExtension
 {
@@ -27,19 +29,10 @@ class AuthExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return [
-			'config',
-			'container',
-			'pipeline',
-		];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
-		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void

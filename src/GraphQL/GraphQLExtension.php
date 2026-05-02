@@ -18,7 +18,7 @@ use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
-use ON\Middleware\Init\PipelineInitEvents;
+
 use Psr\Container\ContainerInterface;
 
 class GraphQLExtension extends AbstractExtension
@@ -30,11 +30,6 @@ class GraphQLExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['container', 'events'];
-	}
-
 	public function register(Init $init): void
 	{
 		$enabled = $this->options['enabled'] ?? true;
@@ -43,7 +38,7 @@ class GraphQLExtension extends AbstractExtension
 			return;
 		}
 
-		$init->on(PipelineInitEvents::READY, [$this, 'onPipelineReady']);
+		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
 	public function onPipelineReady(PipelineReadyEvent $event): void

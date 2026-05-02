@@ -6,13 +6,11 @@ namespace ON\View;
 
 use League\Plates\Engine;
 use ON\Application;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
-use ON\Container\Init\ContainerInitEvents;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-use ON\Middleware\Init\PipelineInitEvents;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
 
@@ -28,18 +26,13 @@ class ViewExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['container', 'pipeline'];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(PipelineInitEvents::READY, function (): void {
+		$init->on(PipelineReadyEvent::class, function (): void {
 			$this->injectMiddleware();
 		});
 
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 
 			$containerConfig->addFactories([

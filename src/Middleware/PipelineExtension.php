@@ -31,15 +31,12 @@ use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
-use ON\Middleware\Init\PipelineInitEvents;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Handler\NotFoundHandler;
 use ON\MiddlewareContainer;
@@ -97,26 +94,12 @@ class PipelineExtension extends AbstractExtension
 	public MiddlewareFactory $factory;
 	protected ContainerInterface $container;
 
-	protected array $controllerCache = [];
-
 	protected array $q = [];
 
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
-	}
-	public function getController($class_name)
-	{
-		return $this->controllerCache[$class_name];
-	}
-
-	public function requires(): array
-	{
-		return [
-			'container',
-			'config',
-		];
 	}
 
 	public function register(Init $init): void
@@ -130,8 +113,8 @@ class PipelineExtension extends AbstractExtension
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
 
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
-		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
@@ -181,7 +164,7 @@ class PipelineExtension extends AbstractExtension
 
 		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
 
-		$context->emit(PipelineInitEvents::READY, new PipelineReadyEvent($this, $this->container));
+		$context->emit(new PipelineReadyEvent($this, $this->container));
 	}
 
 	public function registerMiddlewares(): void

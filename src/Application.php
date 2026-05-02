@@ -33,6 +33,9 @@ class Application
 
 	protected Init $init;
 
+	/** @var array<string, array<string, callable>> [MethodName => [ExtensionClass => Callback]] */
+	protected array $unresolvedMethods = [];
+
 	/**
 	 * @param array {
 	 *   debug?: ?bool,
@@ -137,40 +140,134 @@ class Application
 
 	protected function loadExtensions()
 	{
+		// Phase 1: Instantiate all extensions (Order doesn't matter yet)
 		foreach ($this->extensionsToInstall as $ext_class => $ext_options) {
 			$this->install($ext_class, $ext_options);
 		}
 
-		$orderedExtensions = $this->getStartupOrder();
-
-		foreach ($orderedExtensions as $ext_instance) {
-			$ext_instance->register($this->init);
+		// Phase 2: Registration Pass (Collecting all subscriptions and methods)
+		foreach ($this->extensions as $class => $instance) {
+			$this->init->setCurrentExtension($class);
+			$instance->register($this->init);
 		}
+		$this->init->setCurrentExtension(null);
 
-		foreach ($orderedExtensions as $ext_instance) {
+		$subscriptionMap = $this->init->getSubscriptionMap();
+
+		// Phase 3: Lifecycle Order (Hash Check or Rebuild)
+		$orderedClasses = $this->getLifecycleOrder($subscriptionMap);
+
+
+		// Phase 4: Sorting & Resolution (Deferred execution logic)
+		$this->init->sortListeners($orderedClasses);
+		$this->resolveMethods($orderedClasses);
+
+		// Phase 5: Execution (Start in sorted order)
+		foreach ($orderedClasses as $class) {
+			$ext_instance = $this->extensions[$class];
 			if (method_exists($ext_instance, 'start')) {
 				$ext_instance->start($this->init->context());
 			}
 		}
 	}
 
-	/** @return array<class-string, ExtensionInterface> */
-	protected function getStartupOrder(): array
+	/** @return string[] Array of ordered extension classes */
+	protected function getLifecycleOrder(array $subscriptionMap): array
 	{
+		$hash = md5(serialize($subscriptionMap));
+		$cacheFile = $this->project_dir . '/var/cache/app_lifecycle.php';
+
+		if (!$this->debug && file_exists($cacheFile)) {
+			$cache = require $cacheFile;
+			if ($cache['hash'] === $hash) {
+				return $cache['order'];
+			}
+		}
+
+		// Cache miss or debug mode: Heavy Lifting
+		$order = $this->rebuildLifecycleOrder($subscriptionMap);
+
+		if (!$this->debug) {
+			if (!is_dir(dirname($cacheFile))) {
+				mkdir(dirname($cacheFile), 0777, true);
+			}
+			$content = "<?php\n\nreturn " . var_export(['hash' => $hash, 'order' => $order], true) . ";\n";
+			file_put_contents($cacheFile, $content);
+		}
+
+		return $order;
+	}
+
+	protected function resolveMethods(array $orderedClasses): void
+	{
+		foreach ($this->unresolvedMethods as $name => $registrations) {
+			if (count($registrations) > 1) {
+				$owners = implode(', ', array_keys($registrations));
+				throw new Exception("Conflict detected: The method '{$name}' was registered by multiple extensions: [{$owners}]. Only one extension can define a specific method.");
+			}
+
+			$owner = array_key_first($registrations);
+			$this->__methods[$name] = $registrations[$owner];
+		}
+	}
+
+	/**
+	 * @param array<string, string[]> $subscriptionMap [ListenerClass => [EventClasses]]
+	 * @return string[] Ordered list of extension classes
+	 */
+	protected function rebuildLifecycleOrder(array $subscriptionMap): array
+	{
+		$graph = [];
+		$extensionNamespaces = [];
+
+		// Build a map of NamespaceRoot => ExtensionClass
+		foreach ($this->extensions as $class => $inst) {
+			$parts = explode('\\', $class);
+			array_pop($parts); // Remove class name
+			$ns = implode('\\', $parts);
+			$extensionNamespaces[$ns] = $class;
+			$graph[$class] = [];
+		}
+
+		// Infer dependencies from event namespaces
+		foreach ($subscriptionMap as $listenerClass => $events) {
+			foreach ($events as $eventClass) {
+				$ownerClass = $this->inferEventOwner($eventClass, $extensionNamespaces);
+				if ($ownerClass && $ownerClass !== $listenerClass) {
+					$graph[$listenerClass][] = $ownerClass;
+				}
+			}
+		}
+
+		// Topological sort
 		$ordered = [];
 		$visiting = [];
 		$visited = [];
 
-		foreach ($this->extensions as $class => $extension) {
-			$this->visitExtension($class, $extension, $ordered, $visiting, $visited);
+		foreach (array_keys($this->extensions) as $class) {
+			$this->sortExtension($class, $graph, $ordered, $visiting, $visited);
 		}
+
 
 		return $ordered;
 	}
 
-	private function visitExtension(
+	private function inferEventOwner(string $eventClass, array $extensionNamespaces): ?string
+	{
+		$parts = explode('\\', $eventClass);
+		while (count($parts) > 1) {
+			array_pop($parts);
+			$ns = implode('\\', $parts);
+			if (isset($extensionNamespaces[$ns])) {
+				return $extensionNamespaces[$ns];
+			}
+		}
+		return null;
+	}
+
+	private function sortExtension(
 		string $class,
-		ExtensionInterface $extension,
+		array $graph,
 		array &$ordered,
 		array &$visiting,
 		array &$visited
@@ -185,22 +282,13 @@ class Application
 
 		$visiting[$class] = true;
 
-		foreach ($extension->requires() as $dependency) {
-			if (! $this->hasExtension($dependency)) {
-				if ($this->isDebug()) {
-					throw new Exception("Extension {$class} depends on: '{$dependency}' that is not installed.");
-				}
-
-				continue;
-			}
-
-			$dependencyExtension = $this->getExtension($dependency);
-			$this->visitExtension($dependencyExtension::class, $dependencyExtension, $ordered, $visiting, $visited);
+		foreach ($graph[$class] as $dependency) {
+			$this->sortExtension($dependency, $graph, $ordered, $visiting, $visited);
 		}
 
 		unset($visiting[$class]);
 		$visited[$class] = true;
-		$ordered[$class] = $extension;
+		$ordered[] = $class;
 	}
 
 	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
@@ -303,7 +391,8 @@ class Application
 
 	public function registerMethod($name, callable $method)
 	{
-		$this->__methods[$name] = $method;
+		$owner = $this->init->getCurrentExtension();
+		$this->unresolvedMethods[$name][$owner] = $method;
 	}
 
 	public function run()

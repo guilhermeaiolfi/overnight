@@ -4,10 +4,13 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 use ON\Application;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;
@@ -25,7 +28,10 @@ class FileRoutingExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(PipelineReadyEvent::class, function (): void {
+			$this->injectMiddleware();
+		});
 	}
 
 	public function onConfigConfigure(): void
@@ -49,10 +55,9 @@ class FileRoutingExtension extends AbstractExtension
 		);
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function injectMiddleware(): void
 	{
 		// 101 because it should run just before the RouteMiddleware (100)
 		$this->app->pipe("/", FileRoutingMiddleware::class, 101);
-
 	}
 }

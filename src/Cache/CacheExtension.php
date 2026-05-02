@@ -8,10 +8,10 @@ use Exception;
 use ON\Application;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
@@ -28,7 +28,7 @@ class CacheExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$config = $event->config;
 
 			$containerConfig = $config->get(ContainerConfig::class);

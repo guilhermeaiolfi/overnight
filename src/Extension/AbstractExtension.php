@@ -44,10 +44,6 @@ abstract class AbstractExtension implements ExtensionInterface
 	{
 	}
 
-	public function requires(): array
-	{
-		return [];
-	}
 
 	public function getNamespace(): string
 	{

@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace ON\Logging;
 
+use ON\Console\Init\Event\ConsoleReadyEvent;
+
 use ON\Application;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Console\Init\ConsoleInitEvents;
-use ON\Container\Init\ContainerInitEvents;
+
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Logging\Command\MonitorLogsCommand;
@@ -34,7 +36,7 @@ class LoggingExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactories([
 				LoggerInterface::class => LoggerFactory::class,
@@ -54,7 +56,7 @@ class LoggingExtension extends AbstractExtension
 		});
 
 		if ($this->app->hasExtension('console')) {
-			$init->on(ConsoleInitEvents::READY, function (): void {
+			$init->on(ConsoleReadyEvent::class, function (): void {
 				$this->app->console->addCommand(MonitorLogsCommand::class);
 			});
 		}

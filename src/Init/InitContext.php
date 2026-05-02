@@ -13,7 +13,7 @@ final class InitContext
 	) {
 	}
 
-	public function emit(string|BackedEnum $event, object $payload): object
+	public function emit(object|string $event, ?object $payload = null): object
 	{
 		return $this->init->emit($event, $payload);
 	}

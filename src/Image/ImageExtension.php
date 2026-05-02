@@ -7,9 +7,9 @@ namespace ON\Image;
 use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Application;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Image\Container\ImageManagerFactory;
@@ -27,7 +27,7 @@ class ImageExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, [$this, 'onConfigConfigure']);
+		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
 	}
 
 	public function start(\ON\Init\InitContext $context): void

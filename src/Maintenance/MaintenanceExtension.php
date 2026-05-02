@@ -7,16 +7,14 @@ namespace ON\Maintenance;
 use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
-use ON\Container\Init\ContainerInitEvents;
-use ON\Console\Init\ConsoleInitEvents;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Maintenance\Container\MaintenanceModeFactory;
-use ON\Middleware\Init\PipelineInitEvents;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -35,21 +33,21 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
+
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$appCfg = $event->config->get(AppConfig::class);
 			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
 		});
 
-
-
-		$init->on(PipelineInitEvents::READY, function (): void {
+		$init->on(PipelineReadyEvent::class, function (): void {
 			$this->injectMiddleware();
 		});
 
 		if ($this->app->isCli()) {
-			$init->on(ConsoleInitEvents::READY, function (): void {
+			$init->on(ConsoleReadyEvent::class, function (): void {
 				$this->app->console->addCommand(MaintenanceCommand::class);
 			});
 		}
@@ -58,11 +56,6 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 	public function isMaintenanceMode(): bool
 	{
 		return isset($_ENV["APP_MAINTENANCE"]) ? $_ENV["APP_MAINTENANCE"] == "true" : false;
-	}
-
-	public function start(\ON\Init\InitContext $context): void
-	{
-		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
 	}
 
 	public function injectMiddleware(): void

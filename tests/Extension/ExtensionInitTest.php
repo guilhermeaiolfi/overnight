@@ -7,11 +7,11 @@ namespace Tests\ON\Extension;
 use FilesystemIterator;
 use ON\Application;
 use ON\Config\ConfigExtension;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryExtension;
@@ -119,6 +119,31 @@ final class ExtensionInitTest extends TestCase
 			'start',
 			'listener',
 		], InitRegisterProbeExtension::$events);
+	}
+
+	public function testMethodsRegisteredDuringRegisterAreAvailableAfterBootstrap(): void
+	{
+		RegisterMethodProbeExtension::$calls = 0;
+
+		$app = $this->createApplication([
+			RegisterMethodProbeExtension::class => [],
+		]);
+
+		$this->assertSame('probe-result', $app->probeMethod());
+		$this->assertSame(1, RegisterMethodProbeExtension::$calls);
+	}
+
+	public function testDeferredCrossExtensionMethodUsageCanFollowEventsInsteadOfInstallOrder(): void
+	{
+		RegisterMethodProbeExtension::$calls = 0;
+
+		$this->createApplication([
+			MethodConsumerExtension::class => [],
+			RegisterMethodProbeExtension::class => [],
+		]);
+
+		$this->assertSame(1, RegisterMethodProbeExtension::$calls);
+		$this->assertSame(['event', 'method'], MethodConsumerExtension::$events);
 	}
 
 	/**
@@ -255,9 +280,60 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 	{
 		self::$events[] = 'probe.register';
 
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			self::$events[] = 'probe.config.setup';
 		});
+	}
+}
+
+final class RegisterMethodProbeExtension extends AbstractExtension
+{
+	public static int $calls = 0;
+
+	public function __construct(
+		private Application $app,
+		private array $options = []
+	) {
+	}
+
+	public function register(Init $init): void
+	{
+		$this->app->registerMethod('probeMethod', function (): string {
+			self::$calls++;
+
+			return 'probe-result';
+		});
+	}
+}
+
+final class MethodProviderReadyEvent
+{
+}
+
+final class MethodConsumerExtension extends AbstractExtension
+{
+	public static array $events = [];
+
+	public function __construct(
+		private Application $app,
+		private array $options = []
+	) {
+	}
+
+	public function register(Init $init): void
+	{
+		self::$events = [];
+
+		$init->on(MethodProviderReadyEvent::class, function (): void {
+			self::$events[] = 'event';
+			$this->app->probeMethod();
+			self::$events[] = 'method';
+		});
+	}
+
+	public function start(\ON\Init\InitContext $context): void
+	{
+		$context->emit(new MethodProviderReadyEvent());
 	}
 }
 
@@ -271,7 +347,7 @@ final class ContainerDefinitionProbeExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::CONFIGURE, function (ConfigureContainerEvent $event): void {
+		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
 			self::$containerSetupCalls++;
 			$event->container->addAlias(ContainerProbeInterface::class, ContainerProbeService::class);
 		});

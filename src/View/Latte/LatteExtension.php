@@ -6,9 +6,9 @@ namespace ON\View\Latte;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\Init\ContainerInitEvents;
+
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\View\ViewConfig;
@@ -23,14 +23,9 @@ class LatteExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['view', 'container'];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			$viewConfig = $event->config->get(ViewConfig::class);
 

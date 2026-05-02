@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use ON\Console\Init\Event\ConsoleReadyEvent;
+
+use ON\Config\Init\Event\ConfigConfigureEvent;
+
 use ON\Application;
 use ON\Config\ConfigExtension;
 use ON\Container\ContainerConfig;
-use ON\Config\Init\ConfigInitEvents;
-use ON\Console\Init\ConsoleInitEvents;
+
+
 use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateAllCommand;
 use ON\DB\Command\MigrateDownCommand;
@@ -33,7 +37,7 @@ class DatabaseExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		if ($this->app->isCli()) {
-			$init->on(ConsoleInitEvents::READY, function (): void {
+			$init->on(ConsoleReadyEvent::class, function (): void {
 				$this->app->console->addCommand(MigrateCommand::class);
 				$this->app->console->addCommand(MigrateUpCommand::class);
 				$this->app->console->addCommand(MigrateAllCommand::class);
@@ -42,7 +46,7 @@ class DatabaseExtension extends AbstractExtension
 			});
 		}
 
-		$init->on(ConfigInitEvents::CONFIGURE, function (object $event): void {
+		$init->on(ConfigConfigureEvent::class, function (object $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 			$containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);

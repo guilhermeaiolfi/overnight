@@ -10,11 +10,9 @@ use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\OvernightCommand;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
-use ON\Container\Init\ContainerInitEvents;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
-use ON\Console\Init\ConsoleInitEvents;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Init\Init;
 use ON\Init\InitContext;
@@ -42,20 +40,18 @@ class ConsoleExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerInitEvents::READY, [$this, 'onContainerReady']);
+		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+
+		if ($this->app->isCli()) {
+			$this->app->registerMethod("run", [$this, "run"]);
+		}
 	}
 
 	public function start(InitContext $context): void
 	{
-		
-		if ($this->app->isCli()) {
-			$this->app->registerMethod("run", [$this, "run"]);
-		}
-
-
 		$this->consoleApp = new ConsoleApplication();
 
-		$context->emit(ConsoleInitEvents::READY, new ConsoleReadyEvent($this));
+		$context->emit(new ConsoleReadyEvent($this));
 	}
 
 	public function onContainerReady(ContainerReadyEvent $event): void

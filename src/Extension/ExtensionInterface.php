@@ -6,7 +6,6 @@ namespace ON\Extension;
 
 use ON\Application;
 use ON\Init\Init;
-use ON\Init\InitContext;
 
 interface ExtensionInterface
 {
@@ -17,8 +16,6 @@ interface ExtensionInterface
 	public function register(Init $init): void;
 
 	public function getType(): int;
-
-	public function requires(): array;
 
 	public function getNamespace(): string;
 }

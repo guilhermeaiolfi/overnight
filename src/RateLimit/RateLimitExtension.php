@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\RateLimit;
 
 use ON\Application;
-use ON\Config\Init\ConfigInitEvents;
+
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
@@ -22,14 +22,9 @@ class RateLimitExtension extends AbstractExtension
 	) {
 	}
 
-	public function requires(): array
-	{
-		return ['container'];
-	}
-
 	public function register(Init $init): void
 	{
-		$init->on(ConfigInitEvents::CONFIGURE, function (ConfigConfigureEvent $event): void {
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
 
 			$containerConfig->addFactories([
