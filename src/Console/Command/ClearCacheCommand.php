@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace ON\Console\Command;
 
+use FilesystemIterator;
 use ON\Application;
 use ON\Cache\CacheInterface;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Descriptor\ApplicationDescription;
 use Symfony\Component\Console\Helper\DescriptorHelper;
@@ -74,16 +77,37 @@ class ClearCacheCommand extends Command
 		if (in_array('a', $selection) || in_array('2', $selection)) {
 			$this->cache->clear();
 			if ($this->app->hasExtension('discovery')) {
-				$this->app->discovery->forget();
+				$this->app->ext('discovery')->clear();
 			}
 			$output->writeln($formatter->formatSection("OK", "Discovery Cache cleared!"));
 		}
 
-
-
-
-
+		if (in_array('a', $selection, true)) {
+			$this->clearDirectoryContents($this->app->paths->get('cache')->absolute());
+			$output->writeln($formatter->formatSection("OK", "Application cache directory cleared!"));
+		}
 
 		return Command::SUCCESS;
+	}
+
+	private function clearDirectoryContents(string $directory): void
+	{
+		if (! is_dir($directory)) {
+			return;
+		}
+
+		$items = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
+			RecursiveIteratorIterator::CHILD_FIRST
+		);
+
+		foreach ($items as $item) {
+			if ($item->isDir()) {
+				rmdir($item->getPathname());
+				continue;
+			}
+
+			unlink($item->getPathname());
+		}
 	}
 }

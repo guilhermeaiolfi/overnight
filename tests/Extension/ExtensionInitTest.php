@@ -133,6 +133,16 @@ final class ExtensionInitTest extends TestCase
 		$this->assertSame(1, RegisterMethodProbeExtension::$calls);
 	}
 
+	public function testApplicationExposesNormalizedPaths(): void
+	{
+		$app = $this->createApplication([]);
+		$normalizedProjectDir = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->projectDir);
+
+		$this->assertSame($normalizedProjectDir, $app->paths->get('project')->absolute());
+		$this->assertSame($normalizedProjectDir . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->absolute());
+		$this->assertSame('var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->relative());
+	}
+
 	public function testDeferredCrossExtensionMethodUsageCanFollowEventsInsteadOfInstallOrder(): void
 	{
 		RegisterMethodProbeExtension::$calls = 0;
@@ -154,7 +164,9 @@ final class ExtensionInitTest extends TestCase
 		$this->writeProjectFiles();
 
 		return new Application([
-			'project_dir' => $this->projectDir,
+			'paths' => [
+				'project' => $this->projectDir,
+			],
 			'extensions' => $extensions,
 			'debug' => false,
 		]);

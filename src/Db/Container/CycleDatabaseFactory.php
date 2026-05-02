@@ -27,7 +27,12 @@ use ON\ORM\Definition\Registry;
 
 class CycleDatabaseFactory
 {
-	public const CACHE_FILE = "./var/cache/cycle.schema.php";
+	protected string $cacheFile;
+
+	public function __construct(
+		protected Application $app
+	) {
+	}
 
 	public function __invoke(
 		Clockwork $clockwork,
@@ -35,6 +40,8 @@ class CycleDatabaseFactory
 		Registry $registry,
 		string $name
 	): CycleDatabase {
+		$this->cacheFile = $this->app->paths->get('cache')->append('cycle.schema.php')->absolute();
+
 		$manager = new CycleDatabase($name, $dbCfg);
 
 		$dbal = $manager->getConnection();
@@ -55,11 +62,9 @@ class CycleDatabaseFactory
 
 	protected function isCacheClean(Registry $registry): bool
 	{
-		// TODO: ugly and not great, we should get the current application
-		$app = Application::$instance;
-		if (! file_exists(self::CACHE_FILE)) {
+		if (! file_exists($this->cacheFile)) {
 			return false;
-		} elseif (! $app->isDebug()) {
+		} elseif (! $this->app->isDebug()) {
 			return true;
 		}
 
@@ -71,12 +76,17 @@ class CycleDatabaseFactory
 			}
 		}
 
-		return $newer <= filemtime(self::CACHE_FILE);
+		return $newer <= filemtime($this->cacheFile);
 	}
 
 	protected function saveCache(array $schema): void
 	{
-		file_put_contents(self::CACHE_FILE, serialize($schema));
+		$dir = dirname($this->cacheFile);
+		if (! is_dir($dir)) {
+			mkdir($dir, 0777, true);
+		}
+
+		file_put_contents($this->cacheFile, serialize($schema));
 	}
 
 	protected function readCache(Registry $registry, $dbal): ?array
@@ -102,6 +112,6 @@ class CycleDatabaseFactory
 			return $schema;
 		}
 
-		return unserialize(file_get_contents(self::CACHE_FILE));
+		return unserialize(file_get_contents($this->cacheFile));
 	}
 }

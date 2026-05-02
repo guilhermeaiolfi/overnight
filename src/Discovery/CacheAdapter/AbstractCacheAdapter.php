@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace ON\Discovery\CacheAdapter;
 
+use ON\Application;
 use ON\Config\AppConfig;
 use ON\Discovery\DiscoverInterface;
 use ON\Discovery\DiscoveryLocation;
+use ON\Path;
 
 abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 
     public function __construct (
-		protected AppConfig $appCfg
+		protected AppConfig $appCfg,
+		protected Application $app
     ) {
 
     }
@@ -32,9 +35,17 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 		}
 	}
 
-    protected function cacheFilenameFromDiscover(DiscoverInterface $discover, DiscoveryLocation $location): string
+	protected function cacheFilenameFromDiscover(DiscoverInterface $discover, DiscoveryLocation $location): string
 	{
-		return $this->appCfg->get("discovery.cache_path", "var/cache/discovery/") . $this->classNameToFilename(get_class($discover), $location);
+		$basePath = $this->appCfg->get("discovery.cache_path");
+		if (! is_string($basePath) || trim($basePath) === '') {
+			$basePath = $this->app->paths->get('cache')->append('discovery')->absolute();
+		} else {
+			$basePath = Path::from($basePath, $this->app->paths->get('project'))
+				->absolute();
+		}
+
+		return rtrim($basePath, '/\\') . DIRECTORY_SEPARATOR . $this->classNameToFilename(get_class($discover), $location);
 	}
 
 	protected function classNameToFilename(string $className, DiscoveryLocation $location)

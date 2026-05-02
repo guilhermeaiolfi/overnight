@@ -7,10 +7,10 @@ namespace ON\FileRouting;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 
 use ON\Application;
-
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Path;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;
@@ -40,7 +40,14 @@ class FileRoutingExtension extends AbstractExtension
 		$router_cfg = $this->app->config->get(RouterConfig::class);
 		$view_cfg = $this->app->config->get(ViewConfig::class);
 		$template_namespace = $filerouting_cfg->get('template.namespace', 'filerouting');
-		$cache_path = $filerouting_cfg->get('cachePath');
+		$configuredCachePath = $filerouting_cfg->get('cachePath');
+		if ($configuredCachePath === null || trim($configuredCachePath) === '') {
+			$cache_path = $this->app->paths->get('cache')->append('filerouting')->absolute();
+		} else {
+			$cache_path = Path::from($configuredCachePath, $this->app->paths->get('project'))
+				->absolute();
+		}
+		$filerouting_cfg->set('cachePath', $cache_path);
 
 		if (! is_dir($cache_path) && ! mkdir($cache_path, 0777, true) && ! is_dir($cache_path)) {
 			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cache_path));

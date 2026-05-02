@@ -47,7 +47,9 @@ final class ExtensionPriorityTest extends TestCase
     private function createApplication(array $extensions, bool $debug = true): Application
 	{
 		return new Application([
-			'project_dir' => $this->projectDir,
+			'paths' => [
+				'project' => $this->projectDir,
+			],
 			'extensions' => $extensions,
 			'debug' => $debug,
 		]);

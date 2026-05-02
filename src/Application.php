@@ -13,8 +13,6 @@ class Application
 {
 	public static ?self $instance = null;
 
-	protected string $project_dir;
-
 	protected array $extensionsToInstall = [];
 
 	protected array $aliases = [];
@@ -31,6 +29,8 @@ class Application
 
 	public ?Dotenv $env = null;
 
+	public PathRegistry $paths;
+
 	protected Init $init;
 
 	/** @var array<string, array<string, callable>> [MethodName => [ExtensionClass => Callback]] */
@@ -41,7 +41,7 @@ class Application
 	 *   debug?: ?bool,
 	 *   env?: ?string,
 	 *   disable_dotenv?: ?bool,
-	 *   project_dir?: ?string,
+	 *   paths?: ?array<string, string>,
 	 *   prod_envs?: ?string[],
 	 *   dotenv_path?: ?string,
 	 *   test_envs?: ?string[],
@@ -64,8 +64,15 @@ class Application
 
 		$this->init = new Init();
 
-		$this->project_dir = $project_dir = $options["project_dir"] ?? dirname(getcwd(), 1);
+		$paths = $options['paths'] ?? [];
+		if (! is_array($paths)) {
+			throw new Exception('Application option "paths" must be an array.');
+		}
 
+		$paths['project'] ??= dirname(getcwd(), 1);
+
+		$this->paths = new PathRegistry($paths, getcwd());
+		$project_dir = $this->paths->get('project')->absolute();
 
 		// defines the default dir to the project root
 		if ($project_dir != getcwd()) {
@@ -175,7 +182,7 @@ class Application
 	protected function getLifecycleOrder(array $subscriptionMap): array
 	{
 		$hash = md5(serialize($subscriptionMap));
-		$cacheFile = $this->project_dir . '/var/cache/app_lifecycle.php';
+		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->absolute();
 
 		if (!$this->debug && file_exists($cacheFile)) {
 			$cache = require $cacheFile;

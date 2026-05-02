@@ -28,6 +28,7 @@ use RuntimeException;
 use function getcwd;
 use function preg_match;
 use function rtrim;
+use ON\Path;
 
 class ContainerExtension extends AbstractExtension
 {
@@ -98,9 +99,13 @@ class ContainerExtension extends AbstractExtension
 	{
 		$builder = new ContainerBuilder();
 
-		$this->cache_path = $this->resolveCachePath(
-			$this->options["cache_path"] ?? $config->get('cache_path', "var/container/")
-		);
+		$cachePath = $this->options["cache_path"] ?? $config->get('cache_path');
+		if ($cachePath !== null) {
+			$this->cache_path = Path::from($cachePath, $this->app->paths->get('project'))
+				->absolute();
+		} else {
+			$this->cache_path = $this->app->paths->get('cache')->append('container')->absolute();
+		}
 
 		if ($config->get("enable_cache", false)) {
 			$this->ensureCachePathExists($this->cache_path);
@@ -190,20 +195,6 @@ class ContainerExtension extends AbstractExtension
 				$cachePath
 			));
 		}
-	}
-
-	private function resolveCachePath(string $cachePath): string
-	{
-		if (preg_match('/^(?:[A-Za-z]:[\\\\\\/]|[\\\\\\/]{2}|\/)/', $cachePath) === 1) {
-			return $cachePath;
-		}
-
-		$root = getcwd();
-		if (! is_string($root) || $root === '') {
-			return $cachePath;
-		}
-
-		return rtrim($root, '/\\') . DIRECTORY_SEPARATOR . ltrim($cachePath, '/\\');
 	}
 
 	private function createDelegatorFactory(string $delegator, string $previous, string $name): DefinitionHelper

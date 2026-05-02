@@ -10,6 +10,7 @@ use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Init\InitContext;
+use ON\Path;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use Laminas\Stdlib\ArrayUtils;
@@ -38,7 +39,12 @@ class ConfigExtension extends AbstractExtension
 			$this->options['debug'] = $app->isDebug();
 		}
 
-		$this->cachePath = $options['cachePath'] ?? 'var/cache/config.php';
+		if (isset($options['cachePath'])) {
+			$this->cachePath = Path::from($options['cachePath'], $this->app->paths->get('project'))
+				->absolute();
+		} else {
+			$this->cachePath = $app->paths->get('cache')->append('config.php')->absolute();
+		}
 	}
 
 	public function get(?string $className = null): mixed
@@ -217,4 +223,5 @@ class ConfigExtension extends AbstractExtension
 		]);
 		file_put_contents($this->cachePath, $content);
 	}
+
 }

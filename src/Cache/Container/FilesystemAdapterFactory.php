@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace ON\Cache\Container;
 
 use Exception;
+use ON\Application;
 use ON\Cache\CacheConfig;
+use ON\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
@@ -19,7 +21,16 @@ class FilesystemAdapterFactory
 		}
 		$config = $c->get(CacheConfig::class);
 
-		$directory = $config->get("adapter.directory", "var/cache/symfony");
+		$defaultDirectory = 'var/cache/symfony';
+		if ($c->has(Application::class)) {
+			$defaultDirectory = $c->get(Application::class)->paths->get('cache')->append('symfony')->absolute();
+		}
+
+		$directory = $config->get("adapter.directory", $defaultDirectory);
+		if ($c->has(Application::class)) {
+			$directory = Path::from($directory, $c->get(Application::class)->paths->get('project'))
+				->absolute();
+		}
 		$namespace = $config->get("adapter.namespace", "ON");
 		$defaultLifetime = $config->get("adapter.defaultLifetime", 0);
 

@@ -167,7 +167,9 @@ final class AutoWiringExtensionTest extends TestCase
 		$this->expectExceptionMessage("Extension {$extensionClass} is already installed.");
 
 		new Application([
-			'project_dir' => $this->projectDir,
+			'paths' => [
+				'project' => $this->projectDir,
+			],
 			'extensions' => [
 				AutoWiringExtension::class => [
 					'scan_path' => 'modules',
@@ -184,7 +186,9 @@ final class AutoWiringExtensionTest extends TestCase
 	private function createApplication(array $options, bool $debug = false): Application
 	{
 		return new Application([
-			'project_dir' => $this->projectDir,
+			'paths' => [
+				'project' => $this->projectDir,
+			],
 			'extensions' => [
 				AutoWiringExtension::class => $options,
 			],

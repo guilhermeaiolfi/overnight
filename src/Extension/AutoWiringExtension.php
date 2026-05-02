@@ -7,6 +7,7 @@ namespace ON\Extension;
 use FilesystemIterator;
 use ON\Application;
 use ON\Discovery\ClassFinder;
+use ON\Path;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -23,13 +24,16 @@ class AutoWiringExtension extends AbstractExtension
 
 	private const DEFAULT_CACHE_MODE = 'auto';
 
-	private const DEFAULT_CACHE_FILE = 'var/cache/autowiring.php';
+	private const DEFAULT_CACHE_FILE = 'autowiring.php';
+
+	private string $cacheFile;
 
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
 		$app->autowiring = $this;
+		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->absolute();
 		$this->installDiscoveredExtensions();
 	}
 	public function start(\ON\Init\InitContext $context): void
@@ -125,17 +129,7 @@ class AutoWiringExtension extends AbstractExtension
 
 	private function absolutePath(string $path): string
 	{
-		if ($this->isAbsolutePath($path)) {
-			return rtrim($path, DIRECTORY_SEPARATOR);
-		}
-
-		return rtrim(getcwd() . DIRECTORY_SEPARATOR . $path, DIRECTORY_SEPARATOR);
-	}
-
-	private function isAbsolutePath(string $path): bool
-	{
-		return str_starts_with($path, DIRECTORY_SEPARATOR)
-			|| preg_match('/^[A-Z]:[\\\\\/]/i', $path) === 1;
+		return rtrim(Path::from($path, $this->app->paths->get('project'))->absolute(), DIRECTORY_SEPARATOR);
 	}
 
 	/**
@@ -226,12 +220,11 @@ class AutoWiringExtension extends AbstractExtension
 	 */
 	private function readCache(string $cacheKey): ?array
 	{
-		$cacheFile = $this->cacheFile();
-		if (! is_file($cacheFile)) {
+		if (! is_file($this->cacheFile)) {
 			return null;
 		}
 
-		$cache = include $cacheFile;
+		$cache = include $this->cacheFile;
 		if (! is_array($cache) || ! isset($cache[$cacheKey]) || ! is_array($cache[$cacheKey])) {
 			return null;
 		}
@@ -250,30 +243,18 @@ class AutoWiringExtension extends AbstractExtension
 	 */
 	private function writeCache(string $cacheKey, array $extensions): void
 	{
-		$cacheFile = $this->cacheFile();
-		$cacheDir = dirname($cacheFile);
+		$cacheDir = dirname($this->cacheFile);
 		if (! is_dir($cacheDir)) {
 			mkdir($cacheDir, 0777, true);
 		}
 
-		$cache = is_file($cacheFile) ? include $cacheFile : [];
+		$cache = is_file($this->cacheFile) ? include $this->cacheFile : [];
 		if (! is_array($cache)) {
 			$cache = [];
 		}
 
 		$cache[$cacheKey] = $extensions;
 
-		file_put_contents($cacheFile, "<?php\n\nreturn " . var_export($cache, true) . ";\n");
-	}
-
-	private function cacheFile(): string
-	{
-		if (isset($this->options['cache_file'])) {
-			return $this->absolutePath($this->options['cache_file']);
-		}
-
-		$cachePath = $this->options['cache_path'] ?? dirname(self::DEFAULT_CACHE_FILE);
-
-		return $this->absolutePath(rtrim($cachePath, '/\\') . DIRECTORY_SEPARATOR . basename(self::DEFAULT_CACHE_FILE));
+		file_put_contents($this->cacheFile, "<?php\n\nreturn " . var_export($cache, true) . ";\n");
 	}
 }
