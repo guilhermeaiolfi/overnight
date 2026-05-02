@@ -41,6 +41,7 @@ class EventsExtension extends AbstractExtension
 		protected Application $app,
 		protected array $options = []
 	) {
+		$this->eventDispatcher = new EventDispatcher();
 	}
 	public function register(Init $init): void
 	{
@@ -58,8 +59,6 @@ class EventsExtension extends AbstractExtension
 
 	public function start(InitContext $context): void
 	{
-		$this->eventDispatcher = new EventDispatcher();
-
 		// register events for extensions
 		$this->registerEventSubscribersForExtensions();
 
