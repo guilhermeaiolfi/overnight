@@ -16,13 +16,17 @@ Extensions are modular components that extend the framework's functionality.
 | `DatabaseExtension` | ORM/database | [database.md](extensions/database.md) |
 | `EventsExtension` | Event dispatcher | [events.md](extensions/events.md) |
 | `DiscoveryExtension` | Class discovery | |
-| `ConsoleExtension` | CLI commands | |
+| `ConsoleExtension` | CLI commands | [cli.md](cli.md) |
 | `CMSExtension` | Built-in CMS | |
 | `MaintenanceExtension` | Maintenance mode | [maintenance.md](extensions/maintenance.md) |
 | `ClockworkExtension` | Debug profiling | |
 | `FileRoutingExtension` | File-based routing | |
 | `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
 | `AutoWiringExtension` | Automatic application extension discovery | [auto-wiring.md](extensions/auto-wiring.md) |
+| `RestApiExtension` | REST API endpoints from entity definitions | [rest-api.md](extensions/rest-api.md) |
+| `ImageExtension` | Image processing | |
+| `RateLimitExtension` | Rate limiting | |
+| `PipelineExtension` | PSR-15 middleware pipeline | |
 
 ## Extension Documentation
 
@@ -64,7 +68,6 @@ namespace App\Extensions;
 
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use ON\Config\Init\ConfigInitEvents;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 
 class MyExtension extends AbstractExtension
@@ -75,36 +78,18 @@ class MyExtension extends AbstractExtension
         return true;
     }
 
-    public function setup(): void
+    public function register(Init $init): void
     {
-        // Called during setup phase.
         // Register event listeners here.
-        $this->app->init()->on(ConfigInitEvents::CONFIGURE, function(ConfigConfigureEvent $event) {
-            $config = $event->getConfig();
+        // Events are auto-typed — pass an event class instance or class-string.
+        $init->on(ConfigConfigureEvent::class, function(ConfigConfigureEvent $event) {
+            $config = $event->config;
             
             // Register services in the container
             $config->set('container.my_service', function($container) {
                 return new MyService();
             });
         });
-    }
-
-    public function boot(): void
-    {
-        // Called during boot phase
-        // Final configuration or late-stage initialization
-    }
-
-    public function requires(): array
-    {
-        // Return required extensions
-        return [RouterExtension::class];
-    }
-
-    public function getNamespace(): string
-    {
-        // Return namespace for discovery
-        return 'App\\';
     }
 
     public function getType(): int
@@ -133,46 +118,23 @@ class MyExtension extends AbstractExtension
 ## Lifecycle
 
 ```
-install()    → Called once when $app->install() is called
+install()       → Called once when $app->install() is called
     ↓
-setup()      → Called during app setup phase
+register()      → Called for ALL extensions (collects event subscriptions)
     ↓
-CONFIGURE    → (ConfigInitEvents) Register services and configuration
+resolveOrder()  → Lifecycle order inferred from event subscriptions (cached)
     ↓
-boot()       → Called during app boot phase
-    ↓
-READY        → (ConfigInitEvents) App is ready to run
+start()         → Called in resolved order via $init->context()->emit()
 ```
 
-### Lifecycle Callbacks
+### Listener Ordering
 
-```php
-$extension->when('setup', function() {
-    // Called when transitioning to setup state
-});
+Extension startup order is **automatically inferred** from event subscriptions. If extension A listens to an event emitted by extension B, A will start after B. This replaces the old `requires()` method. The ordering is:
 
-$extension->when('boot', function() {
-    // Called when transitioning to boot state
-});
-
-$extension->when('ready', function() {
-    // Called when app is ready
-});
-```
-
-## Deferred Execution
-
-Register callbacks to run later:
-
-```php
-public function setup(): void
-{
-    // Run after setup phase
-    $this->nextTick(function() {
-        $this->registerRoutes();
-    });
-}
-```
+1. All extensions call `register()` to subscribe to events
+2. A dependency graph is built from subscription patterns (who listens to whose events)
+3. Topological sort determines execution order
+4. The result is cached to `var/cache/app_lifecycle.php` in non-debug mode
 
 ## Extension Configuration
 
@@ -266,22 +228,17 @@ if ($app->hasExtension(MyExtension::class)) {
 
 ## Extension Dependencies
 
-Declare dependencies:
+Dependencies are **automatically inferred** from event subscriptions. If extension A listens to an event whose class belongs to extension B's namespace, A will be ordered after B. No manual `requires()` declaration needed.
+
+The dependency graph is built during `rebuildLifecycleOrder()` and cached to `var/cache/app_lifecycle.php` in production mode. In debug mode the order is recalculated on every request.
+
+### Method Registration Conflicts
+
+Only one extension may register a given `run` method (or any magic `__call` method). If multiple extensions attempt to register the same method name, an exception is thrown at startup:
 
 ```php
-class MyExtension extends AbstractExtension
-{
-    public function requires(): array
-    {
-        return [
-            RouterExtension::class,
-            ContainerExtension::class,
-        ];
-    }
-}
+$app->registerMethod('run', $someCallable);
 ```
-
-The framework will ensure dependencies are installed first.
 
 ## Auto-Discovery
 
@@ -304,8 +261,8 @@ class DiscoveryExtension extends AbstractExtension
 ## Best Practices
 
 1. **Keep extensions focused** - One extension, one responsibility
-2. **Declare dependencies** - Use `requires()` to specify what you need
-3. **Use lifecycle phases** - Use `setup()` for event registration, and `ConfigInitEvents::CONFIGURE` for service registration.
-4. **Prefer Config Registration** - Registering services via `ConfigInitEvents::CONFIGURE` ensures they are cached and can be overridden by user configuration files.
+2. **Use event objects** - Use typed event classes (e.g. `ConfigConfigureEvent::class`) instead of enum-based event names for listener registration.
+3. **Auto-ordered lifecycle** - No need to declare `requires()`; dependency order is inferred from event subscription patterns.
+4. **Pass via Context** - Use `$this->app->init()->context()->emit(EventClass::class)` from within `start()` to dispatch events in the resolved order.
 5. **Provide sensible defaults** - Accept options array for configuration
 6. **Test independently** - Extensions should be testable in isolation

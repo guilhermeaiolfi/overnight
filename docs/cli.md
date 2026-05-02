@@ -56,18 +56,23 @@ php bin/console cache:clear --templates
 ### Database Commands
 
 ```bash
-# Run migrations
-php bin/console orm:migrate
+# Run next pending migration
+php bin/console db:migrate:up
 
-# Generate migration
-php bin/console orm:migrate:generate create_users_table
+# Run all pending migrations at once
+php bin/console db:migrate:all
 
-# Rollback
-php bin/console orm:migrate:down
+# Rollback last migration
+php bin/console db:migrate:down
 
-# Sync schema
-php bin/console orm:schema:sync
+# Initialize migration tracking
+php bin/console db:migrate:init
+
+# Show migration status
+php bin/console db:migrate:status
 ```
+
+The `db:migrate:all` command runs all pending migrations in a loop until the database is up to date. It auto-initializes the migration table if not yet configured.
 
 ## Creating Commands
 

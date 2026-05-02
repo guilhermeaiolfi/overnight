@@ -5,21 +5,15 @@ declare(strict_types=1);
 namespace ON\CMS;
 
 use ON\Console\Init\Event\ConsoleReadyEvent;
-
 use ON\Router\Init\Event\RouterSetupEvent;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
 use ON\Application;
 use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
 use ON\Container\ContainerConfig;
-
-
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Router\RouterExtension;
-
 
 class CMSExtension extends AbstractExtension
 {

@@ -38,27 +38,28 @@ $app = new Application([
 ```
 
 It manages:
-- Extension registration
-- Lifecycle states (setup, boot, ready)
+- Extension registration (from `config/extensions.php` or array)
+- Lifecycle phases: register (collect subscriptions) → resolve order (auto-inferred) → start (executed)
 - Debug mode and environment detection
+- Cached lifecycle order in `var/cache/app_lifecycle.php`
 
 ### Extensions
 
 Extensions are modular components that extend the framework:
 
 ```php
-$app->install(RouterConfig::class);
+$app->install(RouterExtension::class);
 $app->install(ContainerExtension::class);
 $app->install(ViewExtension::class);
 ```
 
 Each extension provides:
-- `install()` - Static installer called during app bootstrap.
-- `setup()` - Called during setup phase. Use this to register event listeners.
-- `boot()` - Called during boot phase. Use this for late-stage initialization.
-- `requires()` - Optional dependencies.
+- `install()` — Static installer called during app bootstrap.
+- `register()` — Called during the registration pass. Subscribe to init events here using typed event class objects.
+- `start()` — Called in auto-resolved dependency order during the start phase.
+- Dependency order is automatically inferred from event subscription namespaces — no manual `requires()` needed.
 
-**Service Registration:** The standard way to register services into the container from an extension is by listening to `ConfigInitEvents::CONFIGURE`. This allows service definitions to be cached and easily overridden.
+**Service Registration:** Register services into the container by listening to typed event objects (e.g. `ConfigConfigureEvent::class`) during `register()`.
 
 ### Dependency Injection Container
 
@@ -178,14 +179,14 @@ class MyExtension extends AbstractExtension
         return true;
     }
 
-    public function setup(): void
+    public function register(Init $init): void
     {
-        // Setup phase
+        // Register event listeners. Dependencies auto-inferred from namespaces.
     }
 
-    public function boot(): void
+    public function start(InitContext $ctx): void
     {
-        // Boot phase
+        // Start phase — called in resolved dependency order
     }
 }
 ```
@@ -209,37 +210,77 @@ Multiple template engine support (Plates, Latte) via `RendererInterface`.
 
 ### 5. Observer Pattern
 
-Events system for hooking into framework lifecycle. Overnight uses a layered event system:
+Events system for hooking into framework lifecycle. Overnight uses typed event objects:
 
-- **Init Events**: Framework lifecycle events (Setup, Configure, Boot, Ready).
-- **Domain Events**: Specific extension events (e.g., `orm.configure`, `rest.item.get`).
+- **Init Events**: Dispatched during `register()`/`start()`. Listened to by class name (e.g., `ConfigConfigureEvent::class`).
+- **Domain Events**: Specific extension events (e.g., `RouterSetupEvent`, `OrmConfigureEvent`).
 
 ```php
-// Registering a listener during setup
-$extension->on(ConfigInitEvents::CONFIGURE, function($event) {
-    // Modify configuration or register services
+// Registering a listener during register()
+$init->on(ConfigConfigureEvent::class, function(ConfigConfigureEvent $event) {
+    // $event->config is typed and auto-resolved
 });
 ```
+
+Event objects can be dispatched by passing an instance to `emit()` — the class name becomes the event key automatically:
 
 ## State Machine & Initialization
 
-The application follows a rigorous lifecycle managed by the `Init` system:
+The framework uses a two-phase initialization managed by the `Init` system:
 
 ```
-SETUP → CONFIGURE (Config/Container) → BOOT → READY → RUNNING
+REGISTER (all extensions) → RESOLVE ORDER (topological sort) → START (in resolved order)
 ```
 
-Extensions can register callbacks for state transitions or listen to specific events:
+### Phase 1: Registration
+
+Every extension calls `register()` on the `Init` object. During this phase, the `Init` tracks which extension owns each event subscription via `$init->setCurrentExtension()`:
 
 ```php
-$this->app->init()->on(ConfigInitEvents::READY, function() {
-    // Called when configuration is fully loaded and ready
+public function register(Init $init): void
+{
+    // Typed event objects — pass ::class string or an instance
+    $init->on(ConfigConfigureEvent::class, function(ConfigConfigureEvent $event) {
+        // Register services
+    });
+}
+```
+
+### Phase 2: Order Resolution
+
+After all extensions register, `Application::rebuildLifecycleOrder()` builds a dependency graph from the subscription map. Extensions that listen to events in another extension's namespace are ordered after that extension. The result is cached in `var/cache/app_lifecycle.php` (production) or recalculated on every request (debug).
+
+### Phase 3: Start Execution
+
+Extensions' `start()` methods are called in the resolved order. Use `$this->app->init()->context()` to emit events:
+
+```php
+public function start(InitContext $ctx): void
+{
+    // Emit a typed event — pass an instance
+    $ctx->emit(new MyExtensionReadyEvent($this));
+}
+```
+
+### Event Objects
+
+Events can be dispatched as typed objects — the class name becomes the event name:
+
+```php
+// Emit:
+$init->emit(new ConfigConfigureEvent($config));
+
+// Listen:
+$init->on(ConfigConfigureEvent::class, function(ConfigConfigureEvent $event) {
+    // $event->config is typed
 });
 ```
 
+This replaces the older enum/string-based event system. When `emit()` receives a single object (no explicit payload), the object itself serves as both the event identifier (via `get_class()`) and the payload.
+
 ### Initialization Debugging
 
-To help debug complex initialization sequences, the framework tracks all emitted events in an `eventHistory`. You can access this history through the `InitContext`:
+The framework tracks all emitted events in an `eventHistory`. Access it through `InitContext`:
 
 ```php
 $history = $app->init()->getEventHistory();
@@ -249,7 +290,14 @@ foreach ($history as $event) {
 }
 ```
 
-This is particularly useful for identifying the exact order in which extensions are configuring themselves and detecting circular dependencies or late-binding issues.
+### Subscription Map
+
+Inspect which extensions subscribe to which events via `$app->init()->getSubscriptionMap()`:
+
+```php
+$map = $app->init()->getSubscriptionMap();
+// [ExtensionClass => [EventName, ...]]
+```
 
 ## Error Handling
 

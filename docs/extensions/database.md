@@ -222,7 +222,7 @@ try {
 ### Generate Migration
 
 ```bash
-php bin/console orm:migrate:generate create_users_table
+php bin/console db:migrate:generate create_users_table
 ```
 
 ### Migration File
@@ -253,18 +253,20 @@ return new class extends AtomicMigration
 ### Run Migrations
 
 ```bash
-# Run all pending migrations
-php bin/console orm:migrate
+# Run next pending migration
+php bin/console db:migrate:up
 
-# Run specific migration
-php bin/console orm:migrate:up create_users_table
+# Run all pending migrations
+php bin/console db:migrate:all
 
 # Rollback last migration
-php bin/console orm:migrate:down
+php bin/console db:migrate:down
 
 # Show migration status
-php bin/console orm:migrate:status
+php bin/console db:migrate:status
 ```
+
+The `db:migrate:all` command runs all pending migrations in sequence, auto-initializing the migration table if needed.
 
 ## Schema Synchronization
 
@@ -277,6 +279,9 @@ php bin/console orm:schema:diff
 
 # Clear cache
 php bin/console orm:schema:cache:clear
+
+# Clear all caches
+php bin/console cache:clear
 ```
 
 ## Raw SQL

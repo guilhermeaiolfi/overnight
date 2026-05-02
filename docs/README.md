@@ -10,10 +10,15 @@ A modern PHP framework with PSR-7/PSR-15 compliance, dependency injection, and p
 - **Template Engines** - Support for Plates and Latte
 - **Authentication** - Built-in auth with session storage
 - **ORM** - Cycle ORM with migrations
-- **Events** - League Event integration
+- **Events** - Typed event object system with auto-ordered lifecycle
 - **i18n** - Full translation support
-- **CLI** - Symfony Console integration
+- **CLI** - Symfony Console integration with `db:migrate:all` command
 - **Debugging** - Clockwork profiling, Whoops error pages
+- **REST API** - Auto-generated Directus-style REST endpoints from entity definitions
+- **GraphQL** - Auto-generated GraphQL API from entity definitions
+- **Rate Limiting** - Built-in rate limit support
+- **Maintenance Mode** - Built-in maintenance mode
+- **Image Processing** - Image manipulation support
 
 ## Quick Start
 
@@ -89,22 +94,29 @@ class HelloPage
 src/
 ├── Application.php          # Main application class
 ├── Container/                # DI container and executors
+├── Init/                     # Init system and event lifecycle
+├── Extension/                # Extension base classes & interface
 ├── Router/                   # Routing system
-├── Middleware/              # PSR-15 middleware
-├── View/                    # Template engines
-├── Auth/                    # Authentication/Authorization
-├── Db/                      # Database/ORM
-├── Event/                   # Event system
-├── Session/                 # Session handling
-├── Translation/             # i18n support
-├── Config/                  # Configuration system
-├── Discovery/               # Class discovery via attributes
-├── Console/                 # CLI commands
-├── CMS/                     # Built-in CMS components
-├── Logging/                 # Logging (Monolog)
-├── Maintenance/             # Maintenance mode
-├── Clockwork/               # Debugging
-└── FileRouting/             # File-based routing
+├── Middleware/               # PSR-15 middleware
+├── View/                     # Template engines
+├── Auth/                     # Authentication/Authorization
+├── Db/                       # Database/ORM/Migrations
+├── Event/                    # Event system
+├── Session/                  # Session handling
+├── Translation/              # i18n support
+├── Config/                   # Configuration system
+├── Discovery/                # Class discovery via attributes
+├── Console/                  # CLI commands
+├── CMS/                      # Built-in CMS components
+├── Logging/                  # Logging (Monolog)
+├── Maintenance/              # Maintenance mode
+├── Clockwork/                # Debugging
+├── FileRouting/              # File-based routing
+├── Image/                    # Image processing
+├── RateLimit/                # Rate limiting
+├── RestApi/                  # REST API endpoints
+├── GraphQL/                  # GraphQL API support
+└── AutoWiring/               # Auto-wiring extension discovery
 ```
 
 ## Requirements
