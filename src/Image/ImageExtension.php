@@ -44,7 +44,7 @@ class ImageExtension extends AbstractExtension
 		$image_cfg = $event->config->get(ImageConfig::class);
 		$router_cfg = $event->config->get(RouterConfig::class);
 		$router_cfg->addRoute(
-			'/' . $image_cfg->get('basePath', "i/") . '{uri:\S+}',
+			'/' . $image_cfg->publicImagesUriPath() . '/{uri:\S+}',
 			"ON\Image\ImageManager::process",
 			['GET'],
 			"imagemanager",

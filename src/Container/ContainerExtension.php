@@ -81,6 +81,7 @@ class ContainerExtension extends AbstractExtension
 		}
 
 		// we need to set it to the container in case other places need the instance of Application
+		$this->container->set(Application::class, $this->app);
 		$this->container->set(get_class($this->app), $this->app);
 
 	}

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\ON;
 
 use ON\Path;
+use ON\PathFile;
+use ON\PathFolder;
 use ON\PathRegistry;
 use PHPUnit\Framework\TestCase;
 
@@ -30,6 +32,19 @@ final class PathRegistryTest extends TestCase
 		$this->assertSame('.', $paths->get('project')->relative());
 		$this->assertSame('var\\cache', $paths->get('cache')->relative());
 		$this->assertSame('var\\cache\\filerouting', $paths->get('cache')->append('filerouting')->relative());
+	}
+
+	public function testDirectoryPathsCreateImmutableFileAndDirectoryChildren(): void
+	{
+		$root = PathFolder::from('C:\\tmp\\overnight-app\\public');
+		$file = $root->withDirectory('images')->withFile('cover.jpg');
+
+		$this->assertInstanceOf(PathFile::class, $file);
+		$this->assertSame('C:\\tmp\\overnight-app\\public', $root->absolute());
+		$this->assertSame('C:\\tmp\\overnight-app\\public\\images\\cover.jpg', $file->absolute());
+		$this->assertSame('cover.jpg', $file->filename());
+		$this->assertSame('jpg', $file->extension());
+		$this->assertSame('C:\\tmp\\overnight-app\\public\\images', $file->parent()->absolute());
 	}
 
 	public function testAllowsVarOverrideToDriveCacheDefault(): void

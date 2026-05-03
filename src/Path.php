@@ -6,23 +6,27 @@ namespace ON;
 
 use InvalidArgumentException;
 
-final class Path
+class Path implements DirectoryPathInterface
 {
-	private function __construct(
-		private string $path,
-		private ?string $relativeBase = null
+	private string $path;
+
+	private ?string $relativeBase;
+
+	protected function __construct(
+		string $path,
+		?string $relativeBase = null
 	) {
 		$this->path = self::normalize($path);
 		$this->relativeBase = $relativeBase === null ? null : self::normalize($relativeBase);
 	}
 
-	public static function from(string $path, Path|string|null $base = null): self
+	public static function from(string $path, PathInterface|string|null $base = null): static
 	{
 		if (trim($path) === '') {
 			throw new InvalidArgumentException('Path must be a non-empty string.');
 		}
 
-		$instance = new self($path);
+		$instance = new static($path);
 
 		if ($base === null) {
 			return $instance;
@@ -31,13 +35,13 @@ final class Path
 		return $instance->resolveAgainst($base);
 	}
 
-	public function withRelativeBase(Path|string|null $base): self
+	public function withRelativeBase(PathInterface|string|null $base): static
 	{
-		if ($base instanceof self) {
+		if ($base instanceof PathInterface) {
 			$base = $base->absolute();
 		}
 
-		return new self($this->path, $base);
+		return new static($this->path, $base);
 	}
 
 	public function absolute(): string
@@ -54,51 +58,42 @@ final class Path
 		return $this->relativeTo($this->relativeBase);
 	}
 
-	public function relativeTo(Path|string $base): string
+	public function relativeTo(PathInterface|string $base): string
 	{
-		if ($base instanceof self) {
-			$base = $base->absolute();
-		}
-
-		$pathParts = self::split(self::normalize($this->path));
-		$baseParts = self::split(self::normalize($base));
-
-		if ($pathParts['prefix'] !== $baseParts['prefix']) {
-			return $this->path;
-		}
-
-		if ($this->path === self::normalize($base)) {
-			return '.';
-		}
-
-		$common = 0;
-		$max = min(count($pathParts['segments']), count($baseParts['segments']));
-		while ($common < $max && $pathParts['segments'][$common] === $baseParts['segments'][$common]) {
-			++$common;
-		}
-
-		$relative = array_fill(0, count($baseParts['segments']) - $common, '..');
-		$relative = array_merge($relative, array_slice($pathParts['segments'], $common));
-
-		return $relative === [] ? '.' : implode(DIRECTORY_SEPARATOR, $relative);
+		return self::relativeString($this->path, $base);
 	}
 
-	public function append(string $suffix): self
+	public function append(string $suffix): static
 	{
 		if ($suffix === '') {
-			return new self($this->path, $this->relativeBase);
+			return new static($this->path, $this->relativeBase);
 		}
 
 		if (self::isAbsoluteString($suffix)) {
 			throw new InvalidArgumentException('Cannot append an absolute path suffix.');
 		}
 
-		return new self($this->path . DIRECTORY_SEPARATOR . $suffix, $this->relativeBase);
+		return new static($this->path . DIRECTORY_SEPARATOR . $suffix, $this->relativeBase);
 	}
 
-	public function resolveAgainst(Path|string $base): self
+	public function parent(): DirectoryPathInterface
 	{
-		if ($base instanceof self) {
+		return new static(dirname($this->path), $this->relativeBase);
+	}
+
+	public function withFile(string $name): FilePathInterface
+	{
+		return PathFile::from($this->path . DIRECTORY_SEPARATOR . $name)->withRelativeBase($this->relativeBase);
+	}
+
+	public function withDirectory(string $name): static
+	{
+		return $this->append($name);
+	}
+
+	public function resolveAgainst(PathInterface|string $base): static
+	{
+		if ($base instanceof PathInterface) {
 			$base = $base->absolute();
 		}
 
@@ -106,7 +101,7 @@ final class Path
 			return $this->withRelativeBase($base);
 		}
 
-		return new self(self::normalize($base) . DIRECTORY_SEPARATOR . $this->path, $base);
+		return new static(self::normalize($base) . DIRECTORY_SEPARATOR . $this->path, $base);
 	}
 
 	public function exists(): bool
@@ -122,6 +117,35 @@ final class Path
 	public function __toString(): string
 	{
 		return $this->absolute();
+	}
+
+	public static function relativeString(string $path, PathInterface|string $base): string
+	{
+		if ($base instanceof PathInterface) {
+			$base = $base->absolute();
+		}
+
+		$pathParts = self::split(self::normalize($path));
+		$baseParts = self::split(self::normalize($base));
+
+		if ($pathParts['prefix'] !== $baseParts['prefix']) {
+			return self::normalize($path);
+		}
+
+		if (self::normalize($path) === self::normalize($base)) {
+			return '.';
+		}
+
+		$common = 0;
+		$max = min(count($pathParts['segments']), count($baseParts['segments']));
+		while ($common < $max && $pathParts['segments'][$common] === $baseParts['segments'][$common]) {
+			++$common;
+		}
+
+		$relative = array_fill(0, count($baseParts['segments']) - $common, '..');
+		$relative = array_merge($relative, array_slice($pathParts['segments'], $common));
+
+		return $relative === [] ? '.' : implode(DIRECTORY_SEPARATOR, $relative);
 	}
 
 	public static function isAbsoluteString(string $path): bool

@@ -8,7 +8,7 @@ use InvalidArgumentException;
 
 final class PathRegistry
 {
-	/** @var array<string, Path> */
+	/** @var array<string, DirectoryPathInterface> */
 	private array $paths = [];
 
 	/**
@@ -28,12 +28,12 @@ final class PathRegistry
 		$this->set('project', $this->resolve($project, $base));
 
 		$canonicalDefaults = [
-			'public' => fn (): Path => $this->get('project')->append('public'),
-			'config' => fn (): Path => $this->get('project')->append('config'),
-			'src' => fn (): Path => $this->get('project')->append('src'),
-			'var' => fn (): Path => $this->get('project')->append('var'),
-			'cache' => fn (): Path => $this->get('var')->append('cache'),
-			'data' => fn (): Path => $this->get('project')->append('data'),
+			'public' => fn (): DirectoryPathInterface => $this->get('project')->append('public'),
+			'config' => fn (): DirectoryPathInterface => $this->get('project')->append('config'),
+			'src' => fn (): DirectoryPathInterface => $this->get('project')->append('src'),
+			'var' => fn (): DirectoryPathInterface => $this->get('project')->append('var'),
+			'cache' => fn (): DirectoryPathInterface => $this->get('var')->append('cache'),
+			'data' => fn (): DirectoryPathInterface => $this->get('project')->append('data'),
 		];
 
 		foreach ($canonicalDefaults as $name => $default) {
@@ -54,7 +54,7 @@ final class PathRegistry
 		}
 	}
 
-	public function get(string $name): Path
+	public function get(string $name): DirectoryPathInterface
 	{
 		$path = $this->paths[$name] ?? null;
 		if ($path === null) {
@@ -64,13 +64,13 @@ final class PathRegistry
 		return $path;
 	}
 
-	public function set(string $name, Path|string $path): void
+	public function set(string $name, PathInterface|string $path): void
 	{
 		$this->assertName($name);
-		$path = $path instanceof Path ? $path : Path::from($path);
+		$path = $path instanceof DirectoryPathInterface ? $path : Path::from((string) $path);
 		$relativeBase = $name === 'project' ? $path : ($this->paths['project'] ?? null);
 		if ($relativeBase !== null && ! $path->isAbsolute()) {
-			$path = $relativeBase->append($path->absolute());
+			$path = Path::from($path->absolute(), $relativeBase);
 		}
 
 		$this->paths[$name] = $relativeBase === null ? $path : $path->withRelativeBase($relativeBase);
@@ -87,7 +87,7 @@ final class PathRegistry
 	}
 
 	/**
-	 * @return array<string, Path>
+	 * @return array<string, DirectoryPathInterface>
 	 */
 	public function all(): array
 	{
@@ -103,7 +103,7 @@ final class PathRegistry
 
 	private function assertValue(string $name, mixed $path): void
 	{
-		if ($path instanceof Path) {
+		if ($path instanceof PathInterface) {
 			return;
 		}
 
@@ -112,9 +112,9 @@ final class PathRegistry
 		}
 	}
 
-	private function resolve(Path|string $path, Path $base): Path
+	private function resolve(PathInterface|string $path, DirectoryPathInterface $base): DirectoryPathInterface
 	{
-		$path = $path instanceof Path ? $path : Path::from($path);
+		$path = $path instanceof DirectoryPathInterface ? $path : Path::from((string) $path);
 		return $path->resolveAgainst($base);
 	}
 }

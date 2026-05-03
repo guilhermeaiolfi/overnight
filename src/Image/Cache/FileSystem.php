@@ -6,12 +6,16 @@ namespace ON\Image\Cache;
 
 use Exception;
 use Intervention\Image\ImageManager as InterventionManager;
+use ON\DirectoryPathInterface;
+use ON\FilePathInterface;
 use ON\Image\ImageConfig;
+use ON\PathFile;
 
 class FileSystem implements ImageCacheInterface
 {
 	public function __construct(
-		protected ImageConfig $config
+		protected ImageConfig $config,
+		protected ?DirectoryPathInterface $publicRoot = null
 	) {
 	}
 
@@ -27,32 +31,41 @@ class FileSystem implements ImageCacheInterface
 		$driver = new $driver_class();
 
 		$manager = new InterventionManager($driver);
-		$basename = basename($path);
 		$filename = $this->filename($path, $token);
+		$cacheFile = $this->cacheFile($filename);
+		$cacheDirectory = $cacheFile->parent()->absolute();
 
-		$publicPath = rtrim($this->config->get('publicPath', 'public/'), '/') . '/';
-		$pathinfo = pathinfo($filename);
+		@mkdir($cacheDirectory, 0777, true);
 
-		@mkdir($publicPath . $pathinfo["dirname"], 0777, true);
+		$sourcePath = $path instanceof FilePathInterface ? $path->absolute() : (string) $path;
+		$manager->read($sourcePath)->modify($template)->save($cacheFile->absolute());
 
-		$manager->read($path)->modify($template)->save($publicPath . $filename);
-
-		return file_get_contents($publicPath . $filename);
+		return file_get_contents($cacheFile->absolute());
 	}
 
 	public function filename($path, $token)
 	{
-		$folders = explode("/", $path);
-
-		$filepath = array_pop($folders);
+		$filepath = $path instanceof FilePathInterface ? $path->filename() : basename((string) $path);
 		$dotPos = strrpos($filepath, '.');
 		$extension = $dotPos !== false ? substr($filepath, $dotPos + 1) : 'jpg';
 
-		return $this->config['basePath'] . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
+		$basePath = $this->config->publicImagesUriPath();
+		$basePath = $basePath === '' ? '' : $basePath . '/';
+
+		return $basePath . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
 	}
 
 	public function token($token)
 	{
 		return str_replace("/", "", $token);
+	}
+
+	private function cacheFile(string $filename): PathFile
+	{
+		if ($this->publicRoot === null) {
+			throw new Exception('FileSystem cache requires a public root directory.');
+		}
+
+		return PathFile::from($filename, $this->publicRoot);
 	}
 }

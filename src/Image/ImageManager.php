@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Image;
 
-use Intervention\Image\Image;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
@@ -12,6 +11,10 @@ use ON\Image\Cache\FileSystem;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\Encrypter\OpenSSL;
+use ON\DirectoryPathInterface;
+use ON\Path;
+use ON\PathFile;
+use ON\PathRegistry;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -28,10 +31,16 @@ class ImageManager implements MiddlewareInterface
 	private $signatureKey = null;
 
 	/**
+	 * @var list<DirectoryPathInterface>|null
+	 */
+	private ?array $resolvedSourceRoots = null;
+
+	/**
 	 * Set the signature key used to encode/decode the data.
 	 */
 	public function __construct(
 		protected ImageConfig $imageCfg,
+		protected PathRegistry $paths,
 		protected ?EncrypterInterface $encrypter = null,
 		protected ?ImageCacheInterface $imageCache = null
 	) {
@@ -44,7 +53,7 @@ class ImageManager implements MiddlewareInterface
 		$this->signatureKey = $signatureKey;
 
 		if (! isset($imageCache)) {
-			$this->imageCache = new FileSystem($imageCfg);
+			$this->imageCache = new FileSystem($imageCfg, $this->paths->get('public'));
 		}
 	}
 
@@ -83,7 +92,7 @@ class ImageManager implements MiddlewareInterface
 	{
 		$response = null;
 
-		$imageBasePath = $this->imageCfg->get('basePath');
+		$imageBasePath = '/' . $this->imageCfg->publicImagesUriPath() . '/';
 		if (strpos($request->getHeaderLine('Accept'), 'image/') === false) {
 			$response = $handler->handle($request);
 		} else {
@@ -232,19 +241,79 @@ class ImageManager implements MiddlewareInterface
 	 */
 	protected function getImagePath($filename)
 	{
-		// find file
-		foreach ($this->imageCfg->get("paths", []) as $path) {
-			// don't allow '..' in filenames
-
-			$image_path = $path . '/' . str_replace('..', '', $filename);
-			if (file_exists($image_path) && is_file($image_path)) {
-				// file found
-				return $image_path;
+		$normalizedFilename = (string) $filename;
+		if (Path::isAbsoluteString($normalizedFilename)) {
+			$imagePath = PathFile::from($normalizedFilename);
+			if (file_exists($imagePath->absolute()) && is_file($imagePath->absolute())) {
+				return $imagePath;
 			}
 		}
 
-		// file not found
+		$sanitizedFilename = str_replace('..', '', $normalizedFilename);
+		foreach ($this->getSourceRoots() as $root) {
+			$imagePath = PathFile::from($sanitizedFilename, $root);
+			if (file_exists($imagePath->absolute()) && is_file($imagePath->absolute())) {
+				return $imagePath;
+			}
+		}
+
 		return null;
+	}
+
+	/**
+	 * @return list<DirectoryPathInterface>
+	 */
+	protected function getSourceRoots(): array
+	{
+		if ($this->resolvedSourceRoots !== null) {
+			return $this->resolvedSourceRoots;
+		}
+
+		$configuredRoots = $this->imageCfg->get('sourceRoots', $this->imageCfg->get('paths', []));
+		if (! is_array($configuredRoots)) {
+			$this->resolvedSourceRoots = [];
+			return $this->resolvedSourceRoots;
+		}
+
+		$projectDir = $this->paths->get('project');
+		$this->resolvedSourceRoots = [];
+
+		foreach ($configuredRoots as $root) {
+			if (! is_string($root) || trim($root) === '') {
+				continue;
+			}
+
+			$this->resolvedSourceRoots[] = $this->resolveSourceRoot($root, $projectDir);
+		}
+
+		return $this->resolvedSourceRoots;
+	}
+
+	protected function resolveSourceRoot(string $root, DirectoryPathInterface $projectDir): DirectoryPathInterface
+	{
+		$trimmedRoot = trim($root);
+		$normalizedRoot = str_replace('\\', '/', $trimmedRoot);
+		$registryKey = rtrim($normalizedRoot, '/');
+
+		if ($registryKey === '.') {
+			return $projectDir;
+		}
+
+		if (preg_match('/^\{([a-z][a-z0-9_]*)\}(?:\/(.*))?$/', $normalizedRoot, $matches) === 1) {
+			$pathName = $matches[1];
+			$suffix = $matches[2] ?? '';
+
+			if ($this->paths->has($pathName)) {
+				$basePath = $this->paths->get($pathName);
+				return $suffix === '' ? $basePath : Path::from($suffix, $basePath);
+			}
+		}
+
+		if ($registryKey !== '' && $this->paths->has($registryKey)) {
+			return $this->paths->get($registryKey);
+		}
+
+		return Path::from($trimmedRoot, $projectDir);
 	}
 
 	/**
