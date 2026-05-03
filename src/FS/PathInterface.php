@@ -8,9 +8,9 @@ interface PathInterface
 {
 	public function withRelativeBase(PathInterface|string|null $base): static;
 
-	public function absolute(): string;
+	public function getAbsolutePath(): string;
 
-	public function relative(): string;
+	public function getRelativePath(): string;
 
 	public function relativeTo(PathInterface|string $base): string;
 

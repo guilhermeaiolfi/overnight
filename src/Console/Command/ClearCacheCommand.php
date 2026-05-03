@@ -83,7 +83,7 @@ class ClearCacheCommand extends Command
 		}
 
 		if (in_array('a', $selection, true)) {
-			$this->clearDirectoryContents($this->app->paths->get('cache')->absolute());
+			$this->clearDirectoryContents($this->app->paths->get('cache')->getAbsolutePath());
 			$output->writeln($formatter->formatSection("OK", "Application cache directory cleared!"));
 		}
 

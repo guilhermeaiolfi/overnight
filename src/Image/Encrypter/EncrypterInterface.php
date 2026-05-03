@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace ON\Image\Encrypter;
 
+use ON\Image\ImageRequest;
+
 interface EncrypterInterface
 {
-	/**
-	 * @return array<string, mixed>|null
-	 */
-	public function decrypt(string $token): ?array;
+	public function decrypt(string $token): ?ImageRequest;
 
-	public function encrypt(array $data): ?string;
+	public function encrypt(ImageRequest $data): ?string;
 }

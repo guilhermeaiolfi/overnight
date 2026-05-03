@@ -103,9 +103,9 @@ class ContainerExtension extends AbstractExtension
 		$cachePath = $this->options["cache_path"] ?? $config->get('cache_path');
 		if ($cachePath !== null) {
 			$this->cache_path = Path::from($cachePath, $this->app->paths->get('project'))
-				->absolute();
+				->getAbsolutePath();
 		} else {
-			$this->cache_path = $this->app->paths->get('cache')->append('container')->absolute();
+			$this->cache_path = $this->app->paths->get('cache')->append('container')->getAbsolutePath();
 		}
 
 		if ($config->get("enable_cache", false)) {

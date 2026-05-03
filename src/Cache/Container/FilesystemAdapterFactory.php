@@ -23,13 +23,13 @@ class FilesystemAdapterFactory
 
 		$defaultDirectory = 'var/cache/symfony';
 		if ($c->has(Application::class)) {
-			$defaultDirectory = $c->get(Application::class)->paths->get('cache')->append('symfony')->absolute();
+			$defaultDirectory = $c->get(Application::class)->paths->get('cache')->append('symfony')->getAbsolutePath();
 		}
 
 		$directory = $config->get("adapter.directory", $defaultDirectory);
 		if ($c->has(Application::class)) {
 			$directory = Path::from($directory, $c->get(Application::class)->paths->get('project'))
-				->absolute();
+				->getAbsolutePath();
 		}
 		$namespace = $config->get("adapter.namespace", "ON");
 		$defaultLifetime = $config->get("adapter.defaultLifetime", 0);

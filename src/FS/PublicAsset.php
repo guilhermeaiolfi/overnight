@@ -12,17 +12,12 @@ final class PublicAsset implements PublicAssetInterface
 	) {
 	}
 
-	public function path(): string
+	public function getUri(): string
 	{
 		return $this->path;
 	}
 
-	public function uri(): string
-	{
-		return $this->path;
-	}
-
-	public function file(): FilePathInterface
+	public function getFile(): FilePathInterface
 	{
 		return $this->file;
 	}

@@ -10,9 +10,9 @@ use ON\FS\PublicAssetInterface;
 
 interface ImageCacheInterface
 {
-	public function get(string $token, callable|ModifierInterface $template, string|FilePathInterface $path): string;
+	public function create(string $token, callable|ModifierInterface $template, string|FilePathInterface $sourcePath): PublicAssetInterface;
 
-	public function publicAsset(string|FilePathInterface $path, string $token): PublicAssetInterface;
+	public function get(string|FilePathInterface $sourcePath, string $token): PublicAssetInterface;
 
-	public function token(string $path): string;
+	public function extractToken(string $path): string;
 }

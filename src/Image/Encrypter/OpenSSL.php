@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Image\Encrypter;
 
+use ON\Image\ImageRequest;
+
 class OpenSSL implements EncrypterInterface
 {
 	protected ?array $configuration = null;
@@ -19,7 +21,7 @@ class OpenSSL implements EncrypterInterface
 		$this->iv = $options['iv'] ?? $_ENV["APP_SALT"] ?? substr(md5((string) $key), 0, 16);
 	}
 
-	public function decrypt(string $token): ?array
+	public function decrypt(string $token): ?ImageRequest
 	{
 
 		$token = str_replace(['-','_'], ['+','/'], $token);
@@ -46,21 +48,21 @@ class OpenSSL implements EncrypterInterface
 		}
 		parse_str($params["query"], $data);
 
-		return [
+		return ImageRequest::fromArray([
 			"path" => $params["path"],
 			"template" => $data["t"] ?? null,
 			"options" => $data["o"] ?? null,
-		];
+		]);
 	}
 
-	public function encrypt(array $data): ?string
+	public function encrypt(ImageRequest $data): ?string
 	{
-		$plaintext = $data["path"] . "?t=" . $data["template"] . '&o=' . $data["options"];
+		$plaintext = $data->getSourceFilePath() . "?t=" . $data->getTemplate() . '&o=' . $data->getOptions();
 		$ivlen = openssl_cipher_iv_length($this->cipher);
 
 		// TODO: figured it out what iv should be
 		// it was: $iv = substr(md5(filemtime('public/' . $data["path"])), 0, $ivlen);
-		$iv = substr(md5($data["path"]), 0, $ivlen);
+		$iv = substr(md5($data->getSourceFilePath()), 0, $ivlen);
 		//$iv=1234567890123456;
 		//$iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('AES-256-CBC'));
 		$ciphertext_raw = openssl_encrypt($plaintext, $this->cipher, $this->key, OPENSSL_RAW_DATA, $iv);

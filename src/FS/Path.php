@@ -38,18 +38,18 @@ class Path implements DirectoryPathInterface
 	public function withRelativeBase(PathInterface|string|null $base): static
 	{
 		if ($base instanceof PathInterface) {
-			$base = $base->absolute();
+			$base = $base->getAbsolutePath();
 		}
 
 		return new static($this->path, $base);
 	}
 
-	public function absolute(): string
+	public function getAbsolutePath(): string
 	{
 		return $this->path;
 	}
 
-	public function relative(): string
+	public function getRelativePath(): string
 	{
 		if ($this->relativeBase === null) {
 			throw new InvalidArgumentException('No relative base is configured for this path.');
@@ -76,7 +76,7 @@ class Path implements DirectoryPathInterface
 		return new static($this->path . DIRECTORY_SEPARATOR . $suffix, $this->relativeBase);
 	}
 
-	public function parent(): DirectoryPathInterface
+	public function getParent(): DirectoryPathInterface
 	{
 		return new static(dirname($this->path), $this->relativeBase);
 	}
@@ -94,7 +94,7 @@ class Path implements DirectoryPathInterface
 	public function resolveAgainst(PathInterface|string $base): static
 	{
 		if ($base instanceof PathInterface) {
-			$base = $base->absolute();
+			$base = $base->getAbsolutePath();
 		}
 
 		if ($this->isAbsolute()) {
@@ -116,13 +116,13 @@ class Path implements DirectoryPathInterface
 
 	public function __toString(): string
 	{
-		return $this->absolute();
+		return $this->getAbsolutePath();
 	}
 
 	public static function relativeString(string $path, PathInterface|string $base): string
 	{
 		if ($base instanceof PathInterface) {
-			$base = $base->absolute();
+			$base = $base->getAbsolutePath();
 		}
 
 		$pathParts = self::split(self::normalize($path));

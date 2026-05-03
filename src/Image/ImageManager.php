@@ -56,7 +56,7 @@ class ImageManager implements MiddlewareInterface
 		}
 	}
 
-	public function getUri(string $path, string $template, mixed $options = null): string
+	public function getUri(string $sourceFilePath, string $template, mixed $options = null): string
 	{
 
 		if ($this->signatureKey === null) {
@@ -68,20 +68,21 @@ class ImageManager implements MiddlewareInterface
 		// If we simply return the image, it won't be the size needed
 		// for the moment, converting the base image to what we need
 		// seems the best approach
-		if (! $this->imageExists($path)) {
+		if (! $this->imageExists($sourceFilePath)) {
 			//return $this->imageCfg->get("404ImagePath");
-			$path = $this->imageCfg->get("404ImagePath");
+			$sourceFilePath = $this->imageCfg->get("404ImagePath");
 		}
-		$token = $this->encrypter->encrypt(["path" => $path, "template" => $template, "options" => $options]);
+		$imageRequest = new ImageRequest($sourceFilePath, $template, $options);
+		$token = $this->encrypter->encrypt($imageRequest);
 		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
 		//$token = str_replace('/.', './', $token); //create folders for images
 
-		return $this->imageCache->publicAsset($path, $token)->uri();
+		return $this->imageCache->get($sourceFilePath, $token)->getUri();
 	}
 
 	protected function imageExists(string $filename): bool
 	{
-		return $this->getImagePath($filename) !== null;
+		return $this->getConcreteImagePath($filename) !== null;
 	}
 
 	/**
@@ -91,7 +92,7 @@ class ImageManager implements MiddlewareInterface
 	{
 		$response = null;
 
-		$imageBasePath = '/' . $this->imageCfg->publicImagesUriPath() . '/';
+		$imageBasePath = '/' . $this->imageCfg->getPublicImagesUri() . '/';
 		if (strpos($request->getHeaderLine('Accept'), 'image/') === false) {
 			$response = $handler->handle($request);
 		} else {
@@ -110,14 +111,14 @@ class ImageManager implements MiddlewareInterface
 				$token = substr($token, 0, $extensionPos);
 			}
 
-			$token = $this->imageCache->token($token);
+			$token = $this->imageCache->extractToken($token);
 
-			$payload = $this->encrypter->decrypt($token);
+			$imageRequest = $this->encrypter->decrypt($token);
 
-			if (! $payload) {
+			if (! $imageRequest) {
 				$response = $handler->handle($request);
 			} else {
-				$response = $this->getResponse($token, $payload['template'], $payload['path'], $payload['options']);
+				$response = $this->getResponse($token, $imageRequest);
 			}
 		}
 
@@ -132,17 +133,17 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getResponse(string $token, string $template, string $filename, mixed $options = null): ResponseInterface
+	public function getResponse(string $token, ImageRequest $imageRequest): ResponseInterface
 	{
-		switch (strtolower($template)) {
+		switch (strtolower($imageRequest->getTemplate())) {
 			case 'original':
-				return $this->getOriginal($filename);
+				return $this->getOriginalImageResponse($imageRequest->getSourceFilePath());
 
 			case 'download':
-				return $this->getDownload($filename);
+				return $this->getDownloadResponse($imageRequest->getSourceFilePath());
 
 			default:
-				return $this->getImage($token, $template, $filename, $options);
+				return $this->getCachedImageResponse($token, $imageRequest);
 		}
 	}
 
@@ -153,20 +154,21 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getImage(string $token, string $template, string $filename, mixed $options = null): ResponseInterface
+	public function getCachedImageResponse(string $token, ImageRequest $imageRequest): ResponseInterface
 	{
-		$template = $this->getTemplate($template, $options);
-		$path = $this->getImagePath($filename);
+		$template = $this->getTemplate($imageRequest->getTemplate(), $imageRequest->getOptions());
+		$sourceFile = $this->getConcreteImagePath($imageRequest->getSourceFilePath());
 
 
-		if (! $path) {
+		if (! $sourceFile) {
 			return new EmptyResponse(404);
 		}
 		if ($template instanceof ResponseInterface) {
 			return $template;
 		}
 
-		$content = $this->imageCache->get($token, $template, $path);
+		$asset = $this->imageCache->create($token, $template, $sourceFile);
+		$content = (string) file_get_contents($asset->getFile()->getAbsolutePath());
 
 		return $this->buildResponse($content);
 	}
@@ -177,14 +179,14 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getOriginal(string $filename): ResponseInterface
+	public function getOriginalImageResponse(string $filename): ResponseInterface
 	{
-		$path = $this->getImagePath($filename);
-		if ($path === null) {
+		$sourceFile = $this->getConcreteImagePath($filename);
+		if ($sourceFile === null) {
 			return new EmptyResponse(404);
 		}
 
-		return $this->buildResponse((string) file_get_contents($path->absolute()));
+		return $this->buildResponse((string) file_get_contents($sourceFile->getAbsolutePath()));
 	}
 
 	/**
@@ -193,9 +195,9 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getDownload(string $filename): ResponseInterface
+	public function getDownloadResponse(string $filename): ResponseInterface
 	{
-		$response = $this->getOriginal($filename);
+		$response = $this->getOriginalImageResponse($filename);
 
 		return $response->withHeader(
 			'Content-Disposition',
@@ -241,12 +243,12 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return string
 	 */
-	protected function getImagePath(string $filename): ?FilePathInterface
+	protected function getConcreteImagePath(string $filename): ?FilePathInterface
 	{
 		$normalizedFilename = (string) $filename;
 		if (Path::isAbsoluteString($normalizedFilename)) {
 			$imagePath = PathFile::from($normalizedFilename);
-			if (file_exists($imagePath->absolute()) && is_file($imagePath->absolute())) {
+			if (file_exists($imagePath->getAbsolutePath()) && is_file($imagePath->getAbsolutePath())) {
 				return $imagePath;
 			}
 		}
@@ -254,7 +256,7 @@ class ImageManager implements MiddlewareInterface
 		$sanitizedFilename = str_replace('..', '', $normalizedFilename);
 		foreach ($this->getSourceRoots() as $root) {
 			$imagePath = PathFile::from($sanitizedFilename, $root);
-			if (file_exists($imagePath->absolute()) && is_file($imagePath->absolute())) {
+			if (file_exists($imagePath->getAbsolutePath()) && is_file($imagePath->getAbsolutePath())) {
 				return $imagePath;
 			}
 		}

@@ -73,7 +73,7 @@ class Application
 		$paths['project'] ??= dirname(getcwd(), 1);
 
 		$this->paths = new PathRegistry($paths, getcwd());
-		$project_dir = $this->paths->get('project')->absolute();
+		$project_dir = $this->paths->get('project')->getAbsolutePath();
 
 		// defines the default dir to the project root
 		if ($project_dir != getcwd()) {
@@ -183,7 +183,7 @@ class Application
 	protected function getLifecycleOrder(array $subscriptionMap): array
 	{
 		$hash = md5(serialize($subscriptionMap));
-		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->absolute();
+		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
 
 		if (!$this->debug && file_exists($cacheFile)) {
 			$cache = require $cacheFile;

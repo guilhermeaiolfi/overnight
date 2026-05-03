@@ -33,7 +33,7 @@ class AutoWiringExtension extends AbstractExtension
 		protected array $options = []
 	) {
 		$app->autowiring = $this;
-		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->absolute();
+		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->getAbsolutePath();
 		$this->installDiscoveredExtensions();
 	}
 	public function start(\ON\Init\InitContext $context): void
@@ -129,7 +129,7 @@ class AutoWiringExtension extends AbstractExtension
 
 	private function absolutePath(string $path): string
 	{
-		return rtrim(Path::from($path, $this->app->paths->get('project'))->absolute(), DIRECTORY_SEPARATOR);
+		return rtrim(Path::from($path, $this->app->paths->get('project'))->getAbsolutePath(), DIRECTORY_SEPARATOR);
 	}
 
 	/**

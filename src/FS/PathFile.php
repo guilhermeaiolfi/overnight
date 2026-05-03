@@ -36,18 +36,18 @@ final class PathFile implements FilePathInterface
 	public function withRelativeBase(PathInterface|string|null $base): static
 	{
 		if ($base instanceof PathInterface) {
-			$base = $base->absolute();
+			$base = $base->getAbsolutePath();
 		}
 
 		return new self($this->path, $base);
 	}
 
-	public function absolute(): string
+	public function getAbsolutePath(): string
 	{
 		return $this->path;
 	}
 
-	public function relative(): string
+	public function getRelativePath(): string
 	{
 		if ($this->relativeBase === null) {
 			throw new InvalidArgumentException('No relative base is configured for this path.');
@@ -71,17 +71,17 @@ final class PathFile implements FilePathInterface
 		return Path::isAbsoluteString($this->path);
 	}
 
-	public function parent(): DirectoryPathInterface
+	public function getParent(): DirectoryPathInterface
 	{
 		return PathFolder::from(dirname($this->path))->withRelativeBase($this->relativeBase);
 	}
 
-	public function filename(): string
+	public function getFilename(): string
 	{
 		return basename($this->path);
 	}
 
-	public function extension(): ?string
+	public function getExtension(): ?string
 	{
 		$extension = pathinfo($this->path, PATHINFO_EXTENSION);
 
@@ -90,13 +90,13 @@ final class PathFile implements FilePathInterface
 
 	public function __toString(): string
 	{
-		return $this->absolute();
+		return $this->getAbsolutePath();
 	}
 
 	private function resolveAgainst(PathInterface|string $base): self
 	{
 		if ($base instanceof PathInterface) {
-			$base = $base->absolute();
+			$base = $base->getAbsolutePath();
 		}
 
 		if ($this->isAbsolute()) {

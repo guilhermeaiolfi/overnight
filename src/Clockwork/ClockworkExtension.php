@@ -53,7 +53,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		return [
 			//'api' => it is determined in the constructor, should be
 			//         something like: '/onlegis/__clockwork/'
-			'storage_files_path' => $this->app->paths->get('var')->append('clockwork')->absolute(),
+			'storage_files_path' => $this->app->paths->get('var')->append('clockwork')->getAbsolutePath(),
 			'register_helpers' => true,
 			'storage_expiration' => 2,
 		];

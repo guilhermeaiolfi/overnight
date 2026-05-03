@@ -42,10 +42,10 @@ class FileRoutingExtension extends AbstractExtension
 		$template_namespace = $fileroutingCfg->get('template.namespace', 'filerouting');
 		$configuredCachePath = $fileroutingCfg->get('cachePath');
 		
-		$cache_path = $this->app->paths->get('cache')->append('filerouting')->absolute();
+		$cache_path = $this->app->paths->get('cache')->append('filerouting')->getAbsolutePath();
 		if ($configuredCachePath !== null && trim($configuredCachePath) !== '') {
 			$cache_path = Path::from($configuredCachePath, $this->app->paths->get('project'))
-				->absolute();
+				->getAbsolutePath();
 		}
 		$fileroutingCfg->set('cachePath', $cache_path);
 

@@ -9,6 +9,7 @@ use Lcobucci\JWT\Configuration;
 use Lcobucci\JWT\Signer\Hmac\Sha512;
 use Lcobucci\JWT\Signer\Key;
 use Lcobucci\JWT\Validation\Constraint\SignedWith;
+use ON\Image\ImageRequest;
 
 class Jwt implements EncrypterInterface
 {
@@ -29,7 +30,7 @@ class Jwt implements EncrypterInterface
 		);
 	}
 
-	public function decrypt(string $token): ?array
+	public function decrypt(string $token): ?ImageRequest
 	{
 
 		try {
@@ -48,22 +49,22 @@ class Jwt implements EncrypterInterface
 			$payload = $token->claims()->get(self::DATA_CLAIM);
 
 			if ($payload) {
-				$payload["path"] = str_replace('//', '/', $payload["path"]);
+				$payload["sourceFilePath"] = str_replace('//', '/', $payload["sourceFilePath"]);
 			}
 
-			return $payload;
+			return is_array($payload) ? ImageRequest::fromArray($payload) : null;
 		} catch (Exception $exception) {
 			return null;
 		}
 	}
 
-	public function encrypt(array $data): ?string
+	public function encrypt(ImageRequest $data): ?string
 	{
 
 
 		$token = $this->configuration->createBuilder()
 			->permittedFor("image")
-			->withClaim(self::DATA_CLAIM, $data)
+			->withClaim(self::DATA_CLAIM, $data->toArray())
 			->getToken($this->configuration->getSigner(), $this->configuration->getSigningKey());
 
 		return $token->toString();

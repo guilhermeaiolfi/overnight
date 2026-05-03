@@ -6,9 +6,7 @@ namespace ON\FS;
 
 interface PublicAssetInterface
 {
-	public function path(): string;
+	public function getUri(): string;
 
-	public function uri(): string;
-
-	public function file(): FilePathInterface;
+	public function getFile(): FilePathInterface;
 }

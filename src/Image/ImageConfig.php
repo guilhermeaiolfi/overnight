@@ -25,10 +25,10 @@ class ImageConfig extends Config
 		];
 	}
 
-	public function publicImagesDir(): DirectoryPathInterface
+	public function getPublicImagesDir(): DirectoryPathInterface
 	{
-		if ($this->publicImagesDir !== null) {
-			return $this->publicImagesDir;
+		if ($this->publicImagesDirFile !== null) {
+			return $this->publicImagesDirFile;
 		}
 
 		$configured = $this->get('publicImagesDir', 'i');
@@ -37,15 +37,14 @@ class ImageConfig extends Config
 			$this->publicImagesDir = $configured;
 		} else {
 			$this->publicImagesDir = PathFolder::from(trim((string) $configured, '/\\'));
-			$this->set('publicImagesDir', $this->publicImagesDir);
+			$this->set('publicImagesDirFile', $this->publicImagesDir);
 		}
 
 		return $this->publicImagesDir;
 	}
 
-	public function publicImagesUriPath(): string
+	public function getPublicImagesUri(): string
 	{
-		$path = str_replace('\\', '/', $this->publicImagesDir()->absolute());
-		return trim($path, '/');
+		return trim(str_replace('\\', '/', $this->get('publicImagesDir', 'i')), "/");
 	}
 }

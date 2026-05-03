@@ -40,7 +40,7 @@ class CycleDatabaseFactory
 		Registry $registry,
 		string $name
 	): CycleDatabase {
-		$this->cacheFile = $this->app->paths->get('cache')->append('cycle.schema.php')->absolute();
+		$this->cacheFile = $this->app->paths->get('cache')->append('cycle.schema.php')->getAbsolutePath();
 
 		$manager = new CycleDatabase($name, $dbCfg);
 

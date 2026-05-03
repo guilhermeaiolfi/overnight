@@ -70,7 +70,7 @@ final class PathRegistry
 		$path = $path instanceof DirectoryPathInterface ? $path : Path::from((string) $path);
 		$relativeBase = $name === 'project' ? $path : ($this->paths['project'] ?? null);
 		if ($relativeBase !== null && ! $path->isAbsolute()) {
-			$path = Path::from($path->absolute(), $relativeBase);
+			$path = Path::from($path->getAbsolutePath(), $relativeBase);
 		}
 
 		$this->paths[$name] = $relativeBase === null ? $path : $path->withRelativeBase($relativeBase);

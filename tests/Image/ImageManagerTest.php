@@ -15,6 +15,7 @@ use ON\FS\PathFile;
 use ON\FS\PathRegistry;
 use ON\FS\PublicAsset;
 use ON\FS\PublicAssetInterface;
+use ON\Image\ImageRequest;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -57,7 +58,7 @@ final class ImageManagerTest extends TestCase
 		$this->assertSame('i/signed-token.jpg', $uri);
 		$this->assertSame('photo.jpg', $cache->lastFilenamePath);
 		$this->assertSame('signed-token', $cache->lastFilenameToken);
-		$this->assertSame('i/signed-token.jpg', $cache->lastPublicAsset?->uri());
+		$this->assertSame('i/signed-token.jpg', $cache->lastPublicAsset?->getUri());
 	}
 
 	public function testGetUriUsesFallbackImageWhenRequestedImageDoesNotExist(): void
@@ -87,9 +88,8 @@ final class ImageManagerTest extends TestCase
 			'publicImagesDir' => 'images/cache',
 		]);
 
-		$this->assertInstanceOf(DirectoryPathInterface::class, $config->publicImagesDir());
-		$this->assertSame('images' . DIRECTORY_SEPARATOR . 'cache', $config->publicImagesDir()->absolute());
-		$this->assertSame('images/cache', $config->publicImagesUriPath());
+		$this->assertInstanceOf(DirectoryPathInterface::class, $config->getPublicImagesDir());
+		$this->assertSame('images/cache', $config->getPublicImagesUri());
 	}
 
 	public function testProcessResolvesImageFromConfiguredSourceRoots(): void
@@ -102,11 +102,7 @@ final class ImageManagerTest extends TestCase
 		$cache->tokenValue = 'signed-token';
 		$encrypter = new StubEncrypter(
 			'signed-token',
-			[
-				'template' => 'thumb',
-				'path' => 'nested/photo.jpg',
-				'options' => null,
-			]
+			new ImageRequest('nested/photo.jpg', 'thumb')
 		);
 		$config = new ImageConfig([
 			'publicImagesDir' => 'i',
@@ -166,15 +162,15 @@ final class ImageManagerTest extends TestCase
 
 		$this->assertSame(
 			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->projectDir . '/project-image.jpg'),
-			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $projectPath?->absolute())
+			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $projectPath?->getAbsolutePath())
 		);
 		$this->assertSame(
 			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->projectDir . '/public/public-image.jpg'),
-			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $publicPath?->absolute())
+			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $publicPath?->getAbsolutePath())
 		);
 		$this->assertSame(
 			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->projectDir . '/public/assets/nested-public-image.jpg'),
-			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $nestedPublicPath?->absolute())
+			str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $nestedPublicPath?->getAbsolutePath())
 		);
 	}
 
@@ -198,7 +194,7 @@ final class ImageManagerTest extends TestCase
 
 	private function callGetImagePath(ImageManager $manager, string $filename): mixed
 	{
-		$method = new \ReflectionMethod($manager, 'getImagePath');
+		$method = new \ReflectionMethod($manager, 'getConcreteImagePath');
 		$method->setAccessible(true);
 
 		return $method->invoke($manager, $filename);
@@ -241,7 +237,7 @@ final class ImageManagerTest extends TestCase
 
 final class RecordingImageCache implements ImageCacheInterface
 {
-	public ?string $lastFilenamePath = null;
+	public mixed $lastFilenamePath = null;
 	public ?string $lastFilenameToken = null;
 	public ?PublicAssetInterface $lastPublicAsset = null;
 	public ?string $lastGetToken = null;
@@ -254,16 +250,23 @@ final class RecordingImageCache implements ImageCacheInterface
 	) {
 	}
 
-	public function get(string $url, callable|ModifierInterface $template, string|\ON\FS\FilePathInterface $path): string
+	public function create(string $url, callable|ModifierInterface $template, string|\ON\FS\FilePathInterface $path): PublicAssetInterface
 	{
 		$this->lastGetToken = $url;
 		$this->lastGetTemplate = $template;
 		$this->lastGetPath = $path;
+		$asset = $this->get($path, $url);
+		$file = $asset->getFile();
+		$directory = $file->getParent()->getAbsolutePath();
+		if (! is_dir($directory)) {
+			mkdir($directory, 0777, true);
+		}
+		file_put_contents($file->getAbsolutePath(), $this->content);
 
-		return $this->content;
+		return $asset;
 	}
 
-	public function publicAsset(string|\ON\FS\FilePathInterface $path, string $token): PublicAssetInterface
+	public function get(string|\ON\FS\FilePathInterface $path, string $token): PublicAssetInterface
 	{
 		$this->lastFilenamePath = $path;
 		$this->lastFilenameToken = $token;
@@ -276,7 +279,7 @@ final class RecordingImageCache implements ImageCacheInterface
 		return $this->lastPublicAsset;
 	}
 
-	public function token(string $path): string
+	public function extractToken(string $path): string
 	{
 		return $this->tokenValue !== '' ? $this->tokenValue : $path;
 	}
@@ -286,18 +289,18 @@ final class StubEncrypter implements EncrypterInterface
 {
 	public function __construct(
 		private string $encryptedValue,
-		private array|false $decryptedValue = false
+		private ImageRequest|false $decryptedValue = false
 	) {
 	}
 
-	public function encrypt(array $data): ?string
+	public function encrypt(ImageRequest $data): ?string
 	{
 		return $this->encryptedValue;
 	}
 
-	public function decrypt(string $data): ?array
+	public function decrypt(string $data): ?ImageRequest
 	{
-		return $this->decryptedValue;
+		return $this->decryptedValue === false ? null : $this->decryptedValue;
 	}
 }
 

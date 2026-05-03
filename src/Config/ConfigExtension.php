@@ -41,9 +41,9 @@ class ConfigExtension extends AbstractExtension
 
 		if (isset($options['cachePath'])) {
 			$this->cachePath = Path::from($options['cachePath'], $this->app->paths->get('project'))
-				->absolute();
+				->getAbsolutePath();
 		} else {
-			$this->cachePath = $app->paths->get('cache')->append('config.php')->absolute();
+			$this->cachePath = $app->paths->get('cache')->append('config.php')->getAbsolutePath();
 		}
 	}
 

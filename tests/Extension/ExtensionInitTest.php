@@ -138,9 +138,9 @@ final class ExtensionInitTest extends TestCase
 		$app = $this->createApplication([]);
 		$normalizedProjectDir = str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $this->projectDir);
 
-		$this->assertSame($normalizedProjectDir, $app->paths->get('project')->absolute());
-		$this->assertSame($normalizedProjectDir . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->absolute());
-		$this->assertSame('var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->relative());
+		$this->assertSame($normalizedProjectDir, $app->paths->get('project')->getAbsolutePath());
+		$this->assertSame($normalizedProjectDir . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->getAbsolutePath());
+		$this->assertSame('var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->getRelativePath());
 	}
 
 	public function testDeferredCrossExtensionMethodUsageCanFollowEventsInsteadOfInstallOrder(): void

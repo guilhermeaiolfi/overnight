@@ -6,9 +6,9 @@ namespace ON\FS;
 
 interface FilePathInterface extends PathInterface
 {
-	public function parent(): DirectoryPathInterface;
+	public function getParent(): DirectoryPathInterface;
 
-	public function filename(): string;
+	public function getFilename(): string;
 
-	public function extension(): ?string;
+	public function getExtension(): ?string;
 }

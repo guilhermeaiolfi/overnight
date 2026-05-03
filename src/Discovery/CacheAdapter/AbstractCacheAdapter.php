@@ -39,10 +39,10 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 	{
 		$basePath = $this->appCfg->get("discovery.cache_path");
 		if (! is_string($basePath) || trim($basePath) === '') {
-			$basePath = $this->app->paths->get('cache')->append('discovery')->absolute();
+			$basePath = $this->app->paths->get('cache')->append('discovery')->getAbsolutePath();
 		} else {
 			$basePath = Path::from($basePath, $this->app->paths->get('project'))
-				->absolute();
+				->getAbsolutePath();
 		}
 
 		return rtrim($basePath, '/\\') . DIRECTORY_SEPARATOR . $this->classNameToFilename(get_class($discover), $location);

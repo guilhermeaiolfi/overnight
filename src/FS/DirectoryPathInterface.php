@@ -6,7 +6,7 @@ namespace ON\FS;
 
 interface DirectoryPathInterface extends PathInterface
 {
-	public function parent(): self;
+	public function getParent(): self;
 
 	public function append(string $suffix): static;
 

@@ -22,9 +22,8 @@ class FileSystem implements ImageCacheInterface
 	) {
 	}
 
-	public function get(string $token, callable|ModifierInterface $template, string|FilePathInterface $path): string
+	public function create(string $token, callable|ModifierInterface $template, string|FilePathInterface $sourcePath): PublicAssetInterface
 	{
-
 		// image manipulation based on callback
 		$driver_class = $this->config["driver"];
 
@@ -34,34 +33,36 @@ class FileSystem implements ImageCacheInterface
 		$driver = new $driver_class();
 
 		$manager = new InterventionManager($driver);
-		$cachedPublicAsset = $this->publicAsset($path, $token);
-		$cacheFile = $cachedPublicAsset->file();
-		$cacheDirectory = $cacheFile->parent()->absolute();
+		$cachedPublicAsset = $this->get($sourcePath, $token);
+		$cacheFile = $cachedPublicAsset->getFile();
+		$cacheDirectory = $cacheFile->getParent()->getAbsolutePath();
 
 		@mkdir($cacheDirectory, 0777, true);
 
-		$sourcePath = $path instanceof FilePathInterface ? $path->absolute() : (string) $path;
-		$manager->read($sourcePath)->modify($template)->save($cacheFile->absolute());
+		$resolvedSourcePath = $sourcePath instanceof FilePathInterface ? $sourcePath->getAbsolutePath() : (string) $sourcePath;
+		$manager->read($resolvedSourcePath)->modify($template)->save($cacheFile->getAbsolutePath());
 
-		return file_get_contents($cacheFile->absolute());
+		return $cachedPublicAsset;
 	}
 
-	public function publicAsset(string|FilePathInterface $path, string $token): PublicAssetInterface
+	public function get(string|FilePathInterface $sourcePath, string $token): PublicAssetInterface
 	{
-		$filepath = $path instanceof FilePathInterface ? $path->filename() : basename((string) $path);
+		$filepath = $sourcePath instanceof FilePathInterface ? $sourcePath->getFilename() : basename((string) $sourcePath);
 		$dotPos = strrpos($filepath, '.');
 		$extension = $dotPos !== false ? substr($filepath, $dotPos + 1) : 'jpg';
 
-		$basePath = $this->config->publicImagesUriPath();
-		$basePath = $basePath === '' ? '' : $basePath . '/';
-		$publicPath = $basePath . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
+		$basePath = $this->config->getPublicImagesDir()->getAbsolutePath();
+		
+		$cachedFile = substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
+		$publicPath = $basePath . "/" . $cachedFile;
 
-		return new PublicAsset($publicPath, $this->cacheFile($publicPath));
+		$uri = $this->config->getPublicImagesUri() . '/' . $cachedFile;
+		return new PublicAsset($uri, $this->cacheFile($publicPath));
 	}
 
-	public function token(string $token): string
+	public function extractToken(string $uri): string
 	{
-		return str_replace("/", "", $token);
+		return str_replace("/", "", $uri);
 	}
 
 	private function cacheFile(string $filename): PathFile
