@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Image;
 
+use Intervention\Image\Interfaces\ModifierInterface;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
@@ -11,10 +12,11 @@ use ON\Image\Cache\FileSystem;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\Encrypter\OpenSSL;
-use ON\DirectoryPathInterface;
-use ON\Path;
-use ON\PathFile;
-use ON\PathRegistry;
+use ON\FS\DirectoryPathInterface;
+use ON\FS\FilePathInterface;
+use ON\FS\Path;
+use ON\FS\PathFile;
+use ON\FS\PathRegistry;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -25,10 +27,7 @@ class ImageManager implements MiddlewareInterface
 {
 	public const MAX_FILENAME_LENGTH = 200;
 
-	/**
-	* @var string|null
-	*/
-	private $signatureKey = null;
+	private ?string $signatureKey = null;
 
 	/**
 	 * @var list<DirectoryPathInterface>|null
@@ -57,7 +56,7 @@ class ImageManager implements MiddlewareInterface
 		}
 	}
 
-	public function getUri(string $path, string $template, $options = null): string
+	public function getUri(string $path, string $template, mixed $options = null): string
 	{
 
 		if ($this->signatureKey === null) {
@@ -77,7 +76,7 @@ class ImageManager implements MiddlewareInterface
 		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
 		//$token = str_replace('/.', './', $token); //create folders for images
 
-		return $this->imageCache->filename($path, $token);
+		return $this->imageCache->publicAsset($path, $token)->uri();
 	}
 
 	protected function imageExists(string $filename): bool
@@ -133,7 +132,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getResponse($token, $template, $filename, $options = null)
+	public function getResponse(string $token, string $template, string $filename, mixed $options = null): ResponseInterface
 	{
 		switch (strtolower($template)) {
 			case 'original':
@@ -154,7 +153,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getImage($token, $template, $filename, $options = null)
+	public function getImage(string $token, string $template, string $filename, mixed $options = null): ResponseInterface
 	{
 		$template = $this->getTemplate($template, $options);
 		$path = $this->getImagePath($filename);
@@ -178,11 +177,14 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getOriginal($filename)
+	public function getOriginal(string $filename): ResponseInterface
 	{
 		$path = $this->getImagePath($filename);
+		if ($path === null) {
+			return new EmptyResponse(404);
+		}
 
-		return $this->buildResponse(file_get_contents($path));
+		return $this->buildResponse((string) file_get_contents($path->absolute()));
 	}
 
 	/**
@@ -191,7 +193,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getDownload($filename)
+	public function getDownload(string $filename): ResponseInterface
 	{
 		$response = $this->getOriginal($filename);
 
@@ -207,7 +209,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $template
 	 * @return mixed
 	 */
-	protected function getTemplate($template, $options = null)
+	protected function getTemplate(string $template, mixed $options = null): ResponseInterface|callable|ModifierInterface
 	{
 		$template = $this->imageCfg->get("templates.{$template}");
 
@@ -239,7 +241,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $filename
 	 * @return string
 	 */
-	protected function getImagePath($filename)
+	protected function getImagePath(string $filename): ?FilePathInterface
 	{
 		$normalizedFilename = (string) $filename;
 		if (Path::isAbsoluteString($normalizedFilename)) {
@@ -269,7 +271,7 @@ class ImageManager implements MiddlewareInterface
 			return $this->resolvedSourceRoots;
 		}
 
-		$configuredRoots = $this->imageCfg->get('sourceRoots', $this->imageCfg->get('paths', []));
+		$configuredRoots = $this->imageCfg->get('sourceRoots', []);
 		if (! is_array($configuredRoots)) {
 			$this->resolvedSourceRoots = [];
 			return $this->resolvedSourceRoots;
@@ -322,7 +324,7 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $content
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	protected function buildResponse($content)
+	protected function buildResponse(string $content): ResponseInterface
 	{
 		// define mime type
 		$mime = finfo_buffer(finfo_open(FILEINFO_MIME_TYPE), $content);

@@ -7,7 +7,7 @@ namespace ON\Cache\Container;
 use Exception;
 use ON\Application;
 use ON\Cache\CacheConfig;
-use ON\Path;
+use ON\FS\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;

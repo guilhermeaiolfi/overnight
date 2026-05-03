@@ -28,7 +28,7 @@ use RuntimeException;
 use function getcwd;
 use function preg_match;
 use function rtrim;
-use ON\Path;
+use ON\FS\Path;
 
 class ContainerExtension extends AbstractExtension
 {

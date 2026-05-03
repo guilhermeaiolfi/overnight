@@ -13,9 +13,9 @@ use Lcobucci\JWT\Validation\Constraint\SignedWith;
 class Jwt implements EncrypterInterface
 {
 	public const DATA_CLAIM = 'im';
-	protected $configuration = null;
+	protected Configuration $configuration;
 
-	public function __construct($key)
+	public function __construct(string $key)
 	{
 
 		$signatureKey = new Key($key);
@@ -29,7 +29,7 @@ class Jwt implements EncrypterInterface
 		);
 	}
 
-	public function decrypt($token)
+	public function decrypt(string $token): ?array
 	{
 
 		try {
@@ -57,7 +57,7 @@ class Jwt implements EncrypterInterface
 		}
 	}
 
-	public function encrypt($data)
+	public function encrypt(array $data): ?string
 	{
 
 

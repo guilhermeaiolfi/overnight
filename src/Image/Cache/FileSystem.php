@@ -6,10 +6,13 @@ namespace ON\Image\Cache;
 
 use Exception;
 use Intervention\Image\ImageManager as InterventionManager;
-use ON\DirectoryPathInterface;
-use ON\FilePathInterface;
+use Intervention\Image\Interfaces\ModifierInterface;
+use ON\FS\DirectoryPathInterface;
+use ON\FS\FilePathInterface;
+use ON\FS\PathFile;
+use ON\FS\PublicAsset;
+use ON\FS\PublicAssetInterface;
 use ON\Image\ImageConfig;
-use ON\PathFile;
 
 class FileSystem implements ImageCacheInterface
 {
@@ -19,7 +22,7 @@ class FileSystem implements ImageCacheInterface
 	) {
 	}
 
-	public function get($token, $template, $path)
+	public function get(string $token, callable|ModifierInterface $template, string|FilePathInterface $path): string
 	{
 
 		// image manipulation based on callback
@@ -31,8 +34,8 @@ class FileSystem implements ImageCacheInterface
 		$driver = new $driver_class();
 
 		$manager = new InterventionManager($driver);
-		$filename = $this->filename($path, $token);
-		$cacheFile = $this->cacheFile($filename);
+		$cachedPublicAsset = $this->publicAsset($path, $token);
+		$cacheFile = $cachedPublicAsset->file();
 		$cacheDirectory = $cacheFile->parent()->absolute();
 
 		@mkdir($cacheDirectory, 0777, true);
@@ -43,7 +46,7 @@ class FileSystem implements ImageCacheInterface
 		return file_get_contents($cacheFile->absolute());
 	}
 
-	public function filename($path, $token)
+	public function publicAsset(string|FilePathInterface $path, string $token): PublicAssetInterface
 	{
 		$filepath = $path instanceof FilePathInterface ? $path->filename() : basename((string) $path);
 		$dotPos = strrpos($filepath, '.');
@@ -51,11 +54,12 @@ class FileSystem implements ImageCacheInterface
 
 		$basePath = $this->config->publicImagesUriPath();
 		$basePath = $basePath === '' ? '' : $basePath . '/';
+		$publicPath = $basePath . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
 
-		return $basePath . substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
+		return new PublicAsset($publicPath, $this->cacheFile($publicPath));
 	}
 
-	public function token($token)
+	public function token(string $token): string
 	{
 		return str_replace("/", "", $token);
 	}

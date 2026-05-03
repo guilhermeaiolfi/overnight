@@ -7,7 +7,7 @@ namespace ON\Extension;
 use FilesystemIterator;
 use ON\Application;
 use ON\Discovery\ClassFinder;
-use ON\Path;
+use ON\FS\Path;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;

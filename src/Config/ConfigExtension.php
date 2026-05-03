@@ -10,7 +10,7 @@ use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Init\InitContext;
-use ON\Path;
+use ON\FS\Path;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use Laminas\Stdlib\ArrayUtils;

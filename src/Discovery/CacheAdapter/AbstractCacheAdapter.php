@@ -8,7 +8,7 @@ use ON\Application;
 use ON\Config\AppConfig;
 use ON\Discovery\DiscoverInterface;
 use ON\Discovery\DiscoveryLocation;
-use ON\Path;
+use ON\FS\Path;
 
 abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 

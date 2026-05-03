@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\ON;
 
-use ON\Path;
-use ON\PathFile;
-use ON\PathFolder;
-use ON\PathRegistry;
+use ON\FS\Path;
+use ON\FS\PathFile;
+use ON\FS\PathFolder;
+use ON\FS\PathRegistry;
 use PHPUnit\Framework\TestCase;
 
 final class PathRegistryTest extends TestCase

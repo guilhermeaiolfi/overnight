@@ -10,7 +10,7 @@ use ON\Container\ContainerExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\ConfigExtension;
 use ON\Init\Init;
-use ON\PathRegistry;
+use ON\FS\PathRegistry;
 use ON\View\Latte\LatteExtension;
 use ON\View\Latte\LatteRenderer;
 use ON\View\Latte\LatteRendererFactory;

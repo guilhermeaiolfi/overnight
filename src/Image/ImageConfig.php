@@ -6,8 +6,8 @@ namespace ON\Image;
 
 use Intervention\Image\Drivers\Gd\Driver;
 use ON\Config\Config;
-use ON\DirectoryPathInterface;
-use ON\PathFolder;
+use ON\FS\DirectoryPathInterface;
+use ON\FS\PathFolder;
 
 class ImageConfig extends Config
 {
@@ -31,7 +31,7 @@ class ImageConfig extends Config
 			return $this->publicImagesDir;
 		}
 
-		$configured = $this->get('publicImagesDir', $this->get('basePath', 'i'));
+		$configured = $this->get('publicImagesDir', 'i');
 
 		if ($configured instanceof DirectoryPathInterface) {
 			$this->publicImagesDir = $configured;

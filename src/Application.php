@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON;
 
 use Exception;
+use ON\FS\PathRegistry;
 use ON\Extension\ExtensionInterface;
 use ON\Init\Init;
 use Symfony\Component\Dotenv\Dotenv;

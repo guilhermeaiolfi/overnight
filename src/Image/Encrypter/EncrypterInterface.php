@@ -6,7 +6,10 @@ namespace ON\Image\Encrypter;
 
 interface EncrypterInterface
 {
-	public function decrypt($token);
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	public function decrypt(string $token): ?array;
 
-	public function encrypt($data);
+	public function encrypt(array $data): ?string;
 }

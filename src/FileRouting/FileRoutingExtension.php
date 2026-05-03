@@ -10,7 +10,7 @@ use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\Path;
+use ON\FS\Path;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;

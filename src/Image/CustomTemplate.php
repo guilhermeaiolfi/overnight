@@ -12,12 +12,12 @@ use Intervention\Image\Interfaces\ModifierInterface;
 */
 class CustomTemplate implements ModifierInterface
 {
-	protected $contrainsMatrix = [
+	protected array $contrainsMatrix = [
 		"up" => "upsize",
 		"ar" => "aspectRatio", // keep the aspect ratio, resizes proportionally
 	];
 
-	protected $modifiersArgsSignature = [
+	protected array $modifiersArgsSignature = [
 		"cover" => [
 			"width",
 			"height",
@@ -29,14 +29,14 @@ class CustomTemplate implements ModifierInterface
 		],
 	];
 
-	protected $options = null;
+	protected ?string $options = null;
 
-	public function __construct($options)
+	public function __construct(?string $options)
 	{
 		$this->options = $options;
 	}
 
-	public function parseArgs($args, $callback)
+	public function parseArgs(array $args, ?callable $callback): array
 	{
 		$has_constraints = false;
 		for ($i = 0; $i < count($args); $i++) {
@@ -60,14 +60,14 @@ class CustomTemplate implements ModifierInterface
 	public function apply(ImageInterface $image): ImageInterface
 	{
 		$contrainsMatrix = $this->contrainsMatrix;
-		$options = $this->options;
+		$options = $this->options ?? '';
 		$commands = explode("|", $options);
 		$args = [];
 		foreach ($commands as $command) {
 			if (! $command) {
 				break;
 			}
-			list($method, $args) = explode(":", $command);
+			[$method, $args] = explode(":", $command);
 			$constraints = explode("/", $args);
 			$args = array_shift($constraints);
 			$args = explode(",", $args);

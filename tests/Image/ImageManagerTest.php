@@ -4,13 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\ON\Image;
 
+use Intervention\Image\Interfaces\ModifierInterface;
 use Laminas\Diactoros\ServerRequest;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\ImageConfig;
 use ON\Image\ImageManager;
-use ON\DirectoryPathInterface;
-use ON\PathRegistry;
+use ON\FS\DirectoryPathInterface;
+use ON\FS\PathFile;
+use ON\FS\PathRegistry;
+use ON\FS\PublicAsset;
+use ON\FS\PublicAssetInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -42,7 +46,7 @@ final class ImageManagerTest extends TestCase
 		$encrypter = new StubEncrypter('signed-token');
 		$config = new ImageConfig([
 			'publicImagesDir' => 'i',
-			'paths' => [$sourceRoot],
+			'sourceRoots' => [$sourceRoot],
 			'404ImagePath' => 'fallback.png',
 		]);
 
@@ -53,6 +57,7 @@ final class ImageManagerTest extends TestCase
 		$this->assertSame('i/signed-token.jpg', $uri);
 		$this->assertSame('photo.jpg', $cache->lastFilenamePath);
 		$this->assertSame('signed-token', $cache->lastFilenameToken);
+		$this->assertSame('i/signed-token.jpg', $cache->lastPublicAsset?->uri());
 	}
 
 	public function testGetUriUsesFallbackImageWhenRequestedImageDoesNotExist(): void
@@ -64,7 +69,7 @@ final class ImageManagerTest extends TestCase
 		$encrypter = new StubEncrypter('signed-token');
 		$config = new ImageConfig([
 			'publicImagesDir' => 'i',
-			'paths' => [$sourceRoot],
+			'sourceRoots' => [$sourceRoot],
 			'404ImagePath' => 'fallback.png',
 		]);
 
@@ -238,6 +243,7 @@ final class RecordingImageCache implements ImageCacheInterface
 {
 	public ?string $lastFilenamePath = null;
 	public ?string $lastFilenameToken = null;
+	public ?PublicAssetInterface $lastPublicAsset = null;
 	public ?string $lastGetToken = null;
 	public mixed $lastGetTemplate = null;
 	public mixed $lastGetPath = null;
@@ -248,7 +254,7 @@ final class RecordingImageCache implements ImageCacheInterface
 	) {
 	}
 
-	public function get($url, $template, $path)
+	public function get(string $url, callable|ModifierInterface $template, string|\ON\FS\FilePathInterface $path): string
 	{
 		$this->lastGetToken = $url;
 		$this->lastGetTemplate = $template;
@@ -257,17 +263,20 @@ final class RecordingImageCache implements ImageCacheInterface
 		return $this->content;
 	}
 
-	public function filename($path, $token)
+	public function publicAsset(string|\ON\FS\FilePathInterface $path, string $token): PublicAssetInterface
 	{
 		$this->lastFilenamePath = $path;
 		$this->lastFilenameToken = $token;
+		$extension = pathinfo((string) $path, PATHINFO_EXTENSION) ?: 'jpg';
+		$this->lastPublicAsset = new PublicAsset(
+			'i/' . $token . '.' . $extension,
+			PathFile::from('public/i/' . $token . '.' . $extension)
+		);
 
-		$extension = pathinfo($path, PATHINFO_EXTENSION) ?: 'jpg';
-
-		return 'i/' . $token . '.' . $extension;
+		return $this->lastPublicAsset;
 	}
 
-	public function token($path)
+	public function token(string $path): string
 	{
 		return $this->tokenValue !== '' ? $this->tokenValue : $path;
 	}
@@ -281,12 +290,12 @@ final class StubEncrypter implements EncrypterInterface
 	) {
 	}
 
-	public function encrypt($data)
+	public function encrypt(array $data): ?string
 	{
 		return $this->encryptedValue;
 	}
 
-	public function decrypt($data)
+	public function decrypt(string $data): ?array
 	{
 		return $this->decryptedValue;
 	}
