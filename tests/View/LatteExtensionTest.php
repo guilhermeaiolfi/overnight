@@ -7,11 +7,10 @@ namespace Tests\ON\View;
 use ON\Application;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
 use ON\Config\ConfigExtension;
 use ON\Init\Init;
+use ON\PathRegistry;
 use ON\View\Latte\LatteExtension;
 use ON\View\Latte\LatteRenderer;
 use ON\View\Latte\LatteRendererFactory;
@@ -103,6 +102,9 @@ final class LatteExtensionTest extends TestCase
 			public function __construct(object $config)
 			{
 				$this->config = $config;
+				$this->paths = new PathRegistry([
+					'project' => sys_get_temp_dir(),
+				]);
 			}
 		};
 	}

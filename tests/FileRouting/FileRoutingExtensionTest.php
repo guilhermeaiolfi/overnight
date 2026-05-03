@@ -44,7 +44,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'success.php';
 		$this->writeFileRoutePage($pageFile);
 
-		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
 		$this->writeDefaultLayout($cachePath);
 
 		$config = new FileRoutingConfig([
@@ -95,7 +95,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'success.php';
 		$this->writeLatteFileRoutePage($pageFile);
 
-		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
 		$this->writeDefaultLayout($cachePath);
 
 		$config = new FileRoutingConfig([
@@ -136,7 +136,7 @@ final class FileRoutingExtensionTest extends TestCase
 
 		$this->assertInstanceOf(ViewResult::class, $result);
 		$this->assertSame('latte', $result->toArray()['_templateLang']);
-		$this->assertFileExists($cachePath . 'success.latte');
+		$this->assertFileExists($cachePath . DIRECTORY_SEPARATOR . 'success.latte');
 
 		$response = $page->successView($result->toArray(), $request);
 
@@ -151,7 +151,7 @@ final class FileRoutingExtensionTest extends TestCase
 			. DIRECTORY_SEPARATOR . 'c.php';
 		$this->writeFileRoutePage($pageFile);
 
-		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
 		$config = new FileRoutingConfig([
 			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
 			'cachePath' => $cachePath,
@@ -161,7 +161,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$cache = new FileRoutingCache($config, $viewConfig);
 		$result = $cache->get($pageFile);
 
-		$nestedCachePath = $cachePath . 'a' . DIRECTORY_SEPARATOR . 'b' . DIRECTORY_SEPARATOR;
+		$nestedCachePath = $cachePath . DIRECTORY_SEPARATOR . 'a' . DIRECTORY_SEPARATOR . 'b' . DIRECTORY_SEPARATOR;
 
 		$this->assertSame($nestedCachePath . 'c.code.php', $result[0]);
 		$this->assertSame($nestedCachePath . 'c.phtml', $result[1]);
@@ -181,7 +181,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'success.php';
 		$this->writeFileRoutePage($pageFile);
 
-		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
 		$config = new FileRoutingConfig([
 			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
 			'cachePath' => $cachePath,
@@ -207,7 +207,7 @@ PHP
 
 		$cache->get($pageFile);
 
-		$this->assertStringContainsString('cache atualizado', file_get_contents($cachePath . 'success.code.php'));
+		$this->assertStringContainsString('cache atualizado', file_get_contents($cachePath . DIRECTORY_SEPARATOR . 'success.code.php'));
 	}
 
 	public function testDashedPageMetadataIsExposedAndRemovedFromCachedController(): void
@@ -215,7 +215,7 @@ PHP
 		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'ordem-do-dia.php';
 		$this->writeFileRoutePageWithMetadata($pageFile);
 
-		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache' . DIRECTORY_SEPARATOR;
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
 		$config = new FileRoutingConfig([
 			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
 			'cachePath' => $cachePath,
@@ -230,7 +230,7 @@ PHP
 
 		$this->assertSame('Ordem do Dia', $result[3]['title']);
 		$this->assertSame('auto', $result[3]['breadcrumbs']);
-		$this->assertStringNotContainsString('/*---', file_get_contents($cachePath . 'ordem-do-dia.code.php'));
+		$this->assertStringNotContainsString('/*---', file_get_contents($cachePath . DIRECTORY_SEPARATOR . 'ordem-do-dia.code.php'));
 
 		$engine = new Engine($cachePath, 'phtml');
 		$engine->addFolder('filerouting', $cachePath);
@@ -338,7 +338,7 @@ PHP
 		}
 
 		file_put_contents(
-			$cachePath . 'default.phtml',
+			$cachePath . DIRECTORY_SEPARATOR . 'default.phtml',
 			<<<'PHP'
 <?= $this->section('content') ?>
 PHP
@@ -421,7 +421,7 @@ final class TestLatteRenderer implements RendererInterface
 
 	public function render($layout, $template_name, $data, $params = [])
 	{
-		$templatePath = $this->cachePath . str_replace('filerouting::', '', $template_name) . '.latte';
+		$templatePath = $this->cachePath . DIRECTORY_SEPARATOR . str_replace('filerouting::', '', $template_name) . '.latte';
 		$content = file_get_contents($templatePath);
 
 		return trim(str_replace('{$ok}', $data['ok'], $content));

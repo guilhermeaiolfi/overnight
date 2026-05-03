@@ -36,18 +36,18 @@ class FileRoutingExtension extends AbstractExtension
 
 	public function onConfigConfigure(): void
 	{
-		$filerouting_cfg = $this->app->config->get(FileRoutingConfig::class);
+		$fileroutingCfg = $this->app->config->get(FileRoutingConfig::class);
 		$router_cfg = $this->app->config->get(RouterConfig::class);
 		$view_cfg = $this->app->config->get(ViewConfig::class);
-		$template_namespace = $filerouting_cfg->get('template.namespace', 'filerouting');
-		$configuredCachePath = $filerouting_cfg->get('cachePath');
-		if ($configuredCachePath === null || trim($configuredCachePath) === '') {
-			$cache_path = $this->app->paths->get('cache')->append('filerouting')->absolute();
-		} else {
+		$template_namespace = $fileroutingCfg->get('template.namespace', 'filerouting');
+		$configuredCachePath = $fileroutingCfg->get('cachePath');
+		
+		$cache_path = $this->app->paths->get('cache')->append('filerouting')->absolute();
+		if ($configuredCachePath !== null && trim($configuredCachePath) !== '') {
 			$cache_path = Path::from($configuredCachePath, $this->app->paths->get('project'))
 				->absolute();
 		}
-		$filerouting_cfg->set('cachePath', $cache_path);
+		$fileroutingCfg->set('cachePath', $cache_path);
 
 		if (! is_dir($cache_path) && ! mkdir($cache_path, 0777, true) && ! is_dir($cache_path)) {
 			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cache_path));
@@ -55,7 +55,7 @@ class FileRoutingExtension extends AbstractExtension
 
 		$view_cfg->set("templates.paths.{$template_namespace}", $cache_path);
 		$router_cfg->addRoute(
-			'/' . $filerouting_cfg->get('url', "__fileRouting"),
+			'/' . $fileroutingCfg->get('url', "__fileRouting"),
 			"ON\FileRouting\Page\ApiPage::index",
 			['GET'],
 			"filerouting.api",

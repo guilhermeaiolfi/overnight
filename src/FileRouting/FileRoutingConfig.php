@@ -9,7 +9,6 @@ use ON\Config\Config;
 class FileRoutingConfig extends Config
 {
 	public string $pagesPath = "src" . DIRECTORY_SEPARATOR . "Pages";
-	public ?string $cachePath = null;
 	public string $controller = "ON\FileRouting\Page\MainPage::index";
 	public array $addons = [];
 	public array $template = [

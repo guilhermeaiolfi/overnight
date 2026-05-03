@@ -10,12 +10,16 @@ class FileRoutingCache
 {
 	protected string $pagesPath;
 
+	protected string $cachePath;
+
 	public function __construct(
-		protected FileRoutingConfig $fileRouterConfig,
+		protected FileRoutingConfig $fileroutingCfg,
 		protected ViewConfig $viewConfig
 	) {
-		$this->pagesPath = str_replace(["\\", "/"], [ DIRECTORY_SEPARATOR, DIRECTORY_SEPARATOR ], $fileRouterConfig->get('pagesPath'));
+		$this->pagesPath = str_replace(["\\", "/"], [ DIRECTORY_SEPARATOR, DIRECTORY_SEPARATOR ], $fileroutingCfg->get('pagesPath'));
 		$this->pagesPath = rtrim($this->pagesPath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+
+		$this->cachePath = $fileroutingCfg->get("cachePath");
 	}
 
 	public function get(string $file): array
@@ -55,7 +59,7 @@ class FileRoutingCache
 		$relative = $this->getPathFromFile($file);
 
 		// make sure the folder where it is going to be saved exists
-		@mkdir($this->fileRouterConfig->get("cachePath") . dirname($relative), 0777, true);
+		@mkdir($this->cachePath . DIRECTORY_SEPARATOR . dirname($relative), 0777, true);
 
 		@unlink($php_cache_filename);
 		if (strlen($code[0]) > 12) {
@@ -171,7 +175,7 @@ class FileRoutingCache
 	{
 		$path = $this->getPathFromFile($file);
 
-		return $this->fileRouterConfig->get("cachePath") . preg_replace('/\.php$/', '.code.php', $path);
+		return $this->cachePath . DIRECTORY_SEPARATOR . preg_replace('/\.php$/', '.code.php', $path);
 	}
 
 	public function getCachedTemplateFilename($file, ?string $lang = null): ?string
@@ -180,24 +184,22 @@ class FileRoutingCache
 		$extension = $this->getTemplateExtension($lang);
 		$path = preg_replace('/\.php$/', '.' . $extension, $path);
 
-		return $this->fileRouterConfig->get("cachePath") . $path;
+		return $this->cachePath . DIRECTORY_SEPARATOR . $path;
 	}
 
 	public function getCachedMetadataFilename($file): ?string
 	{
 		$path = $this->getPathFromFile($file);
 
-		return $this->fileRouterConfig->get("cachePath") . preg_replace('/\.php$/', '.meta.php', $path);
+		return $this->cachePath . DIRECTORY_SEPARATOR . preg_replace('/\.php$/', '.meta.php', $path);
 	}
 
 	public function getTemplateName(string $file): string
 	{
-		$cachePath = str_replace(["\\", "/"], [ DIRECTORY_SEPARATOR, DIRECTORY_SEPARATOR ], $this->fileRouterConfig->get("cachePath"));
-		$cachePath = rtrim($cachePath, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
-		$templateName = str_replace($cachePath, "", $file);
+		$templateName = str_replace($this->cachePath, "", $file);
 		$templateName = str_replace(DIRECTORY_SEPARATOR, "/", $templateName);
 
-		return $this->fileRouterConfig->get("template.namespace", "filerouting") . "::" . preg_replace('/\.[^.]+$/', '', $templateName);
+		return $this->fileroutingCfg->get("template.namespace", "filerouting") . "::" . preg_replace('/\.[^.]+$/', '', $templateName);
 	}
 
 	protected function parseTemplate(string $content): array
