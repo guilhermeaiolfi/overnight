@@ -127,41 +127,53 @@ class UserPage
 ```
 src/
 ├── Application.php              # Main entry point
-├── Extension/                    # Extension base classes
-├── Container/                    # DI container
-│   └── Executor/                 # Method invocation with DI
-├── Router/                       # Routing system
-│   ├── Router.php               # FastRoute implementation
-│   ├── Route.php                # Route value object
-│   ├── RouteResult.php          # Routing result
-│   └── Middleware/              # Route middleware
-├── Middleware/                   # PSR-15 middleware
-│   ├── PipelineExtension.php    # Pipeline manager
-│   └── MiddlewarePriorityPipe.php
-├── View/                        # Template engines
-│   ├── ViewExtension.php
-│   ├── Plates/                  # League Plates support
-│   └── Latte/                   # Latte support
-├── Auth/                        # Authentication
+├── Auth/                        # Authentication/Authorization
 │   ├── AuthenticationService.php
 │   ├── Storage/                 # Session storage
 │   └── Middleware/              # Auth middleware
-├── Db/                          # Database
+├── Cache/                       # Cache management (Symfony Cache)
+├── Clockwork/                    # Debug profiling
+├── CMS/                         # CMS components
+├── Common/                      # Shared traits
+├── Config/                      # Configuration
+├── Console/                     # CLI commands
+├── Container/                   # DI container
+│   └── Executor/                # Method invocation with DI
+├── DB/                          # Database abstraction layer
 │   ├── DatabaseExtension.php
-│   ├── Manager.php
+│   ├── PdoDatabase.php, CycleDatabase.php, LaminasDbDatabase.php, Doctrine2Database.php
 │   ├── Command/                 # Migrations
 │   └── Cycle/                   # Cycle ORM support
-├── Event/                        # Events
-├── Config/                       # Configuration
-├── Session/                      # Sessions
-├── Translation/                  # i18n
-├── Console/                      # CLI
-├── CMS/                          # CMS components
-├── Discovery/                    # Class discovery
-├── Logging/                      # Monolog
-├── Maintenance/                  # Maintenance mode
-├── Clockwork/                     # Debugging
-└── FileRouting/                  # File-based routing
+├── Discovery/                   # Class discovery
+├── Event/                       # Events
+├── Exception/                   # Framework exceptions
+├── Extension/                   # Extension base classes
+├── FS/                          # Filesystem path management
+│   ├── PathRegistry.php
+│   └── PublicAssetManager.php
+├── FileRouting/                 # File-based directory routing
+├── GraphQL/                     # GraphQL API support
+├── Handler/                     # Request handlers
+├── Http/                        # HTTP utilities
+├── Image/                       # Image processing
+├── Init/                        # Init system and event lifecycle
+├── Logging/                     # Monolog
+├── Maintenance/                 # Maintenance mode
+├── Middleware/                   # PSR-15 middleware
+├── ORM/                         # Cycle ORM wrapper + definition system
+├── PhpDebugBar/                 # PHP Debug Bar
+├── RateLimit/                   # Rate limiting
+├── RequestStack.php             # Request stack
+├── Response/                    # Response utilities
+├── RestApi/                     # REST API endpoints
+├── Router/                      # Routing system
+├── Service/                     # Service loaders
+├── Session/                     # Sessions
+├── Swoole/                      # Swoole integration
+├── Translation/                 # i18n
+└── View/                        # Template engines
+    ├── Plates/                  # League Plates support
+    └── Latte/                   # Latte support
 ```
 
 ## Design Patterns
@@ -173,12 +185,6 @@ Modular components that can be installed/uninstalled:
 ```php
 class MyExtension extends AbstractExtension
 {
-    public static function install(Application $app, ?array $options): mixed
-    {
-        // Called when extension is installed
-        return true;
-    }
-
     public function register(Init $init): void
     {
         // Register event listeners. Dependencies auto-inferred from namespaces.
@@ -226,13 +232,17 @@ Event objects can be dispatched by passing an instance to `emit()` — the class
 
 ## State Machine & Initialization
 
-The framework uses a two-phase initialization managed by the `Init` system:
+The framework uses a five-phase initialization managed by the `Init` system:
 
 ```
-REGISTER (all extensions) → RESOLVE ORDER (topological sort) → START (in resolved order)
+INSTANTIATE (all extensions) → REGISTER (collect subscriptions) → RESOLVE ORDER (topological sort) → SORT (listener priority) → START (in resolved order)
 ```
 
-### Phase 1: Registration
+### Phase 1: Instantiation
+
+Every extension is instantiated via `new $class($app, $options)`. No event subscriptions happen yet.
+
+### Phase 2: Registration
 
 Every extension calls `register()` on the `Init` object. During this phase, the `Init` tracks which extension owns each event subscription via `$init->setCurrentExtension()`:
 
@@ -285,8 +295,8 @@ The framework tracks all emitted events in an `eventHistory`. Access it through 
 ```php
 $history = $app->init()->getEventHistory();
 
-foreach ($history as $event) {
-    echo $event['name'] . " emitted at " . $event['time'] . "\n";
+foreach ($history as $entry) {
+    echo $entry['event'] . " emitted\n";
 }
 ```
 
@@ -327,12 +337,16 @@ $config->get('database.connections.default.host');
 $config->set('app.debug', true);
 ```
 
-Multiple config files by environment:
+Multiple config files by environment (loaded via glob pattern `config/{,/*.}{all,{env},local}.php`):
 
 ```
 config/
-├── app.php           # Base config
-├── dev.php           # Development overrides
-├── prod.php          # Production overrides
-└── test.php          # Test overrides
+├── all.php              # Shared base config
+├── dev.php              # Development overrides
+├── prod.php             # Production overrides
+├── local.php            # Local overrides (not committed)
+├── database/all.php     # Database module config
+├── database/dev.php     # Database dev overrides
+├── orm.all.php          # ORM registry definitions
+└── .../
 ```

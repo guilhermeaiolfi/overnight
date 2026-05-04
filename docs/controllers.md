@@ -1,6 +1,6 @@
 # Controllers (Pages)
 
-In Overnight, controllers are called **Pages**. They handle HTTP requests and return responses.
+In Overnight, controllers are called **Pages**. They handle HTTP requests and return responses. Pages are plain PHP classes — no base class required. Dependencies are resolved automatically via the container.
 
 ## Creating a Page
 
@@ -32,39 +32,6 @@ class UserPage
         }
         
         return new JsonResponse(['user' => $user]);
-    }
-}
-```
-
-### Using AbstractPage
-
-For additional features, extend `AbstractPage`:
-
-```php
-<?php
-
-declare(strict_types=1);
-
-use ON\AbstractPage;
-use Psr\Http\Message\ResponseInterface;
-
-class UserPage extends AbstractPage
-{
-    public function isSecure(): bool
-    {
-        return true;  // Requires authentication
-    }
-
-    public function index(): Response
-    {
-        $users = User::all();
-        return $this->render('users/index', ['users' => $users]);
-    }
-
-    public function show(int $id): Response
-    {
-        $user = User::find($id);
-        return $this->render('users/show', ['user' => $user]);
     }
 }
 ```
@@ -240,60 +207,38 @@ public function store(ServerRequestInterface $request): Response
 
 ### Response with View
 
-Using `AbstractPage`:
-
 ```php
-public function show(int $id): Response
+use ON\View\ViewManager;
+use Psr\Http\Message\ResponseInterface;
+
+class UserPage
 {
-    $user = User::find($id);
-    
-    return $this->render('users/show', [
-        'user' => $user,
-    ], 'layouts/main');
-}
-```
+    public function __construct(
+        private ViewManager $view
+    ) {
+    }
 
-## Lifecycle Methods
-
-### Validation
-
-```php
-public function validateStore(ServerRequestInterface $request): bool
-{
-    $data = $request->getParsedBody();
-    
-    return isset($data['email']) && isset($data['password']);
-}
-
-public function handleError(): Response
-{
-    return new JsonResponse(['error' => 'Validation failed'], 400);
-}
-```
-
-### Permission Check
-
-```php
-public function checkDestroyPermissions(): bool
-{
-    $user = $this->container->get(AuthenticationService::class)->getIdentity();
-    
-    return $user && $user->hasRole('admin');
-}
-```
-
-## Data Access
-
-### Via Container
-
-```php
-class UserPage extends AbstractPage
-{
-    private UserRepository $users;
-
-    public function __construct(UserRepository $users)
+    public function show(int $id): Response
     {
-        $this->users = $users;
+        $user = User::find($id);
+        
+        $html = $this->view->render('users/show', [
+            'user' => $user,
+        ]);
+        
+        return new HtmlResponse($html);
+    }
+}
+```
+
+## Container Dependency Injection
+
+```php
+class UserPage
+{
+    public function __construct(
+        private UserRepository $users
+    ) {
     }
 
     public function show(int $id): Response

@@ -37,21 +37,10 @@ final class BlogExtension extends AbstractExtension
 {
     public static function install(Application $app, ?array $options = []): ?ExtensionInterface
     {
-        $extension = new self();
+        $extension = new self($app, $options ?? []);
         $app->registerExtension('blog', $extension);
 
         return $extension;
-    }
-
-    public function boot(): void
-    {
-        $this->when('installed', [$this, 'setup']);
-    }
-
-    public function setup(): void
-    {
-        $this->dispatchStateChange('setup');
-        $this->dispatchStateChange('ready');
     }
 }
 ```

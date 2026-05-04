@@ -273,11 +273,10 @@ class PostPage
 Validation method resolution order:
 1. `{action}Validate` — e.g., `createValidate`
 2. `validate` — generic for all actions
-3. `defaultValidate` — fallback (defined in `AbstractPage`)
 
 Error handler resolution order:
 1. `handleError`
-2. `defaultHandleError` — fallback (defined in `AbstractPage`)
+2. Generic error handler
 
 ## Forwarding Requests
 

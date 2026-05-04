@@ -204,17 +204,22 @@ return [
 ## In Pages
 
 ```php
-class ContactPage extends AbstractPage
+use ON\Translation\TranslationManagerInterface;
+
+class ContactPage
 {
+    public function __construct(
+        private TranslationManagerInterface $t
+    ) {
+    }
+
     public function form(): Response
     {
-        $t = $this->container->get(TranslationManagerInterface::class);
-        
         return $this->render('contact/form', [
             'labels' => [
-                'name' => $t->_('validation.name'),
-                'email' => $t->_('validation.email'),
-                'submit' => $t->_('contact.submit'),
+                'name' => $this->t->_('validation.name'),
+                'email' => $this->t->_('validation.email'),
+                'submit' => $this->t->_('contact.submit'),
             ],
         ]);
     }

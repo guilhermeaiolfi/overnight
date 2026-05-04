@@ -6,25 +6,28 @@ Extensions are modular components that extend the framework's functionality.
 
 | Extension | Purpose | Documentation |
 |-----------|---------|---------------|
-| `RouterExtension` | Route registration helpers | [routing.md](extensions/routing.md) |
+| `ConfigExtension` | Configuration loading & caching | |
 | `ContainerExtension` | PHP-DI container | [di-container.md](extensions/di-container.md) |
+| `RouterExtension` | Route registration helpers | [routing.md](extensions/routing.md) |
 | `ViewExtension` | Template rendering | [views.md](extensions/views.md) |
 | `AuthExtension` | Authentication/authorization | [auth.md](extensions/auth.md) |
 | `SessionExtension` | Session management | [sessions.md](extensions/sessions.md) |
 | `TranslationExtension` | Internationalization | [translation.md](extensions/translation.md) |
 | `LoggingExtension` | Monolog logging | |
+| `CacheExtension` | Symfony Cache integration | |
 | `DatabaseExtension` | ORM/database | [database.md](extensions/database.md) |
+| `ORMExtension` | Cycle ORM wrapper | [orm-entity-definition.md](orm-entity-definition.md) |
 | `EventsExtension` | Event dispatcher | [events.md](extensions/events.md) |
-| `DiscoveryExtension` | Class discovery | |
+| `DiscoveryExtension` | Class discovery | [discovery.md](extensions/discovery.md) |
 | `ConsoleExtension` | CLI commands | [cli.md](cli.md) |
 | `CMSExtension` | Built-in CMS | |
 | `MaintenanceExtension` | Maintenance mode | [maintenance.md](extensions/maintenance.md) |
 | `ClockworkExtension` | Debug profiling | |
-| `FileRoutingExtension` | File-based routing | |
+| `FileRoutingExtension` | File-based routing | [file-routing.md](extensions/file-routing.md) |
 | `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
 | `AutoWiringExtension` | Automatic application extension discovery | [auto-wiring.md](extensions/auto-wiring.md) |
 | `RestApiExtension` | REST API endpoints from entity definitions | [rest-api.md](extensions/rest-api.md) |
-| `ImageExtension` | Image processing | |
+| `ImageExtension` | Image processing | [image.md](extensions/image.md) |
 | `RateLimitExtension` | Rate limiting | |
 | `PipelineExtension` | PSR-15 middleware pipeline | |
 
@@ -40,9 +43,14 @@ Detailed documentation for each extension is available in the `docs/extensions/`
 - [Translation](extensions/translation.md) - Internationalization (i18n)
 - [Database](extensions/database.md) - ORM and database configuration
 - [Events](extensions/events.md) - Event dispatcher
+- [File Routing](extensions/file-routing.md) - File-based directory routing
+- [Discovery](extensions/discovery.md) - Attribute-based class discovery
 - [Maintenance](extensions/maintenance.md) - Maintenance mode
+- [Image](extensions/image.md) - Image processing
 - [GraphQL](extensions/graphql.md) - GraphQL API support
+- [GraphQL DataLoader](extensions/graphql-dataloader.md) - N+1 problem solutions
 - [Auto-Wiring](extensions/auto-wiring.md) - Automatic application extension discovery
+- [REST API](extensions/rest-api.md) - Directus-style REST API from entity definitions
 
 ## Installing Extensions
 
@@ -69,15 +77,11 @@ namespace App\Extensions;
 use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Init\Init;
+use ON\Init\InitContext;
 
 class MyExtension extends AbstractExtension
 {
-    public static function install(Application $app, ?array $options): mixed
-    {
-        // Called once when extension is installed
-        return true;
-    }
-
     public function register(Init $init): void
     {
         // Register event listeners here.
@@ -90,6 +94,11 @@ class MyExtension extends AbstractExtension
                 return new MyService();
             });
         });
+    }
+
+    public function start(InitContext $ctx): void
+    {
+        // Start phase — called in resolved dependency order
     }
 
     public function getType(): int
@@ -118,13 +127,15 @@ class MyExtension extends AbstractExtension
 ## Lifecycle
 
 ```
-install()       → Called once when $app->install() is called
+Constructor     → Called when extension is instantiated via new $class($app, $options)
     ↓
 register()      → Called for ALL extensions (collects event subscriptions)
     ↓
 resolveOrder()  → Lifecycle order inferred from event subscriptions (cached)
     ↓
-start()         → Called in resolved order via $init->context()->emit()
+sortListeners() → Listeners sorted by extension order
+    ↓
+start()         → Called in resolved order via InitContext
 ```
 
 ### Listener Ordering
@@ -138,22 +149,24 @@ Extension startup order is **automatically inferred** from event subscriptions. 
 
 ## Extension Configuration
 
+Config classes (like `RouterConfig`, `ContainerConfig`, `ViewConfig`, `DatabaseConfig`) are auto-registered by their respective extensions and obtained from the container. You do not need to pass them to `$app->install()` — they are picked up from config files or registered during extension startup.
+
 ### RouterConfig
 
 ```php
 use ON\Router\RouterConfig;
 
-$app->install(new RouterConfig());
+// RouterConfig is registered by RouterExtension and available from the container
+$routerCfg = $app->config->get(RouterConfig::class);
 
+// Add routes via the router extension
 $router = $app->ext('router');
-
-// Add routes
-$router->addRoute('/users', 'UserPage::index', ['GET']);
-$router->addRoute('/users/{id}', 'UserPage::show', ['GET']);
+$router->get('/users', 'UserPage::index');
+$router->get('/users/{id}', 'UserPage::show');
 
 // Route groups
-$router->addGroup('/api', function($r) {
-    $r->addRoute('/users', 'ApiUserPage::index');
+$router->group('/api', function($r) {
+    $r->get('/users', 'ApiUserPage::index');
 });
 ```
 
@@ -162,12 +175,11 @@ $router->addGroup('/api', function($r) {
 ```php
 use ON\Container\ContainerConfig;
 
-$app->install(new ContainerConfig());
+// ContainerConfig is registered by ContainerExtension
+$containerCfg = $app->config->get(ContainerConfig::class);
 
-$container = $app->ext('container');
-
-// Register services
-$container->define(MyService::class, function($c) {
+// Register services (usually done in config files or during lifecycle events)
+$containerCfg->addService(MyService::class, function($c) {
     return new MyService($c->get(Dependency::class));
 });
 ```
@@ -177,12 +189,8 @@ $container->define(MyService::class, function($c) {
 ```php
 use ON\View\ViewConfig;
 
-$config = new ViewConfig([
-    'engine' => 'plates',
-    'path' => 'templates',
-]);
-
-$app->install($config);
+// ViewConfig is registered by ViewExtension
+$viewCfg = $app->config->get(ViewConfig::class);
 ```
 
 ### DatabaseConfig
@@ -190,10 +198,8 @@ $app->install($config);
 ```php
 use ON\Db\DatabaseConfig;
 
-$config = new DatabaseConfig();
-$config->addDatabase('default', 'mysql:host=localhost;dbname=app', 'root', 'password');
-
-$app->install($config);
+// DatabaseConfig is registered by DatabaseExtension
+$dbCfg = $app->config->get(DatabaseConfig::class);
 ```
 
 ### LoggingConfig
@@ -201,24 +207,24 @@ $app->install($config);
 ```php
 use ON\Logging\LoggingConfig;
 
-$config = new LoggingConfig([
-    'default' => [
-        'type' => 'rotating_file',
-        'path' => 'logs/app.log',
-    ],
-]);
-
-$app->install($config);
+// LoggingConfig is registered by LoggingExtension
+$logCfg = $app->config->get(LoggingConfig::class);
 ```
 
 ## Accessing Extensions
 
 ```php
-// Get by class name
-$router = $app->ext(RouterConfig::class);
-
-// Get by registered name
+// Get by registered ID (defined in extension's ID constant)
 $router = $app->ext('router');
+$container = $app->ext('container');
+$config = $app->ext('config');
+
+// Get by class name
+$router = $app->ext(RouterExtension::class);
+
+// Extensions are also accessible as dynamic properties
+$router = $app->router;
+$container = $app->container;
 
 // Check if installed
 if ($app->hasExtension(MyExtension::class)) {
@@ -247,7 +253,7 @@ Extensions can auto-discover classes with attributes:
 ```php
 class DiscoveryExtension extends AbstractExtension
 {
-    public function setup(): void
+    public function register(Init $init): void
     {
         $discovery = $this->app->ext('discovery');
         
@@ -263,6 +269,6 @@ class DiscoveryExtension extends AbstractExtension
 1. **Keep extensions focused** - One extension, one responsibility
 2. **Use event objects** - Use typed event classes (e.g. `ConfigConfigureEvent::class`) instead of enum-based event names for listener registration.
 3. **Auto-ordered lifecycle** - No need to declare `requires()`; dependency order is inferred from event subscription patterns.
-4. **Pass via Context** - Use `$this->app->init()->context()->emit(EventClass::class)` from within `start()` to dispatch events in the resolved order.
+4. **Pass via Context** - Use `$ctx->emit(new EventClass($this))` from within `start()` to dispatch events in the resolved order.
 5. **Provide sensible defaults** - Accept options array for configuration
 6. **Test independently** - Extensions should be testable in isolation

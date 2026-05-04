@@ -40,14 +40,14 @@ $config->get('auth.providers.session.timeout');
 
 ```
 config/
-├── app.php           # Base application config
-├── dev.php           # Development overrides
-├── prod.php          # Production overrides
-├── test.php          # Test overrides
-├── database.php      # Database config
-├── cache.php         # Cache config
-├── mail.php          # Mail config
-└── services.php      # Service definitions
+├── all.php              # Shared base config
+├── dev.php              # Development overrides (when env=dev)
+├── prod.php             # Production overrides (when env=prod)
+├── local.php            # Local overrides (not committed to VCS)
+├── database/all.php     # Module-level config
+├── database/dev.php     # Module-level dev overrides
+├── orm.all.php          # ORM Registry definitions
+└── .../
 ```
 
 ### Loading by Environment
@@ -59,6 +59,15 @@ $app = new Application([
     'env' => 'prod', // Loads config/prod.php overrides
 ]);
 ```
+
+The config loader scans files matching the pattern `config/{,/*.}{all,{env},local}.php`. Files are loaded in order, with later files overriding earlier ones:
+
+- `config/all.php` — Shared base config
+- `config/{env}.php` — Environment-specific (e.g. `dev.php`)
+- `config/local.php` — Local overrides (not committed to VCS)
+- `config/*/all.php` — Module base config files
+- `config/*/{env}.php` — Module environment-specific
+- `config/*/local.php` — Module local overrides
 
 ### Config Files
 
@@ -317,18 +326,18 @@ return [
 
 ### Extension Configuration & Service Registration
 
-Extensions receive configuration during install, but the preferred way to register services into the container is by listening to the `ConfigInitEvents::CONFIGURE` event. This ensures that service definitions are correctly processed and can be overridden by user configuration.
+Extensions receive configuration during install, but the preferred way to register services into the container is by listening to the `ConfigConfigureEvent` event. This ensures that service definitions are correctly processed and can be overridden by user configuration.
 
 ```php
-use ON\Config\Init\ConfigInitEvents;
+use ON\Init\Init;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 
 class MyExtension extends AbstractExtension
 {
-    public function setup(): void
+    public function register(Init $init): void
     {
-        $this->app->init()->on(ConfigInitEvents::CONFIGURE, function(ConfigConfigureEvent $event) {
-            $config = $event->getConfig();
+        $init->on(ConfigConfigureEvent::class, function(ConfigConfigureEvent $event) {
+            $config = $event->config;
             
             // Register a service in the container
             $config->set('container.my_service', function($container) {
@@ -339,7 +348,7 @@ class MyExtension extends AbstractExtension
 }
 ```
 
-Service registrations using `ConfigInitEvents::CONFIGURE` are automatically included in the configuration cache unless they return non-serializable objects.
+Service registrations using `ConfigConfigureEvent` are automatically included in the configuration cache unless they return non-serializable objects.
 
 ## Caching Config
 
@@ -347,7 +356,7 @@ In production, the framework automatically caches your configuration if enabled 
 
 The cache includes:
 - All static configuration arrays.
-- Service definitions registered via `ConfigInitEvents::CONFIGURE`.
+- Service definitions registered via `ConfigConfigureEvent`.
 - Tracked file paths for "Cache Exceptions" (non-serializable objects).
 
 To clear the cache, you can delete the `var/cache/config.php` file.

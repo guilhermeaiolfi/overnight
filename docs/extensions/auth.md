@@ -214,10 +214,10 @@ $middleware = new SecurityMiddleware([
 
 ### Route-Level Security
 
-Mark pages as secure in the page class:
+Mark pages as secure by adding an `isSecure()` method (detected automatically by `SecurityMiddleware`):
 
 ```php
-class AdminPage extends AbstractPage
+class AdminPage
 {
     public function isSecure(): bool
     {
@@ -314,21 +314,21 @@ class LoginPage
 ### Protected Dashboard
 
 ```php
-class DashboardPage extends AbstractPage
+class DashboardPage
 {
     public function isSecure(): bool
     {
         return true;
     }
 
-    public function index(ServerRequestInterface $request): Response
+    public function index(): string
     {
-        $auth = $this->container->get(AuthenticationService::class);
-        $user = $auth->getIdentity();
+        return 'Success';
+    }
 
-        return $this->render('dashboard', [
-            'user' => $user,
-        ]);
+    public function indexSuccess(): Response
+    {
+        return new HtmlResponse('<h1>Dashboard</h1>');
     }
 }
 ```

@@ -183,7 +183,7 @@ use ON\Console\ConsoleExtension;
 
 class AppExtension extends AbstractExtension
 {
-    public function setup(): void
+    public function start(InitContext $context): void
     {
         $console = $this->app->ext('console');
 
