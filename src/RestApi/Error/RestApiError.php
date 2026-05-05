@@ -82,6 +82,16 @@ class RestApiError extends \RuntimeException
 		return $this->errorCode;
 	}
 
+	public static function forbidden(string $message = 'Forbidden.'): self
+	{
+		return new self($message, 'FORBIDDEN', null, 403);
+	}
+
+	public static function unauthenticated(string $message = 'Authentication required.'): self
+	{
+		return new self($message, 'UNAUTHENTICATED', null, 401);
+	}
+
 	public function getHttpStatus(): int
 	{
 		return $this->httpStatus;

@@ -8,6 +8,8 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\AuthState;
+use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreate;
 use ON\RestApi\Event\ItemDelete;
@@ -78,6 +80,7 @@ class RestApiService
 		if ($this->shouldDispatchEvents($params)) {
 			$event = new ItemList($collection, $params);
 			$this->dispatchEvent($event);
+			$this->assertAuthorized($event);
 
 			if ($event->isDefaultPrevented()) {
 				return [
@@ -106,6 +109,7 @@ class RestApiService
 
 		$event = new ItemGet($collection, $id, $params);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
@@ -126,6 +130,7 @@ class RestApiService
 
 		$event = new ItemCreate($collection, $input);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
@@ -146,6 +151,7 @@ class RestApiService
 
 		$event = new ItemCreate($collection, $input);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
@@ -167,6 +173,7 @@ class RestApiService
 
 		$event = new ItemUpdate($collection, $id, $input);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
@@ -192,6 +199,7 @@ class RestApiService
 
 		$event = new ItemUpdate($collection, $id, $input);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
@@ -216,6 +224,7 @@ class RestApiService
 
 		$event = new ItemDelete($collection, $id);
 		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
 
 		if ($event->isDefaultPrevented()) {
 			return true;
@@ -226,7 +235,25 @@ class RestApiService
 
 	public function aggregate(string|CollectionInterface $collection, array $params = []): array
 	{
-		return $this->requireResolver()->aggregate($this->resolveCollection($collection), $params);
+		$collection = $this->resolveCollection($collection);
+		$params = $this->normalizeParams($collection, $params);
+
+		if (! $this->shouldDispatchEvents($params)) {
+			return $this->requireResolver()->aggregate($collection, $params);
+		}
+
+		$event = new ItemList($collection, $params);
+		$this->dispatchEvent($event);
+		$this->assertAuthorized($event);
+
+		if ($event->isDefaultPrevented()) {
+			return $event->getResult() ?? [];
+		}
+
+		$result = $this->requireResolver()->aggregate($collection, $params);
+		$event->setResult($result);
+
+		return $event->getResult() ?? [];
 	}
 
 	public function clearCache(): void
@@ -267,6 +294,19 @@ class RestApiService
 	public function dispatchEvent(object $event): void
 	{
 		$this->eventDispatcher?->dispatch($event);
+	}
+
+	protected function assertAuthorized(object $event): void
+	{
+		if (! $event instanceof AuthorizationAwareEventInterface) {
+			return;
+		}
+
+		match ($event->getAuthState()) {
+			AuthState::Allowed => null,
+			AuthState::Unauthenticated => throw RestApiError::unauthenticated(),
+			AuthState::Forbidden, AuthState::Pending => throw RestApiError::forbidden(),
+		};
 	}
 
 	protected function checkIfMatch(CollectionInterface $collection, string $id, ?string $ifMatch): void

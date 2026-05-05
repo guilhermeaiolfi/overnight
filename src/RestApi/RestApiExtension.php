@@ -50,7 +50,7 @@ class RestApiExtension extends AbstractExtension
 		$container = $event->container;
 		$config = $container->get(RestApiConfig::class);
 
-		$path = $config->get('path', '/items');
+		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
 		$defaultLimit = $config->get('defaultLimit', 100);
 		$maxLimit = $config->get('maxLimit', 1000);
@@ -67,7 +67,7 @@ class RestApiExtension extends AbstractExtension
 		$middleware = new RestMiddleware(
 			$service,
 			[
-				'path' => $path,
+				'endpointUri' => $path,
 				'defaultLimit' => $defaultLimit,
 				'maxLimit' => $maxLimit,
 				'debug' => $debug,

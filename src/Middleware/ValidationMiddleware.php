@@ -24,7 +24,7 @@ class ValidationMiddleware implements MiddlewareInterface
 	{
 		$routeResult = $request->getAttribute(RouteResult::class, false);
 
-		if (!$routeResult) {
+		if (! $routeResult) {
 			return $handler->handle($request);
 		}
 
@@ -52,7 +52,7 @@ class ValidationMiddleware implements MiddlewareInterface
 		}
 
 		// Validation failed — call error handler on the page
-		$errorMethod = $this->findErrorMethod($page);
+		$errorMethod = $this->findErrorMethod($page, $action);
 
 		if ($errorMethod === null) {
 			return $handler->handle($request);
@@ -81,8 +81,13 @@ class ValidationMiddleware implements MiddlewareInterface
 		return null;
 	}
 
-	protected function findErrorMethod(object $page): ?string
+	protected function findErrorMethod(object $page, ?string $action): ?string
 	{
+		$method = 'handle' . ucfirst($action) . 'Error';
+		if (method_exists($page, $method)) {
+			return $method;
+		}
+
 		if (method_exists($page, 'handleError')) {
 			return 'handleError';
 		}

@@ -26,7 +26,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$basePath = $this->options['path'] ?? '/items';
+		$basePath = $this->options['endpointUri'] ?? '/items';
 		$path = $request->getUri()->getPath();
 
 		if (!$this->matchesBasePath($path, $basePath)) {

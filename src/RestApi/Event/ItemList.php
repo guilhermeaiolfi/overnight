@@ -8,8 +8,10 @@ use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 
-class ItemList implements HasEventNameInterface, PreventableEventInterface
+class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
+	use AuthorizationAwareEventTrait;
+
 	private bool $defaultPrevented = false;
 	private ?array $result = null;
 	private ?int $totalCount = null;
@@ -33,6 +35,25 @@ class ItemList implements HasEventNameInterface, PreventableEventInterface
 	public function getParams(): array
 	{
 		return $this->params;
+	}
+
+	public function isAggregate(): bool
+	{
+		return $this->getAggregate() !== null;
+	}
+
+	public function getAggregate(): ?array
+	{
+		$aggregate = $this->params['aggregate'] ?? null;
+
+		return is_array($aggregate) && $aggregate !== [] ? $aggregate : null;
+	}
+
+	public function getGroupBy(): ?array
+	{
+		$groupBy = $this->params['groupBy'] ?? null;
+
+		return is_array($groupBy) && $groupBy !== [] ? $groupBy : null;
 	}
 
 	public function getResult(): ?array

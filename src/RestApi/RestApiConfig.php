@@ -8,16 +8,11 @@ use ON\Config\Config;
 
 class RestApiConfig extends Config
 {
-	public static function getDefaults(): array
-	{
-		return [
-			'path' => '/items',
-			'resolver' => 'auto',
-			'defaultLimit' => 100,
-			'maxLimit' => 1000,
-			'rateLimit' => 100,
-			'rateLimitWindow' => 60,
-			'addons' => [],
-		];
-	}
+	public string $endpointUri = '/items';
+	public string $resolver = 'auto';
+	public int $defaultLimit = 100;
+	public int $maxLimit = 1000;
+	public int $rateLimit = 100;
+	public int $rateLimitWindow = 60;
+	public array $addons = [];
 }

@@ -8,8 +8,10 @@ use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 
-class ItemGet implements HasEventNameInterface, PreventableEventInterface
+class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
+	use AuthorizationAwareEventTrait;
+
 	private bool $defaultPrevented = false;
 	private ?array $result = null;
 
