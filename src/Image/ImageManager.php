@@ -41,7 +41,8 @@ class ImageManager implements MiddlewareInterface
 		protected ImageConfig $imageCfg,
 		protected PathRegistry $paths,
 		protected ?EncrypterInterface $encrypter = null,
-		protected ?ImageCacheInterface $imageCache = null
+		protected ?ImageCacheInterface $imageCache = null,
+		protected ?PlaceholderImageInterface $placeholderImage = null
 	) {
 		$signatureKey = $imageCfg->get('key', $_ENV['APP_SALT'] ?? '');
 
@@ -54,6 +55,8 @@ class ImageManager implements MiddlewareInterface
 		if (! isset($imageCache)) {
 			$this->imageCache = new FileSystem($imageCfg, $this->paths->get('public'));
 		}
+
+		$this->placeholderImage ??= new DefaultPlaceholderImage($imageCfg, $this->imageCache);
 	}
 
 	public function getUri(string $sourceFilePath, string $template, mixed $options = null): string
@@ -64,18 +67,14 @@ class ImageManager implements MiddlewareInterface
 			' You must instantiate the middleware or assign the key as third argument');
 		}
 
-		// TODO: what is the best approach here?
-		// If we simply return the image, it won't be the size needed
-		// for the moment, converting the base image to what we need
-		// seems the best approach
-		if (! $this->imageExists($sourceFilePath)) {
-			//return $this->imageCfg->get("404ImagePath");
-			$sourceFilePath = $this->imageCfg->get("404ImagePath");
-		}
 		$imageRequest = new ImageRequest($sourceFilePath, $template, $options);
 		$token = $this->encrypter->encrypt($imageRequest);
 		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
 		//$token = str_replace('/.', './', $token); //create folders for images
+
+		if (! $this->imageExists($sourceFilePath)) {
+			return $this->placeholderImage->getUri($this, (string) $token, $imageRequest);
+		}
 
 		return $this->imageCache->get($sourceFilePath, $token)->getUri();
 	}
@@ -135,6 +134,10 @@ class ImageManager implements MiddlewareInterface
 	 */
 	public function getResponse(string $token, ImageRequest $imageRequest): ResponseInterface
 	{
+		if ($this->getConcreteImagePath($imageRequest->getSourceFilePath()) === null) {
+			return $this->placeholderImage->getResponse($this, $token, $imageRequest);
+		}
+
 		switch (strtolower($imageRequest->getTemplate())) {
 			case 'original':
 				return $this->getOriginalImageResponse($imageRequest->getSourceFilePath());
@@ -326,10 +329,10 @@ class ImageManager implements MiddlewareInterface
 	 * @param  string $content
 	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	protected function buildResponse(string $content): ResponseInterface
+	protected function buildResponse(string $content, ?string $mime = null): ResponseInterface
 	{
 		// define mime type
-		$mime = finfo_buffer(finfo_open(FILEINFO_MIME_TYPE), $content);
+		$mime ??= finfo_buffer(finfo_open(FILEINFO_MIME_TYPE), $content);
 
 		// respond with 304 not modified if browser has the image cached
 		$etag = md5($content);

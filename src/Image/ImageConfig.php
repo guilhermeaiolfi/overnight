@@ -11,40 +11,48 @@ use ON\FS\PathFolder;
 
 class ImageConfig extends Config
 {
-	private ?DirectoryPathInterface $publicImagesDir = null;
+	public string|DirectoryPathInterface $publicImagesDir = 'i';
+	public string $placeholderImageClass = DefaultPlaceholderImage::class;
+	public array $placeholderImageOptions = [
+		'width' => 400,
+		'height' => 300,
+		'background' => '#f3f4f6',
+		'foreground' => '#9ca3af',
+		'label' => '404',
+		'showFilename' => false,
+		'templates' => [],
+	];
+	public array $templates = [
+		'custom' => CustomTemplate::class,
+	];
+	public string $driver = Driver::class;
 
-	public static function getDefaults(): array
-	{
-		return [
-			"publicImagesDir" => "i",
-			"404ImagePath" => "404i.png",
-			"templates" => [
-				"custom" => CustomTemplate::class,
-			],
-			"driver" => Driver::class,
-		];
-	}
+	private ?DirectoryPathInterface $resolvedPublicImagesDir = null;
 
 	public function getPublicImagesDir(): DirectoryPathInterface
 	{
-		if ($this->publicImagesDirFile !== null) {
-			return $this->publicImagesDirFile;
+		if ($this->resolvedPublicImagesDir !== null) {
+			return $this->resolvedPublicImagesDir;
 		}
 
-		$configured = $this->get('publicImagesDir', 'i');
+		$configured = $this->publicImagesDir;
 
 		if ($configured instanceof DirectoryPathInterface) {
-			$this->publicImagesDir = $configured;
+			$this->resolvedPublicImagesDir = $configured;
 		} else {
-			$this->publicImagesDir = PathFolder::from(trim((string) $configured, '/\\'));
-			$this->set('publicImagesDirFile', $this->publicImagesDir);
+			$this->resolvedPublicImagesDir = PathFolder::from(trim((string) $configured, '/\\'));
 		}
 
-		return $this->publicImagesDir;
+		return $this->resolvedPublicImagesDir;
 	}
 
 	public function getPublicImagesUri(): string
 	{
-		return trim(str_replace('\\', '/', $this->get('publicImagesDir', 'i')), "/");
+		$configured = $this->publicImagesDir;
+		if ($configured instanceof DirectoryPathInterface) {
+			return trim(str_replace('\\', '/', $configured->getPath()), '/');
+		}
+
+		return trim(str_replace('\\', '/', (string) $configured), '/');
 	}
 }

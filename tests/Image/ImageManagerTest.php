@@ -7,6 +7,7 @@ namespace Tests\ON\Image;
 use Intervention\Image\Interfaces\ModifierInterface;
 use Laminas\Diactoros\ServerRequest;
 use ON\Image\Cache\ImageCacheInterface;
+use ON\Image\DefaultPlaceholderImage;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\ImageConfig;
 use ON\Image\ImageManager;
@@ -16,6 +17,7 @@ use ON\FS\PathRegistry;
 use ON\FS\PublicAsset;
 use ON\FS\PublicAssetInterface;
 use ON\Image\ImageRequest;
+use ON\Image\UserFilePlaceholderImage;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -41,14 +43,12 @@ final class ImageManagerTest extends TestCase
 	{
 		$sourceRoot = $this->createDirectory('storage/uploads');
 		$this->writeFile('storage/uploads/photo.jpg', 'original-image');
-		$this->writeFile('storage/uploads/fallback.png', 'fallback-image');
 
 		$cache = new RecordingImageCache();
 		$encrypter = new StubEncrypter('signed-token');
 		$config = new ImageConfig([
 			'publicImagesDir' => 'i',
 			'sourceRoots' => [$sourceRoot],
-			'404ImagePath' => 'fallback.png',
 		]);
 
 		$manager = new ImageManager($config, $this->createPaths(), $encrypter, $cache);
@@ -61,25 +61,112 @@ final class ImageManagerTest extends TestCase
 		$this->assertSame('i/signed-token.jpg', $cache->lastPublicAsset?->getUri());
 	}
 
-	public function testGetUriUsesFallbackImageWhenRequestedImageDoesNotExist(): void
+	public function testGetUriReturnsSvgPlaceholderWhenRequestedImageDoesNotExist(): void
 	{
 		$sourceRoot = $this->createDirectory('storage/uploads');
-		$this->writeFile('storage/uploads/fallback.png', 'fallback-image');
 
 		$cache = new RecordingImageCache();
 		$encrypter = new StubEncrypter('signed-token');
 		$config = new ImageConfig([
 			'publicImagesDir' => 'i',
 			'sourceRoots' => [$sourceRoot],
-			'404ImagePath' => 'fallback.png',
 		]);
 
 		$manager = new ImageManager($config, $this->createPaths(), $encrypter, $cache);
 
 		$uri = $manager->getUri('missing.jpg', 'thumb');
 
+		$this->assertSame('i/signed-token.svg', $uri);
+		$this->assertNull($cache->lastFilenamePath);
+	}
+
+	public function testProcessReturnsGeneratedSvgPlaceholderWhenSourceImageDoesNotExist(): void
+	{
+		$cache = new RecordingImageCache();
+		$cache->tokenValue = 'signed-token';
+		$encrypter = new StubEncrypter(
+			'signed-token',
+			new ImageRequest('missing.jpg', 'custom', 'cover:640,360')
+		);
+		$config = new ImageConfig([
+			'publicImagesDir' => 'i',
+			'sourceRoots' => ['storage/uploads'],
+			'placeholderImageClass' => DefaultPlaceholderImage::class,
+			'placeholderImageOptions' => [
+				'width' => 400,
+				'height' => 300,
+				'showFilename' => false,
+			],
+			'cache' => [
+				'lifetime' => 60,
+			],
+		]);
+
+		$manager = new ImageManager($config, $this->createPaths(), $encrypter, $cache);
+		$request = new ServerRequest(
+			uri: '/i/signed-token.svg',
+			method: 'GET',
+			headers: ['Accept' => 'image/svg+xml']
+		);
+
+		$response = $manager->process($request, new NullRequestHandler());
+
+		$this->assertSame(200, $response->getStatusCode());
+		$this->assertSame('image/svg+xml', $response->getHeaderLine('Content-Type'));
+		$this->assertStringContainsString('viewBox="0 0 640 360"', (string) $response->getBody());
+		$this->assertStringNotContainsString('missing.jpg', (string) $response->getBody());
+		$this->assertNull($cache->lastGetToken);
+	}
+
+	public function testUserFilePlaceholderUsesConfiguredImageFile(): void
+	{
+		$sourceRoot = $this->createDirectory('storage/uploads');
+		$this->writeFile('storage/uploads/placeholder.png', 'placeholder-image');
+
+		$cache = new RecordingImageCache('processed-placeholder');
+		$cache->tokenValue = 'signed-token';
+		$encrypter = new StubEncrypter(
+			'signed-token',
+			new ImageRequest('missing.jpg', 'thumb')
+		);
+		$config = new ImageConfig([
+			'publicImagesDir' => 'i',
+			'sourceRoots' => [$sourceRoot],
+			'placeholderImageClass' => UserFilePlaceholderImage::class,
+			'placeholderImageOptions' => [
+				'path' => 'placeholder.png',
+			],
+			'templates' => [
+				'thumb' => static fn ($image) => $image,
+			],
+			'cache' => [
+				'lifetime' => 60,
+			],
+		]);
+
+		$manager = new ImageManager(
+			$config,
+			$this->createPaths(),
+			$encrypter,
+			$cache,
+			new UserFilePlaceholderImage($config, $cache)
+		);
+
+		$uri = $manager->getUri('missing.jpg', 'thumb');
 		$this->assertSame('i/signed-token.png', $uri);
-		$this->assertSame('fallback.png', $cache->lastFilenamePath);
+		$this->assertSame('placeholder.png', $cache->lastFilenamePath);
+
+		$request = new ServerRequest(
+			uri: '/i/signed-token.png',
+			method: 'GET',
+			headers: ['Accept' => 'image/png']
+		);
+
+		$response = $manager->process($request, new NullRequestHandler());
+
+		$this->assertSame(200, $response->getStatusCode());
+		$this->assertSame('processed-placeholder', (string) $response->getBody());
+		$this->assertStringEndsWith('placeholder.png', str_replace(['/', '\\'], DIRECTORY_SEPARATOR, (string) $cache->lastGetPath));
 	}
 
 	public function testImageConfigNormalizesPublicImagesDirToDirectoryPath(): void

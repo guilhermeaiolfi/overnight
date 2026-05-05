@@ -9,7 +9,9 @@ use ON\Image\Cache\FileSystem;
 use ON\Image\Encrypter\OpenSSL;
 use ON\Image\ImageConfig;
 use ON\Image\ImageManager;
+use ON\Image\PlaceholderImageInterface;
 use Psr\Container\ContainerInterface;
+use RuntimeException;
 
 class ImageManagerFactory
 {
@@ -31,7 +33,17 @@ class ImageManagerFactory
 		$cache = $cache_class === FileSystem::class
 			? new $cache_class($imageCfg, $publicRoot)
 			: new $cache_class($imageCfg);
+		$placeholderImageClass = $imageCfg->placeholderImageClass;
+		$placeholderImage = new $placeholderImageClass($imageCfg, $cache);
 
-		return new ImageManager($imageCfg, $app->paths, $encrypter, $cache);
+		if (! $placeholderImage instanceof PlaceholderImageInterface) {
+			throw new RuntimeException(sprintf(
+				'Placeholder image class "%s" must implement %s.',
+				$placeholderImageClass,
+				PlaceholderImageInterface::class
+			));
+		}
+
+		return new ImageManager($imageCfg, $app->paths, $encrypter, $cache, $placeholderImage);
 	}
 }
