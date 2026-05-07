@@ -11,17 +11,19 @@ use Invoker\ParameterResolver\ResolverChain;
 use Invoker\ParameterResolver\TypeHintResolver;
 use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
+use ON\Application;
 use ON\Container\Executor\Executor;
-use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
+use ON\Http\InvocationContext;
 use ON\Middleware\ExecutionMiddleware;
+use ON\Middleware\PipelineExtension;
 use ON\RequestStack;
 use ON\RequestStackInterface;
+use ON\Router\Container\UrlHelperFactory;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\Router\UrlHelper;
-use ON\Router\Container\UrlHelperFactory;
 use ON\View\ViewConfig;
 use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
@@ -30,6 +32,13 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tests\ON\Fixtures\TestPage;
+
+final class ExecutionInvocationPayload
+{
+	public function __construct(public string $value)
+	{
+	}
+}
 
 final class ExecutionMiddlewareTest extends TestCase
 {
@@ -50,12 +59,14 @@ final class ExecutionMiddlewareTest extends TestCase
 				UrlHelper::class,
 				RouterInterface::class,
 				RequestStackInterface::class,
+				TestPage::class,
 			], true));
 		$this->container->method('get')
 			->willReturnCallback(function (string $class) use ($router, $requestStack, $urlHelperFactory): mixed {
 				return match ($class) {
 					RouterInterface::class => $router,
 					RequestStackInterface::class => $requestStack,
+					TestPage::class => $this->page,
 					UrlHelper::class => $urlHelperFactory($this->container),
 					default => null,
 				};
@@ -112,12 +123,10 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		$this->page->resetTestData();
 
-		$route = new Route('/test/{id}/{name}', 'TestPage::testIt');
+		$route = new Route('/test/{id}/{name}', TestPage::class . '::testIt');
 		$routeResult = RouteResult::fromRoute($route, ['id' => '42', 'name' => 'test']);
-		$routeResult->setTargetInstance($this->page);
-		$routeResult->setMethod('testIt');
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -133,7 +142,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testInt', ['id' => '123']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -149,7 +158,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testFloat', ['price' => '19.99']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -165,7 +174,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testBool', ['active' => '1']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -181,7 +190,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testItOptionalParam', ['other' => 'value']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -197,7 +206,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testItWithServerRequest', []);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -212,7 +221,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testItWithBoth', ['id' => '100']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -264,7 +273,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult('testItUntyped', ['id' => '456']);
 
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -274,13 +283,92 @@ final class ExecutionMiddlewareTest extends TestCase
 		$this->assertSame('string', $this->page->testData['testItUntyped']['type']);
 	}
 
+	public function testInvocationContextValuesAreInjectedIntoAction(): void
+	{
+		$route = new Route('/test', 'Page::index');
+		$routeResult = RouteResult::fromRoute($route);
+
+		$dto = new ExecutionInvocationPayload('typed');
+
+		$page = new class {
+			public ?string $token = null;
+			public ?ExecutionInvocationPayload $dto = null;
+
+			public function index(string $token, ExecutionInvocationPayload $dto): TextResponse
+			{
+				$this->token = $token;
+				$this->dto = $dto;
+
+				return new TextResponse('ok');
+			}
+		};
+
+		$routeResult->setTargetInstance($page);
+		$routeResult->setMethod('index');
+
+		$context = InvocationContext::empty()
+			->with('token', 'abc123')
+			->withTyped($dto);
+
+		$request = (new ServerRequest())
+			->withAttribute(RouteResult::class, $routeResult)
+			->withAttribute(InvocationContext::class, $context);
+
+		$handler = $this->createMock(RequestHandlerInterface::class);
+
+		$response = $this->createExecutionMiddleware()->process($request, $handler);
+
+		$this->assertSame('ok', (string) $response->getBody());
+		$this->assertSame('abc123', $page->token);
+		$this->assertSame($dto, $page->dto);
+	}
+
+	public function testInvocationContextRejectsReservedNamedKeys(): void
+	{
+		foreach (['request', 'handler', 'delegate'] as $key) {
+			try {
+				InvocationContext::empty()->with($key, new \stdClass());
+				$this->fail(sprintf('Expected reserved key "%s" to be rejected.', $key));
+			} catch (\InvalidArgumentException $e) {
+				$this->assertStringContainsString($key, $e->getMessage());
+			}
+		}
+	}
+
+	public function testInvocationContextRejectsReservedTypedRequestObjects(): void
+	{
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage(ServerRequestInterface::class);
+
+		InvocationContext::empty()->withTyped(new ServerRequest());
+	}
+
+	public function testInvocationContextRejectsReservedTypedHandlerObjects(): void
+	{
+		$this->expectException(\InvalidArgumentException::class);
+		$this->expectExceptionMessage(RequestHandlerInterface::class);
+
+		$handler = $this->createMock(RequestHandlerInterface::class);
+		InvocationContext::empty()->withTyped($handler);
+	}
+
 	protected function createRouteResult(string $method, array $params): RouteResult
 	{
-		$route = new Route('/test', 'TestPage::' . $method);
-		$routeResult = RouteResult::fromRoute($route, $params);
-		$routeResult->setTargetInstance($this->page);
-		$routeResult->setMethod($method);
-		return $routeResult;
+		$route = new Route('/test', TestPage::class . '::' . $method);
+		return RouteResult::fromRoute($route, $params);
+	}
+
+	protected function prepareRequest(RouteResult $routeResult): ServerRequestInterface
+	{
+		$app = $this->getMockBuilder(Application::class)
+			->disableOriginalConstructor()
+			->getMock();
+
+		$pipeline = new PipelineExtension($app, []);
+		$containerProperty = new \ReflectionProperty($pipeline, 'container');
+		$containerProperty->setValue($pipeline, $this->container);
+
+		return $pipeline->prepareRequestFromRouteResult($routeResult, new ServerRequest());
 	}
 
 	protected function createExecutionMiddleware(): ExecutionMiddleware

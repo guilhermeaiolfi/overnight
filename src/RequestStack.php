@@ -6,6 +6,7 @@ namespace ON;
 
 use function array_key_last;
 use function count;
+use ON\Http\InvocationContext;
 use ON\Http\RequestContext;
 use Psr\Http\Message\ServerRequestInterface;
 
@@ -110,6 +111,10 @@ class RequestStack implements RequestStackInterface
 
 	private function normalizeRequest(ServerRequestInterface $request): ServerRequestInterface
 	{
+		if (! $request->getAttribute(InvocationContext::class) instanceof InvocationContext) {
+			$request = $request->withAttribute(InvocationContext::class, InvocationContext::empty());
+		}
+
 		if ($request->getAttribute(RequestContext::class) instanceof RequestContext) {
 			return $request;
 		}

@@ -7,7 +7,10 @@ namespace Tests\ON\Middleware;
 use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
+use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
+use ON\Http\InvocationContext;
+use ON\Middleware\PipelineExtension;
 use ON\Middleware\ValidationMiddleware;
 use ON\RequestStack;
 use ON\Router\Route;
@@ -21,6 +24,13 @@ use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+
+final class ValidationInvocationErrorBag
+{
+	public function __construct(public array $messages)
+	{
+	}
+}
 
 final class ValidationMiddlewareTest extends TestCase
 {
@@ -299,6 +309,141 @@ final class ValidationMiddlewareTest extends TestCase
 		$middleware->process($request, $handler);
 	}
 
+	public function testValidationResultExtrasAreStoredInInvocationContextForErrorHandling(): void
+	{
+		$errorBag = new ValidationInvocationErrorBag(['email' => 'Invalid email']);
+
+		$page = new class($errorBag) {
+			public ?string $token = null;
+			public ?ValidationInvocationErrorBag $errors = null;
+
+			public function __construct(private ValidationInvocationErrorBag $errorBag)
+			{
+			}
+
+			public function validate(): array
+			{
+				return [false, 'token' => 'abc123', $this->errorBag];
+			}
+
+			public function handleError(string $token, ValidationInvocationErrorBag $errors): string
+			{
+				$this->token = $token;
+				$this->errors = $errors;
+
+				return 'Error';
+			}
+
+			public function errorView(ViewResult $result, $request = null, $delegate = null): ResponseInterface
+			{
+				return new HtmlResponse('validation error');
+			}
+		};
+
+		$executor = $this->createMock(ExecutorInterface::class);
+		$executor->expects($this->exactly(3))
+			->method('execute')
+			->willReturnCallback(function ($callable, $args) use ($page) {
+				if ($callable[1] === 'validate') {
+					return $page->validate();
+				}
+				if ($callable[1] === 'handleError') {
+					return $page->handleError($args['token'], $args[ValidationInvocationErrorBag::class]);
+				}
+				if ($callable[1] === 'errorView') {
+					return new HtmlResponse('validation error');
+				}
+				return null;
+			});
+
+		$middleware = $this->createValidationMiddleware($executor);
+
+		$routeResult = $this->createRouteResult($page, 'index');
+		$request = (new ServerRequest())
+			->withAttribute(RouteResult::class, $routeResult)
+			->withAttribute(InvocationContext::class, InvocationContext::empty());
+
+		$response = $middleware->process($request, $this->createHandler(new TextResponse('nope')));
+
+		$this->assertInstanceOf(ResponseInterface::class, $response);
+		$this->assertSame('abc123', $page->token);
+		$this->assertSame($errorBag, $page->errors);
+	}
+
+	public function testUpdatedRequestCarriesInvocationContextToNextMiddleware(): void
+	{
+		$page = new class {
+			public function validate(ServerRequestInterface $request): array
+			{
+				$context = InvocationContext::fromRequest($request)->with('token', 'abc123');
+				$request = $request->withAttribute(InvocationContext::class, $context);
+
+				return [true, $request];
+			}
+		};
+
+		$executor = $this->createMock(ExecutorInterface::class);
+		$executor->expects($this->once())
+			->method('execute')
+			->willReturnCallback(fn($callable, $args) => $page->validate($args[ServerRequestInterface::class]));
+
+		$middleware = $this->createValidationMiddleware($executor);
+		$routeResult = $this->createRouteResult($page, 'index');
+		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+
+		$handler = $this->createMock(RequestHandlerInterface::class);
+		$handler->expects($this->once())
+			->method('handle')
+			->with($this->callback(function (ServerRequestInterface $request): bool {
+				$context = InvocationContext::fromRequest($request);
+
+				return $context->get('token') === 'abc123';
+			}))
+			->willReturn(new TextResponse('ok'));
+
+		$response = $middleware->process($request, $handler);
+
+		$this->assertSame('ok', (string) $response->getBody());
+	}
+
+	public function testPreparedRouteParamsAreAvailableToValidateMethod(): void
+	{
+		$page = new class {
+			public ?int $id = null;
+
+			public function index(): string
+			{
+				return 'ok';
+			}
+
+			public function validate(int $id): bool
+			{
+				$this->id = $id;
+
+				return true;
+			}
+		};
+
+		$executor = $this->createMock(ExecutorInterface::class);
+		$executor->expects($this->once())
+			->method('execute')
+			->willReturnCallback(function ($callable, $args) use ($page) {
+				return $page->validate((int) $args['id']);
+			});
+
+		$middleware = $this->createValidationMiddleware($executor);
+		$routeResult = RouteResult::fromRoute(new Route('/test/{id}', get_class($page) . '::index'), ['id' => '42']);
+		$request = $this->prepareRequest($routeResult, [
+			get_class($page) => $page,
+			RouterInterface::class => $this->createMock(RouterInterface::class),
+		]);
+
+		$response = $middleware->process($request, $this->createHandler(new TextResponse('ok')));
+
+		$this->assertSame('ok', (string) $response->getBody());
+		$this->assertSame(42, $page->id);
+	}
+
 	protected function createHandler(ResponseInterface $response): RequestHandlerInterface
 	{
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -333,5 +478,27 @@ final class ValidationMiddlewareTest extends TestCase
 			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
 
 		return $container;
+	}
+
+	/**
+	 * @param array<string, object> $services
+	 */
+	protected function prepareRequest(RouteResult $routeResult, array $services): ServerRequestInterface
+	{
+		$app = $this->getMockBuilder(Application::class)
+			->disableOriginalConstructor()
+			->getMock();
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('has')
+			->willReturnCallback(fn(string $class): bool => array_key_exists($class, $services));
+		$container->method('get')
+			->willReturnCallback(fn(string $class): mixed => $services[$class] ?? null);
+
+		$pipeline = new PipelineExtension($app, []);
+		$containerProperty = new \ReflectionProperty($pipeline, 'container');
+		$containerProperty->setValue($pipeline, $container);
+
+		return $pipeline->prepareRequestFromRouteResult($routeResult, new ServerRequest());
 	}
 }

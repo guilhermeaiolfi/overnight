@@ -39,6 +39,7 @@ use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Handler\NotFoundHandler;
+use ON\Http\InvocationContext;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
 use ON\MiddlewareFactoryInterface;
@@ -55,6 +56,8 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use ReflectionMethod;
+use ReflectionNamedType;
 
 /**
  * PipelineExtension manages the middleware pipeline and request execution.
@@ -312,7 +315,57 @@ class PipelineExtension extends AbstractExtension
 			$result->setMethod('process');
 		}
 
+		$subrequest = $this->enrichInvocationContextFromRouteParams($subrequest, $result);
+
 		return $subrequest;
+	}
+
+	protected function enrichInvocationContextFromRouteParams(
+		ServerRequestInterface $request,
+		RouteResult $result
+	): ServerRequestInterface {
+		$target = $result->getTargetInstance();
+
+		if (! $target || ! $result->isSuccess()) {
+			return $request;
+		}
+
+		$routeParams = $result->getMatchedParams();
+
+		if ($routeParams === []) {
+			return $request;
+		}
+
+		$context = InvocationContext::fromRequest($request);
+
+		foreach ($routeParams as $name => $value) {
+			if (is_string($name)) {
+				$context = $context->with($name, $value);
+			}
+		}
+
+		$reflection = new ReflectionMethod($target, $result->getMethod());
+
+		foreach ($reflection->getParameters() as $param) {
+			$paramName = $param->getName();
+
+			if (! array_key_exists($paramName, $routeParams)) {
+				continue;
+			}
+
+			$value = $routeParams[$paramName];
+			$type = $param->getType();
+
+			if ($type instanceof ReflectionNamedType && $type->isBuiltin()) {
+				settype($value, $type->getName());
+			} elseif ($type && ! $type->isBuiltin()) {
+				continue;
+			}
+
+			$context = $context->with($paramName, $value);
+		}
+
+		return $request->withAttribute(InvocationContext::class, $context);
 	}
 
 	public function processForward(string $middleware, ServerRequestInterface $request): ResponseInterface

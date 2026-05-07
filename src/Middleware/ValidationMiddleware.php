@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Container\Executor\ExecutorInterface;
+use ON\Http\InvocationContext;
 use ON\Router\RouteResult;
 use ON\View\ViewManager;
 use Psr\Http\Message\ResponseInterface;
@@ -44,10 +45,36 @@ class ValidationMiddleware implements MiddlewareInterface
 		$args = [
 			ServerRequestInterface::class => $request,
 		];
+		$args = InvocationContext::fromRequest($request)->applyToArgs($args);
 
 		$valid = $this->executor->execute([$page, $validateMethod], $args);
 
-		if ($valid) {
+		if (is_array($valid)) {
+			$context = InvocationContext::fromRequest($request);
+
+			foreach ($valid as $key => $value) {
+				if ($value instanceof ServerRequestInterface) {
+					$request = $value;
+					$context = $context->merge(InvocationContext::fromRequest($request));
+					continue;
+				}
+
+				if (is_string($key)) {
+					$args[$key] = $value;
+					$context = $context->with($key, $value);
+				} elseif (is_object($value)) {
+					$args[get_class($value)] = $value;
+					$context = $context->withTyped($value);
+				}
+			}
+
+			$request = $request->withAttribute(InvocationContext::class, $context);
+			$args[ServerRequestInterface::class] = $request;
+			$args = $context->applyToArgs($args);
+			$valid = $valid[0];
+		}
+
+		if ($valid === true) {
 			return $handler->handle($request);
 		}
 
@@ -60,6 +87,8 @@ class ValidationMiddleware implements MiddlewareInterface
 
 		$response = $this->executor->execute([$page, $errorMethod], $args);
 
+		// We don't need to test $response as ResponseInterface, because that's done in the runView already
+		// that means that handleError can return an ResponseInterface directly, or return data to be rendered in the view
 		return $this->viewManager->runView($page, $action, $response, $request, $handler, $this->executor);
 	}
 
