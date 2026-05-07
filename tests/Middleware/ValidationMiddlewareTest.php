@@ -11,6 +11,7 @@ use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\InvocationContext;
 use ON\Middleware\ValidationMiddleware;
+use ON\Middleware\ValidationResult;
 use ON\RequestStack;
 use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Route;
@@ -321,9 +322,14 @@ final class ValidationMiddlewareTest extends TestCase
 			{
 			}
 
-			public function validate(): array
+			public function validate(ServerRequestInterface $request): ValidationResult
 			{
-				return [false, 'token' => 'abc123', $this->errorBag];
+				$context = InvocationContext::fromRequest($request)
+					->with('token', 'abc123')
+					->withTyped($this->errorBag);
+				$request = $request->withAttribute(InvocationContext::class, $context);
+
+				return ValidationResult::fail($request);
 			}
 
 			public function handleError(string $token, ValidationInvocationErrorBag $errors): string
@@ -345,7 +351,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->method('execute')
 			->willReturnCallback(function ($callable, $args) use ($page) {
 				if ($callable[1] === 'validate') {
-					return $page->validate();
+					return $page->validate($args[ServerRequestInterface::class]);
 				}
 				if ($callable[1] === 'handleError') {
 					return $page->handleError($args['token'], $args[ValidationInvocationErrorBag::class]);
@@ -373,12 +379,12 @@ final class ValidationMiddlewareTest extends TestCase
 	public function testUpdatedRequestCarriesInvocationContextToNextMiddleware(): void
 	{
 		$page = new class {
-			public function validate(ServerRequestInterface $request): array
+			public function validate(ServerRequestInterface $request): ValidationResult
 			{
 				$context = InvocationContext::fromRequest($request)->with('token', 'abc123');
 				$request = $request->withAttribute(InvocationContext::class, $context);
 
-				return [true, $request];
+				return ValidationResult::valid($request);
 			}
 		};
 
@@ -404,6 +410,60 @@ final class ValidationMiddlewareTest extends TestCase
 		$response = $middleware->process($request, $handler);
 
 		$this->assertSame('ok', (string) $response->getBody());
+	}
+
+	public function testValidationResultFailurePassesUpdatedRequestToErrorHandler(): void
+	{
+		$page = new class {
+			public ?string $token = null;
+
+			public function validate(ServerRequestInterface $request): ValidationResult
+			{
+				$context = InvocationContext::fromRequest($request)->with('token', 'abc123');
+				$request = $request->withAttribute(InvocationContext::class, $context);
+
+				return ValidationResult::fail($request);
+			}
+
+			public function handleError(string $token): string
+			{
+				$this->token = $token;
+
+				return 'Error';
+			}
+
+			public function errorView(ViewResult $result, $request = null, $delegate = null): ResponseInterface
+			{
+				return new HtmlResponse('validation error');
+			}
+		};
+
+		$executor = $this->createMock(ExecutorInterface::class);
+		$executor->expects($this->exactly(3))
+			->method('execute')
+			->willReturnCallback(function ($callable, $args) use ($page) {
+				if ($callable[1] === 'validate') {
+					return $page->validate($args[ServerRequestInterface::class]);
+				}
+				if ($callable[1] === 'handleError') {
+					return $page->handleError($args['token']);
+				}
+				if ($callable[1] === 'errorView') {
+					return new HtmlResponse('validation error');
+				}
+				return null;
+			});
+
+		$middleware = $this->createValidationMiddleware($executor);
+		$routeResult = $this->createRouteResult($page, 'index');
+		$request = (new ServerRequest())
+			->withAttribute(RouteResult::class, $routeResult)
+			->withAttribute(InvocationContext::class, InvocationContext::empty());
+
+		$response = $middleware->process($request, $this->createHandler(new TextResponse('nope')));
+
+		$this->assertInstanceOf(ResponseInterface::class, $response);
+		$this->assertSame('abc123', $page->token);
 	}
 
 	public function testPreparedRouteParamsAreAvailableToValidateMethod(): void

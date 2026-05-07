@@ -75,7 +75,7 @@ class MainPage
 		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file);
 		$data['_templateLang'] = $template_lang;
 
-		return new ViewResult('success', $data);
+		return ViewResult::for('success', $data);
 	}
 
 	protected function includeControllerFile(string $php_file, array $pageContext = [], array $pageMeta = []): array

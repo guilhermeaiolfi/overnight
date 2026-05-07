@@ -49,29 +49,11 @@ class ValidationMiddleware implements MiddlewareInterface
 
 		$valid = $this->executor->execute([$page, $validateMethod], $args);
 
-		if (is_array($valid)) {
-			$context = InvocationContext::fromRequest($request);
-
-			foreach ($valid as $key => $value) {
-				if ($value instanceof ServerRequestInterface) {
-					$request = $value;
-					$context = $context->merge(InvocationContext::fromRequest($request));
-					continue;
-				}
-
-				if (is_string($key)) {
-					$args[$key] = $value;
-					$context = $context->with($key, $value);
-				} elseif (is_object($value)) {
-					$args[get_class($value)] = $value;
-					$context = $context->withTyped($value);
-				}
-			}
-
-			$request = $request->withAttribute(InvocationContext::class, $context);
+		if ($valid instanceof ValidationResult) {
+			$request = $valid->request();
 			$args[ServerRequestInterface::class] = $request;
-			$args = $context->applyToArgs($args);
-			$valid = $valid[0];
+			$args = InvocationContext::fromRequest($request)->applyToArgs($args);
+			$valid = $valid->isValid();
 		}
 
 		if ($valid === true) {

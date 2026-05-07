@@ -44,6 +44,11 @@ class ViewResult implements \ArrayAccess
 		}
 	}
 
+	public static function for(string $view, array $data = []): self
+	{
+		return new self($view, $data);
+	}
+
 	public function getTargetObject(): ?object
 	{
 		return $this->targetObject;
