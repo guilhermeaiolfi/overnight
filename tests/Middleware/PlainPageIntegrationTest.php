@@ -23,6 +23,7 @@ use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\ValidationMiddleware;
 use ON\RequestStack;
+use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -118,7 +119,7 @@ final class PlainPageIntegrationTest extends TestCase
 		};
 
 		$routeResult = $this->createRouteResult($page, 'show', ['id' => '42']);
-		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
+		$request = $this->prepareMatchedRequest($routeResult);
 		$handler = $this->createMock(RequestHandlerInterface::class);
 
 		$middleware = $this->createExecutionMiddleware();
@@ -265,6 +266,41 @@ final class PlainPageIntegrationTest extends TestCase
 		return new ValidationMiddleware($this->executor, $this->createViewManager());
 	}
 
+	protected function prepareMatchedRequest(RouteResult $routeResult): ServerRequestInterface
+	{
+		$app = $this->getMockBuilder(Application::class)->disableOriginalConstructor()->getMock();
+		$router = $this->createMock(RouterInterface::class);
+		$router->method('match')->willReturn($routeResult);
+		$page = $routeResult->getTargetInstance();
+		$method = $routeResult->getMethod();
+
+		if ($page) {
+			$routeResult->getMatchedRoute()?->setMiddleware(get_class($page) . '::' . $method);
+		}
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('has')
+			->willReturnCallback(fn(string $class): bool => $page !== null && $class === get_class($page));
+		$container->method('get')
+			->willReturnCallback(fn(string $class): mixed => $page !== null && $class === get_class($page) ? $page : null);
+
+		$middleware = new RouteMiddleware($router, $app, $container);
+		$capture = new class implements RequestHandlerInterface {
+			public ?ServerRequestInterface $request = null;
+
+			public function handle(ServerRequestInterface $request): ResponseInterface
+			{
+				$this->request = $request;
+
+				return new JsonResponse(['ok' => true]);
+			}
+		};
+
+		$middleware->process(new ServerRequest(), $capture);
+
+		return $capture->request ?? new ServerRequest();
+	}
+
 	protected function createViewManager(): ViewManager
 	{
 		$router = $this->createMock(RouterInterface::class);
@@ -293,13 +329,13 @@ final class PlainPageIntegrationTest extends TestCase
 		$app = new class($forwardResponse) extends Application {
 			private ResponseInterface $forwardResponse;
 			public function __construct(ResponseInterface $r) { $this->forwardResponse = $r; }
-			public function processForward($middleware, $request): ResponseInterface {
+			public function processForward($path, $request): ResponseInterface {
 				return $this->forwardResponse;
 			}
 		};
 
 		$config = new AppConfig();
-		$config->set('controllers.login', 'LoginPage::index');
+		$config->set('controllers.login', '/login');
 
 		$middleware = new SecurityMiddleware($auth, $app, $config);
 

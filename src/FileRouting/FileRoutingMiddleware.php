@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
-use ON\Application;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use ON\View\ViewConfig;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -19,7 +19,7 @@ class FileRoutingMiddleware implements MiddlewareInterface
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingConfig,
 		protected RouterInterface $router,
-		protected Application $app
+		protected ContainerInterface $container
 	) {
 	}
 
@@ -30,10 +30,7 @@ class FileRoutingMiddleware implements MiddlewareInterface
 	 */
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-
 		$fileRouter = new FileRouter($this->fileRoutingConfig, $this->router->getBasePath());
-
-
 
 		// if we already set the route, don't handle it again
 		if ($request->getAttribute(RouteResult::class)) {
@@ -47,9 +44,15 @@ class FileRoutingMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$request = $this->app->pipeline->prepareRequestFromRouteResult($result, $request);
+		foreach ($result->getMatchedParams() as $param => $value) {
+			$request = $request->withAttribute($param, $value);
+		}
+
+		[$className, $method] = explode('::', (string) $this->fileRoutingConfig->get('controller'));
+		$result->setTargetInstance($this->container->get($className));
+		$result->setMethod($method);
+		$request = $request->withAttribute(RouteResult::class, $result);
 
 		return $handler->handle($request);
-
 	}
 }

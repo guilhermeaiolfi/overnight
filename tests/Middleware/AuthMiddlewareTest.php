@@ -77,14 +77,14 @@ class AuthMiddlewareTest extends TestCase
 		$app = new class($forwardResponse) extends Application {
 			public function __construct(private ResponseInterface $response) {}
 
-			public function processForward($middleware, $request): ResponseInterface
+			public function processForward($path, $request): ResponseInterface
 			{
 				return $this->response;
 			}
 		};
 
 		$config = new AppConfig();
-		$config->set('controllers.login', 'LoginPage::index');
+		$config->set('controllers.login', '/login');
 
 		$middleware = new SecurityMiddleware($auth, $app, $config);
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));

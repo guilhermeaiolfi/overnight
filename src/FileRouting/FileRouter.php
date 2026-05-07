@@ -112,6 +112,21 @@ class FileRouter
 		}
 
 		$current_path = $this->fileRoutingConfig->get('pagesPath');
+
+		if ($segments === [] || ($segments[0] ?? '') === '') {
+			$found = $this->fileExists($current_path, $request_method);
+
+			if ($found) {
+				$route = new Route('/', $this->fileRoutingConfig->get('controller'), [$request_method], '.');
+				$route_result = RouteResult::fromRoute($route, []);
+				$route_result->set("_fileController", $found);
+
+				return $route_result;
+			}
+
+			return RouteResult::fromRouteFailure([$request->getMethod()]);
+		}
+
 		$result = $this->matchInFolder($current_path, $request_method, $segments, 0, []);
 
 		if (isset($result)) {

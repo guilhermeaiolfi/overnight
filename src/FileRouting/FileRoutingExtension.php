@@ -60,6 +60,12 @@ class FileRoutingExtension extends AbstractExtension
 			['GET'],
 			"filerouting.api",
 		);
+		$router_cfg->addRoute(
+			'/' . trim($fileroutingCfg->get('url', "__fileRouting"), '/') . '/page',
+			$fileroutingCfg->get('controller'),
+			['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+			'filerouting.page',
+		);
 	}
 
 	public function injectMiddleware(): void

@@ -50,13 +50,13 @@ class AuthorizationMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		$errorMiddleware = $this->config->get('controllers.errors.403', false);
+		$errorPath = $this->config->get('controllers.errors.403', false);
 
-		if (! $errorMiddleware) {
+		if (! $errorPath) {
 			return new EmptyResponse(403);
 		}
 
-		return $this->app->processForward($errorMiddleware, $request);
+		return $this->app->processForward($errorPath, $request);
 	}
 
 	protected function findCheckPermissionsMethod(object $page, string $action): ?string

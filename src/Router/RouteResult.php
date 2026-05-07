@@ -18,7 +18,7 @@ use Psr\Http\Server\RequestHandlerInterface;
  * - The matched route, parameters, and route name
  * - For "ClassName::method" routes: the resolved target instance and method
  *
- * The target instance and method are set by PipelineExtension when it
+ * The target instance and method are set by routing middleware when it
  * resolves a "ClassName::method" string from the route definition.
  * Downstream middleware (Execution, Validation, Security, Authorization)
  * read these directly — no intermediate decorator needed.

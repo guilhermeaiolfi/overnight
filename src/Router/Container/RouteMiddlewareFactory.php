@@ -55,7 +55,8 @@ class RouteMiddlewareFactory
 
 		return new RouteMiddleware(
 			$container->get(RouterInterface::class),
-			$container->get(Application::class)
+			$container->get(Application::class),
+			$container
 		);
 	}
 }

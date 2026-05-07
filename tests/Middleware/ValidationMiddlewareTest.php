@@ -10,9 +10,9 @@ use Laminas\Diactoros\ServerRequest;
 use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\InvocationContext;
-use ON\Middleware\PipelineExtension;
 use ON\Middleware\ValidationMiddleware;
 use ON\RequestStack;
+use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -485,20 +485,29 @@ final class ValidationMiddlewareTest extends TestCase
 	 */
 	protected function prepareRequest(RouteResult $routeResult, array $services): ServerRequestInterface
 	{
-		$app = $this->getMockBuilder(Application::class)
-			->disableOriginalConstructor()
-			->getMock();
-
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
 			->willReturnCallback(fn(string $class): bool => array_key_exists($class, $services));
 		$container->method('get')
 			->willReturnCallback(fn(string $class): mixed => $services[$class] ?? null);
 
-		$pipeline = new PipelineExtension($app, []);
-		$containerProperty = new \ReflectionProperty($pipeline, 'container');
-		$containerProperty->setValue($pipeline, $container);
+		$app = $this->getMockBuilder(Application::class)->disableOriginalConstructor()->getMock();
+		$router = $this->createMock(RouterInterface::class);
+		$router->method('match')->willReturn($routeResult);
+		$middleware = new RouteMiddleware($router, $app, $container);
+		$capture = new class implements RequestHandlerInterface {
+			public ?ServerRequestInterface $request = null;
 
-		return $pipeline->prepareRequestFromRouteResult($routeResult, new ServerRequest());
+			public function handle(ServerRequestInterface $request): ResponseInterface
+			{
+				$this->request = $request;
+
+				return new TextResponse('ok');
+			}
+		};
+
+		$middleware->process(new ServerRequest(), $capture);
+
+		return $capture->request ?? new ServerRequest();
 	}
 }

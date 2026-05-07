@@ -35,8 +35,12 @@ class MainPage
 
 	public function index(ServerRequestInterface $request): mixed
 	{
-		$result = $request->getAttribute(RouteResult::class);
-		$file = $result->get("_fileController");
+		$routeResult = $request->getAttribute(RouteResult::class);
+		$file = $routeResult instanceof RouteResult ? $routeResult->get('_fileController') : null;
+
+		if (! is_string($file) || $file === '') {
+			throw new RuntimeException('No file route match is available for the current request.');
+		}
 
 		[$php_file, $template_file, $template_lang, $page_meta] = $this->fileRoutingCache->get($file);
 
@@ -44,7 +48,7 @@ class MainPage
 			'request' => $request,
 			'sourceFile' => $file,
 			'relativeFile' => $this->fileRoutingCache->getPathFromFile($file),
-			'params' => $result->getMatchedParams(),
+			'params' => $routeResult instanceof RouteResult ? $routeResult->getMatchedParams() : [],
 			'metadata' => $page_meta,
 		];
 

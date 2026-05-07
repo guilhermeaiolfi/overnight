@@ -53,6 +53,7 @@ class RouterExtension extends AbstractExtension
 
 		$init->on(PipelineReadyEvent::class, function () {
 			$this->app->pipe("/", RouteMiddleware::class, 100);
+			$this->app->pipeline->addRequestPreparer(new RouteResultCleanupPreparer(), 1000);
 		});
 
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);

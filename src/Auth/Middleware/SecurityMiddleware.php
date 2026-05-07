@@ -34,13 +34,13 @@ class SecurityMiddleware implements MiddlewareInterface
 		$page = $routeResult->getTargetInstance();
 
 		if (method_exists($page, 'isSecure') && $page->isSecure() && ! $this->auth->hasIdentity()) {
-			$loginMiddleware = $this->config->get('controllers.login', false);
+			$loginPath = $this->config->get('controllers.login', false);
 
-			if (! is_string($loginMiddleware) || $loginMiddleware === '') {
+			if (! is_string($loginPath) || $loginPath === '') {
 				return new EmptyResponse(401);
 			}
 
-			return $this->app->processForward($loginMiddleware, $request);
+			return $this->app->processForward($loginPath, $request);
 		}
 
 		return $handler->handle($request);

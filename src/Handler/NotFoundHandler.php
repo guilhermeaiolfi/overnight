@@ -20,7 +20,7 @@ class NotFoundHandler implements RequestHandlerInterface
 	**/
 	public function __construct(
 		private Application $app,
-		private string $middleware,
+		private string $path,
 		private $responseFactory
 	) {
 	}
@@ -31,7 +31,11 @@ class NotFoundHandler implements RequestHandlerInterface
 			return $this->generatePlainTextResponse($request);
 		}
 
-		return $this->app->processForward($this->middleware, $request);
+		if ($this->path === '' || $request->getUri()->getPath() === $this->path) {
+			return $this->generatePlainTextResponse($request);
+		}
+
+		return $this->app->processForward($this->path, $request);
 	}
 
 	/**

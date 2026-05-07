@@ -263,6 +263,23 @@ PHP
 		$this->assertSame('Ordem do Dia', $data['_breadcrumbs'][1]['label']);
 	}
 
+	public function testRootPathMatchesIndexFileWhenPresent(): void
+	{
+		$pageFile = $this->projectDir . DIRECTORY_SEPARATOR . 'pages' . DIRECTORY_SEPARATOR . 'index.php';
+		$this->writeFileRoutePage($pageFile);
+
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+		]);
+
+		$routeResult = (new FileRouter($config, ''))->match(
+			new ServerRequest(uri: '/', method: 'GET')
+		);
+
+		$this->assertFalse($routeResult->isFailure());
+		$this->assertSame(realpath($pageFile), $routeResult->get('_fileController'));
+	}
+
 	private function writeFileRoutePage(string $path): void
 	{
 		if (! is_dir(dirname($path))) {

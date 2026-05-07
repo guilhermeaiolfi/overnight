@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\View\Plates;
 
+use Laminas\Diactoros\ServerRequestFactory;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Router\Route;
-use ON\Router\RouteResult;
 use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use Psr\Http\Message\ResponseInterface;
@@ -65,23 +65,12 @@ class PlatesRenderer implements RendererInterface
 
 	public function runSection(Route $route, ?ServerRequestInterface $parentRequest = null): ResponseInterface
 	{
-		$request = $this->createSectionRequest($route, $parentRequest);
+		$request = $parentRequest ?? ServerRequestFactory::fromGlobals();
 
-		return $this->app->handle($request);
-	}
-
-	protected function createSectionRequest(Route $route, ?ServerRequestInterface $parentRequest = null): ServerRequestInterface
-	{
-		$result = RouteResult::fromRoute($route);
-
-		if (! $parentRequest) {
-			return $this->app->pipeline->prepareRequestFromRouteResult($result);
-		}
-
-		$request = $parentRequest->withUri(
-			$parentRequest->getUri()->withPath($route->getPath())
+		return $this->app->processForward(
+			$route->getPath(),
+			$request,
+			$route->getAllowedMethods()[0] ?? $request->getMethod()
 		);
-
-		return $this->app->pipeline->prepareRequestFromRouteResult($result, $request);
 	}
 }

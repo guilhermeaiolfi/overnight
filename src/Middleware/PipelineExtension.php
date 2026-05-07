@@ -4,23 +4,24 @@ declare(strict_types=1);
 
 namespace ON\Middleware;
 
-use Laminas\Diactoros\Response;
 use Laminas\Diactoros\ResponseFactory;
 use Laminas\Diactoros\ServerRequestFactory;
+use Laminas\Diactoros\Uri;
 use Laminas\HttpHandlerRunner\Emitter\EmitterInterface;
 use Laminas\HttpHandlerRunner\RequestHandlerRunner;
 use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
 use Laminas\Stratigility\Middleware\ErrorHandler;
-use Laminas\Stratigility\MiddlewarePipe;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use function Laminas\Stratigility\path;
 use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\EmitterFactory;
 use ON\Container\ErrorHandlerFactory;
 use ON\Container\ErrorResponseGeneratorFactory;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Container\MiddlewareContainerFactory;
 use ON\Container\NotFoundHandlerFactory;
 use ON\Container\RequestHandlerRunnerFactory;
@@ -28,76 +29,50 @@ use ON\Container\ResponseFactoryFactory;
 use ON\Container\ServerRequestErrorResponseGeneratorFactory;
 use ON\Container\ServerRequestFactoryFactory;
 use ON\Container\StreamFactoryFactory;
-use ON\Container\WhoopsErrorResponseGeneratorFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
+use ON\Handler\NotFoundHandler;
+use ON\Http\RequestContext;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\Handler\NotFoundHandler;
-use ON\Http\InvocationContext;
 use ON\MiddlewareContainer;
 use ON\MiddlewareFactory;
 use ON\MiddlewareFactoryInterface;
 use ON\RequestStack;
 use ON\RequestStackInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
-use ON\Router\Route;
-use ON\Router\RouteResult;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Message\RequestInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use ReflectionMethod;
-use ReflectionNamedType;
 
 /**
- * PipelineExtension manages the middleware pipeline and request execution.
+ * Owns the PSR-15 middleware pipeline lifecycle for the application.
  *
- * ## Route Target Resolution
- *
- * When a route is defined with the syntax `PageClass::method` (e.g.,
- * `PageController::index`), PipelineExtension resolves it during request
- * preparation:
- *   - The class is resolved from the container
- *   - The instance and method are stored on RouteResult via
- *     setTargetInstance() and setMethod()
- *
- * ## Request Preparation Flow
- *
- * 1. Route matching occurs (RouterMiddleware / FileRoutingMiddleware)
- * 2. PipelineExtension::prepareRequestFromRouteResult() is called
- * 3. If route middleware is a string like "PageClass::method":
- *    - The class is resolved from the container
- *    - Instance and method are set on RouteResult
- * 4. RouteResult flows through the pipeline as a request attribute
- * 5. Downstream middleware (Validation, Security, Authorization) access
- *    the target via $routeResult->getTargetInstance() / getMethod()
- * 6. ExecutionMiddleware calls the action and builds the view
+ * This extension is intentionally transport-focused: it wires the pipeline,
+ * queues middleware registration until the container is ready, and forwards
+ * requests by rewriting the request and re-entering the pipeline.
  */
 class PipelineExtension extends AbstractExtension
 {
 	public const ID = 'pipeline';
 
-	public const NAMESPACE = "core.extensions.pipeline";
+	public const NAMESPACE = 'core.extensions.pipeline';
 	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
-
 	protected RequestStack $requestStack;
-
 	protected MiddlewarePipeInterface $pipeline;
 	public MiddlewareFactory $factory;
 	protected ContainerInterface $container;
-
 	protected array $q = [];
+	/** @var array<int, array{priority:int, preparer:RequestPreparerInterface}> */
+	protected array $requestPreparers = [];
 
 	public function __construct(
 		protected Application $app,
@@ -107,13 +82,13 @@ class PipelineExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$this->app->registerMethod("pipe", [$this, "pipe"]);
-		$this->app->registerMethod("processForward", [$this, "processForward"]);
-		$this->app->registerMethod("process", [$this, "process"]);
-		$this->app->registerMethod("handle", [$this, "handle"]);
+		$this->app->registerMethod('pipe', [$this, 'pipe']);
+		$this->app->registerMethod('processForward', [$this, 'processForward']);
+		$this->app->registerMethod('process', [$this, 'process']);
+		$this->app->registerMethod('handle', [$this, 'handle']);
 
 		if (! $this->app->isCli()) {
-			$this->app->registerMethod("run", [$this, "run"]);
+			$this->app->registerMethod('run', [$this, 'run']);
 		}
 
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
@@ -129,16 +104,11 @@ class PipelineExtension extends AbstractExtension
 			ErrorHandler::class => ErrorHandlerFactory::class,
 			MiddlewareContainer::class => MiddlewareContainerFactory::class,
 			RequestStack::class => fn () => new RequestStack(),
-
-			// Change the following in development to the WhoopsErrorResponseGeneratorFactory:
 			ErrorResponseGenerator::class => ErrorResponseGeneratorFactory::class,
-			//ErrorResponseGenerator::class => WhoopsErrorResponseGeneratorFactory::class,
 			'ON\Whoops' => WhoopsFactory::class,
 			'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,
-
 			ResponseInterface::class => ResponseFactoryFactory::class,
 			RequestHandlerRunner::class => RequestHandlerRunnerFactory::class,
-
 			ServerRequestErrorResponseGenerator::class => ServerRequestErrorResponseGeneratorFactory::class,
 			ServerRequestInterface::class => ServerRequestFactoryFactory::class,
 			StreamInterface::class => StreamFactoryFactory::class,
@@ -146,7 +116,6 @@ class PipelineExtension extends AbstractExtension
 		]);
 
 		$containerConfig->addAliases([
-			//MiddlewarePipeInterface::class => MiddlewarePipe::class,
 			MiddlewarePipeInterface::class => MiddlewarePriorityPipe::class,
 			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
 			RequestStackInterface::class => RequestStack::class,
@@ -157,14 +126,14 @@ class PipelineExtension extends AbstractExtension
 	public function onContainerReady(ContainerReadyEvent $event, InitContext $context): void
 	{
 		$this->container = $event->container;
+
+		// Bring the runtime pipeline online before loading user pipeline config,
+		// so queued middleware and config-defined middleware resolve consistently.
 		$this->setupPipeline($event->container);
-
 		$this->registerMiddlewares();
-
 		$this->flush();
 
 		$appCfg = $this->app->config->get(AppConfig::class);
-
 		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
 
 		$context->emit(new PipelineReadyEvent($this, $this->container));
@@ -172,34 +141,24 @@ class PipelineExtension extends AbstractExtension
 
 	public function registerMiddlewares(): void
 	{
-		// The error handler should be the first (most outer) middleware to catch
-		// all Exceptions.
-		$this->pipe("/", ErrorHandler::class, 1000);
-
-		$this->pipe("/", RegisterRequestMiddleware::class, 900);
-
-		$this->pipe("/", BodyParamsMiddleware::class, 900);
-
-		// Register the validation middleware in the middleware pipeline
-		$this->pipe("/", ValidationMiddleware::class, 1);
-
-		// This middleware is responsible for calling the controller/page method
-		$this->pipe("/", ExecutionMiddleware::class, 0);
-
-		// At this point, if no Response is returned by any middleware, the
-		// NotFoundHandler kicks in; alternately, you can provide other fallback
-		// middleware to execute.
-		$this->pipe("/", NotFoundMiddleware::class, -1);
+		// Core middleware order matters:
+		// - Error handling wraps everything
+		// - Request/body setup runs before business middleware
+		// - Validation runs before execution
+		// - NotFound stays at the end as the final fallback
+		$this->pipe('/', ErrorHandler::class, 1000);
+		$this->pipe('/', RegisterRequestMiddleware::class, 900);
+		$this->pipe('/', BodyParamsMiddleware::class, 900);
+		$this->pipe('/', ValidationMiddleware::class, 1);
+		$this->pipe('/', ExecutionMiddleware::class, 0);
+		$this->pipe('/', NotFoundMiddleware::class, -1);
 	}
 
 	protected function setupPipeline(ContainerInterface $container): void
 	{
 		$this->app->requestStack = $this->requestStack = $container->get(RequestStack::class);
-
 		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
-
 		$this->factory = $container->get(MiddlewareFactory::class);
-
 		$this->runner = $container->get(RequestHandlerRunner::class);
 	}
 
@@ -215,8 +174,9 @@ class PipelineExtension extends AbstractExtension
 
 	public function flush(): void
 	{
+		// Middleware can be registered before the pipeline exists; replay those
+		// registrations once the container-backed pipeline is available.
 		while ($item = array_shift($this->q)) {
-			//dd(...$item);
 			$this->pipe($item[0], $item[1], $item[2]);
 		}
 	}
@@ -244,7 +204,8 @@ class PipelineExtension extends AbstractExtension
 	public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
 	{
 		if (! isset($this->pipeline)) {
-			//var_dump($middleware);
+			// Delay registration until container services such as middleware
+			// factories and the pipeline itself are ready.
 			$this->q[] = [$middlewareOrPath, $middleware, $priority];
 
 			return;
@@ -253,6 +214,8 @@ class PipelineExtension extends AbstractExtension
 		$middleware = $middleware ?? $middlewareOrPath;
 		$path = $middleware === $middlewareOrPath ? '/' : $middlewareOrPath;
 
+		// Path-specific middleware is wrapped before being inserted into the
+		// priority pipe; root middleware is inserted directly.
 		$middleware = $path !== '/'
 			? path($path, $this->prepareMiddleware($middleware))
 			: $this->prepareMiddleware($middleware);
@@ -262,141 +225,87 @@ class PipelineExtension extends AbstractExtension
 
 	public function handle(ServerRequestInterface $request): ResponseInterface
 	{
-		return $this->pipeline->handle($request);
+		return $this->pipeline->handle($this->prepareRequest($request));
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		return $this->pipeline->process($request, $handler);
+		return $this->pipeline->process($this->prepareRequest($request), $handler);
 	}
 
-	public function prepareRequestFromRouteResult($result, $request = null): ServerRequestInterface
+	public function addRequestPreparer(RequestPreparerInterface $preparer, int $priority = 0): void
+	{
+		$this->requestPreparers[] = [
+			'priority' => $priority,
+			'preparer' => $preparer,
+		];
+
+		usort(
+			$this->requestPreparers,
+			static fn(array $left, array $right): int => $right['priority'] <=> $left['priority']
+		);
+	}
+
+	protected function prepareRequest(ServerRequestInterface $request): ServerRequestInterface
+	{
+		foreach ($this->requestPreparers as $entry) {
+			$request = $entry['preparer']->prepare($request);
+		}
+
+		return $request;
+	}
+
+	public function createForwardRequest(
+		string $path,
+		?ServerRequestInterface $request = null,
+		?string $method = null
+	): ServerRequestInterface
 	{
 		if (! $request) {
 			$request = ServerRequestFactory::fromGlobals();
 		}
-		// Inject the actual route result, as well as individual matched parameters.
-		$subrequest = $request->withAttribute(RouteResult::class, $result);
 
-		foreach ($result->getMatchedParams() as $param => $value) {
-			$subrequest = $subrequest->withAttribute($param, $value);
+		// Forwarded requests carry a fresh RequestContext that points back to the
+		// current request, allowing preparers to infer request lineage without an
+		// extra marker attribute.
+		$request = $request
+			->withAttribute(
+				RequestContext::class,
+				new RequestContext(
+					$request,
+					$request->getAttribute(RequestContext::class)
+				)
+			)
+			->withUri(new Uri($path));
+
+		if ($method !== null) {
+			$request = $request->withMethod($method);
 		}
 
-
-		$options = $result->getMatchedRoute()->getOptions();
-		if (! empty($options) && ! empty($options["callbacks"]) && is_array($options["callbacks"])) {
-			foreach ($options["callbacks"] as $callback) {
-				$callback = $this->container->get($callback);
-				$result = $callback->onMatched($result);
-			}
-		}
-
-		// We need to update the params again, since it may have entered callbacks that changed it
-		$subrequest = $subrequest->withAttribute(RouteResult::class, $result);
-
-		foreach ($result->getMatchedParams() as $param => $value) {
-			$subrequest = $subrequest->withAttribute($param, $value);
-		}
-
-
-		$middleware = $result->getMatchedRoute()->getMiddleware();
-
-		// Resolve middleware into a target instance + method on RouteResult.
-		// "ClassName::method" → page/controller with action method
-		// Everything else → resolved via prepareMiddleware() with method "process"
-		// Route::getMiddleware() retains the original definition.
-		if (is_string($middleware) && strpos($middleware, '::') !== false) {
-			[$className, $method] = explode('::', $middleware);
-			$result->setTargetInstance($this->container->get($className));
-			$result->setMethod($method);
-		} else {
-			$prepared = $this->prepareMiddleware($middleware);
-			$result->setTargetInstance($prepared);
-			$result->setMethod('process');
-		}
-
-		$subrequest = $this->enrichInvocationContextFromRouteParams($subrequest, $result);
-
-		return $subrequest;
+		return $request;
 	}
 
-	protected function enrichInvocationContextFromRouteParams(
+	public function processForward(
+		string $path,
 		ServerRequestInterface $request,
-		RouteResult $result
-	): ServerRequestInterface {
-		$target = $result->getTargetInstance();
-
-		if (! $target || ! $result->isSuccess()) {
-			return $request;
-		}
-
-		$routeParams = $result->getMatchedParams();
-
-		if ($routeParams === []) {
-			return $request;
-		}
-
-		$context = InvocationContext::fromRequest($request);
-
-		foreach ($routeParams as $name => $value) {
-			if (is_string($name)) {
-				$context = $context->with($name, $value);
-			}
-		}
-
-		$reflection = new ReflectionMethod($target, $result->getMethod());
-
-		foreach ($reflection->getParameters() as $param) {
-			$paramName = $param->getName();
-
-			if (! array_key_exists($paramName, $routeParams)) {
-				continue;
-			}
-
-			$value = $routeParams[$paramName];
-			$type = $param->getType();
-
-			if ($type instanceof ReflectionNamedType && $type->isBuiltin()) {
-				settype($value, $type->getName());
-			} elseif ($type && ! $type->isBuiltin()) {
-				continue;
-			}
-
-			$context = $context->with($paramName, $value);
-		}
-
-		return $request->withAttribute(InvocationContext::class, $context);
-	}
-
-	public function processForward(string $middleware, ServerRequestInterface $request): ResponseInterface
+		?string $method = null
+	): ResponseInterface
 	{
-		$route = new Route($request->getUri()->getPath(), $middleware);
-		$result = RouteResult::fromRoute($route);
-
-		$request = $this->prepareRequestFromRouteResult($result, $request);
-
-		return $this->handle($request);
+		// Forwarding stays transport-level here: the caller provides the target
+		// URI/path and routing middleware prepares the next execution state.
+		return $this->handle($this->createForwardRequest($path, $request, $method));
 	}
 
-	/**
-	 * Run the application.
-	 *
-	 * Proxies to the RequestHandlerRunner::run() method.
-	 */
 	public function run(): void
 	{
-		// core.run event
 		if ($dispatcher = $this->app->ext('events')) {
-			/** @var EventsExtension $dispatcher */
-			$dispatcher->dispatch(new NamedEvent("core.run"));
+			$dispatcher->dispatch(new NamedEvent('core.run'));
 		}
 
 		$this->runner->run();
 
-		// core.end event
 		if ($dispatcher = $this->app->ext('events')) {
-			/** @var EventsExtension $dispatcher */
-			$dispatcher->dispatch(new NamedEvent("core.end"));
+			$dispatcher->dispatch(new NamedEvent('core.end'));
 		}
 	}
 }

@@ -16,10 +16,10 @@ use ON\Container\Executor\Executor;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Http\InvocationContext;
 use ON\Middleware\ExecutionMiddleware;
-use ON\Middleware\PipelineExtension;
 use ON\RequestStack;
 use ON\RequestStackInterface;
 use ON\Router\Container\UrlHelperFactory;
+use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Route;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -28,6 +28,7 @@ use ON\View\ViewConfig;
 use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -360,15 +361,25 @@ final class ExecutionMiddlewareTest extends TestCase
 
 	protected function prepareRequest(RouteResult $routeResult): ServerRequestInterface
 	{
-		$app = $this->getMockBuilder(Application::class)
-			->disableOriginalConstructor()
-			->getMock();
+		$app = $this->getMockBuilder(Application::class)->disableOriginalConstructor()->getMock();
+		$router = $this->createMock(RouterInterface::class);
+		$router->method('match')->willReturn($routeResult);
 
-		$pipeline = new PipelineExtension($app, []);
-		$containerProperty = new \ReflectionProperty($pipeline, 'container');
-		$containerProperty->setValue($pipeline, $this->container);
+		$middleware = new RouteMiddleware($router, $app, $this->container);
+		$capture = new class implements RequestHandlerInterface {
+			public ?ServerRequestInterface $request = null;
 
-		return $pipeline->prepareRequestFromRouteResult($routeResult, new ServerRequest());
+			public function handle(ServerRequestInterface $request): ResponseInterface
+			{
+				$this->request = $request;
+
+				return new TextResponse('ok');
+			}
+		};
+
+		$middleware->process(new ServerRequest(), $capture);
+
+		return $capture->request ?? new ServerRequest();
 	}
 
 	protected function createExecutionMiddleware(): ExecutionMiddleware
