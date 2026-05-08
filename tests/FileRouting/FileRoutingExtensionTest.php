@@ -54,6 +54,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$viewConfig = $this->createViewConfig($cachePath, 'plates');
 		$engine = new Engine($cachePath, 'phtml');
 		$engine->addFolder('filerouting', $cachePath);
+		$engine->addFolder('overnight', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'View' . DIRECTORY_SEPARATOR . 'templates');
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
@@ -102,9 +103,10 @@ final class FileRoutingExtensionTest extends TestCase
 			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
 			'cachePath' => $cachePath,
 		]);
-		$viewConfig = $this->createViewConfig($cachePath, 'latte');
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
 		$engine = new Engine($cachePath, 'phtml');
 		$engine->addFolder('filerouting', $cachePath);
+		$engine->addFolder('overnight', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'View' . DIRECTORY_SEPARATOR . 'templates');
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
@@ -141,6 +143,32 @@ final class FileRoutingExtensionTest extends TestCase
 		$response = $page->successView($result->toArray(), $request);
 
 		$this->assertSame('<div>sucesso absoluto</div>', (string) $response->getBody());
+	}
+
+	public function testSplitReturnsLatteTemplateContentWithoutTemplateWrapper(): void
+	{
+		$cachePath = $this->projectDir . DIRECTORY_SEPARATOR . 'cache';
+		$config = new FileRoutingConfig([
+			'pagesPath' => $this->projectDir . DIRECTORY_SEPARATOR . 'pages',
+			'cachePath' => $cachePath,
+		]);
+		$viewConfig = $this->createViewConfig($cachePath, 'plates');
+		$cache = new FileRoutingCache($config, $viewConfig);
+
+		[$php, $template] = $cache->split(<<<'PHP'
+<?php
+
+    $ok = "sucesso absoluto";
+
+?>
+
+<template lang="latte">
+<div>{$ok}</div>
+</template>
+PHP);
+
+		$this->assertStringContainsString('$ok = "sucesso absoluto";', $php);
+		$this->assertSame('<div>{$ok}</div>', $template);
 	}
 
 	public function testNestedRoutesWriteControllerTemplateAndMetadataToMatchingCacheFolder(): void
@@ -234,6 +262,7 @@ PHP
 
 		$engine = new Engine($cachePath, 'phtml');
 		$engine->addFolder('filerouting', $cachePath);
+		$engine->addFolder('overnight', dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'View' . DIRECTORY_SEPARATOR . 'templates');
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine) {
@@ -370,6 +399,7 @@ PHP
 				'paths' => [
 					$cachePath,
 					'filerouting' => $cachePath,
+					'overnight' => dirname(__DIR__, 2) . DIRECTORY_SEPARATOR . 'src' . DIRECTORY_SEPARATOR . 'View' . DIRECTORY_SEPARATOR . 'templates',
 				],
 			],
 			'formats' => [

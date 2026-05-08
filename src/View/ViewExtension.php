@@ -34,10 +34,16 @@ class ViewExtension extends AbstractExtension
 
 		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$containerConfig = $event->config->get(ContainerConfig::class);
+			$viewConfig = $event->config->get(ViewConfig::class);
 
 			$containerConfig->addFactories([
 				Engine::class => PlatesEngineFactory::class,
 			]);
+
+			$viewConfig->set(
+				'templates.paths.overnight',
+				[__DIR__ . DIRECTORY_SEPARATOR . 'templates']
+			);
 
 		});
 	}

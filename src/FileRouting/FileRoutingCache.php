@@ -47,9 +47,9 @@ class FileRoutingCache
 	public function generate(string $file): array
 	{
 		$content = file_get_contents($file);
-		$code = $this->split($content);
-		$page_meta = $this->extractPageMeta($code[0]);
-		$template = $this->parseTemplate($code[1]);
+		[$php_code, $template_code] = $this->splitSourceContent($content);
+		$page_meta = $this->extractPageMeta($php_code);
+		$template = $this->parseTemplate($template_code);
 
 		$php_cache_filename = $this->getCachedPhpFilename($file);
 
@@ -62,10 +62,10 @@ class FileRoutingCache
 		@mkdir($this->cachePath . DIRECTORY_SEPARATOR . dirname($relative), 0777, true);
 
 		@unlink($php_cache_filename);
-		if (strlen($code[0]) > 12) {
+		if (strlen($php_code) > 12) {
 			// there is no reason to have a empty php file,
 			// just don't include() it
-			file_put_contents($php_cache_filename, $code[0]);
+			file_put_contents($php_cache_filename, $php_code);
 		}
 
 
@@ -122,6 +122,17 @@ class FileRoutingCache
 	}
 
 	public function split($content): array
+	{
+		[$php_code, $template_code] = $this->splitSourceContent($content);
+		$template = $this->parseTemplate($template_code);
+
+		return [
+			$php_code,
+			$template['content'],
+		];
+	}
+
+	protected function splitSourceContent(string $content): array
 	{
 		$content = trim($content);
 		// it may not have php code

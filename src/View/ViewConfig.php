@@ -6,6 +6,7 @@ namespace ON\View;
 
 use ON\Config\Config;
 use ON\Router\UrlHelper;
+use RuntimeException;
 
 class Node extends Config
 {
@@ -97,5 +98,90 @@ class ViewConfig extends Config
 	public function done(): array
 	{
 		return $this->all();
+	}
+
+	public function getLayoutConfig(string $layoutName): array
+	{
+		$layoutConfig = $this->get("formats.html.layouts.{$layoutName}");
+		if (! is_array($layoutConfig)) {
+			throw new RuntimeException(sprintf('There is no configuration for layout name: "%s"', $layoutName));
+		}
+
+		$layoutConfig['name'] = $layoutName;
+
+		return $layoutConfig;
+	}
+
+	public function getRendererConfig(string $rendererName): array
+	{
+		$rendererConfig = $this->get("formats.html.renderers.{$rendererName}");
+		if (! is_array($rendererConfig)) {
+			throw new RuntimeException(sprintf('There is no configuration for renderer name: "%s"', $rendererName));
+		}
+
+		return $rendererConfig;
+	}
+
+	public function getRendererClass(string $rendererName): string
+	{
+		$rendererConfig = $this->getRendererConfig($rendererName);
+
+		return $rendererConfig['class'] ?? '\ON\Renderer';
+	}
+
+	public function getRendererExtension(string $rendererName): ?string
+	{
+		$rendererConfig = $this->getRendererConfig($rendererName);
+		if (! empty($rendererConfig['extension']) && is_string($rendererConfig['extension'])) {
+			return $rendererConfig['extension'];
+		}
+
+		return match ($rendererName) {
+			'plates' => $this->get('templates.extension', 'phtml'),
+			'latte' => $this->get('latte.extension', 'latte'),
+			default => null,
+		};
+	}
+
+	public function getRendererNameFromTemplateExtension(string $templateName): ?string
+	{
+		$extension = $this->extractTemplateExtension($templateName);
+		if ($extension === null) {
+			return null;
+		}
+
+		foreach (array_keys($this->get('formats.html.renderers', [])) as $rendererName) {
+			if ($this->getRendererExtension($rendererName) === $extension) {
+				return $rendererName;
+			}
+		}
+
+		return null;
+	}
+
+	public function normalizeTemplateReference(string $templateName): array
+	{
+		$rendererName = $this->getRendererNameFromTemplateExtension($templateName);
+		if ($rendererName === null) {
+			return [$templateName, null];
+		}
+
+		$extension = $this->extractTemplateExtension($templateName);
+		if ($extension === null) {
+			return [$templateName, null];
+		}
+
+		return [substr($templateName, 0, -strlen('.' . $extension)), $rendererName];
+	}
+
+	protected function extractTemplateExtension(string $templateName): ?string
+	{
+		$templatePath = str_contains($templateName, '::')
+			? explode('::', $templateName, 2)[1]
+			: $templateName;
+
+		$extension = pathinfo($templatePath, PATHINFO_EXTENSION);
+
+		return $extension !== '' ? $extension : null;
 	}
 }

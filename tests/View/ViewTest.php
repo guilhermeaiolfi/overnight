@@ -5,8 +5,12 @@ declare(strict_types=1);
 namespace Tests\ON\View;
 
 use Exception;
+use Laminas\Diactoros\Response\HtmlResponse;
+use ON\Application;
 use ON\RequestStack;
+use ON\Router\Route;
 use ON\View\GenericView;
+use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use ON\View\ViewInterface;
 use ON\View\ViewManager;
@@ -36,7 +40,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class {
+		$mockRenderer = new class implements RendererInterface {
 			public ?array $lastLayoutConfig = null;
 			public ?string $lastTemplateName = null;
 			public ?array $lastData = null;
@@ -73,7 +77,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class {
+		$mockRenderer = new class implements RendererInterface {
 			public ?string $lastTemplateName = null;
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
@@ -107,7 +111,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class {
+		$mockRenderer = new class implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				return 'ok';
@@ -139,7 +143,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig(inject: ['imageManager' => 'ImageManagerClass']);
 
-		$mockRenderer = new class {
+		$mockRenderer = new class implements RendererInterface {
 			public ?array $lastData = null;
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
@@ -175,6 +179,246 @@ final class ViewTest extends TestCase
 
 		$this->assertSame('template-a', $view1->getDefaultTemplateName());
 		$this->assertSame('template-b', $view2->getDefaultTemplateName());
+	}
+
+	public function testRenderInfersRendererFromTemplateExtension(): void
+	{
+		$contentRenderer = new class implements RendererInterface {
+			public array $calls = [];
+
+			public function render($layoutConfig, $templateName, $data, $params = [])
+			{
+				$this->calls[] = [$params['mode'] ?? 'layout', $templateName];
+
+				return 'LATTE:' . $templateName;
+			}
+		};
+
+		$outerRenderer = new class implements RendererInterface {
+			public ?array $lastParams = null;
+
+			public function render($layoutConfig, $templateName, $data, $params = [])
+			{
+				$this->lastParams = $params;
+
+				return ($params['sections']['content']['content'] ?? '') . '|' . ($params['sections']['footer']['content'] ?? '');
+			}
+		};
+
+		$config = new ViewConfig([
+			'formats' => [
+				'html' => [
+					'default' => 'default',
+					'layouts' => [
+						'default' => [
+							'renderer' => 'plates',
+							'sections' => [
+								'footer' => ['template' => 'app::footer.latte'],
+							],
+						],
+					],
+					'renderers' => [
+						'plates' => [
+							'class' => 'OuterRenderer',
+							'extension' => 'phtml',
+						],
+						'latte' => [
+							'class' => 'ContentRenderer',
+							'extension' => 'latte',
+						],
+					],
+				],
+			],
+		]);
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')
+			->willReturnCallback(function (string $class) use ($outerRenderer, $contentRenderer) {
+				return match ($class) {
+					'OuterRenderer' => $outerRenderer,
+					'ContentRenderer' => $contentRenderer,
+					default => null,
+				};
+			});
+
+		$view = $this->createView($config, $container);
+		$result = $view->render([], 'pages::show.latte');
+
+		$this->assertSame('LATTE:pages::show|LATTE:app::footer', $result);
+		$this->assertSame(
+			[['fragment', 'app::footer'], ['fragment', 'pages::show']],
+			$contentRenderer->calls
+		);
+	}
+
+	public function testExplicitSectionRendererOverrideBeatsTemplateExtension(): void
+	{
+		$overrideRenderer = new class implements RendererInterface {
+			public function render($layoutConfig, $templateName, $data, $params = [])
+			{
+				return 'OVERRIDE:' . $templateName;
+			}
+		};
+
+		$outerRenderer = new class implements RendererInterface {
+			public function render($layoutConfig, $templateName, $data, $params = [])
+			{
+				if (($params['mode'] ?? 'layout') === 'fragment') {
+					return 'PLATES:' . $templateName;
+				}
+
+				return ($params['sections']['content']['content'] ?? '') . '|' . ($params['sections']['footer']['content'] ?? '');
+			}
+		};
+
+		$config = new ViewConfig([
+			'formats' => [
+				'html' => [
+					'default' => 'default',
+					'layouts' => [
+						'default' => [
+							'renderer' => 'plates',
+							'sections' => [
+								'footer' => [
+									'template' => 'app::footer.phtml',
+									'renderer' => 'markdown',
+								],
+							],
+						],
+					],
+					'renderers' => [
+						'plates' => [
+							'class' => 'OuterRenderer',
+							'extension' => 'phtml',
+						],
+						'markdown' => [
+							'class' => 'OverrideRenderer',
+							'extension' => 'md',
+						],
+					],
+				],
+			],
+		]);
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')
+			->willReturnCallback(function (string $class) use ($outerRenderer, $overrideRenderer) {
+				return match ($class) {
+					'OuterRenderer' => $outerRenderer,
+					'OverrideRenderer' => $overrideRenderer,
+					default => null,
+				};
+			});
+
+		$view = $this->createView($config, $container);
+		$result = $view->render([], 'pages::show');
+
+		$this->assertSame('PLATES:pages::show|OVERRIDE:app::footer.phtml', $result);
+	}
+
+	public function testRouteSectionsStillRenderThroughApplication(): void
+	{
+		$app = new class {
+			public function processForward(): HtmlResponse
+			{
+				return new HtmlResponse('ROUTE');
+			}
+		};
+
+		$outerRenderer = new class implements RendererInterface {
+			public function render($layoutConfig, $templateName, $data, $params = [])
+			{
+				if (($params['mode'] ?? 'layout') === 'fragment') {
+					return 'PLATES:' . $templateName;
+				}
+
+				return ($params['sections']['content']['content'] ?? '') . '|' . ($params['sections']['footer']['content'] ?? '');
+			}
+		};
+
+		$config = new ViewConfig([
+			'formats' => [
+				'html' => [
+					'default' => 'default',
+					'layouts' => [
+						'default' => [
+							'renderer' => 'plates',
+							'sections' => [
+								'footer' => new Route('/footer', 'TestPage::index', ['GET'], 'footer'),
+							],
+						],
+					],
+					'renderers' => [
+						'plates' => [
+							'class' => 'OuterRenderer',
+							'extension' => 'phtml',
+						],
+					],
+				],
+			],
+		]);
+
+		$container = $this->createMock(ContainerInterface::class);
+		$container->method('get')
+			->willReturnCallback(function (string $class) use ($outerRenderer, $app) {
+				return match ($class) {
+					'OuterRenderer' => $outerRenderer,
+					Application::class => $app,
+					default => null,
+				};
+			});
+
+		$view = $this->createView($config, $container);
+		$result = $view->render([], 'pages::show');
+
+		$this->assertSame('PLATES:pages::show|ROUTE', $result);
+	}
+
+	public function testViewConfigNormalizesSupportedSectionDefinitions(): void
+	{
+		$config = new ViewConfig([
+			'templates' => [
+				'extension' => 'phtml',
+			],
+			'latte' => [
+				'extension' => 'latte',
+			],
+			'formats' => [
+				'html' => [
+					'renderers' => [
+						'plates' => [
+							'class' => 'PlatesRenderer',
+							'extension' => 'phtml',
+						],
+						'latte' => [
+							'class' => 'LatteRenderer',
+							'extension' => 'latte',
+						],
+					],
+				],
+			],
+		]);
+
+		$this->assertSame(
+			['type' => 'content', 'content' => 'literal'],
+			$config->normalizeSectionDefinition('literal')
+		);
+		$this->assertSame(
+			['type' => 'template', 'template' => 'app::footer.latte', 'renderer' => null],
+			$config->normalizeSectionDefinition('app::footer.latte')
+		);
+		$this->assertSame(
+			['type' => 'content', 'content' => 'explicit'],
+			$config->normalizeSectionDefinition(['content' => 'explicit'])
+		);
+		$this->assertSame(
+			['type' => 'template', 'template' => 'app::footer.phtml', 'renderer' => 'latte'],
+			$config->normalizeSectionDefinition(['template' => 'app::footer.phtml', 'renderer' => 'latte'])
+		);
+
+		$routeDefinition = $config->normalizeSectionDefinition(new Route('/footer', 'TestPage::index', ['GET'], 'footer'));
+		$this->assertSame('route', $routeDefinition['type']);
+		$this->assertInstanceOf(Route::class, $routeDefinition['route']);
 	}
 
 	protected function createViewConfig(array $inject = []): ViewConfig

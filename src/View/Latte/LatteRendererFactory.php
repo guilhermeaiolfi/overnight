@@ -5,36 +5,23 @@ declare(strict_types=1);
 namespace ON\View\Latte;
 
 use Latte\Engine;
-use Latte\Macros\MacroSet;
 use ON\Application;
+use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
 
 class LatteRendererFactory
 {
-	public function __invoke(ContainerInterface $c)
+	public function __invoke(ContainerInterface $c, ViewConfig $config): LatteRenderer
 	{
-		$config = $c->get("config");
 		$latte = $c->get(Engine::class);
 		$app = $c->get(Application::class);
 
-		// lets create a set
-		$set = new MacroSet($latte->getCompiler());
+		$latte->addExtension(new SectionLatteExtension());
 
+		if (isset($config["latte"]["tempDirectory"])) {
+			$latte->setTempDirectory($config["latte"]["tempDirectory"] ?? []);
+		}
 
-		$set->addMacro('section', function ($node, $writer) {
-			//return $writer->write('echo isset($__sections)? $__sections[%node.args] : null');
-			return $writer->write('
-        $_blockName = "' . $node->args . '";' .
-		'if (isset($__sections) && isset($__sections[$_blockName]) && is_array($__sections[$_blockName])) {
-          if ($__sections[$_blockName]["type"] == "text") {
-            echo isset($__sections[$_blockName]["content"])? $__sections[$_blockName]["content"] : null;
-          } else if ($__sections[$_blockName]["type"] == "file") {
-			      $this->createTemplate($__sections[$_blockName]["content"], %node.array? + get_defined_vars(), "include")->render();
-          }
-        }', implode($node->context));
-		});
-
-		$latte->setTempDirectory($config["paths"]["latte"]);
 		$latte->setAutoRefresh($config["latte"]["autorefresh"]);
 
 		$renderer = new LatteRenderer($config, $latte, $app, $c);

@@ -5,16 +5,11 @@ declare(strict_types=1);
 namespace ON\View\Latte;
 
 use Exception;
-use function explode;
-use Laminas\Diactoros\ServerRequestFactory;
 use Latte\Engine;
 use ON\Application;
-use ON\Router\Route;
 use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
 
 class LatteRenderer implements RendererInterface
 {
@@ -33,12 +28,10 @@ class LatteRenderer implements RendererInterface
 
 	public function render($layout, $template_name = null, $data = null, $params = [])
 	{
-
 		$config = $this->config;
-
 		$engine = $this->engine;
+		$mode = $params['mode'] ?? 'layout';
 
-		//print_r($layout);
 		$latte_renderer_config = $config["formats"]["html"]["renderers"]["latte"];
 
 		if (isset($latte_renderer_config["inject"]) && is_array($latte_renderer_config["inject"])) {
@@ -51,49 +44,16 @@ class LatteRenderer implements RendererInterface
 		}
 		$ext = isset($latte_renderer_config["extension"]) ? $latte_renderer_config["extension"] : $config["latte"]["extension"];
 
-		$templatePath = $this->findTemplate($layout["name"], $ext);
-		$blocks = [];
-		$request = $params['request'] ?? null;
-		if (isset($layout["sections"])) {
-			foreach ($layout["sections"] as $section_name => $section_value) {
-				$type = "text";
-				$content = null;
+		if ($mode === 'fragment') {
+			$contentPath = $this->findTemplate($template_name, $ext);
 
-				if (is_array($section_value)) { // convert to Route instance
-					//	array format: ["/layout/front/footer", "Core\Page\FooterPage::index", ["GET"], "layout.front.footer"]
-					$section_value = new Route(...$section_value);
-				}
-
-				if (is_string($section_value)) {
-					if (strpos($section_value, "." . $ext) !== false) {
-						$type = "file";
-
-						// findTemplate expect template without extension
-						$template = substr($section_value, 0, -strlen("." . $ext));
-						$content = $this->findTemplate($template, $ext);
-					} else {
-						$content = $section_value;
-					}
-				} else if ($section_value instanceof Route) {
-					$response = $this->runSection($section_value, $request);
-					$content = (string) $response->getBody();
-				} else {
-					throw new Exception("Invalid section configuration for section: {$section_name}");
-				}
-				
-				$blocks[$section_name] = ["type" => $type, "content" => $content];
-			}
+			return $engine->renderToString($contentPath, $data);
 		}
-		$contentPath = $this->findTemplate($template_name, $ext);
-		$blocks["content"] = ["type" => "text", "content" => $engine->renderToString($contentPath, $data)];
-		$engine->addProvider('coreParentFinder', function ($template) use ($templatePath) {
-			if (! $template->getReferenceType()) {
-				return $templatePath;
-			}
-		});
-		$data["__sections"] = $blocks;
 
-		return $engine->renderToString($contentPath, $data);
+		$templatePath = $this->findTemplate($layout["name"], $ext);
+		$data["__sections"] = $params['sections'] ?? [];
+
+		return $engine->renderToString($templatePath, $data);
 
 	}
 
@@ -119,16 +79,5 @@ class LatteRenderer implements RendererInterface
 
 		throw new Exception("The template filename({$fs_path}) doesn't exist", 1);
 
-	}
-
-	public function runSection(Route $route, ?ServerRequestInterface $parentRequest = null): ResponseInterface
-	{
-		$request = $parentRequest ?? ServerRequestFactory::fromGlobals();
-
-		return $this->app->processForward(
-			$route->getPath(),
-			$request,
-			$route->getAllowedMethods()[0] ?? $request->getMethod()
-		);
 	}
 }

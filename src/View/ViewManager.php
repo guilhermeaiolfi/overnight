@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace ON\View;
 
 use Exception;
+use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\RequestContext;
 use ON\RequestStackInterface;
+use ON\Router\Route;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use RuntimeException;
 
 class ViewManager
 {
@@ -38,33 +41,18 @@ class ViewManager
 			$layoutName = $this->config["formats"]["html"]["default"] ?? 'default';
 		}
 
-		if (! isset($this->config["formats"]['html']['layouts'][$layoutName])) {
-			throw new Exception("There is no configuration for layout name: \"{$layoutName}\"");
-		}
-
-		$layoutConfig = $this->config["formats"]['html']['layouts'][$layoutName];
+		$layoutConfig = $this->config->getLayoutConfig($layoutName);
 		$rendererName = $layoutConfig['renderer'];
-		$rendererConfig = $this->config["formats"]['html']['renderers'][$rendererName];
-		$rendererClass = $rendererConfig['class'] ?? '\ON\Renderer';
-		$renderer = $this->container->get($rendererClass);
+		$renderer = $this->getRendererInstance($rendererName);
 
-		if (! empty($rendererConfig['inject'])) {
-			$renderContext = new RenderContext(
-				$this->container,
-				$request,
-				$data,
-				['layout' => $layoutConfig, 'template' => $templateName]
-			);
+		$renderedSections = $this->renderSections($data, $templateName, $rendererName, $layoutConfig, $request);
 
-			foreach ($rendererConfig['inject'] as $key => $class) {
-				$data[$key] = $this->resolveInjectedValue($class, $renderContext);
-			}
-		}
-
-		$layoutConfig["name"] = $layoutName;
+		$data = $this->injectHelpers($rendererName, $data, $request, $layoutConfig, $templateName);
 
 		return $renderer->render($layoutConfig, $templateName, $data, [
 			'request' => $request,
+			'mode' => 'layout',
+			'sections' => $renderedSections,
 		]);
 	}
 
@@ -82,7 +70,7 @@ class ViewManager
 		$result = $this->resolveViewResult($response);
 
 		$result->setActionName($actionName);
-		
+
 		if ($result->getPageClass() === null) {
 			$result->setTargetObject($actionPage);
 		} else {
@@ -100,15 +88,17 @@ class ViewManager
 				$requestContext->set(ViewResult::class, $result);
 			}
 
-			return $executor->execute([
-				$result->getTargetObject(),
-				$result->getViewMethod(),
-			],
-			$this->resolveViewParameters(
-				$result,
-				$request,
-				$delegate
-			));
+			return $executor->execute(
+				[
+					$result->getTargetObject(),
+					$result->getViewMethod(),
+				],
+				$this->resolveViewParameters(
+					$result,
+					$request,
+					$delegate
+				)
+			);
 		});
 	}
 
@@ -179,5 +169,197 @@ class ViewManager
 		$viewResult = $requestContext->get(ViewResult::class);
 
 		return $viewResult instanceof ViewResult ? $viewResult : null;
+	}
+
+	protected function getType(mixed $sectionDefinition): array
+	{
+		if ($sectionDefinition instanceof Route) {
+			return [
+				'type' => 'uri',
+				"uri" => $sectionDefinition->getPath(),
+			];
+		}
+
+		if (is_array($sectionDefinition) && array_is_list($sectionDefinition)) {
+			return [
+				'type' => 'uri',
+				'uri' => $sectionDefinition[0] ?? '',
+			];
+		}
+
+		if (is_array($sectionDefinition)) {
+			if (array_key_exists('content', $sectionDefinition)) {
+				return [
+					'type' => 'content',
+					'content' => (string) $sectionDefinition['content'],
+				];
+			}
+
+
+			if (isset($sectionDefinition['template'])) {
+				return [
+					'type' => 'template',
+					'template' => (string) $sectionDefinition['template'],
+					'renderer' => isset($sectionDefinition['renderer']) && is_string($sectionDefinition['renderer'])
+						? $sectionDefinition['renderer']
+						: null,
+				];
+			}
+		}
+
+		if (is_string($sectionDefinition)) {
+			if (str_ends_with($sectionDefinition, '.php') && file_exists($sectionDefinition)) {
+				return [
+					'type' => 'phpFile',
+					'phpFile' => $sectionDefinition,
+				];
+			}
+
+
+			if ($this->config->getRendererNameFromTemplateExtension($sectionDefinition) !== null) {
+				return [
+					'type' => 'template',
+					'template' => $sectionDefinition,
+					'renderer' => null,
+				];
+			}
+
+			return [
+				'type' => 'content',
+				'content' => $sectionDefinition,
+			];
+		}
+
+		throw new RuntimeException('Invalid section configuration.');
+
+	}
+
+	protected function renderSections(
+		array &$data,
+		string $templateName,
+		string $outerRenderer,
+		array $layoutConfig,
+		?ServerRequestInterface $request
+	): array {
+		$sections = [];
+
+		foreach ($layoutConfig['sections'] ?? [] as $sectionName => $sectionDefinition) {
+
+			$sections[$sectionName] = [
+				'type' => 'text',
+				'content' => $this->renderSection(
+					$data,
+					$this->getType($sectionDefinition),
+					$outerRenderer,
+					$layoutConfig,
+					$request
+				),
+			];
+		}
+
+		$sections['content'] = [
+			'type' => 'text',
+			'content' => $this->renderSection(
+				$data,
+				$this->getType(['template' => $templateName]),
+				$outerRenderer,
+				$layoutConfig,
+				$request
+			),
+		];
+
+		return $sections;
+	}
+
+	protected function renderSection(
+		array &$data,
+		array $sectionDefinition,
+		string $outerRenderer,
+		array $layoutConfig,
+		?ServerRequestInterface $request
+	): string {
+		switch ($sectionDefinition['type'] ?? null) {
+			case 'content':
+				return (string) $sectionDefinition['content'];
+
+			case 'uri':
+				$app = $this->container->get(Application::class);
+
+				$response = $app->processForward(
+					$sectionDefinition['uri'],
+					$request,
+					'GET'
+				);
+
+				return (string) $response->getBody();
+
+			case 'phpFile':
+				ob_start();
+				include $sectionDefinition['phpFile'];
+
+				return (string) ob_get_clean();
+
+			case 'template':
+				$templateName = (string) $sectionDefinition['template'];
+				$explicitRenderer = $sectionDefinition['renderer'] ?? null;
+				[$normalizedTemplate, $inferredRenderer] = $this->config->normalizeTemplateReference($templateName);
+				$rendererName = $explicitRenderer ?? $inferredRenderer ?? $outerRenderer;
+				$templateReference = ($explicitRenderer !== null && $explicitRenderer !== $inferredRenderer)
+					? $templateName
+					: $normalizedTemplate;
+
+				$data = $this->injectHelpers($rendererName, $data, $request, $layoutConfig, $templateReference);
+
+				$renderer = $this->getRendererInstance($rendererName);
+
+				return $renderer->render($layoutConfig, $templateReference, $data, [
+					'request' => $request,
+					'mode' => 'fragment',
+				]);
+		}
+
+		throw new Exception('Invalid section configuration.');
+	}
+
+	protected function getRendererInstance(string $rendererName): RendererInterface
+	{
+		$rendererClass = $this->config->getRendererClass($rendererName);
+		$renderer = $this->container->get($rendererClass);
+
+		if (! $renderer instanceof RendererInterface) {
+			throw new Exception(sprintf('Renderer "%s" is invalid.', $rendererName));
+		}
+
+		return $renderer;
+	}
+
+	protected function injectHelpers(
+		string $rendererName,
+		array $data,
+		?ServerRequestInterface $request,
+		array $layoutConfig,
+		string $templateName
+	): array {
+		$rendererConfig = $this->config->getRendererConfig($rendererName);
+		if (empty($rendererConfig['inject'])) {
+			return $data;
+		}
+
+		$renderContext = new RenderContext(
+			$this->container,
+			$request,
+			$data,
+			['layout' => $layoutConfig, 'template' => $templateName]
+		);
+
+		foreach ($rendererConfig['inject'] as $key => $class) {
+			if (array_key_exists($key, $data)) {
+				continue;
+			}
+
+			$data[$key] = $this->resolveInjectedValue($class, $renderContext);
+		}
+
+		return $data;
 	}
 }
