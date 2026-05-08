@@ -72,7 +72,7 @@ class MainPage
 		$data = $this->processAddons($page_context, $data);
 
 		$data['_templateFileName'] = $template_file;
-		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file);
+		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file, true);
 		$data['_templateLang'] = $template_lang;
 
 		return ViewResult::for('success', $data);
@@ -127,7 +127,8 @@ class MainPage
 	public function successView(array $data, ServerRequestInterface $request = null, $delegate = null)
 	{
 		$template_file = $data['_templateFileName'] ?? '';
-		$template_name = $data['_templateName'] ?? str_replace([".phtml", ".php"], "", $template_file);
+		$template_name = $data['_templateName']
+			?? str_replace([".phtml", ".php"], "", $template_file);
 
 		return new HtmlResponse($this->viewManager->render($data, $template_name, $this->layout));
 	}

@@ -194,12 +194,17 @@ class FileRoutingCache
 		return $this->cachePath . DIRECTORY_SEPARATOR . preg_replace('/\.php$/', '.meta.php', $path);
 	}
 
-	public function getTemplateName(string $file): string
+	public function getTemplateName(string $file, bool $preserveExtension = false): string
 	{
 		$templateName = str_replace($this->cachePath, "", $file);
 		$templateName = str_replace(DIRECTORY_SEPARATOR, "/", $templateName);
+		$templateName = ltrim($templateName, "/");
 
-		return $this->fileroutingCfg->get("template.namespace", "filerouting") . "::" . preg_replace('/\.[^.]+$/', '', $templateName);
+		if (! $preserveExtension) {
+			$templateName = preg_replace('/\.[^.]+$/', '', $templateName);
+		}
+
+		return $this->fileroutingCfg->get("template.namespace", "filerouting") . "::" . $templateName;
 	}
 
 	protected function parseTemplate(string $content): array
