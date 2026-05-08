@@ -43,6 +43,11 @@ class DebugPDO extends PDO
 		return $this->pdo->commit();
 	}
 
+	public function rollBack(): bool
+	{
+		return $this->pdo->rollBack();
+	}
+
 	public function errorCode(): ?string
 	{
 		return $this->pdo->errorCode();
