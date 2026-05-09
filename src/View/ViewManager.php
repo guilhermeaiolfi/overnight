@@ -42,6 +42,11 @@ class ViewManager
 		}
 
 		$layoutConfig = $this->config->getLayoutConfig($layoutName);
+
+		if (! is_array($layoutConfig)) {
+			throw new RuntimeException(sprintf('There is no configuration for layout name: "%s"', $layoutName));
+		}
+
 		$rendererName = $layoutConfig['renderer'];
 		$renderer = $this->getRendererInstance($rendererName);
 
@@ -66,53 +71,45 @@ class ViewManager
 	): mixed {
 		if ($response instanceof ResponseInterface) {
 			return $response;
+		} else if (is_string($response)) {
+			$response = ViewResult::for($response);
 		}
-		$result = $this->resolveViewResult($response);
 
-		$result->setActionName($actionName);
+		if (! $response instanceof ViewResult) {
+			throw new Exception('Response invalid', 1);
+		}
 
-		if ($result->getPageClass() === null) {
-			$result->setTargetObject($actionPage);
+		$response->setActionName($actionName);
+
+		if ($response->getPageClass() === null) {
+			$response->setTargetObject($actionPage);
 		} else {
-			$targetObject = $this->container->get($result->getPageClass());
-			$result->setTargetObject($targetObject);
+			$targetObject = $this->container->get($response->getPageClass());
+			$response->setTargetObject($targetObject);
 		}
 
 		return $this->requestStack->usingRequest($request, function (ServerRequestInterface $request) use (
-			$result,
+			$response,
 			$delegate,
 			$executor
 		): mixed {
 			$requestContext = $request->getAttribute(RequestContext::class);
 			if ($requestContext instanceof RequestContext) {
-				$requestContext->set(ViewResult::class, $result);
+				$requestContext->set(ViewResult::class, $response);
 			}
 
 			return $executor->execute(
 				[
-					$result->getTargetObject(),
-					$result->getViewMethod(),
+					$response->getTargetObject(),
+					$response->getViewMethod(),
 				],
 				$this->resolveViewParameters(
-					$result,
+					$response,
 					$request,
 					$delegate
 				)
 			);
 		});
-	}
-
-	protected function resolveViewResult(mixed $response): mixed
-	{
-		if ($response instanceof ViewResult) {
-			return $response;
-		}
-
-		if (is_string($response)) {
-			return new ViewResult($response);
-		}
-
-		throw new Exception("Response invalid", 1);
 	}
 
 	protected function resolveViewParameters(
@@ -140,20 +137,11 @@ class ViewManager
 		);
 
 		foreach ($this->config->get('helpers', []) as $name => $class) {
-			$helper = $this->resolveInjectedValue($class, $renderContext);
+			$helper = $this->createInjectedValue($class, $renderContext);
 			$parameters[$class] ??= $helper;
 		}
 
 		return $parameters;
-	}
-
-	protected function resolveInjectedValue(string $class, RenderContext $context): mixed
-	{
-		if (is_a($class, RenderContextAwareHelperInterface::class, true)) {
-			return $class::createFromRenderContext($context);
-		}
-
-		return $this->container->get($class);
 	}
 
 	protected function getCurrentViewResult(): ?ViewResult
@@ -274,7 +262,7 @@ class ViewManager
 	protected function renderSection(
 		array &$data,
 		array $sectionDefinition,
-		string $outerRenderer,
+		string $outerRendererName,
 		array $layoutConfig,
 		?ServerRequestInterface $request
 	): string {
@@ -301,18 +289,32 @@ class ViewManager
 
 			case 'template':
 				$templateName = (string) $sectionDefinition['template'];
-				$explicitRenderer = $sectionDefinition['renderer'] ?? null;
-				[$normalizedTemplate, $inferredRenderer] = $this->config->normalizeTemplateReference($templateName);
-				$rendererName = $explicitRenderer ?? $inferredRenderer ?? $outerRenderer;
-				$templateReference = ($explicitRenderer !== null && $explicitRenderer !== $inferredRenderer)
-					? $templateName
-					: $normalizedTemplate;
+				$explicitRendererName = $sectionDefinition['renderer'] ?? null;
 
-				$data = $this->injectHelpers($rendererName, $data, $request, $layoutConfig, $templateReference);
+				$inferredRendererName = $this->config->getRendererNameFromTemplateExtension($templateName);
+				$templateNameWithoutExtension = null;
+				if ($inferredRendererName === null) { // that was no extension or there is no renderer for that extension
+					$templateNameWithoutExtension = $templateName;
+				}
+
+				$extension = $this->config->extractTemplateExtension($templateName);
+				if ($extension === null) {
+					$templateNameWithoutExtension = $templateName;
+				}
+
+				if ($templateNameWithoutExtension === null) {
+					$templateNameWithoutExtension = substr($templateName, 0, -strlen('.' . $extension));
+				}
+				$rendererName = $explicitRendererName ?? $inferredRendererName ?? $outerRendererName;
+				$templateNameWithoutExtension = ($explicitRendererName !== null && $explicitRendererName !== $inferredRendererName)
+					? $templateName
+					: $templateNameWithoutExtension;
+
+				$data = $this->injectHelpers($rendererName, $data, $request, $layoutConfig, $templateNameWithoutExtension);
 
 				$renderer = $this->getRendererInstance($rendererName);
 
-				return $renderer->render($layoutConfig, $templateReference, $data, [
+				return $renderer->render($layoutConfig, $templateNameWithoutExtension, $data, [
 					'request' => $request,
 					'mode' => 'fragment',
 				]);
@@ -324,6 +326,11 @@ class ViewManager
 	protected function getRendererInstance(string $rendererName): RendererInterface
 	{
 		$rendererClass = $this->config->getRendererClass($rendererName);
+
+		if ($rendererClass === null) {
+			throw new RuntimeException(sprintf('There is no configuration for renderer name: "%s"', $rendererName));
+		}
+
 		$renderer = $this->container->get($rendererClass);
 
 		if (! $renderer instanceof RendererInterface) {
@@ -341,6 +348,11 @@ class ViewManager
 		string $templateName
 	): array {
 		$rendererConfig = $this->config->getRendererConfig($rendererName);
+
+		if (! is_array($rendererConfig)) {
+			throw new RuntimeException(sprintf('There is no configuration for renderer name: "%s"', $rendererName));
+		}
+
 		if (empty($rendererConfig['inject'])) {
 			return $data;
 		}
@@ -357,9 +369,19 @@ class ViewManager
 				continue;
 			}
 
-			$data[$key] = $this->resolveInjectedValue($class, $renderContext);
+			$data[$key] = $this->createInjectedValue($class, $renderContext);
 		}
 
 		return $data;
 	}
+
+	protected function createInjectedValue(string $class, RenderContext $context): mixed
+	{
+		if (is_a($class, RenderContextAwareHelperInterface::class, true)) {
+			return $class::createFromRenderContext($context);
+		}
+
+		return $this->container->get($class);
+	}
+
 }

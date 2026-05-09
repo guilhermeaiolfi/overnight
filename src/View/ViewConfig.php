@@ -100,11 +100,11 @@ class ViewConfig extends Config
 		return $this->all();
 	}
 
-	public function getLayoutConfig(string $layoutName): array
+	public function getLayoutConfig(string $layoutName): ?array
 	{
 		$layoutConfig = $this->get("formats.html.layouts.{$layoutName}");
 		if (! is_array($layoutConfig)) {
-			throw new RuntimeException(sprintf('There is no configuration for layout name: "%s"', $layoutName));
+			return NULL;
 		}
 
 		$layoutConfig['name'] = $layoutName;
@@ -112,19 +112,20 @@ class ViewConfig extends Config
 		return $layoutConfig;
 	}
 
-	public function getRendererConfig(string $rendererName): array
+	public function getRendererConfig(string $rendererName): ?array
 	{
 		$rendererConfig = $this->get("formats.html.renderers.{$rendererName}");
-		if (! is_array($rendererConfig)) {
-			throw new RuntimeException(sprintf('There is no configuration for renderer name: "%s"', $rendererName));
-		}
 
 		return $rendererConfig;
 	}
 
-	public function getRendererClass(string $rendererName): string
+	public function getRendererClass(string $rendererName): ?string
 	{
 		$rendererConfig = $this->getRendererConfig($rendererName);
+
+		if ($rendererConfig === null) {
+			return null;
+		}
 
 		return $rendererConfig['class'] ?? '\ON\Renderer';
 	}
@@ -159,22 +160,7 @@ class ViewConfig extends Config
 		return null;
 	}
 
-	public function normalizeTemplateReference(string $templateName): array
-	{
-		$rendererName = $this->getRendererNameFromTemplateExtension($templateName);
-		if ($rendererName === null) {
-			return [$templateName, null];
-		}
-
-		$extension = $this->extractTemplateExtension($templateName);
-		if ($extension === null) {
-			return [$templateName, null];
-		}
-
-		return [substr($templateName, 0, -strlen('.' . $extension)), $rendererName];
-	}
-
-	protected function extractTemplateExtension(string $templateName): ?string
+	public function extractTemplateExtension(string $templateName): ?string
 	{
 		$templatePath = str_contains($templateName, '::')
 			? explode('::', $templateName, 2)[1]
