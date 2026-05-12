@@ -6,6 +6,7 @@ namespace Tests\ON\Extension;
 
 use FilesystemIterator;
 use ON\Application;
+use ON\Clockwork\ClockworkExtension;
 use ON\Config\ConfigExtension;
 
 use ON\Config\Init\Event\ConfigConfigureEvent;
@@ -156,10 +157,47 @@ final class ExtensionInitTest extends TestCase
 		$this->assertSame(['event', 'method'], MethodConsumerExtension::$events);
 	}
 
+	public function testExtensionProfilerIsDisabledWithoutDebugClockwork(): void
+	{
+		$app = $this->createApplication([
+			InitRegisterProbeExtension::class => [],
+		], true);
+
+		$this->assertFalse($app->extensionProfiler()->isEnabled());
+		$this->assertSame([], $app->extensionProfiler()->samples());
+	}
+
+	public function testExtensionProfilerIsDisabledOutsideDebugEvenWithClockwork(): void
+	{
+		$app = $this->createApplication([
+			ClockworkExtension::class => [],
+			InitRegisterProbeExtension::class => [],
+		]);
+
+		$this->assertFalse($app->extensionProfiler()->isEnabled());
+		$this->assertSame([], $app->extensionProfiler()->samples());
+	}
+
+	public function testExtensionProfilerRecordsLifecycleWhenDebugClockworkIsInstalled(): void
+	{
+		$app = $this->createApplication([
+			ClockworkExtension::class => [],
+			InitRegisterProbeExtension::class => [],
+		], true);
+
+		$matches = array_values(array_filter(
+			$app->extensionProfiler()->samples(),
+			fn (array $sample): bool => $sample['extension'] === InitRegisterProbeExtension::class
+		));
+
+		$this->assertTrue($app->extensionProfiler()->isEnabled());
+		$this->assertNotEmpty($matches);
+	}
+
 	/**
 	 * @param array<class-string, array<string, mixed>> $extensions
 	 */
-	private function createApplication(array $extensions): Application
+	private function createApplication(array $extensions, bool $debug = false): Application
 	{
 		$this->writeProjectFiles();
 
@@ -168,7 +206,7 @@ final class ExtensionInitTest extends TestCase
 				'project' => $this->projectDir,
 			],
 			'extensions' => $extensions,
-			'debug' => false,
+			'debug' => $debug,
 		]);
 	}
 

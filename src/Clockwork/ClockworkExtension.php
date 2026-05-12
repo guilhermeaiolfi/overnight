@@ -12,6 +12,7 @@ use Clockwork\Support\Vanilla\Clockwork;
 use Laminas\Stdlib\ArrayUtils;
 use ON\Application;
 use ON\Benchmark;
+use ON\Clockwork\DataSource\ExtensionProfilerDataSource;
 use ON\Clockwork\DataSource\PsrLoggerDatasource;
 use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Container\Init\Event\ContainerReadyEvent;
@@ -66,9 +67,6 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 			$this->injectMiddleware();
 		});
 
-		foreach ($this->app->getInstalledExtensions() as $extClassName) {
-			clock()->event($extClassName)->begin();
-		}
 	}
 
 	public function injectMiddleware(): void
@@ -83,6 +81,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$logger = $container->get(LoggerInterface::class);
 		$loggerDataSource = new PsrLoggerDatasource($logger);
 		$this->clockwork->addDataSource($loggerDataSource);
+		$this->clockwork->addDataSource(new ExtensionProfilerDataSource($this->app->extensionProfiler()));
 	}
 
 	public function onQuery($event)

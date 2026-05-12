@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Application;
-use ON\Container\ContainerConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -56,6 +56,7 @@ class RestApiExtension extends AbstractExtension
 		$maxLimit = $config->get('maxLimit', 1000);
 
 		$service = $container->get(RestApiService::class);
+
 
 		// Wire up per-request cleanup via event
 		if ($service->getResolver() !== null) {
@@ -129,5 +130,4 @@ class RestApiExtension extends AbstractExtension
 			}
 		}
 	}
-
 }

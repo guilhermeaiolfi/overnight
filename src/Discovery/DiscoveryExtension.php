@@ -6,7 +6,6 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\AppConfig;
-
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -58,6 +57,7 @@ class DiscoveryExtension extends AbstractExtension
 	{
 		return isset($this->discovers[$className]);
 	}
+
 	public function runDiscovery(): void
 	{
 		$this->appCfg = $this->app->config->get(AppConfig::class);
@@ -86,8 +86,6 @@ class DiscoveryExtension extends AbstractExtension
 				$discover->apply();
 			}
 		}
-
-
 		// we are now fully ready
 	}
 

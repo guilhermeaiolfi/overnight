@@ -9,6 +9,7 @@ use ON\Config\AppConfig;
 use ON\Config\Scanner\AttributeReader;
 use Psr\Container\ContainerInterface;
 use ReflectionClass;
+use SplFileInfo;
 
 class AttributesDiscoverer implements DiscoverInterface
 {
@@ -55,7 +56,7 @@ class AttributesDiscoverer implements DiscoverInterface
 		$this->processors[$className] = $options;
 	}
 
-	public function discover($file, DiscoveryLocation $location): void
+	public function discover(SplFileInfo $file, DiscoveryLocation $location): void
 	{
 		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
 		foreach ($classes as $className) {
@@ -78,19 +79,19 @@ class AttributesDiscoverer implements DiscoverInterface
 		}
 	}
 
-	public function getData(): mixed
+	public function getData(): DiscoveryItems
 	{
 		return $this->items;
 	}
 
-	public function addData(mixed $items): void
+	public function addData(DiscoveryItems $items): void
 	{
 		foreach ($items as $item) {
 			$this->items->add($item);
 		}
 	}
 
-	public function setData(mixed $items): void
+	public function setData(DiscoveryItems $items): void
 	{
 		$this->items = $items;
 

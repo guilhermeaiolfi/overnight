@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Init;
 
 use BackedEnum;
+use ON\Extension\ExtensionProfiler;
 use Throwable;
 
 class Init
@@ -28,7 +29,9 @@ class Init
 	/** @var array<int, array{event: string, payload: object}> */
 	private array $eventHistory = [];
 
-	public function __construct()
+	public function __construct(
+		private ?ExtensionProfiler $profiler = null
+	)
 	{
 		$this->context = new InitContext($this);
 	}
@@ -82,11 +85,11 @@ class Init
 
 		try {
 			foreach ($listeners as $item) {
-				$this->invoke($item['callback'], $payload);
+				$this->invoke($item, $name, $payload, 'init');
 			}
 
 			foreach ($doneListeners as $item) {
-				$this->invoke($item['callback'], $payload);
+				$this->invoke($item, $name, $payload, 'init.done');
 			}
 		} catch (Throwable $e) {
 			throw new InitException($name, $this->eventStack, $e);
@@ -99,24 +102,28 @@ class Init
 
 	public function addListener(string $event, callable $listener): void
 	{
-		if ($this->currentExtension) {
-			$this->subscriptionMap[$this->currentExtension][] = $event;
+		$owner = $this->currentExtension ?? $this->profiler?->getActiveExtension();
+
+		if ($owner) {
+			$this->subscriptionMap[$owner][] = $event;
 		}
 
 		$this->listeners[$event][] = [
-			'owner' => $this->currentExtension,
+			'owner' => $owner,
 			'callback' => $listener
 		];
 	}
 
 	public function addDoneListener(string $event, callable $listener): void
 	{
-		if ($this->currentExtension) {
-			$this->subscriptionMap[$this->currentExtension][] = $event;
+		$owner = $this->currentExtension ?? $this->profiler?->getActiveExtension();
+
+		if ($owner) {
+			$this->subscriptionMap[$owner][] = $event;
 		}
 
 		$this->doneListeners[$event][] = [
-			'owner' => $this->currentExtension,
+			'owner' => $owner,
 			'callback' => $listener
 		];
 	}
@@ -180,8 +187,28 @@ class Init
 		return $event;
 	}
 
-	private function invoke(callable $listener, object $payload): mixed
+	/**
+	 * @param array{owner: ?string, callback: callable} $item
+	 */
+	private function invoke(array $item, string $event, object $payload, string $stage): mixed
 	{
+		$listener = $item['callback'];
+		$owner = $item['owner'];
+
+		if ($this->profiler !== null && $owner !== null) {
+			$this->profiler->begin(
+				$owner,
+				$event,
+				$stage,
+				$listener
+			);
+			try {
+				return $listener($payload, $this->context);
+			} finally {
+				$this->profiler->end();
+			}
+		}
+
 		return $listener($payload, $this->context);
 	}
 }

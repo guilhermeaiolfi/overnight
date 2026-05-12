@@ -7,6 +7,7 @@ namespace Tests\ON\Init;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Init\InitException;
+use ON\Extension\ExtensionProfiler;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use stdClass;
@@ -91,5 +92,51 @@ final class InitTest extends TestCase
 			$this->assertSame(['setup'], $e->getEventStack());
 			$this->assertSame('boom', $e->getPrevious()->getMessage());
 		}
+	}
+
+	public function testProfilerRecordsInitListenerTimeByOwnerAndEvent(): void
+	{
+		$profiler = new ExtensionProfiler();
+		$init = new Init($profiler);
+
+		$init->setCurrentExtension('Tests\\ON\\Init\\ProfiledExtension');
+		$init->on('setup', function (): void {
+			usleep(1000);
+		});
+		$init->setCurrentExtension(null);
+
+		$init->emit('setup', new stdClass());
+
+		$samples = $profiler->samples();
+		$this->assertCount(1, $samples);
+		$this->assertSame('Tests\\ON\\Init\\ProfiledExtension', $samples[0]['extension']);
+		$this->assertSame('setup', $samples[0]['event']);
+		$this->assertSame('init', $samples[0]['stage']);
+		$this->assertGreaterThan(0, $samples[0]['duration']);
+	}
+
+	public function testProfilerUsesExclusiveTimeForNestedEvents(): void
+	{
+		$profiler = new ExtensionProfiler();
+		$init = new Init($profiler);
+
+		$init->setCurrentExtension('ParentExtension');
+		$init->on('parent', function (object $event, InitContext $context): void {
+			$context->emit('child', new stdClass());
+		});
+
+		$init->setCurrentExtension('ChildExtension');
+		$init->on('child', function (): void {
+			usleep(5000);
+		});
+		$init->setCurrentExtension(null);
+
+		$init->emit('parent', new stdClass());
+
+		$samples = $profiler->samples();
+		$parent = array_values(array_filter($samples, fn (array $sample): bool => $sample['extension'] === 'ParentExtension'))[0];
+		$child = array_values(array_filter($samples, fn (array $sample): bool => $sample['extension'] === 'ChildExtension'))[0];
+
+		$this->assertLessThan($child['duration'], $parent['duration']);
 	}
 }

@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace ON;
 
 use Exception;
-use ON\FS\PathRegistry;
+use ON\Extension\ExtensionProfiler;
 use ON\Extension\ExtensionInterface;
+use ON\FS\PathRegistry;
 use ON\Init\Init;
 use Symfony\Component\Dotenv\Dotenv;
 
@@ -33,6 +34,8 @@ class Application
 	public PathRegistry $paths;
 
 	protected Init $init;
+
+	protected ExtensionProfiler $extensionProfiler;
 
 	/** @var array<string, array<string, callable>> [MethodName => [ExtensionClass => Callback]] */
 	protected array $unresolvedMethods = [];
@@ -62,8 +65,6 @@ class Application
 		if (! isset(self::$instance)) {
 			self::$instance = $this;
 		}
-
-		$this->init = new Init();
 
 		$paths = $options['paths'] ?? [];
 		if (! is_array($paths)) {
@@ -100,6 +101,9 @@ class Application
 		foreach ($extensions as $ext_class => $ext_options) {
 			$this->extensionsToInstall[$ext_class] = $ext_options;
 		}
+
+		$this->extensionProfiler = new ExtensionProfiler($this->shouldProfileExtensions());
+		$this->init = new Init($this->extensionProfiler);
 
 		$this->loadExtensions();
 	}
@@ -146,6 +150,28 @@ class Application
 		return $this->init;
 	}
 
+	public function extensionProfiler(): ExtensionProfiler
+	{
+		return $this->extensionProfiler;
+	}
+
+	private function shouldProfileExtensions(): bool
+	{
+		if (! $this->debug) {
+			return false;
+		}
+
+		foreach ($this->extensionsToInstall as $class => $options) {
+			if ($class !== 'ON\\Clockwork\\ClockworkExtension') {
+				continue;
+			}
+
+			return ! isset($options['enabled']) || $options['enabled'] !== false;
+		}
+
+		return false;
+	}
+
 	protected function loadExtensions()
 	{
 		// Phase 1: Instantiate all extensions (Order doesn't matter yet)
@@ -156,7 +182,17 @@ class Application
 		// Phase 2: Registration Pass (Collecting all subscriptions and methods)
 		foreach ($this->extensions as $class => $instance) {
 			$this->init->setCurrentExtension($class);
-			$instance->register($this->init);
+			$this->extensionProfiler->begin(
+				$class,
+				'extension.register',
+				'lifecycle',
+				[$instance, 'register']
+			);
+			try {
+				$instance->register($this->init);
+			} finally {
+				$this->extensionProfiler->end();
+			}
 		}
 		$this->init->setCurrentExtension(null);
 
@@ -174,7 +210,17 @@ class Application
 		foreach ($orderedClasses as $class) {
 			$ext_instance = $this->extensions[$class];
 			if (method_exists($ext_instance, 'start')) {
-				$ext_instance->start($this->init->context());
+				$this->extensionProfiler->begin(
+					$class,
+					'extension.start',
+					'lifecycle',
+					[$ext_instance, 'start']
+				);
+				try {
+					$ext_instance->start($this->init->context());
+				} finally {
+					$this->extensionProfiler->end();
+				}
 			}
 		}
 	}
@@ -330,7 +376,17 @@ class Application
 			}
 		}
 
-		$instance = new $extension_class($this, $extension_options);
+		$this->extensionProfiler->begin(
+			$extension_class,
+			'extension.install',
+			'lifecycle',
+			[$extension_class, '__construct']
+		);
+		try {
+			$instance = new $extension_class($this, $extension_options);
+		} finally {
+			$this->extensionProfiler->end();
+		}
 		if (isset($instance)) {
 			$this->extensions[$extension_class] = $instance;
 			$this->registerExtension($instance->id(), $instance);
