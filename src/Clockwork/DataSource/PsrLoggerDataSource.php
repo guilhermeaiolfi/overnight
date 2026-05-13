@@ -11,7 +11,7 @@ use Monolog\Logger;
 use ON\Clockwork\Handler\MonologHandler;
 
 // Data source for Monolog, provides application log
-class PsrLoggerDatasource extends DataSource
+class PsrLoggerDataSource extends DataSource
 {
 	// Clockwork log instance
 	protected $log;

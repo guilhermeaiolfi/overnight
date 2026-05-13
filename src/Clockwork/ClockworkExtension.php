@@ -13,15 +13,15 @@ use Laminas\Stdlib\ArrayUtils;
 use ON\Application;
 use ON\Benchmark;
 use ON\Clockwork\DataSource\ExtensionProfilerDataSource;
-use ON\Clockwork\DataSource\PsrLoggerDatasource;
+use ON\Clockwork\DataSource\PsrLoggerDataSource;
 use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Db\DatabaseConfig;
-use ON\Middleware\Init\Event\PipelineReadyEvent;
-
+use ON\DB\DebugPDO\LoggingPDOStatement;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Router;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -33,6 +33,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	protected Clockwork $clockwork;
 	protected ContainerInterface $container;
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -79,7 +80,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$container = $this->container = $event->container;
 		$container->set(Clockwork::class, $this->clockwork);
 		$logger = $container->get(LoggerInterface::class);
-		$loggerDataSource = new PsrLoggerDatasource($logger);
+		$loggerDataSource = new PsrLoggerDataSource($logger);
 		$this->clockwork->addDataSource($loggerDataSource);
 		$this->clockwork->addDataSource(new ExtensionProfilerDataSource($this->app->extensionProfiler()));
 	}
@@ -113,7 +114,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 		if ($database->getName() == $config->get("default")) {
 			// Set the event dispatcher on LoggingPDOStatement for query logging
-			\ON\DB\DebugPDO\LoggingPDOStatement::setDispatcher(
+			LoggingPDOStatement::setDispatcher(
 				$this->container->get(EventDispatcherInterface::class)
 			);
 		}

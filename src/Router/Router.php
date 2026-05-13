@@ -596,14 +596,16 @@ class Router implements RouterInterface
 		// we use a stand-in.
 		$requestUri = parse_url('http://example.com' . (isset($server['REQUEST_URI']) ? $server['REQUEST_URI'] : null), PHP_URL_PATH);
 
-		$requestRootDir = dirname($requestScriptDir); // remove /public from it
-
 		$basePath = '';
 
-		if (stripos($requestUri, $requestRootDir) === 0) {
-			$basePath = $requestRootDir;
-		} elseif ($requestScriptDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
+		if ($requestScriptDir !== '/' && stripos($requestUri, $requestScriptDir) === 0) {
 			$basePath = $requestScriptDir;
+		} else {
+			$requestRootDir = dirname($requestScriptDir); // remove /public from it
+
+			if ($requestRootDir !== '/' && stripos($requestUri, $requestRootDir) === 0) {
+				$basePath = $requestRootDir;
+			}
 		}
 
 		return "/" . ltrim($basePath, '/');
@@ -632,3 +634,4 @@ class Router implements RouterInterface
 		}
 	}
 }
+
