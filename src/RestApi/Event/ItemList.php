@@ -37,6 +37,11 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 		return $this->params;
 	}
 
+	public function setParams(array $params): void
+	{
+		$this->params = $params;
+	}
+
 	public function isAggregate(): bool
 	{
 		return $this->getAggregate() !== null;

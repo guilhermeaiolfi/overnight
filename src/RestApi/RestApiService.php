@@ -81,6 +81,7 @@ class RestApiService
 			$event = new ItemList($collection, $params);
 			$this->dispatchEvent($event);
 			$this->assertAuthorized($event);
+			$params = $event->getParams();
 
 			if ($event->isDefaultPrevented()) {
 				return [
@@ -110,6 +111,7 @@ class RestApiService
 		$event = new ItemGet($collection, $id, $params);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$params = $event->getParams();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
@@ -131,12 +133,13 @@ class RestApiService
 		$event = new ItemCreate($collection, $input);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$input = $event->getInput();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
 		}
 
-		$event->setResult($this->requireResolver()->create($collection, $event->getInput()));
+		$event->setResult($this->requireResolver()->create($collection, $input));
 		return $event->getResult();
 	}
 
@@ -152,12 +155,13 @@ class RestApiService
 		$event = new ItemCreate($collection, $input);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$input = $event->getInput();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
 		}
 
-		$event->setResult($this->requireResolver()->createWithRelations($collection, $event->getInput(), $nestedInput));
+		$event->setResult($this->requireResolver()->createWithRelations($collection, $input, $nestedInput));
 		return $event->getResult();
 	}
 
@@ -174,12 +178,13 @@ class RestApiService
 		$event = new ItemUpdate($collection, $id, $input);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$input = $event->getInput();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
 		}
 
-		$updated = $this->requireResolver()->update($collection, $id, $event->getInput());
+		$updated = $this->requireResolver()->update($collection, $id, $input);
 		if ($updated !== null) {
 			$event->setResult($updated);
 		}
@@ -200,12 +205,13 @@ class RestApiService
 		$event = new ItemUpdate($collection, $id, $input);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$input = $event->getInput();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
 		}
 
-		$updated = $this->requireResolver()->updateWithRelations($collection, $id, $event->getInput(), $nestedInput);
+		$updated = $this->requireResolver()->updateWithRelations($collection, $id, $input, $nestedInput);
 		if ($updated !== null) {
 			$event->setResult($updated);
 		}
@@ -245,6 +251,7 @@ class RestApiService
 		$event = new ItemList($collection, $params);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
+		$params = $event->getParams();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];

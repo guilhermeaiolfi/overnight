@@ -27,6 +27,7 @@ class Field implements FieldInterface
 
 	protected bool $required = false;
 
+	protected ?bool $searchable = null;
 
 	protected bool $sensible = false;
 
@@ -166,6 +167,18 @@ class Field implements FieldInterface
 	public function isRequired(): bool
 	{
 		return $this->required;
+	}
+
+	public function searchable(bool $searchable = true): self
+	{
+		$this->searchable = $searchable;
+
+		return $this;
+	}
+
+	public function isSearchable(): ?bool
+	{
+		return $this->searchable;
 	}
 
 	public function hasTypecast(): bool

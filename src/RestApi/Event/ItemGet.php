@@ -42,6 +42,11 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 		return $this->params;
 	}
 
+	public function setParams(array $params): void
+	{
+		$this->params = $params;
+	}
+
 	public function getResult(): ?array
 	{
 		return $this->result;

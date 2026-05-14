@@ -57,6 +57,10 @@ interface FieldInterface
 
 	public function isFilterable(): bool;
 
+	public function searchable(bool $searchable = true): self;
+
+	public function isSearchable(): ?bool;
+
 	public function required(bool $required): self;
 
 	public function isRequired(): bool;

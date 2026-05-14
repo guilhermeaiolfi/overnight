@@ -106,6 +106,7 @@ class RestMiddleware implements MiddlewareInterface
 			'filter'       => $query['filter'] ?? [],
 			'sort'         => $query['sort'] ?? null,
 			'fields'       => $parsedFields,
+			'fieldsExplicit' => array_key_exists('fields', $query),
 			'limit'        => $this->resolveLimit($query),
 			'offset'       => isset($query['offset']) ? (int) $query['offset'] : null,
 			'page'         => isset($query['page']) ? (int) $query['page'] : null,
@@ -150,6 +151,7 @@ class RestMiddleware implements MiddlewareInterface
 
 		$params = [
 			'fields'       => $parsedFields,
+			'fieldsExplicit' => array_key_exists('fields', $query),
 			'deep'         => $query['deep'] ?? null,
 		];
 

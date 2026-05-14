@@ -303,6 +303,10 @@ abstract class AbstractRestResolver implements RestResolverInterface
 				continue;
 			}
 
+			if (method_exists($field, 'isSearchable') && $field->isSearchable() === false) {
+				continue;
+			}
+
 			try {
 				$type = strtolower($field->getType());
 				if (in_array($type, $stringTypes, true)) {
