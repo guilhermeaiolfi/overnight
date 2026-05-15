@@ -14,6 +14,7 @@ use ON\View\ViewConfig;
 use ON\View\ViewManager;
 use ON\View\ViewResult;
 use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
 
@@ -27,7 +28,7 @@ class MainPage
 		protected RouterInterface $router,
 		protected ViewConfig $viewCfg,
 		protected FileRoutingConfig $fileRoutingCfg,
-		protected ?ContainerInterface $container = null
+		protected ContainerInterface $container
 	) {
 		$this->layout = $this->viewCfg->get("formats.html.default");
 		$this->fileRoutingCache = new FileRoutingCache($fileRoutingCfg, $viewCfg);
@@ -124,12 +125,17 @@ class MainPage
 		$this->layout = $layout;
 	}
 
-	public function successView(array $data, ServerRequestInterface $request = null, $delegate = null)
+	public function successView(array $data): ResponseInterface
 	{
 		$template_file = $data['_templateFileName'] ?? '';
 		$template_name = $data['_templateName']
 			?? str_replace([".phtml", ".php"], "", $template_file);
 
 		return new HtmlResponse($this->viewManager->render($data, $template_name, $this->layout));
+	}
+
+	public function getContainer(): ?ContainerInterface
+	{
+		return $this->container;
 	}
 }
