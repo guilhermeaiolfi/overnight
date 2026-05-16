@@ -50,12 +50,12 @@ class FieldSelector
 
 			if (count($parts) === 1) {
 				// Scalar field
-				if ($this->validateField($collection, $first)) {
+				if ($collection->fields->has($first)) {
 					$fields[] = $first;
 				}
 			} else {
 				// Relation path
-				if ($this->validateRelation($collection, $first) || isset($aliases[$first])) {
+				if ($collection->relations->has($first) || isset($aliases[$first])) {
 					if (!isset($relations[$first])) {
 						$relations[$first] = [];
 					}
@@ -109,17 +109,6 @@ class FieldSelector
 
 		return $fields;
 	}
-
-	protected function validateField(CollectionInterface $collection, string $fieldName): bool
-	{
-		return $collection->fields->has($fieldName);
-	}
-
-	protected function validateRelation(CollectionInterface $collection, string $relationName): bool
-	{
-		return $collection->relations->has($relationName);
-	}
-
 	protected function normalizeAliases(CollectionInterface $collection, array $aliases): array
 	{
 		$normalized = [];
