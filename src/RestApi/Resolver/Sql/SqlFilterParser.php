@@ -152,7 +152,7 @@ class SqlFilterParser
 		if ($relation->isJunction() && $relation instanceof \ON\ORM\Definition\Relation\M2MRelation) {
 			$through = $relation->through;
 			$junctionAlias = $this->buildAlias($targetAlias . '__junction');
-			$parentColumn = $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey());
+			$parentColumn = (string) $relation->getInnerKey();
 			$targetColumn = $this->getPrimaryKeyColumn($targetCollection);
 			$junctionInnerColumn = (string) $through->getInnerKey();
 			$junctionOuterColumn = (string) $through->getOuterKey();
@@ -185,8 +185,8 @@ class SqlFilterParser
 			);
 		}
 
-		$parentColumn = $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey());
-		$targetColumn = $this->fieldOrColumnToColumn($targetCollection, (string) $relation->getOuterKey());
+		$parentColumn = (string) $relation->getInnerKey();
+		$targetColumn = (string) $relation->getOuterKey();
 
 		$conditions[] = $this->qualifyColumn($targetAlias, $targetColumn)
 			. ' = '

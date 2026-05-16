@@ -24,8 +24,10 @@ class FieldSelector
 		$aliases = $this->normalizeAliases($collection, $aliases);
 
 		if ($fieldsParam === null || $fieldsParam === '' || $fieldsParam === '*') {
+			$fields = $this->getAllVisibleFields($collection);
 			return [
-				'fields' => $this->getAllVisibleFields($collection),
+				'fields' => $fields,
+				'requestedFields' => $fields,
 				'relations' => [],
 			];
 		}
@@ -38,6 +40,7 @@ class FieldSelector
 	protected function buildTree(array $fieldPaths, CollectionInterface $collection, array $aliases = []): array
 	{
 		$fields = [];
+		$requestedFields = [];
 		$relations = [];
 
 		foreach ($fieldPaths as $path) {
@@ -52,6 +55,7 @@ class FieldSelector
 				// Scalar field
 				if ($collection->fields->has($first)) {
 					$fields[] = $first;
+					$requestedFields[] = $first;
 				}
 			} else {
 				// Relation path
@@ -94,6 +98,7 @@ class FieldSelector
 
 		return [
 			'fields' => array_unique($fields),
+			'requestedFields' => array_unique($requestedFields),
 			'relations' => $resolvedRelations,
 		];
 	}

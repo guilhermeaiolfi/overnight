@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver\Sql;
 
 use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
-use Cycle\Database\Injection\Fragment;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use ON\DB\DatabaseInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
@@ -13,13 +12,17 @@ use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Resolver\AbstractRestResolver;
+use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
+use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
+use ON\RestApi\Resolver\Sql\Loader\QueryContext;
+use ON\RestApi\Resolver\Sql\Loader\RootLoader;
 use PDO;
 
 class SqlRestResolver extends AbstractRestResolver
 {
-	protected RestDataLoader $dataLoader;
 	protected ?CycleDatabaseInterface $dbal = null;
 	protected SqlFilterApplier $filterApplier;
+	protected LoaderFactory $loaderFactory;
 
 	public function __construct(
 		protected Registry $registry,
@@ -31,11 +34,11 @@ class SqlRestResolver extends AbstractRestResolver
 		protected ?SqlExpressionBuilder $expressions = null
 	) {
 		parent::__construct($defaultLimit, $maxLimit);
-		$this->dataLoader = new RestDataLoader();
 		$this->dbalFactory ??= new CycleDbalFactory();
 		$this->expressions ??= new SqlExpressionBuilder($this->getDatabase());
 		$this->filterParser->setExpressionBuilder($this->expressions);
 		$this->filterApplier = new SqlFilterApplier($this->getDatabase(), $this->expressions);
+		$this->loaderFactory = LoaderFactory::defaults();
 	}
 
 	public function transaction(callable $callback): mixed
@@ -46,7 +49,7 @@ class SqlRestResolver extends AbstractRestResolver
 	public function list(CollectionInterface $collection, array $params = []): array
 	{
 		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['fields']);
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
 		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
@@ -74,28 +77,14 @@ class SqlRestResolver extends AbstractRestResolver
 		$this->applyPagination($query, $params);
 
 		$items = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
-
-		$visibleFields = $this->getVisibleFields($collection);
-		$items = array_map(
-			fn(array $item) => array_intersect_key($item, array_flip($visibleFields)),
-			$items
+		$items = $this->loadRootItems(
+			$collection,
+			$items,
+			$requestedColumnNames,
+			$internalRelationKeyColumnNames,
+			$fields['relations'],
+			$params['deep'] ?? []
 		);
-
-		if (!empty($fields['relations'])) {
-			$items = $this->loadRelations(
-				$collection,
-				$items,
-				$fields['relations'],
-				$params['deep'] ?? []
-			);
-		}
-
-		if (!empty($internalRelationKeyColumnNames)) {
-			$items = array_map(
-				fn(array $item) => $this->stripUnrequestedColumnNames($item, $internalRelationKeyColumnNames, $requestedColumnNames),
-				$items
-			);
-		}
 
 		return [
 			'items' => $items,
@@ -106,7 +95,7 @@ class SqlRestResolver extends AbstractRestResolver
 	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
 	{
 		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['fields']);
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
 		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
@@ -123,23 +112,16 @@ class SqlRestResolver extends AbstractRestResolver
 			return null;
 		}
 
-		$item = array_intersect_key($item, array_flip($this->getVisibleFields($collection)));
+		$items = $this->loadRootItems(
+			$collection,
+			[$item],
+			$requestedColumnNames,
+			$internalRelationKeyColumnNames,
+			$fields['relations'],
+			$params['deep'] ?? []
+		);
 
-		if (!empty($fields['relations'])) {
-			$items = $this->loadRelations(
-				$collection,
-				[$item],
-				$fields['relations'],
-				$params['deep'] ?? []
-			);
-			$item = $items[0];
-		}
-
-		if (!empty($internalRelationKeyColumnNames)) {
-			$item = $this->stripUnrequestedColumnNames($item, $internalRelationKeyColumnNames, $requestedColumnNames);
-		}
-
-		return $item;
+		return $items[0] ?? null;
 	}
 
 	public function create(CollectionInterface $collection, array $input): array
@@ -320,7 +302,6 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function clearCache(): void
 	{
-		$this->dataLoader->clear();
 		$this->dbal = null;
 	}
 
@@ -425,287 +406,38 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 	}
 
-	protected function loadRelations(CollectionInterface $collection, array $items, array $relationFields, array $deepParams = []): array
-	{
-		if ($items === [] || $relationFields === []) {
-			return $items;
-		}
-
-		$database = $this->getDatabase();
-
-		foreach ($relationFields as $relationName => $relParsed) {
-			$targetRelationName = $relParsed['_relation'] ?? $relationName;
-			if (!$collection->relations->has($targetRelationName)) {
-				continue;
-			}
-
-			$relation = $collection->relations->get($targetRelationName);
-			$targetCollection = $this->registry->getCollection($relation->getCollection());
-			if ($targetCollection === null) {
-				continue;
-			}
-
-			$innerCol = $this->fieldOrColumnToColumn($collection, $relation->getInnerKey());
-			$outerCol = $this->fieldOrColumnToColumn($targetCollection, $relation->getOuterKey());
-
-			$parentIds = [];
-			foreach ($items as $item) {
-				$val = $item[$innerCol] ?? null;
-				if ($val !== null && !in_array($val, $parentIds, true)) {
-					$parentIds[] = $val;
-				}
-			}
-
-			if ($parentIds === []) {
-				foreach ($items as &$item) {
-					$item[$relationName] = $relation->getCardinality() === 'single' ? null : [];
-				}
-				unset($item);
-				continue;
-			}
-
-			if (!empty($relParsed['fields'])) {
-				$relColumns = [];
-				foreach ($relParsed['fields'] as $fieldName) {
-					if ($targetCollection->fields->has($fieldName)) {
-						$relColumns[] = $targetCollection->fields->get($fieldName)->getColumn();
-					}
-				}
-				$requestedRelColumnNames = $relColumns;
-				$internalRelKeyColumnNames = [$outerCol];
-				foreach ($this->getRelationKeyColumnNames($targetCollection, $relParsed['relations'] ?? []) as $nestedKeyColumn) {
-					if (!in_array($nestedKeyColumn, $internalRelKeyColumnNames, true)) {
-						$internalRelKeyColumnNames[] = $nestedKeyColumn;
-					}
-				}
-				foreach ($internalRelKeyColumnNames as $internalRelColumn) {
-					if (!in_array($internalRelColumn, $relColumns, true)) {
-						$relColumns[] = $internalRelColumn;
-					}
-				}
-			} else {
-				$relColumns = null;
-				$requestedRelColumnNames = $this->getVisibleFields($targetCollection);
-				$internalRelKeyColumnNames = [];
-			}
-
-			if (!in_array($outerCol, $internalRelKeyColumnNames, true)) {
-				$internalRelKeyColumnNames[] = $outerCol;
-			}
-			if ($relColumns !== null && !in_array($outerCol, $relColumns, true)) {
-				$relColumns[] = $outerCol;
-			}
-
-			$relDeep = $deepParams[$relationName] ?? [];
-			$relOrderBy = !empty($relDeep['_sort']) ? $this->buildOrderByExpressions($targetCollection, $relDeep['_sort']) : [];
-			$relLimit = isset($relDeep['_limit']) ? (int) $relDeep['_limit'] : null;
-			$relOffset = isset($relDeep['_offset']) ? (int) $relDeep['_offset'] : null;
-			$relFilters = !empty($relDeep['_filter']) && is_array($relDeep['_filter']) ? $relDeep['_filter'] : [];
-
-			if ($relation->isJunction() && $relation instanceof M2MRelation) {
-				$items = $this->loadM2MRelation(
-					$relation,
-					$targetCollection,
-					$items,
-					$innerCol,
-					$relationName,
-					$relColumns,
-					$relFilters,
-					$relOrderBy,
-					$relLimit,
-					$relOffset,
-					$database
-				);
-				continue;
-			}
-
-			$grouped = $this->dataLoader->loadBatch(
-				$targetCollection->getTable(),
-				$outerCol,
-				$parentIds,
-				$database,
-				$relColumns,
-				$targetCollection,
-				$relFilters,
-				$this->filterApplier,
-				$relOrderBy,
-				$relLimit,
-				$relOffset
-			);
-
-			$visibleFields = $this->getVisibleFields($targetCollection);
-			$isSingle = $relation->getCardinality() === 'single';
-
-			foreach ($items as &$item) {
-				$parentVal = $item[$innerCol] ?? null;
-				$related = array_map(
-					fn(array $row) => array_intersect_key($row, array_flip($visibleFields)),
-					$grouped[$parentVal] ?? []
-				);
-
-				$item[$relationName] = $isSingle ? ($related[0] ?? null) : $related;
-			}
-			unset($item);
-
-			if (!empty($relParsed['relations'])) {
-				foreach ($items as &$item) {
-					$relData = $item[$relationName] ?? null;
-					if ($relData === null) {
-						continue;
-					}
-
-					$item[$relationName] = $isSingle
-						? ($this->loadRelations($targetCollection, [$relData], $relParsed['relations'])[0] ?? null)
-						: $this->loadRelations($targetCollection, $relData, $relParsed['relations']);
-				}
-				unset($item);
-			}
-
-			if ($internalRelKeyColumnNames !== []) {
-				foreach ($items as &$item) {
-					$relData = $item[$relationName] ?? null;
-					if ($relData === null) {
-						continue;
-					}
-
-					$item[$relationName] = $isSingle
-						? $this->stripUnrequestedColumnNames($relData, $internalRelKeyColumnNames, $requestedRelColumnNames)
-						: array_map(
-							fn(array $row) => $this->stripUnrequestedColumnNames($row, $internalRelKeyColumnNames, $requestedRelColumnNames),
-							$relData
-						);
-				}
-				unset($item);
-			}
-		}
-
-		return $items;
-	}
-
-	protected function loadM2MRelation(
-		M2MRelation $relation,
-		CollectionInterface $targetCollection,
+	protected function loadRootItems(
+		CollectionInterface $collection,
 		array $items,
-		string $innerKey,
-		string $relationName,
-		?array $relColumns,
-		array $relFilters,
-		array $relOrderBy,
-		?int $relLimit,
-		?int $relOffset,
-		CycleDatabaseInterface $database
+		array $requestedColumnNames,
+		array $internalRelationKeyColumnNames,
+		array $relations,
+		array $deep
 	): array {
-		$through = $relation->through;
-		$junctionTable = $through->getCollection();
-		$throughInnerKey = (string) $through->getInnerKey();
-		$throughOuterKey = (string) $through->getOuterKey();
-		$targetPkColumn = $this->getPrimaryKeyColumn($targetCollection);
-
-		$parentIds = [];
-		foreach ($items as $item) {
-			$val = $item[$innerKey] ?? null;
-			if ($val !== null && !in_array($val, $parentIds, true)) {
-				$parentIds[] = $val;
-			}
+		if ($items === []) {
+			return [];
 		}
 
-		if ($parentIds === []) {
-			foreach ($items as &$item) {
-				$item[$relationName] = [];
-			}
-			unset($item);
+		$columns = array_keys($items[0]);
+		$loader = new RootLoader(
+			$collection,
+			$items,
+			$columns,
+			$requestedColumnNames === [] ? $this->getVisibleFields($collection) : $requestedColumnNames,
+			$internalRelationKeyColumnNames,
+			$relations,
+			$deep,
+			new QueryContext(
+				$this->getDatabase(),
+				$this->registry,
+				$this->filterApplier,
+				$this->expressions,
+				new AliasRegistry()
+			),
+			$this->loaderFactory
+		);
 
-			return $items;
-		}
-
-		$junctionRows = $database->select([$throughInnerKey, $throughOuterKey])
-			->from($junctionTable)
-			->where($throughInnerKey, 'IN', $parentIds)
-			->fetchAll(CycleStatementInterface::FETCH_ASSOC);
-
-		$parentToTargets = [];
-		$allTargetIds = [];
-		foreach ($junctionRows as $row) {
-			$parentToTargets[$row[$throughInnerKey]][] = $row[$throughOuterKey];
-			if (!in_array($row[$throughOuterKey], $allTargetIds, true)) {
-				$allTargetIds[] = $row[$throughOuterKey];
-			}
-		}
-
-		$targetItems = [];
-		if ($allTargetIds !== []) {
-			$query = $database->select()->from($targetCollection->getTable())
-				->where($targetPkColumn, 'IN', $allTargetIds);
-
-			if ($relColumns !== null) {
-				$query->columns($relColumns);
-			}
-			if ($relFilters !== []) {
-				$this->filterApplier->apply($query, $targetCollection, $relFilters);
-			}
-			foreach ($relOrderBy as $order) {
-				if (
-					!is_array($order)
-					|| !isset($order['expression'])
-					|| !$order['expression'] instanceof \Cycle\Database\Injection\FragmentInterface
-				) {
-					continue;
-				}
-
-				$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
-			}
-
-			foreach ($query->fetchAll(CycleStatementInterface::FETCH_ASSOC) as $row) {
-				$targetItems[$row[$targetPkColumn]] = $row;
-			}
-		}
-
-		$visibleFields = $this->getVisibleFields($targetCollection);
-		foreach ($items as &$item) {
-			$parentVal = $item[$innerKey] ?? null;
-			$related = [];
-
-			foreach ($parentToTargets[$parentVal] ?? [] as $targetId) {
-				if (isset($targetItems[$targetId])) {
-					$related[] = array_intersect_key($targetItems[$targetId], array_flip($visibleFields));
-				}
-			}
-
-			if ($relLimit !== null || $relOffset !== null) {
-				$related = array_slice($related, $relOffset ?? 0, $relLimit);
-			}
-
-			$item[$relationName] = $related;
-		}
-		unset($item);
-
-		return $items;
-	}
-
-	protected function buildOrderByExpressions(CollectionInterface $collection, string $sort): array
-	{
-		$orders = [];
-		foreach (array_map('trim', explode(',', $sort)) as $part) {
-			if ($part === '') {
-				continue;
-			}
-
-			$direction = 'ASC';
-			if (str_starts_with($part, '-')) {
-				$direction = 'DESC';
-				$part = substr($part, 1);
-			}
-
-			$expression = $this->expressions->value($collection, $part, $collection->getTable());
-			if ($expression !== null) {
-				$orders[] = [
-					'expression' => $expression,
-					'direction' => $direction,
-				];
-			}
-		}
-
-		return $orders;
+		return $loader->load();
 	}
 
 	protected function getConnection(): PDO
@@ -765,7 +497,7 @@ class SqlRestResolver extends AbstractRestResolver
 		foreach ($relationFields as $relationName => $relationData) {
 			$targetRelationName = is_array($relationData) ? ($relationData['_relation'] ?? $relationName) : $relationName;
 			if ($collection->relations->has($targetRelationName)) {
-				$columnNames[] = $this->fieldOrColumnToColumn($collection, $collection->relations->get($targetRelationName)->getInnerKey());
+				$columnNames[] = (string) $collection->relations->get($targetRelationName)->getInnerKey();
 			}
 		}
 
@@ -777,17 +509,6 @@ class SqlRestResolver extends AbstractRestResolver
 		return $collection->fields->has($fieldOrColumn)
 			? $collection->fields->get($fieldOrColumn)->getColumn()
 			: $fieldOrColumn;
-	}
-
-	protected function stripUnrequestedColumnNames(array $item, array $internalColumnNames, array $requestedColumnNames): array
-	{
-		foreach ($internalColumnNames as $column) {
-			if (!in_array($column, $requestedColumnNames, true)) {
-				unset($item[$column]);
-			}
-		}
-
-		return $item;
 	}
 
 	protected function convertDatabaseError(\Throwable $e, CollectionInterface $collection): RestApiError

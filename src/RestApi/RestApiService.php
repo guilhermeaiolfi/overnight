@@ -624,7 +624,7 @@ class RestApiService
 
 	protected function shouldDispatchEvents(array $options): bool
 	{
-		return $options['dispatchEvents'] ?? true;
+		return $this->eventDispatcher !== null && ($options['dispatchEvents'] ?? true);
 	}
 
 	protected function resolveDynamicVariables(mixed $value): mixed

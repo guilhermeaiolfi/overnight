@@ -144,15 +144,15 @@ class SqlFilterApplier
 				->where(
 					new Expression($junctionAlias . '.' . $through->getInnerKey()),
 					'=',
-					new Expression($tableAlias . '.' . $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey()))
+					new Expression($tableAlias . '.' . $relation->getInnerKey())
 				);
 		} else {
 			$subQuery
 				->from($targetCollection->getTable() . ' AS ' . $targetAlias)
 				->where(
-					new Expression($targetAlias . '.' . $this->fieldOrColumnToColumn($targetCollection, (string) $relation->getOuterKey())),
+					new Expression($targetAlias . '.' . $relation->getOuterKey()),
 					'=',
-					new Expression($tableAlias . '.' . $this->fieldOrColumnToColumn($collection, (string) $relation->getInnerKey()))
+					new Expression($tableAlias . '.' . $relation->getInnerKey())
 				);
 		}
 
