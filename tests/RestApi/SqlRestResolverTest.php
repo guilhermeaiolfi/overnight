@@ -157,7 +157,7 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createResolver($registry, $db);
 
 		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => ['columns' => ['id', 'title'], 'relations' => []],
+			'fields' => ['fields' => ['id', 'title'], 'relations' => []],
 		]);
 
 		$this->assertNotEmpty($result['items']);
@@ -178,9 +178,9 @@ final class SqlRestResolverTest extends TestCase
 
 		$result = $resolver->list($registry->getCollection('post'), [
 			'fields' => [
-				'columns' => ['id', 'title'],
+				'fields' => ['id', 'title'],
 				'relations' => [
-					'comments' => ['columns' => ['id', 'body'], 'relations' => []],
+					'comments' => ['fields' => ['id', 'body'], 'relations' => []],
 				],
 			],
 		]);
@@ -209,9 +209,9 @@ final class SqlRestResolverTest extends TestCase
 
 		$result = $resolver->list($registry->getCollection('post'), [
 			'fields' => [
-				'columns' => ['id', 'title'],
+				'fields' => ['id', 'title'],
 				'relations' => [
-					'author' => ['columns' => ['id', 'name'], 'relations' => []],
+					'author' => ['fields' => ['id', 'name'], 'relations' => []],
 				],
 			],
 		]);
@@ -232,18 +232,18 @@ final class SqlRestResolverTest extends TestCase
 
 		$resolver->list($registry->getCollection('post'), [
 			'fields' => [
-				'columns' => ['id', 'title'],
+				'fields' => ['id', 'title'],
 				'relations' => [
-					'comments' => ['columns' => ['id'], 'relations' => []],
+					'comments' => ['fields' => ['id'], 'relations' => []],
 				],
 			],
 		]);
 
 		$result = $resolver->list($registry->getCollection('post'), [
 			'fields' => [
-				'columns' => ['id', 'title'],
+				'fields' => ['id', 'title'],
 				'relations' => [
-					'comments' => ['columns' => ['id', 'body'], 'relations' => []],
+					'comments' => ['fields' => ['id', 'body'], 'relations' => []],
 				],
 			],
 		]);

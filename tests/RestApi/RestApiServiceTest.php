@@ -403,7 +403,7 @@ final class ResolverSpy implements RestResolverInterface
 	{
 		$this->lastCreateInput = $input;
 
-		return $this->createResult === [] ? ['id' => 1] + $input : $this->createResult;
+		return $this->createResult === [] ? $input + ['id' => 1] : $this->createResult;
 	}
 
 	public function update(CollectionInterface $collection, string $id, array $input): ?array

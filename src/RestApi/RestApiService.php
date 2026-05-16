@@ -256,7 +256,7 @@ class RestApiService
 		$operation = $mode;
 
 		if ($mode === 'upsert') {
-			$operation = $id !== null && $this->resolver->get($collection, $id, ['fields' => ['columns' => [], 'relations' => []]]) !== null
+			$operation = $id !== null && $this->resolver->get($collection, $id, ['fields' => ['fields' => [], 'relations' => []]]) !== null
 				? 'update'
 				: 'create';
 		}
@@ -280,7 +280,7 @@ class RestApiService
 
 		if ($operation === 'create') {
 			$createId = $this->inputPrimaryKeyValue($collection, $input);
-			if ($createId !== null && $this->resolver->get($collection, (string) $createId, ['fields' => ['columns' => [], 'relations' => []]]) !== null) {
+			if ($createId !== null && $this->resolver->get($collection, (string) $createId, ['fields' => ['fields' => [], 'relations' => []]]) !== null) {
 				throw new RestApiError(
 					"A record with this {$this->getPrimaryKeyName($collection)} already exists.",
 					'DUPLICATE',

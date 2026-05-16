@@ -30,8 +30,8 @@ final class FieldSelectorTest extends TestCase
 
 		$result = $this->selector->parse($collection, 'id,name');
 
-		$this->assertContains('id', $result['columns']);
-		$this->assertContains('name', $result['columns']);
+		$this->assertContains('id', $result['fields']);
+		$this->assertContains('name', $result['fields']);
 		$this->assertEmpty($result['relations']);
 	}
 
@@ -43,9 +43,9 @@ final class FieldSelectorTest extends TestCase
 
 		$result = $this->selector->parse($collection, 'id,author.name');
 
-		$this->assertContains('id', $result['columns']);
+		$this->assertContains('id', $result['fields']);
 		$this->assertArrayHasKey('author', $result['relations']);
-		$this->assertContains('name', $result['relations']['author']['columns']);
+		$this->assertContains('name', $result['relations']['author']['fields']);
 	}
 
 	public function testParseNestedDotNotation(): void
@@ -57,12 +57,12 @@ final class FieldSelectorTest extends TestCase
 		// user -> posts -> comments
 		$result = $this->selector->parse($collection, 'id,posts.comments.body');
 
-		$this->assertContains('id', $result['columns']);
+		$this->assertContains('id', $result['fields']);
 		$this->assertArrayHasKey('posts', $result['relations']);
 
 		$postsRelation = $result['relations']['posts'];
 		$this->assertArrayHasKey('comments', $postsRelation['relations']);
-		$this->assertContains('body', $postsRelation['relations']['comments']['columns']);
+		$this->assertContains('body', $postsRelation['relations']['comments']['fields']);
 	}
 
 	public function testInvalidFieldIgnored(): void
@@ -73,9 +73,9 @@ final class FieldSelectorTest extends TestCase
 
 		$result = $this->selector->parse($collection, 'id,nonexistent');
 
-		$this->assertContains('id', $result['columns']);
+		$this->assertContains('id', $result['fields']);
 		// nonexistent should be silently ignored
-		$this->assertNotContains('nonexistent', $result['columns']);
+		$this->assertNotContains('nonexistent', $result['fields']);
 	}
 
 	public function testInvalidRelationIgnored(): void
@@ -86,7 +86,7 @@ final class FieldSelectorTest extends TestCase
 
 		$result = $this->selector->parse($collection, 'id,fake.name');
 
-		$this->assertContains('id', $result['columns']);
+		$this->assertContains('id', $result['fields']);
 		$this->assertArrayNotHasKey('fake', $result['relations']);
 	}
 
@@ -99,11 +99,11 @@ final class FieldSelectorTest extends TestCase
 		$result = $this->selector->parse($collection, null);
 
 		// Should include all non-hidden fields
-		$this->assertContains('id', $result['columns']);
-		$this->assertContains('name', $result['columns']);
-		$this->assertContains('email', $result['columns']);
+		$this->assertContains('id', $result['fields']);
+		$this->assertContains('name', $result['fields']);
+		$this->assertContains('email', $result['fields']);
 		// password is hidden
-		$this->assertNotContains('password', $result['columns']);
+		$this->assertNotContains('password', $result['fields']);
 	}
 
 	public function testWildcardReturnsAll(): void
@@ -114,10 +114,10 @@ final class FieldSelectorTest extends TestCase
 
 		$result = $this->selector->parse($collection, '*');
 
-		$this->assertContains('id', $result['columns']);
-		$this->assertContains('name', $result['columns']);
-		$this->assertContains('email', $result['columns']);
-		$this->assertNotContains('password', $result['columns']);
+		$this->assertContains('id', $result['fields']);
+		$this->assertContains('name', $result['fields']);
+		$this->assertContains('email', $result['fields']);
+		$this->assertNotContains('password', $result['fields']);
 	}
 
 	public function testPrimaryKeyAlwaysIncluded(): void
@@ -129,8 +129,8 @@ final class FieldSelectorTest extends TestCase
 		// Request only 'name' — PK 'id' should still be included
 		$result = $this->selector->parse($collection, 'name');
 
-		$this->assertContains('id', $result['columns']);
-		$this->assertContains('name', $result['columns']);
+		$this->assertContains('id', $result['fields']);
+		$this->assertContains('name', $result['fields']);
 	}
 
 	public function testParseTopLevelRelationAlias(): void
@@ -145,6 +145,6 @@ final class FieldSelectorTest extends TestCase
 
 		$this->assertArrayHasKey('recent_posts', $result['relations']);
 		$this->assertSame('posts', $result['relations']['recent_posts']['_relation']);
-		$this->assertContains('title', $result['relations']['recent_posts']['columns']);
+		$this->assertContains('title', $result['relations']['recent_posts']['fields']);
 	}
 }

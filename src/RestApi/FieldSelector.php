@@ -9,13 +9,13 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 class FieldSelector
 {
 	/**
-	 * Parse the `fields` query parameter into column list and relation map.
+	 * Parse the `fields` query parameter into field list and relation map.
 	 *
 	 * Input: "id,name,author.name,author.role.name"
 	 * Output: [
-	 *   'columns' => ['id', 'name'],
+	 *   'fields' => ['id', 'name'],
 	 *   'relations' => [
-	 *     'author' => ['columns' => ['name'], 'relations' => ['role' => ['columns' => ['name']]]]
+	 *     'author' => ['fields' => ['name'], 'relations' => ['role' => ['fields' => ['name']]]]
 	 *   ]
 	 * ]
 	 */
@@ -25,7 +25,7 @@ class FieldSelector
 
 		if ($fieldsParam === null || $fieldsParam === '' || $fieldsParam === '*') {
 			return [
-				'columns' => $this->getAllVisibleColumns($collection),
+				'fields' => $this->getAllVisibleFields($collection),
 				'relations' => [],
 			];
 		}
@@ -37,7 +37,7 @@ class FieldSelector
 
 	protected function buildTree(array $fieldPaths, CollectionInterface $collection, array $aliases = []): array
 	{
-		$columns = [];
+		$fields = [];
 		$relations = [];
 
 		foreach ($fieldPaths as $path) {
@@ -51,7 +51,7 @@ class FieldSelector
 			if (count($parts) === 1) {
 				// Scalar field
 				if ($this->validateField($collection, $first)) {
-					$columns[] = $first;
+					$fields[] = $first;
 				}
 			} else {
 				// Relation path
@@ -87,26 +87,27 @@ class FieldSelector
 		$pk = $collection->getPrimaryKey();
 		if ($pk !== null) {
 			$pkName = is_array($pk) ? $pk[0]->getName() : $pk->getName();
-			if (!in_array($pkName, $columns, true)) {
-				array_unshift($columns, $pkName);
+			if (!in_array($pkName, $fields, true)) {
+				array_unshift($fields, $pkName);
 			}
 		}
 
 		return [
-			'columns' => array_unique($columns),
+			'fields' => array_unique($fields),
 			'relations' => $resolvedRelations,
 		];
 	}
 
-	protected function getAllVisibleColumns(CollectionInterface $collection): array
+	protected function getAllVisibleFields(CollectionInterface $collection): array
 	{
-		$columns = [];
+		$fields = [];
 		foreach ($collection->fields as $name => $field) {
 			if (!$field->isHidden()) {
-				$columns[] = $name;
+				$fields[] = $name;
 			}
 		}
-		return $columns;
+
+		return $fields;
 	}
 
 	protected function validateField(CollectionInterface $collection, string $fieldName): bool

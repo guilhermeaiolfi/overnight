@@ -45,16 +45,16 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function list(CollectionInterface $collection, array $params = []): array
 	{
-		$fields = $params['fields'] ?? ['columns' => [], 'relations' => []];
-		$requestedColumns = $this->fieldNamesToColumns($collection, $fields['columns']);
-		$internalColumns = $this->getRelationKeyColumns($collection, $fields['relations']);
+		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['fields']);
+		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
-		$fieldsForSelect['columns'] = array_values(array_unique(array_merge(
-			$fieldsForSelect['columns'],
-			$this->columnNamesToFieldNames($collection, $internalColumns)
+		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
+			$fieldsForSelect['fields'],
+			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
-		$query = $this->newSelectQuery($collection, $fieldsForSelect['columns']);
+		$query = $this->newSelectQuery($collection, $fieldsForSelect['fields']);
 		$this->applyFilters($query, $collection, $params['filter'] ?? []);
 		$this->applySearch($query, $collection, $params['search'] ?? null);
 
@@ -90,9 +90,9 @@ class SqlRestResolver extends AbstractRestResolver
 			);
 		}
 
-		if (!empty($internalColumns)) {
+		if (!empty($internalRelationKeyColumnNames)) {
 			$items = array_map(
-				fn(array $item) => $this->stripUnrequestedColumns($item, $internalColumns, $requestedColumns),
+				fn(array $item) => $this->stripUnrequestedColumnNames($item, $internalRelationKeyColumnNames, $requestedColumnNames),
 				$items
 			);
 		}
@@ -105,16 +105,16 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
 	{
-		$fields = $params['fields'] ?? ['columns' => [], 'relations' => []];
-		$requestedColumns = $this->fieldNamesToColumns($collection, $fields['columns']);
-		$internalColumns = $this->getRelationKeyColumns($collection, $fields['relations']);
+		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['fields']);
+		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
-		$fieldsForSelect['columns'] = array_values(array_unique(array_merge(
-			$fieldsForSelect['columns'],
-			$this->columnNamesToFieldNames($collection, $internalColumns)
+		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
+			$fieldsForSelect['fields'],
+			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
-		$query = $this->newSelectQuery($collection, $fieldsForSelect['columns']);
+		$query = $this->newSelectQuery($collection, $fieldsForSelect['fields']);
 		$query->where($this->getPrimaryKeyColumn($collection), $id)->limit(1);
 		$rows = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
 		$item = $rows[0] ?? null;
@@ -135,8 +135,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$item = $items[0];
 		}
 
-		if (!empty($internalColumns)) {
-			$item = $this->stripUnrequestedColumns($item, $internalColumns, $requestedColumns);
+		if (!empty($internalRelationKeyColumnNames)) {
+			$item = $this->stripUnrequestedColumnNames($item, $internalRelationKeyColumnNames, $requestedColumnNames);
 		}
 
 		return $item;
@@ -324,10 +324,10 @@ class SqlRestResolver extends AbstractRestResolver
 		$this->dbal = null;
 	}
 
-	protected function newSelectQuery(CollectionInterface $collection, array $fields = []): \Cycle\Database\Query\SelectQuery
+	protected function newSelectQuery(CollectionInterface $collection, array $fieldNames = []): \Cycle\Database\Query\SelectQuery
 	{
 		$query = $this->getDatabase()->select()->from($collection->getTable());
-		$columns = $this->buildSelectColumns($collection, $fields);
+		$columns = $this->buildSelectColumnNames($collection, $fieldNames);
 
 		if ($columns !== null) {
 			$query->columns($columns);
@@ -336,20 +336,20 @@ class SqlRestResolver extends AbstractRestResolver
 		return $query;
 	}
 
-	protected function buildSelectColumns(CollectionInterface $collection, ?array $fields): ?array
+	protected function buildSelectColumnNames(CollectionInterface $collection, ?array $fieldNames): ?array
 	{
-		if ($fields === null || $fields === []) {
+		if ($fieldNames === null || $fieldNames === []) {
 			return null;
 		}
 
-		$columns = [];
-		foreach ($fields as $fieldName) {
+		$columnNames = [];
+		foreach ($fieldNames as $fieldName) {
 			if ($collection->fields->has($fieldName)) {
-				$columns[] = $collection->fields->get($fieldName)->getColumn();
+				$columnNames[] = $collection->fields->get($fieldName)->getColumn();
 			}
 		}
 
-		return $columns === [] ? null : $columns;
+		return $columnNames === [] ? null : $columnNames;
 	}
 
 	protected function applyFilters(object $query, CollectionInterface $collection, array $filters): void
@@ -464,33 +464,33 @@ class SqlRestResolver extends AbstractRestResolver
 				continue;
 			}
 
-			if (!empty($relParsed['columns'])) {
+			if (!empty($relParsed['fields'])) {
 				$relColumns = [];
-				foreach ($relParsed['columns'] as $fieldName) {
+				foreach ($relParsed['fields'] as $fieldName) {
 					if ($targetCollection->fields->has($fieldName)) {
 						$relColumns[] = $targetCollection->fields->get($fieldName)->getColumn();
 					}
 				}
-				$requestedRelColumns = $relColumns;
-				$internalRelColumns = [$outerCol];
-				foreach ($this->getRelationKeyColumns($targetCollection, $relParsed['relations'] ?? []) as $nestedKeyColumn) {
-					if (!in_array($nestedKeyColumn, $internalRelColumns, true)) {
-						$internalRelColumns[] = $nestedKeyColumn;
+				$requestedRelColumnNames = $relColumns;
+				$internalRelKeyColumnNames = [$outerCol];
+				foreach ($this->getRelationKeyColumnNames($targetCollection, $relParsed['relations'] ?? []) as $nestedKeyColumn) {
+					if (!in_array($nestedKeyColumn, $internalRelKeyColumnNames, true)) {
+						$internalRelKeyColumnNames[] = $nestedKeyColumn;
 					}
 				}
-				foreach ($internalRelColumns as $internalRelColumn) {
+				foreach ($internalRelKeyColumnNames as $internalRelColumn) {
 					if (!in_array($internalRelColumn, $relColumns, true)) {
 						$relColumns[] = $internalRelColumn;
 					}
 				}
 			} else {
 				$relColumns = null;
-				$requestedRelColumns = $this->getVisibleFields($targetCollection);
-				$internalRelColumns = [];
+				$requestedRelColumnNames = $this->getVisibleFields($targetCollection);
+				$internalRelKeyColumnNames = [];
 			}
 
-			if (!in_array($outerCol, $internalRelColumns, true)) {
-				$internalRelColumns[] = $outerCol;
+			if (!in_array($outerCol, $internalRelKeyColumnNames, true)) {
+				$internalRelKeyColumnNames[] = $outerCol;
 			}
 			if ($relColumns !== null && !in_array($outerCol, $relColumns, true)) {
 				$relColumns[] = $outerCol;
@@ -561,7 +561,7 @@ class SqlRestResolver extends AbstractRestResolver
 				unset($item);
 			}
 
-			if ($internalRelColumns !== []) {
+			if ($internalRelKeyColumnNames !== []) {
 				foreach ($items as &$item) {
 					$relData = $item[$relationName] ?? null;
 					if ($relData === null) {
@@ -569,9 +569,9 @@ class SqlRestResolver extends AbstractRestResolver
 					}
 
 					$item[$relationName] = $isSingle
-						? $this->stripUnrequestedColumns($relData, $internalRelColumns, $requestedRelColumns)
+						? $this->stripUnrequestedColumnNames($relData, $internalRelKeyColumnNames, $requestedRelColumnNames)
 						: array_map(
-							fn(array $row) => $this->stripUnrequestedColumns($row, $internalRelColumns, $requestedRelColumns),
+							fn(array $row) => $this->stripUnrequestedColumnNames($row, $internalRelKeyColumnNames, $requestedRelColumnNames),
 							$relData
 						);
 				}
@@ -737,14 +737,14 @@ class SqlRestResolver extends AbstractRestResolver
 		return $mapped;
 	}
 
-	protected function fieldNamesToColumns(CollectionInterface $collection, array $fieldNames): array
+	protected function fieldNamesToColumnNames(CollectionInterface $collection, array $fieldNames): array
 	{
-		$columns = [];
+		$columnNames = [];
 		foreach ($fieldNames as $fieldName) {
-			$columns[] = $this->fieldOrColumnToColumn($collection, (string) $fieldName);
+			$columnNames[] = $this->fieldOrColumnToColumn($collection, (string) $fieldName);
 		}
 
-		return array_values(array_unique($columns));
+		return array_values(array_unique($columnNames));
 	}
 
 	protected function columnNamesToFieldNames(CollectionInterface $collection, array $columnNames): array
@@ -759,17 +759,17 @@ class SqlRestResolver extends AbstractRestResolver
 		return array_values(array_unique($fieldNames));
 	}
 
-	protected function getRelationKeyColumns(CollectionInterface $collection, array $relationFields): array
+	protected function getRelationKeyColumnNames(CollectionInterface $collection, array $relationFields): array
 	{
-		$columns = [];
+		$columnNames = [];
 		foreach ($relationFields as $relationName => $relationData) {
 			$targetRelationName = is_array($relationData) ? ($relationData['_relation'] ?? $relationName) : $relationName;
 			if ($collection->relations->has($targetRelationName)) {
-				$columns[] = $this->fieldOrColumnToColumn($collection, $collection->relations->get($targetRelationName)->getInnerKey());
+				$columnNames[] = $this->fieldOrColumnToColumn($collection, $collection->relations->get($targetRelationName)->getInnerKey());
 			}
 		}
 
-		return array_values(array_unique($columns));
+		return array_values(array_unique($columnNames));
 	}
 
 	protected function fieldOrColumnToColumn(CollectionInterface $collection, string $fieldOrColumn): string
@@ -779,10 +779,10 @@ class SqlRestResolver extends AbstractRestResolver
 			: $fieldOrColumn;
 	}
 
-	protected function stripUnrequestedColumns(array $item, array $internalColumns, array $requestedColumns): array
+	protected function stripUnrequestedColumnNames(array $item, array $internalColumnNames, array $requestedColumnNames): array
 	{
-		foreach ($internalColumns as $column) {
-			if (!in_array($column, $requestedColumns, true)) {
+		foreach ($internalColumnNames as $column) {
+			if (!in_array($column, $requestedColumnNames, true)) {
 				unset($item[$column]);
 			}
 		}
