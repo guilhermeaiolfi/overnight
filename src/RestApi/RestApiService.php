@@ -146,6 +146,28 @@ class RestApiService
 		);
 	}
 
+	public function upsert(string|CollectionInterface $collection, array $input, array $options = []): array
+	{
+		$collection = $this->resolveCollection($collection);
+		$id = $this->inputPrimaryKeyValue($collection, $input);
+		if ($id === null) {
+			$primaryKey = $this->getPrimaryKeyName($collection);
+			throw new RestApiError(
+				"Upsert requires primary key '{$primaryKey}'.",
+				'MISSING_PRIMARY_KEY',
+				$primaryKey,
+				400
+			);
+		}
+
+		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
+		$dispatchEvents = $this->shouldDispatchEvents($options);
+
+		return $this->resolver->transaction(
+			fn() => $this->saveNode('upsert', $collection, $input, (string) $id, [], $collection, $input, $dispatchEvents) ?? []
+		);
+	}
+
 	public function delete(string|CollectionInterface $collection, string $id, array $options = []): bool
 	{
 		$collection = $this->resolveCollection($collection);

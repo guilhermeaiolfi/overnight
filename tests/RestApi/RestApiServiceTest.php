@@ -173,6 +173,73 @@ final class RestApiServiceTest extends TestCase
 		}
 	}
 
+	public function testUpsertRequiresPrimaryKey(): void
+	{
+		$service = $this->createService(
+			$this->createRegistryWithUsers(),
+			new ResolverSpy(),
+			fn (object $event) => $event
+		);
+
+		try {
+			$service->upsert('user', ['name' => 'Missing ID']);
+			$this->fail('Expected missing primary key error to be thrown.');
+		} catch (RestApiError $error) {
+			$this->assertSame(400, $error->getHttpStatus());
+			$this->assertSame('MISSING_PRIMARY_KEY', $error->getErrorCode());
+			$this->assertSame('id', $error->getField());
+		}
+	}
+
+	public function testUpsertDispatchesCreateWhenPrimaryKeyDoesNotExist(): void
+	{
+		$resolver = new ResolverSpy();
+		$resolver->missingIds = ['999'];
+		$events = [];
+		$service = $this->createService(
+			$this->createRegistryWithUsers(),
+			$resolver,
+			function (object $event) use (&$events): object {
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+					$events[] = 'create';
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->upsert('user', ['id' => 999, 'name' => 'New User']);
+
+		$this->assertSame(['create'], $events);
+		$this->assertSame(999, $result['id']);
+		$this->assertSame('New User', $resolver->lastCreateInput['name']);
+	}
+
+	public function testUpsertDispatchesUpdateWhenPrimaryKeyExists(): void
+	{
+		$resolver = new ResolverSpy();
+		$events = [];
+		$service = $this->createService(
+			$this->createRegistryWithUsers(),
+			$resolver,
+			function (object $event) use (&$events): object {
+				if ($event instanceof ItemUpdate) {
+					$event->allow();
+					$events[] = 'update';
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->upsert('user', ['id' => 1, 'name' => 'Updated User']);
+
+		$this->assertSame(['update'], $events);
+		$this->assertSame('1', $result['id']);
+		$this->assertSame('Updated User', $result['name']);
+	}
+
 	public function testNestedCreateDispatchesEventsForEachNodePath(): void
 	{
 		if (!extension_loaded('pdo_sqlite')) {
@@ -314,6 +381,7 @@ final class ResolverSpy implements RestResolverInterface
 	public array $lastCreateInput = [];
 	public array $connected = [];
 	public array $disconnected = [];
+	public array $missingIds = [];
 
 	public function list(CollectionInterface $collection, array $params = []): array
 	{
@@ -324,6 +392,10 @@ final class ResolverSpy implements RestResolverInterface
 
 	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
 	{
+		if (in_array($id, $this->missingIds, true)) {
+			return null;
+		}
+
 		return ['id' => $id];
 	}
 
