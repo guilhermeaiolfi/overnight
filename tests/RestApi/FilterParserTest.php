@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Registry;
+use ON\RestApi\Resolver\Sql\CycleDbalFactory;
+use ON\RestApi\Resolver\Sql\SqlExpressionBuilder;
 use ON\RestApi\Resolver\Sql\SqlFilterParser;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -20,9 +22,9 @@ final class FilterParserTest extends TestCase
 
 	protected function setUp(): void
 	{
-		$this->parser = new SqlFilterParser();
 		$this->registry = new Registry();
 		$this->createFullSchema($this->registry);
+		$this->parser = new SqlFilterParser();
 	}
 
 	public function testEqOperator(): void
@@ -215,5 +217,17 @@ final class FilterParserTest extends TestCase
 		$this->assertStringContainsString('FROM `post_tag`', $result['sql']);
 		$this->assertStringContainsString('INNER JOIN `tag`', $result['sql']);
 		$this->assertSame(['GraphQL'], $result['values']);
+	}
+
+	public function testFunctionFieldFilter(): void
+	{
+		$parser = new SqlFilterParser(new SqlExpressionBuilder(
+			(new CycleDbalFactory())->fromPdo($this->createFullDatabase()->getConnection())
+		));
+		$collection = $this->registry->getCollection('post');
+		$result = $parser->parse($collection, ['year(created_at)' => ['_eq' => 2025]]);
+
+		$this->assertStringContainsString("CAST(strftime('%Y', \"post\".\"created_at\") AS INTEGER) = ?", $result['sql']);
+		$this->assertSame([2025], $result['values']);
 	}
 }

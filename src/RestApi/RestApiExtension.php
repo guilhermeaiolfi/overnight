@@ -59,11 +59,9 @@ class RestApiExtension extends AbstractExtension
 
 
 		// Wire up per-request cleanup via event
-		if ($service->getResolver() !== null) {
-			$this->app->events->registerListener('restapi.request.complete', function () use ($service) {
-				$service->clearCache();
-			});
-		}
+		$this->app->events->registerListener('restapi.request.complete', function () use ($service) {
+			$service->clearCache();
+		});
 
 		$middleware = new RestMiddleware(
 			$service,

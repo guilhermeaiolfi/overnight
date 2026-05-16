@@ -4,26 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi\Support;
 
-use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
-use Cycle\Database\DatabaseProviderInterface;
-use Cycle\ORM\Factory as CycleOrmFactory;
-use Cycle\ORM\ORM;
-use Cycle\ORM\Schema;
-use Cycle\Schema\Compiler;
-use Cycle\Schema\Generator\ForeignKeys;
-use Cycle\Schema\Generator\GenerateModifiers;
-use Cycle\Schema\Generator\GenerateRelations;
-use Cycle\Schema\Generator\GenerateTypecast;
-use Cycle\Schema\Generator\RenderModifiers;
-use Cycle\Schema\Generator\RenderRelations;
-use Cycle\Schema\Generator\RenderTables;
-use Cycle\Schema\Generator\ValidateEntities;
-use Cycle\Schema\Registry as CycleRegistry;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Compiler\CycleRegistryGenerator;
 use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Resolver\Cycle\CycleRestResolver;
-use ON\RestApi\Resolver\Sql\CycleDbalFactory;
+use ON\ORM\Definition\Registry;
 use ON\RestApi\Resolver\Sql\SqlFilterParser;
 use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
@@ -48,6 +30,7 @@ trait RestApiTestFixtures
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('content', 'text')->type('text')->nullable(true)->end()
 			->field('status', 'string')->type('string')->nullable(true)->end()
+			->field('created_at', 'datetime')->type('datetime')->nullable(true)->end()
 			->end();
 	}
 
@@ -97,6 +80,7 @@ trait RestApiTestFixtures
 		$postCollection->field('title', 'string')->type('string')->nullable(true)->end();
 		$postCollection->field('content', 'text')->type('text')->nullable(true)->end();
 		$postCollection->field('status', 'string')->type('string')->nullable(true)->end();
+		$postCollection->field('created_at', 'datetime')->type('datetime')->nullable(true)->end();
 
 		// post hasMany comments: innerKey('id')->outerKey('post_id')
 		$postCollection->hasMany('comments', 'comment')
@@ -156,11 +140,12 @@ trait RestApiTestFixtures
 					'title' => 'TEXT',
 					'content' => 'TEXT',
 					'status' => 'TEXT',
+					'created_at' => 'TEXT',
 				],
 				'rows' => [
-					['id' => 1, 'user_id' => 1, 'title' => 'PHP Tips', 'content' => 'Learn PHP', 'status' => 'published'],
-					['id' => 2, 'user_id' => 1, 'title' => 'Draft Post', 'content' => 'WIP', 'status' => 'draft'],
-					['id' => 3, 'user_id' => 2, 'title' => 'GraphQL Guide', 'content' => 'Learn GraphQL', 'status' => 'published'],
+					['id' => 1, 'user_id' => 1, 'title' => 'PHP Tips', 'content' => 'Learn PHP', 'status' => 'published', 'created_at' => '2025-01-10 10:00:00'],
+					['id' => 2, 'user_id' => 1, 'title' => 'Draft Post', 'content' => 'WIP', 'status' => 'draft', 'created_at' => '2025-02-11 10:00:00'],
+					['id' => 3, 'user_id' => 2, 'title' => 'GraphQL Guide', 'content' => 'Learn GraphQL', 'status' => 'published', 'created_at' => '2026-01-12 10:00:00'],
 				],
 			],
 		]);
@@ -189,11 +174,12 @@ trait RestApiTestFixtures
 					'title' => 'TEXT',
 					'content' => 'TEXT',
 					'status' => 'TEXT',
+					'created_at' => 'TEXT',
 				],
 				'rows' => [
-					['id' => 1, 'user_id' => 1, 'title' => 'PHP Tips', 'content' => 'Learn PHP', 'status' => 'published'],
-					['id' => 2, 'user_id' => 1, 'title' => 'Draft Post', 'content' => 'WIP', 'status' => 'draft'],
-					['id' => 3, 'user_id' => 2, 'title' => 'GraphQL Guide', 'content' => 'Learn GraphQL', 'status' => 'published'],
+					['id' => 1, 'user_id' => 1, 'title' => 'PHP Tips', 'content' => 'Learn PHP', 'status' => 'published', 'created_at' => '2025-01-10 10:00:00'],
+					['id' => 2, 'user_id' => 1, 'title' => 'Draft Post', 'content' => 'WIP', 'status' => 'draft', 'created_at' => '2025-02-11 10:00:00'],
+					['id' => 3, 'user_id' => 2, 'title' => 'GraphQL Guide', 'content' => 'Learn GraphQL', 'status' => 'published', 'created_at' => '2026-01-12 10:00:00'],
 				],
 			],
 			'comment' => [
@@ -258,37 +244,5 @@ trait RestApiTestFixtures
 			$db,
 			new SqlFilterParser(),
 		);
-	}
-
-	protected function createCycleResolver(Registry $registry, SqliteTestDatabase $db): CycleRestResolver
-	{
-		$database = (new CycleDbalFactory())->fromPdo($db->getConnection(), 'default');
-		$provider = new class($database) implements DatabaseProviderInterface {
-			public function __construct(private CycleDatabaseInterface $database)
-			{
-			}
-
-			public function database(?string $database = null): CycleDatabaseInterface
-			{
-				return $this->database;
-			}
-		};
-
-		$cycleRegistry = new CycleRegistry($provider);
-		$schema = (new Compiler())->compile($cycleRegistry, [
-			new CycleRegistryGenerator($registry),
-			new GenerateRelations(),
-			new GenerateModifiers(),
-			new ValidateEntities(),
-			new RenderTables(),
-			new RenderRelations(),
-			new RenderModifiers(),
-			new ForeignKeys(),
-			new GenerateTypecast(),
-		]);
-
-		$orm = new ORM(new CycleOrmFactory($provider), new Schema($schema));
-
-		return new CycleRestResolver($orm, $registry);
 	}
 }

@@ -7,6 +7,7 @@ namespace ON\RestApi;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
@@ -23,12 +24,13 @@ class RestApiService
 {
 	public function __construct(
 		protected Registry $registry,
-		protected ?RestResolverInterface $resolver,
-		protected ?EventDispatcherInterface $eventDispatcher = null
+		protected RestResolverInterface $resolver,
+		protected ?EventDispatcherInterface $eventDispatcher = null,
+		protected array $dynamicVariables = []
 	) {
 	}
 
-	public function getResolver(): ?RestResolverInterface
+	public function getResolver(): RestResolverInterface
 	{
 		return $this->resolver;
 	}
@@ -49,11 +51,11 @@ class RestApiService
 		return $this->registry->getCollections();
 	}
 
-	public function parseFields(string|CollectionInterface $collection, ?string $fields): array
+	public function parseFields(string|CollectionInterface $collection, ?string $fields, array $aliases = []): array
 	{
 		$collection = is_string($collection) ? $this->getCollection($collection) : $collection;
 
-		return (new FieldSelector())->parse($collection, $fields);
+		return (new FieldSelector())->parse($collection, $fields, $aliases);
 	}
 
 	public function getPrimaryKeyName(string|CollectionInterface $collection): string
@@ -91,7 +93,7 @@ class RestApiService
 			}
 		}
 
-		$result = $this->requireResolver()->list($collection, $params);
+		$result = $this->resolver->list($collection, $params);
 		if (isset($event)) {
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
@@ -105,7 +107,7 @@ class RestApiService
 		$params = $this->normalizeParams($collection, $params);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->requireResolver()->get($collection, $id, $params);
+			return $this->resolver->get($collection, $id, $params);
 		}
 
 		$event = new ItemGet($collection, $id, $params);
@@ -117,7 +119,7 @@ class RestApiService
 			return $event->getResult();
 		}
 
-		$event->setResult($this->requireResolver()->get($collection, $id, $params));
+		$event->setResult($this->resolver->get($collection, $id, $params));
 		return $event->getResult();
 	}
 
@@ -125,44 +127,11 @@ class RestApiService
 	{
 		$collection = $this->resolveCollection($collection);
 		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
+		$dispatchEvents = $this->shouldDispatchEvents($options);
 
-		if (! $this->shouldDispatchEvents($options)) {
-			return $this->requireResolver()->create($collection, $input);
-		}
-
-		$event = new ItemCreate($collection, $input);
-		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
-		$input = $event->getInput();
-
-		if ($event->isDefaultPrevented()) {
-			return $event->getResult() ?? [];
-		}
-
-		$event->setResult($this->requireResolver()->create($collection, $input));
-		return $event->getResult();
-	}
-
-	public function createWithRelations(string|CollectionInterface $collection, array $input, array $nestedInput, array $options = []): array
-	{
-		$collection = $this->resolveCollection($collection);
-		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
-
-		if (! $this->shouldDispatchEvents($options)) {
-			return $this->requireResolver()->createWithRelations($collection, $input, $nestedInput);
-		}
-
-		$event = new ItemCreate($collection, $input);
-		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
-		$input = $event->getInput();
-
-		if ($event->isDefaultPrevented()) {
-			return $event->getResult() ?? [];
-		}
-
-		$event->setResult($this->requireResolver()->createWithRelations($collection, $input, $nestedInput));
-		return $event->getResult();
+		return $this->resolver->transaction(
+			fn() => $this->saveNode('create', $collection, $input, null, [], $collection, $input, $dispatchEvents)
+		);
 	}
 
 	public function update(string|CollectionInterface $collection, string $id, array $input, array $options = []): ?array
@@ -170,53 +139,11 @@ class RestApiService
 		$collection = $this->resolveCollection($collection);
 		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
 		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
+		$dispatchEvents = $this->shouldDispatchEvents($options);
 
-		if (! $this->shouldDispatchEvents($options)) {
-			return $this->requireResolver()->update($collection, $id, $input);
-		}
-
-		$event = new ItemUpdate($collection, $id, $input);
-		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
-		$input = $event->getInput();
-
-		if ($event->isDefaultPrevented()) {
-			return $event->getResult();
-		}
-
-		$updated = $this->requireResolver()->update($collection, $id, $input);
-		if ($updated !== null) {
-			$event->setResult($updated);
-		}
-
-		return $event->getResult();
-	}
-
-	public function updateWithRelations(string|CollectionInterface $collection, string $id, array $input, array $nestedInput, array $options = []): ?array
-	{
-		$collection = $this->resolveCollection($collection);
-		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
-		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
-
-		if (! $this->shouldDispatchEvents($options)) {
-			return $this->requireResolver()->updateWithRelations($collection, $id, $input, $nestedInput);
-		}
-
-		$event = new ItemUpdate($collection, $id, $input);
-		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
-		$input = $event->getInput();
-
-		if ($event->isDefaultPrevented()) {
-			return $event->getResult();
-		}
-
-		$updated = $this->requireResolver()->updateWithRelations($collection, $id, $input, $nestedInput);
-		if ($updated !== null) {
-			$event->setResult($updated);
-		}
-
-		return $event->getResult();
+		return $this->resolver->transaction(
+			fn() => $this->saveNode('update', $collection, $input, $id, [], $collection, $input, $dispatchEvents)
+		);
 	}
 
 	public function delete(string|CollectionInterface $collection, string $id, array $options = []): bool
@@ -225,7 +152,7 @@ class RestApiService
 		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
 
 		if (! $this->shouldDispatchEvents($options)) {
-			return $this->requireResolver()->delete($collection, $id);
+			return $this->resolver->delete($collection, $id);
 		}
 
 		$event = new ItemDelete($collection, $id);
@@ -236,7 +163,7 @@ class RestApiService
 			return true;
 		}
 
-		return $this->requireResolver()->delete($collection, $id);
+		return $this->resolver->delete($collection, $id);
 	}
 
 	public function aggregate(string|CollectionInterface $collection, array $params = []): array
@@ -245,7 +172,7 @@ class RestApiService
 		$params = $this->normalizeParams($collection, $params);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->requireResolver()->aggregate($collection, $params);
+			return $this->resolver->aggregate($collection, $params);
 		}
 
 		$event = new ItemList($collection, $params);
@@ -257,7 +184,7 @@ class RestApiService
 			return $event->getResult() ?? [];
 		}
 
-		$result = $this->requireResolver()->aggregate($collection, $params);
+		$result = $this->resolver->aggregate($collection, $params);
 		$event->setResult($result);
 
 		return $event->getResult() ?? [];
@@ -265,7 +192,7 @@ class RestApiService
 
 	public function clearCache(): void
 	{
-		$this->resolver?->clearCache();
+		$this->resolver->clearCache();
 	}
 
 	public function computeETag(string $jsonBody): string
@@ -289,13 +216,318 @@ class RestApiService
 		return is_string($collection) ? $this->getCollection($collection) : $collection;
 	}
 
-	protected function requireResolver(): RestResolverInterface
-	{
-		if ($this->resolver === null) {
-			throw RestApiError::serviceUnavailable();
+	/**
+	 * @param 'create'|'update'|'upsert' $mode
+	 */
+	protected function saveNode(
+		string $mode,
+		CollectionInterface $collection,
+		array $input,
+		?string $id,
+		array $path,
+		CollectionInterface $rootCollection,
+		array $rootInput,
+		bool $dispatchEvents
+	): ?array {
+		$id ??= $this->inputPrimaryKeyValue($collection, $input);
+		$id = $id === null ? null : (string) $id;
+		$operation = $mode;
+
+		if ($mode === 'upsert') {
+			$operation = $id !== null && $this->resolver->get($collection, $id, ['fields' => ['columns' => [], 'relations' => []]]) !== null
+				? 'update'
+				: 'create';
 		}
 
-		return $this->resolver;
+		if ($operation === 'update' && $id === null) {
+			return null;
+		}
+
+		if ($dispatchEvents) {
+			$event = $operation === 'create'
+				? new ItemCreate($collection, $input, $path, $rootCollection, $rootInput)
+				: new ItemUpdate($collection, $id, $input, $path, $rootCollection, $rootInput);
+			$this->dispatchEvent($event);
+			$this->assertAuthorized($event);
+			$input = $event->getInput();
+
+			if ($event->isDefaultPrevented()) {
+				return $event instanceof ItemCreate ? ($event->getResult() ?? []) : $event->getResult();
+			}
+		}
+
+		if ($operation === 'create') {
+			$createId = $this->inputPrimaryKeyValue($collection, $input);
+			if ($createId !== null && $this->resolver->get($collection, (string) $createId, ['fields' => ['columns' => [], 'relations' => []]]) !== null) {
+				throw new RestApiError(
+					"A record with this {$this->getPrimaryKeyName($collection)} already exists.",
+					'DUPLICATE',
+					$this->getPrimaryKeyName($collection),
+					409
+				);
+			}
+		}
+
+		[$scalarInput, $relations] = $this->splitNodeInput($collection, $input);
+		$beforeParent = [];
+		$afterParent = [];
+		$primaryKey = $this->getPrimaryKeyName($collection);
+
+		foreach ($relations as $relationName => $relationInput) {
+			$relation = $collection->relations->get($relationName);
+			if ($this->relationBelongsOnParent($relation, $primaryKey)) {
+				$beforeParent[$relationName] = $relationInput;
+				continue;
+			}
+
+			$afterParent[$relationName] = $relationInput;
+		}
+
+		foreach ($beforeParent as $relationName => $relationInput) {
+			$relation = $collection->relations->get($relationName);
+			$targetCollection = $this->getCollection($relation->getCollection());
+			$innerKey = (string) $relation->getInnerKey();
+
+			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
+				$targetId = $this->inputPrimaryKeyValue($targetCollection, $relationInput);
+				$target = $this->saveNode(
+					'upsert',
+					$targetCollection,
+					$relationInput,
+					$targetId === null ? null : (string) $targetId,
+					[...$path, $relationName],
+					$rootCollection,
+					$rootInput,
+					$dispatchEvents
+				);
+
+				if ($target !== null) {
+					$scalarInput[$innerKey] = $this->targetKeyValue($targetCollection, $target, (string) $relation->getOuterKey());
+				}
+			} elseif (!is_array($relationInput)) {
+				$scalarInput[$innerKey] = $relationInput;
+			}
+		}
+
+		$saved = $operation === 'create'
+			? $this->resolver->create($collection, $scalarInput)
+			: $this->resolver->update($collection, $id, $scalarInput);
+
+		if ($saved === null) {
+			return null;
+		}
+
+		$saved = $this->persistAfterParentRelations(
+			$collection,
+			$saved,
+			$afterParent,
+			$path,
+			$rootCollection,
+			$rootInput,
+			$dispatchEvents
+		);
+
+		if (isset($event)) {
+			$event->setResult($saved);
+			return $event instanceof ItemCreate ? ($event->getResult() ?? $saved) : $event->getResult();
+		}
+
+		return $saved;
+	}
+
+	protected function persistAfterParentRelations(
+		CollectionInterface $collection,
+		array $parent,
+		array $relations,
+		array $path,
+		CollectionInterface $rootCollection,
+		array $rootInput,
+		bool $dispatchEvents
+	): array {
+		if ($relations === []) {
+			return $parent;
+		}
+
+		$parentId = $this->targetKeyValue($collection, $parent, $this->getPrimaryKeyName($collection));
+
+		foreach ($relations as $relationName => $relationInput) {
+			$relation = $collection->relations->get($relationName);
+			$targetCollection = $this->getCollection($relation->getCollection());
+
+			if ($relation->isJunction()) {
+				$this->persistManyToManyRelation(
+					$collection,
+					$targetCollection,
+					$relationName,
+					(string) $parentId,
+					$relationInput,
+					[...$path, $relationName],
+					$rootCollection,
+					$rootInput,
+					$dispatchEvents
+				);
+				continue;
+			}
+
+			$items = $this->normalizeRelationItems($relationInput);
+			foreach ($items as $index => $item) {
+				if (!is_array($item)) {
+					continue;
+				}
+
+				$item[(string) $relation->getOuterKey()] = $this->targetKeyValue($collection, $parent, (string) $relation->getInnerKey());
+				$itemPath = $relation->getCardinality() === 'many'
+					? [...$path, $relationName, $index]
+					: [...$path, $relationName];
+				$itemId = $this->inputPrimaryKeyValue($targetCollection, $item);
+
+				$this->saveNode(
+					'upsert',
+					$targetCollection,
+					$item,
+					$itemId === null ? null : (string) $itemId,
+					$itemPath,
+					$rootCollection,
+					$rootInput,
+					$dispatchEvents
+				);
+			}
+		}
+
+		return $this->resolver->get($collection, (string) $parentId) ?? $parent;
+	}
+
+	protected function persistManyToManyRelation(
+		CollectionInterface $collection,
+		CollectionInterface $targetCollection,
+		string $relationName,
+		string $parentId,
+		mixed $operations,
+		array $path,
+		CollectionInterface $rootCollection,
+		array $rootInput,
+		bool $dispatchEvents
+	): void {
+		if (!is_array($operations)) {
+			$this->resolver->connectManyToMany($collection, $parentId, $relationName, $operations);
+			return;
+		}
+
+		if (!$this->isAssociativeArray($operations)) {
+			foreach ($operations as $targetId) {
+				$this->resolver->connectManyToMany($collection, $parentId, $relationName, $targetId);
+			}
+
+			return;
+		}
+
+		foreach ($operations['disconnect'] ?? [] as $targetId) {
+			$this->resolver->disconnectManyToMany($collection, $parentId, $relationName, $targetId);
+		}
+
+		foreach ($operations['connect'] ?? [] as $targetId) {
+			$this->resolver->connectManyToMany($collection, $parentId, $relationName, $targetId);
+		}
+
+		foreach ($this->normalizeRelationItems($operations['create'] ?? []) as $index => $item) {
+			if (!is_array($item)) {
+				continue;
+			}
+
+			$created = $this->saveNode(
+				'create',
+				$targetCollection,
+				$item,
+				null,
+				[...$path, 'create', $index],
+				$rootCollection,
+				$rootInput,
+				$dispatchEvents
+			);
+			$this->resolver->connectManyToMany(
+				$collection,
+				$parentId,
+				$relationName,
+				$this->targetKeyValue($targetCollection, $created, $this->getPrimaryKeyName($targetCollection))
+			);
+		}
+	}
+
+	/**
+	 * @return array{0: array, 1: array}
+	 */
+	protected function splitNodeInput(CollectionInterface $collection, array $input): array
+	{
+		$scalar = [];
+		$relations = [];
+
+		foreach ($input as $key => $value) {
+			if ($collection->relations->has((string) $key)) {
+				$relations[(string) $key] = $value;
+				continue;
+			}
+
+			$scalar[$key] = $value;
+		}
+
+		return [$scalar, $relations];
+	}
+
+	protected function relationBelongsOnParent(RelationInterface $relation, string $primaryKey): bool
+	{
+		return !$relation->isJunction() && (string) $relation->getInnerKey() !== $primaryKey;
+	}
+
+	protected function normalizeRelationItems(mixed $input): array
+	{
+		if (!is_array($input)) {
+			return [];
+		}
+
+		return $this->isAssociativeArray($input) ? [$input] : $input;
+	}
+
+	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	{
+		$primaryKey = $this->getPrimaryKeyName($collection);
+		if (array_key_exists($primaryKey, $input)) {
+			return $input[$primaryKey];
+		}
+
+		if ($collection->fields->hasColumn($primaryKey)) {
+			$fieldName = $collection->fields->getKeyByColumnName($primaryKey);
+			return $input[$fieldName] ?? null;
+		}
+
+		return null;
+	}
+
+	protected function targetKeyValue(CollectionInterface $collection, array $row, string $fieldOrColumn): mixed
+	{
+		if (array_key_exists($fieldOrColumn, $row)) {
+			return $row[$fieldOrColumn];
+		}
+
+		if ($collection->fields->has($fieldOrColumn)) {
+			$column = $collection->fields->get($fieldOrColumn)->getColumn();
+			return $row[$column] ?? null;
+		}
+
+		if ($collection->fields->hasColumn($fieldOrColumn)) {
+			$fieldName = $collection->fields->getKeyByColumnName($fieldOrColumn);
+			return $row[$fieldName] ?? null;
+		}
+
+		return null;
+	}
+
+	protected function isAssociativeArray(array $value): bool
+	{
+		if ($value === []) {
+			return false;
+		}
+
+		return array_keys($value) !== range(0, count($value) - 1);
 	}
 
 	public function dispatchEvent(object $event): void
@@ -359,8 +591,10 @@ class RestApiService
 
 	protected function normalizeParams(CollectionInterface $collection, array $params): array
 	{
+		$params = $this->resolveDynamicVariables($params);
+
 		if (! array_key_exists('fields', $params) || is_string($params['fields']) || $params['fields'] === null) {
-			$params['fields'] = $this->parseFields($collection, $params['fields'] ?? null);
+			$params['fields'] = $this->parseFields($collection, $params['fields'] ?? null, $params['alias'] ?? []);
 		}
 
 		return $params;
@@ -369,5 +603,33 @@ class RestApiService
 	protected function shouldDispatchEvents(array $options): bool
 	{
 		return $options['dispatchEvents'] ?? true;
+	}
+
+	protected function resolveDynamicVariables(mixed $value): mixed
+	{
+		if (is_array($value)) {
+			foreach ($value as $key => $item) {
+				$value[$key] = $this->resolveDynamicVariables($item);
+			}
+
+			return $value;
+		}
+
+		if (!is_string($value) || !str_starts_with($value, '$')) {
+			return $value;
+		}
+
+		$name = substr($value, 1);
+		$resolver = $this->dynamicVariables[$name] ?? $this->dynamicVariables[$value] ?? null;
+
+		if ($resolver === null) {
+			return match ($name) {
+				'now' => date('Y-m-d H:i:s'),
+				'today' => date('Y-m-d'),
+				default => $value,
+			};
+		}
+
+		return is_callable($resolver) ? $resolver() : $resolver;
 	}
 }

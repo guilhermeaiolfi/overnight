@@ -14,6 +14,6 @@ final class RestApiConfigTest extends TestCase
 		$config = new RestApiConfig();
 
 		$this->assertSame('/items', $config->get('endpointUri'));
-		$this->assertSame('auto', $config->get('resolver'));
+		$this->assertSame(100, $config->get('defaultLimit'));
 	}
 }

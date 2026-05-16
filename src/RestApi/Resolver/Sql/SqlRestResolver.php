@@ -19,39 +19,28 @@ class SqlRestResolver extends AbstractRestResolver
 {
 	protected RestDataLoader $dataLoader;
 	protected ?CycleDatabaseInterface $dbal = null;
+	protected SqlFilterApplier $filterApplier;
 
 	public function __construct(
-		Registry $registry,
+		protected Registry $registry,
 		protected DatabaseInterface $database,
 		protected SqlFilterParser $filterParser,
 		int $defaultLimit = 100,
 		int $maxLimit = 1000,
-		protected ?CycleDbalFactory $dbalFactory = null
+		protected ?CycleDbalFactory $dbalFactory = null,
+		protected ?SqlExpressionBuilder $expressions = null
 	) {
-		parent::__construct($registry, $defaultLimit, $maxLimit);
+		parent::__construct($defaultLimit, $maxLimit);
 		$this->dataLoader = new RestDataLoader();
 		$this->dbalFactory ??= new CycleDbalFactory();
+		$this->expressions ??= new SqlExpressionBuilder($this->getDatabase());
+		$this->filterParser->setExpressionBuilder($this->expressions);
+		$this->filterApplier = new SqlFilterApplier($this->getDatabase(), $this->expressions);
 	}
 
-	protected function beginTransaction(): void
+	public function transaction(callable $callback): mixed
 	{
-		$this->getConnection()->beginTransaction();
-	}
-
-	protected function commitTransaction(): void
-	{
-		$connection = $this->getConnection();
-		if ($connection->inTransaction()) {
-			$connection->commit();
-		}
-	}
-
-	protected function rollbackTransaction(): void
-	{
-		$connection = $this->getConnection();
-		if ($connection->inTransaction()) {
-			$connection->rollBack();
-		}
+		return $this->getDatabase()->transaction($callback);
 	}
 
 	public function list(CollectionInterface $collection, array $params = []): array
@@ -200,45 +189,43 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 	}
 
-	public function handleM2M(CollectionInterface $collection, string $parentId, M2MRelation $relation, array $operations): void
+	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
 	{
-		$database = $this->getDatabase();
+		if (!$collection->relations->has($relationName)) {
+			return;
+		}
+
+		$relation = $collection->relations->get($relationName);
+		if (!$relation->isJunction()) {
+			return;
+		}
+
 		$through = $relation->through;
-		$junctionTable = $through->getCollection();
-		$throughInnerKey = $through->getInnerKey();
-		$throughOuterKey = $through->getOuterKey();
-		$targetCollection = $this->registry->getCollection($relation->getCollection());
+		$this->insertJunctionRow(
+			$through->getCollection(),
+			(string) $through->getInnerKey(),
+			(string) $through->getOuterKey(),
+			$parentId,
+			$targetId
+		);
+	}
 
-		if (!empty($operations['create']) && $targetCollection !== null) {
-			foreach ($operations['create'] as $createInput) {
-				if (!is_array($createInput)) {
-					continue;
-				}
-
-				$created = $this->create($targetCollection, $createInput);
-				$targetPkColumn = $this->getPrimaryKeyColumn($targetCollection);
-				$targetId = $created[$targetPkColumn] ?? null;
-
-				if ($targetId !== null) {
-					$this->insertJunctionRow($junctionTable, (string) $throughInnerKey, (string) $throughOuterKey, $parentId, $targetId);
-				}
-			}
+	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
+	{
+		if (!$collection->relations->has($relationName)) {
+			return;
 		}
 
-		if (!empty($operations['connect'])) {
-			foreach ($operations['connect'] as $targetId) {
-				$this->insertJunctionRow($junctionTable, (string) $throughInnerKey, (string) $throughOuterKey, $parentId, $targetId);
-			}
+		$relation = $collection->relations->get($relationName);
+		if (!$relation->isJunction()) {
+			return;
 		}
 
-		if (!empty($operations['disconnect'])) {
-			foreach ($operations['disconnect'] as $targetId) {
-				$database->delete($junctionTable)
-					->where($throughInnerKey, $parentId)
-					->where($throughOuterKey, $targetId)
-					->run();
-			}
-		}
+		$through = $relation->through;
+		$this->getDatabase()->delete($through->getCollection())
+			->where($through->getInnerKey(), $parentId)
+			->where($through->getOuterKey(), $targetId)
+			->run();
 	}
 
 	protected function insertJunctionRow(string $table, string $innerCol, string $outerCol, mixed $parentId, mixed $targetId): void
@@ -259,7 +246,7 @@ class SqlRestResolver extends AbstractRestResolver
 	public function aggregate(CollectionInterface $collection, array $params = []): array
 	{
 		$aggregates = $params['aggregate'] ?? [];
-		$groupBy = $params['groupBy'] ?? [];
+		$groupBy = $this->parseArrayValue($params['groupBy'] ?? []);
 
 		if ($aggregates === []) {
 			return [];
@@ -271,37 +258,53 @@ class SqlRestResolver extends AbstractRestResolver
 
 		$selectExpressions = [];
 
+		$groupAliases = $this->getGroupByAliases($groupBy);
 		foreach ($groupBy as $field) {
-			if (!$collection->fields->has($field)) {
+			$expression = $this->expressions->queryField($collection, (string) $field, $collection->getTable());
+			if ($expression === null) {
 				continue;
 			}
 
-			$column = $collection->fields->get($field)->getColumn();
-			$query->groupBy($column);
-			$selectExpressions[] = new Fragment("{$this->quoteIdentifier($column)} AS {$this->quoteIdentifier($field)}");
+			$query->groupBy($expression);
+			$selectExpression = $this->expressions->selectedField(
+				$collection,
+				(string) $field,
+				$collection->getTable(),
+				$groupAliases[$field]
+			);
+			if ($selectExpression !== null) {
+				$selectExpressions[] = $selectExpression;
+			}
 		}
 
-		foreach (['count', 'sum', 'avg', 'min', 'max'] as $allowedFunction) {
+		foreach ([
+			'count' => 'COUNT',
+			'sum' => 'SUM',
+			'avg' => 'AVG',
+			'min' => 'MIN',
+			'max' => 'MAX',
+			'countDistinct' => 'COUNT',
+			'sumDistinct' => 'SUM',
+			'avgDistinct' => 'AVG',
+		] as $allowedFunction => $sqlFunction) {
 			if (!array_key_exists($allowedFunction, $aggregates)) {
 				continue;
 			}
 
 			$fieldList = is_array($aggregates[$allowedFunction]) ? $aggregates[$allowedFunction] : [$aggregates[$allowedFunction]];
 			foreach ($fieldList as $field) {
-				if ($field === '*' && $allowedFunction === 'count') {
-					$selectExpressions[] = new Fragment('COUNT(*) AS `count_*`');
-					continue;
-				}
-
-				if (!$collection->fields->has($field)) {
-					continue;
-				}
-
-				$column = $collection->fields->get($field)->getColumn();
-				$alias = $allowedFunction . '_' . $field;
-				$selectExpressions[] = new Fragment(
-					sprintf('%s(%s) AS %s', strtoupper($allowedFunction), $this->quoteIdentifier($column), $this->quoteIdentifier($alias))
+				$alias = $this->aggregateAlias($allowedFunction, (string) $field);
+				$expression = $this->expressions->aggregate(
+					$sqlFunction,
+					$collection,
+					(string) $field,
+					$collection->getTable(),
+					$alias,
+					str_ends_with($allowedFunction, 'Distinct')
 				);
+				if ($expression !== null) {
+					$selectExpressions[] = $expression;
+				}
 			}
 		}
 
@@ -355,13 +358,7 @@ class SqlRestResolver extends AbstractRestResolver
 			return;
 		}
 
-		$result = $this->filterParser->parse($collection, $filters);
-		if ($result['sql'] === '') {
-			return;
-		}
-
-		$condition = preg_replace('/^WHERE\s+/i', '', $result['sql']) ?? $result['sql'];
-		$query->where(new Fragment($condition, ...$result['values']));
+		$this->filterApplier->apply($query, $collection, $filters);
 	}
 
 	protected function applySearch(object $query, CollectionInterface $collection, ?string $search): void
@@ -400,8 +397,9 @@ class SqlRestResolver extends AbstractRestResolver
 				$part = substr($part, 1);
 			}
 
-			if ($collection->fields->has($part)) {
-				$query->orderBy($collection->fields->get($part)->getColumn(), $direction);
+			$expression = $this->expressions->queryField($collection, $part, $collection->getTable());
+			if ($expression !== null) {
+				$query->orderBy($expression, $direction);
 			}
 		}
 	}
@@ -436,11 +434,12 @@ class SqlRestResolver extends AbstractRestResolver
 		$database = $this->getDatabase();
 
 		foreach ($relationFields as $relationName => $relParsed) {
-			if (!$collection->relations->has($relationName)) {
+			$targetRelationName = $relParsed['_relation'] ?? $relationName;
+			if (!$collection->relations->has($targetRelationName)) {
 				continue;
 			}
 
-			$relation = $collection->relations->get($relationName);
+			$relation = $collection->relations->get($targetRelationName);
 			$targetCollection = $this->registry->getCollection($relation->getCollection());
 			if ($targetCollection === null) {
 				continue;
@@ -498,9 +497,10 @@ class SqlRestResolver extends AbstractRestResolver
 			}
 
 			$relDeep = $deepParams[$relationName] ?? [];
-			$relOrderBy = !empty($relDeep['_sort']) ? $this->buildOrderByClauseRaw($targetCollection, $relDeep['_sort']) : null;
+			$relOrderBy = !empty($relDeep['_sort']) ? $this->buildOrderByExpressions($targetCollection, $relDeep['_sort']) : [];
 			$relLimit = isset($relDeep['_limit']) ? (int) $relDeep['_limit'] : null;
 			$relOffset = isset($relDeep['_offset']) ? (int) $relDeep['_offset'] : null;
+			$relFilters = !empty($relDeep['_filter']) && is_array($relDeep['_filter']) ? $relDeep['_filter'] : [];
 
 			if ($relation->isJunction() && $relation instanceof M2MRelation) {
 				$items = $this->loadM2MRelation(
@@ -510,6 +510,7 @@ class SqlRestResolver extends AbstractRestResolver
 					$innerCol,
 					$relationName,
 					$relColumns,
+					$relFilters,
 					$relOrderBy,
 					$relLimit,
 					$relOffset,
@@ -524,7 +525,9 @@ class SqlRestResolver extends AbstractRestResolver
 				$parentIds,
 				$database,
 				$relColumns,
-				null,
+				$targetCollection,
+				$relFilters,
+				$this->filterApplier,
 				$relOrderBy,
 				$relLimit,
 				$relOffset
@@ -586,7 +589,8 @@ class SqlRestResolver extends AbstractRestResolver
 		string $innerKey,
 		string $relationName,
 		?array $relColumns,
-		?string $relOrderBy,
+		array $relFilters,
+		array $relOrderBy,
 		?int $relLimit,
 		?int $relOffset,
 		CycleDatabaseInterface $database
@@ -636,8 +640,19 @@ class SqlRestResolver extends AbstractRestResolver
 			if ($relColumns !== null) {
 				$query->columns($relColumns);
 			}
-			if ($relOrderBy !== null && $relOrderBy !== '') {
-				$query->orderBy(new Fragment($relOrderBy), null);
+			if ($relFilters !== []) {
+				$this->filterApplier->apply($query, $targetCollection, $relFilters);
+			}
+			foreach ($relOrderBy as $order) {
+				if (
+					!is_array($order)
+					|| !isset($order['expression'])
+					|| !$order['expression'] instanceof \Cycle\Database\Injection\FragmentInterface
+				) {
+					continue;
+				}
+
+				$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
 			}
 
 			foreach ($query->fetchAll(CycleStatementInterface::FETCH_ASSOC) as $row) {
@@ -667,9 +682,9 @@ class SqlRestResolver extends AbstractRestResolver
 		return $items;
 	}
 
-	protected function buildOrderByClauseRaw(CollectionInterface $collection, string $sort): ?string
+	protected function buildOrderByExpressions(CollectionInterface $collection, string $sort): array
 	{
-		$clauses = [];
+		$orders = [];
 		foreach (array_map('trim', explode(',', $sort)) as $part) {
 			if ($part === '') {
 				continue;
@@ -681,12 +696,16 @@ class SqlRestResolver extends AbstractRestResolver
 				$part = substr($part, 1);
 			}
 
-			if ($collection->fields->has($part)) {
-				$clauses[] = $this->quoteIdentifier($collection->fields->get($part)->getColumn()) . ' ' . $direction;
+			$expression = $this->expressions->queryField($collection, $part, $collection->getTable());
+			if ($expression !== null) {
+				$orders[] = [
+					'expression' => $expression,
+					'direction' => $direction,
+				];
 			}
 		}
 
-		return $clauses === [] ? null : implode(', ', $clauses);
+		return $orders;
 	}
 
 	protected function getConnection(): PDO
@@ -743,9 +762,10 @@ class SqlRestResolver extends AbstractRestResolver
 	protected function getRelationKeyColumns(CollectionInterface $collection, array $relationFields): array
 	{
 		$columns = [];
-		foreach (array_keys($relationFields) as $relationName) {
-			if ($collection->relations->has($relationName)) {
-				$columns[] = $this->fieldOrColumnToColumn($collection, $collection->relations->get($relationName)->getInnerKey());
+		foreach ($relationFields as $relationName => $relationData) {
+			$targetRelationName = is_array($relationData) ? ($relationData['_relation'] ?? $relationName) : $relationName;
+			if ($collection->relations->has($targetRelationName)) {
+				$columns[] = $this->fieldOrColumnToColumn($collection, $collection->relations->get($targetRelationName)->getInnerKey());
 			}
 		}
 
@@ -768,13 +788,6 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 
 		return $item;
-	}
-
-	protected function quoteIdentifier(string $identifier): string
-	{
-		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
-
-		return "`{$sanitized}`";
 	}
 
 	protected function convertDatabaseError(\Throwable $e, CollectionInterface $collection): RestApiError

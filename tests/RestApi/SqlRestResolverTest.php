@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Resolver\Sql\SqlFilterParser;
 use ON\RestApi\Resolver\Sql\SqlRestResolver;
+use ON\RestApi\RestApiService;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
@@ -259,6 +259,34 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertNotNull($phpTips);
 		$this->assertArrayHasKey('body', $phpTips['comments'][0]);
 		$this->assertArrayNotHasKey('post_id', $phpTips['comments'][0]);
+	}
+
+	public function testListWithRelationAliasesAndIndependentDeepFilters(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$collection = $registry->getCollection('user');
+		$fields = (new \ON\RestApi\FieldSelector())->parse($collection, 'id,name,published_posts.title,draft_posts.title', [
+			'published_posts' => 'posts',
+			'draft_posts' => 'posts',
+		]);
+
+		$result = $resolver->list($collection, [
+			'fields' => $fields,
+			'deep' => [
+				'published_posts' => ['_filter' => ['status' => ['_eq' => 'published']]],
+				'draft_posts' => ['_filter' => ['status' => ['_eq' => 'draft']]],
+			],
+		]);
+
+		$john = $result['items'][0];
+		$this->assertArrayHasKey('published_posts', $john);
+		$this->assertArrayHasKey('draft_posts', $john);
+		$this->assertSame(['PHP Tips'], array_column($john['published_posts'], 'title'));
+		$this->assertSame(['Draft Post'], array_column($john['draft_posts'], 'title'));
+		$this->assertArrayNotHasKey('posts', $john);
 	}
 
 	public function testListWithMeta(): void
@@ -540,6 +568,58 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame(1, $draft['count']['id']);
 	}
 
+	public function testAggregateDistinctFunctions(): void
+	{
+		$registry = new Registry();
+		$this->createPostCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->aggregate($registry->getCollection('post'), [
+			'aggregate' => ['countDistinct' => 'user_id'],
+		]);
+
+		$this->assertSame(2, $result[0]['countDistinct']['user_id']);
+	}
+
+	public function testAggregateWithFunctionGroupBy(): void
+	{
+		$registry = new Registry();
+		$this->createPostCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->aggregate($registry->getCollection('post'), [
+			'aggregate' => ['count' => 'id'],
+			'groupBy' => ['year(created_at)'],
+		]);
+
+		$byYear = [];
+		foreach ($result as $row) {
+			$byYear[$row['year(created_at)']] = $row['count']['id'];
+		}
+
+		$this->assertSame(2, $byYear[2025]);
+		$this->assertSame(1, $byYear[2026]);
+	}
+
+	public function testListWithDynamicVariableFilter(): void
+	{
+		$registry = new Registry();
+		$this->createPostCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$service = new \ON\RestApi\RestApiService($registry, $resolver, null, [
+			'current_user' => 1,
+		]);
+
+		$result = $service->list('post', [
+			'filter' => ['user_id' => ['_eq' => '$current_user']],
+		]);
+
+		$this->assertSame(['PHP Tips', 'Draft Post'], array_column($result['items'], 'title'));
+	}
+
 	// -------------------------------------------------------------------------
 	// Nested Create — hasMany
 	// -------------------------------------------------------------------------
@@ -550,16 +630,19 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
+		$service = new RestApiService($registry, $resolver);
 
-		$created = $resolver->createWithRelations(
-			$registry->getCollection('user'),
-			['name' => 'Alice', 'email' => 'alice@test.com'],
+		$created = $service->create(
+			'user',
 			[
+				'name' => 'Alice',
+				'email' => 'alice@test.com',
 				'posts' => [
 					['title' => 'Alice Post 1', 'content' => 'Content 1', 'status' => 'published'],
 					['title' => 'Alice Post 2', 'content' => 'Content 2', 'status' => 'draft'],
 				],
-			]
+			],
+			['dispatchEvents' => false]
 		);
 
 		$this->assertSame('Alice', $created['name']);
@@ -586,13 +669,17 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
+		$service = new RestApiService($registry, $resolver);
 
-		$created = $resolver->createWithRelations(
-			$registry->getCollection('post'),
-			['title' => 'New Post', 'content' => 'Content', 'status' => 'published'],
+		$created = $service->create(
+			'post',
 			[
+				'title' => 'New Post',
+				'content' => 'Content',
+				'status' => 'published',
 				'author' => ['name' => 'NewAuthor', 'email' => 'new@test.com'],
-			]
+			],
+			['dispatchEvents' => false]
 		);
 
 		$this->assertSame('New Post', $created['title']);
@@ -614,14 +701,19 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
+		$service = new RestApiService($registry, $resolver);
 
 		// Create a new post and connect it to tags 1 and 2
-		$created = $resolver->createWithRelations(
-			$registry->getCollection('post'),
-			['user_id' => 1, 'title' => 'Tagged Post', 'content' => 'Content', 'status' => 'published'],
+		$created = $service->create(
+			'post',
 			[
+				'user_id' => 1,
+				'title' => 'Tagged Post',
+				'content' => 'Content',
+				'status' => 'published',
 				'tags' => ['connect' => [1, 2]],
-			]
+			],
+			['dispatchEvents' => false]
 		);
 
 		$this->assertSame('Tagged Post', $created['title']);
@@ -641,14 +733,10 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
+		$service = new RestApiService($registry, $resolver);
 
 		// Post 1 is connected to tags 1 and 2. Disconnect tag 1.
-		$postCollection = $registry->getCollection('post');
-		$tagsRelation = $postCollection->relations->get('tags');
-
-		$resolver->handleM2M($postCollection, '1', $tagsRelation, [
-			'disconnect' => [1],
-		]);
+		$service->update('post', '1', ['tags' => ['disconnect' => [1]]], ['dispatchEvents' => false]);
 
 		// Verify only tag 2 remains
 		$pdo = $db->getConnection();
@@ -669,23 +757,26 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
+		$service = new RestApiService($registry, $resolver);
 
 		$userCountBefore = $this->countRows($db, 'user');
 
 		try {
 			// Attempt to create a user with posts, but one post references a
 			// non-existent column which will cause a PDO error
-			$resolver->createWithRelations(
-				$registry->getCollection('user'),
-				['name' => 'FailUser', 'email' => 'fail@test.com'],
+			$service->create(
+				'user',
 				[
+					'name' => 'FailUser',
+					'email' => 'fail@test.com',
 					'posts' => [
 						['title' => 'Good Post', 'content' => 'OK', 'status' => 'published'],
 						// This will fail: inserting into a column that doesn't exist
 						// We simulate failure by inserting a post with a NOT NULL violation
 						// Actually, let's use a direct approach: create a post with bad data
 					],
-				]
+				],
+				['dispatchEvents' => false]
 			);
 
 			// If we get here, the nested create succeeded — we need a different approach
@@ -706,13 +797,16 @@ final class SqlRestResolverTest extends TestCase
 		try {
 			// Create user, then try to create a post that references a non-existent
 			// user_id via a nested belongsTo with duplicate email (will fail on unique constraint)
-			$resolver->createWithRelations(
-				$registry->getCollection('post'),
-				['title' => 'Orphan Post', 'content' => 'Content', 'status' => 'published'],
+			$service->create(
+				'post',
 				[
+					'title' => 'Orphan Post',
+					'content' => 'Content',
+					'status' => 'published',
 					// Create an author with a duplicate email — triggers UNIQUE constraint
 					'author' => ['name' => 'Duplicate', 'email' => 'john@test.com'],
-				]
+				],
+				['dispatchEvents' => false]
 			);
 			// If the duplicate author was created first and succeeded, the post would also succeed
 			// In that case, the test still validates the transaction path works

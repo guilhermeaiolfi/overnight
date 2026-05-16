@@ -19,8 +19,10 @@ class FieldSelector
 	 *   ]
 	 * ]
 	 */
-	public function parse(CollectionInterface $collection, ?string $fieldsParam): array
+	public function parse(CollectionInterface $collection, ?string $fieldsParam, array $aliases = []): array
 	{
+		$aliases = $this->normalizeAliases($collection, $aliases);
+
 		if ($fieldsParam === null || $fieldsParam === '' || $fieldsParam === '*') {
 			return [
 				'columns' => $this->getAllVisibleColumns($collection),
@@ -30,10 +32,10 @@ class FieldSelector
 
 		$fieldPaths = array_map('trim', explode(',', $fieldsParam));
 
-		return $this->buildTree($fieldPaths, $collection);
+		return $this->buildTree($fieldPaths, $collection, $aliases);
 	}
 
-	protected function buildTree(array $fieldPaths, CollectionInterface $collection): array
+	protected function buildTree(array $fieldPaths, CollectionInterface $collection, array $aliases = []): array
 	{
 		$columns = [];
 		$relations = [];
@@ -53,7 +55,7 @@ class FieldSelector
 				}
 			} else {
 				// Relation path
-				if ($this->validateRelation($collection, $first)) {
+				if ($this->validateRelation($collection, $first) || isset($aliases[$first])) {
 					if (!isset($relations[$first])) {
 						$relations[$first] = [];
 					}
@@ -65,7 +67,8 @@ class FieldSelector
 		// Resolve nested relation trees
 		$resolvedRelations = [];
 		foreach ($relations as $relationName => $subPaths) {
-			$relation = $collection->relations->get($relationName);
+			$targetRelationName = $aliases[$relationName] ?? $relationName;
+			$relation = $collection->relations->get($targetRelationName);
 			$targetCollectionName = $relation->getCollection();
 			$registry = $collection->getRegistry();
 			$targetCollection = $registry->getCollection($targetCollectionName);
@@ -75,6 +78,9 @@ class FieldSelector
 			}
 
 			$resolvedRelations[$relationName] = $this->buildTree($subPaths, $targetCollection);
+			if ($targetRelationName !== $relationName) {
+				$resolvedRelations[$relationName]['_relation'] = $targetRelationName;
+			}
 		}
 
 		// Ensure primary key is always included
@@ -111,5 +117,32 @@ class FieldSelector
 	protected function validateRelation(CollectionInterface $collection, string $relationName): bool
 	{
 		return $collection->relations->has($relationName);
+	}
+
+	protected function normalizeAliases(CollectionInterface $collection, array $aliases): array
+	{
+		$normalized = [];
+
+		foreach ($aliases as $alias => $target) {
+			if (!is_string($alias) || !is_string($target)) {
+				continue;
+			}
+
+			if (!preg_match('/^[A-Za-z_][A-Za-z0-9_]*$/', $alias)) {
+				continue;
+			}
+
+			if ($collection->fields->has($alias) || $collection->relations->has($alias)) {
+				continue;
+			}
+
+			if (!$collection->relations->has($target)) {
+				continue;
+			}
+
+			$normalized[$alias] = $target;
+		}
+
+		return $normalized;
 	}
 }

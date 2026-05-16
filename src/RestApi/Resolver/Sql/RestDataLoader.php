@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver\Sql;
 
 use Cycle\Database\DatabaseInterface;
-use Cycle\Database\Injection\Fragment;
+use Cycle\Database\Injection\FragmentInterface;
+use ON\ORM\Definition\Collection\CollectionInterface;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 
 class RestDataLoader
@@ -24,8 +25,10 @@ class RestDataLoader
 		array $parentIds,
 		DatabaseInterface $database,
 		?array $columns = null,
-		?string $where = null,
-		?string $orderBy = null,
+		?CollectionInterface $filterCollection = null,
+		array $filters = [],
+		?SqlFilterApplier $filterApplier = null,
+		array $orderBy = [],
 		?int $limit = null,
 		?int $offset = null
 	): array {
@@ -38,12 +41,20 @@ class RestDataLoader
 			$query->columns($columns);
 		}
 
-		if ($where !== null && $where !== '') {
-			$query->where(new Fragment($where));
+		if ($filterCollection !== null && $filters !== [] && $filterApplier !== null) {
+			$filterApplier->apply($query, $filterCollection, $filters);
 		}
 
-		if ($orderBy !== null && $orderBy !== '') {
-			$query->orderBy(new Fragment($orderBy), null);
+		foreach ($orderBy as $order) {
+			if (
+				!is_array($order)
+				|| !isset($order['expression'])
+				|| !$order['expression'] instanceof FragmentInterface
+			) {
+				continue;
+			}
+
+			$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
 		}
 
 		$allRows = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);

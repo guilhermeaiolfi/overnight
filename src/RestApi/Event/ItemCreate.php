@@ -17,8 +17,13 @@ class ItemCreate implements AuthorizationAwareEventInterface, HasEventNameInterf
 
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected array $input
+		protected array $input,
+		protected array $path = [],
+		protected ?CollectionInterface $rootCollection = null,
+		protected array $rootInput = []
 	) {
+		$this->rootCollection ??= $collection;
+		$this->rootInput = $rootInput === [] ? $input : $rootInput;
 	}
 
 	public function eventName(): string
@@ -39,6 +44,31 @@ class ItemCreate implements AuthorizationAwareEventInterface, HasEventNameInterf
 	public function setInput(array $input): void
 	{
 		$this->input = $input;
+	}
+
+	public function getPath(): array
+	{
+		return $this->path;
+	}
+
+	public function getPathString(): string
+	{
+		return implode('.', array_map('strval', $this->path));
+	}
+
+	public function isRoot(): bool
+	{
+		return $this->path === [];
+	}
+
+	public function getRootCollection(): CollectionInterface
+	{
+		return $this->rootCollection;
+	}
+
+	public function getRootInput(): array
+	{
+		return $this->rootInput;
 	}
 
 	public function getResult(): ?array

@@ -8,6 +8,16 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 
 class SqlFilterParser
 {
+	public function __construct(
+		protected ?SqlExpressionBuilder $expressions = null
+	) {
+	}
+
+	public function setExpressionBuilder(SqlExpressionBuilder $expressions): void
+	{
+		$this->expressions = $expressions;
+	}
+
 	/**
 	 * Parse Directus-style filter array into SQL WHERE clause + bound values.
 	 *
@@ -90,11 +100,10 @@ class SqlFilterParser
 
 	protected function parseCondition(CollectionInterface $collection, string $tableAlias, string $field, string $operator, mixed $value, array &$values): ?string
 	{
-		if (!$this->isValidField($collection, $field)) {
+		$quotedField = $this->resolveFieldExpression($collection, $field, $tableAlias);
+		if ($quotedField === null) {
 			return null;
 		}
-
-		$quotedField = $this->qualifyColumn($tableAlias, $collection->fields->get($field)->getColumn());
 
 		return match ($operator) {
 			'_eq' => $this->comparisonOp($quotedField, '=', $value, $values),
@@ -256,13 +265,18 @@ class SqlFilterParser
 
 	public function quoteIdentifier(string $identifier): string
 	{
+		if ($this->expressions !== null) {
+			return $this->expressions->identifier($identifier);
+		}
+
 		$sanitized = preg_replace('/[^a-zA-Z0-9_]/', '', $identifier);
 		return "`{$sanitized}`";
 	}
 
 	protected function isValidField(CollectionInterface $collection, string $fieldName): bool
 	{
-		return $collection->fields->has($fieldName);
+		return $collection->fields->has($fieldName)
+			|| ($this->expressions !== null && $this->expressions->isFunction($fieldName));
 	}
 
 	protected function isOperatorArray(array $value): bool
@@ -356,7 +370,26 @@ class SqlFilterParser
 
 	protected function qualifyColumn(string $tableAlias, string $column): string
 	{
+		if ($this->expressions !== null) {
+			return $this->expressions->compile(new \Cycle\Database\Injection\Expression($tableAlias . '.' . $column));
+		}
+
 		return $this->quoteIdentifier($tableAlias) . '.' . $this->quoteIdentifier($column);
+	}
+
+	protected function resolveFieldExpression(CollectionInterface $collection, string $fieldName, string $tableAlias): ?string
+	{
+		if ($collection->fields->has($fieldName)) {
+			return $this->qualifyColumn($tableAlias, $collection->fields->get($fieldName)->getColumn());
+		}
+
+		if ($this->expressions === null) {
+			return null;
+		}
+
+		$expression = $this->expressions->queryField($collection, $fieldName, $tableAlias);
+
+		return $expression === null ? null : $this->expressions->compile($expression);
 	}
 
 	protected function buildAlias(string $value): string

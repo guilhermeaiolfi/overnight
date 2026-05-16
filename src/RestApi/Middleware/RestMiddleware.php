@@ -96,7 +96,8 @@ class RestMiddleware implements MiddlewareInterface
 		$query = $request->getQueryParams();
 
 		// Parse fields once in the middleware — resolvers receive the normalized structure
-		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null);
+		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
+		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null, $aliases);
 
 		// Parse meta param: "total_count,filter_count" → ['total_count', 'filter_count']
 		$rawMeta = $query['meta'] ?? null;
@@ -115,6 +116,7 @@ class RestMiddleware implements MiddlewareInterface
 			'deep'         => $query['deep'] ?? [],
 			'aggregate'    => $query['aggregate'] ?? null,
 			'groupBy'      => $query['groupBy'] ?? null,
+			'alias'        => $aliases,
 		];
 
 		// Aggregate shortcut — no event, just return data
@@ -147,12 +149,14 @@ class RestMiddleware implements MiddlewareInterface
 	{
 		$query = $request->getQueryParams();
 
-		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null);
+		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
+		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null, $aliases);
 
 		$params = [
 			'fields'       => $parsedFields,
 			'fieldsExplicit' => array_key_exists('fields', $query),
 			'deep'         => $query['deep'] ?? null,
+			'alias'        => $aliases,
 		];
 
 		$item = $this->restApi->get($collection, $id, $params);
@@ -182,12 +186,8 @@ class RestMiddleware implements MiddlewareInterface
 
 		$this->validateInput($collection, $body);
 
-		[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $body);
 		$options = $this->getMutationOptions($request);
-
-		$created = !empty($nestedInput)
-			? $this->restApi->createWithRelations($collection, $scalarInput, $nestedInput, $options)
-			: $this->restApi->create($collection, $scalarInput, $options);
+		$created = $this->restApi->create($collection, $body, $options);
 
 		return $this->jsonResponse(['data' => $created]);
 	}
@@ -203,12 +203,8 @@ class RestMiddleware implements MiddlewareInterface
 
 		$this->validateInput($collection, $body, true);
 
-		[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $body);
 		$options = $this->getMutationOptions($request);
-
-		$result = !empty($nestedInput)
-			? $this->restApi->updateWithRelations($collection, $id, $scalarInput, $nestedInput, $options)
-			: $this->restApi->update($collection, $id, $scalarInput, $options);
+		$result = $this->restApi->update($collection, $id, $body, $options);
 
 		if (empty($result)) {
 			throw RestApiError::notFound();
@@ -241,12 +237,9 @@ class RestMiddleware implements MiddlewareInterface
 		foreach ($items as $item) {
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item);
-			[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $item);
 			$options = $this->getMutationOptions($request);
 
-			$results[] = !empty($nestedInput)
-				? $this->restApi->createWithRelations($collection, $scalarInput, $nestedInput, $options)
-				: $this->restApi->create($collection, $scalarInput, $options);
+			$results[] = $this->restApi->create($collection, $item, $options);
 		}
 
 		return $this->jsonResponse(['data' => $results]);
@@ -273,12 +266,8 @@ class RestMiddleware implements MiddlewareInterface
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item, true);
 
-			[$scalarInput, $nestedInput] = $this->separateRelationData($collection, $item);
 			$options = $this->getMutationOptions($request);
-
-			$updated = !empty($nestedInput)
-				? $this->restApi->updateWithRelations($collection, $id, $scalarInput, $nestedInput, $options)
-				: $this->restApi->update($collection, $id, $scalarInput, $options);
+			$updated = $this->restApi->update($collection, $id, $item, $options);
 
 			$results[] = $updated ?? [];
 		}
@@ -401,32 +390,6 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		return $input;
-	}
-
-	/**
-	 * Split input into scalar fields and nested relation data.
-	 *
-	 * @return array{0: array, 1: array} [scalarInput, nestedInput]
-	 */
-	protected function separateRelationData(CollectionInterface $collection, array $input): array
-	{
-		$scalar = [];
-		$nested = [];
-
-		$relationNames = [];
-		foreach ($collection->relations as $name => $relation) {
-			$relationNames[$name] = true;
-		}
-
-		foreach ($input as $key => $value) {
-			if (isset($relationNames[$key]) && is_array($value)) {
-				$nested[$key] = $value;
-			} else {
-				$scalar[$key] = $value;
-			}
-		}
-
-		return [$scalar, $nested];
 	}
 
 	// ------------------------------------------------------------------

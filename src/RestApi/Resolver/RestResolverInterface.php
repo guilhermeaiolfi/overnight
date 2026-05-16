@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\M2MRelation;
 
 interface RestResolverInterface
 {
@@ -37,25 +36,25 @@ interface RestResolverInterface
 	public function delete(CollectionInterface $collection, string $id): bool;
 
 	/**
-	 * Create with nested relational data.
-	 */
-	public function createWithRelations(CollectionInterface $collection, array $input, array $nestedInput): array;
-
-	/**
-	 * Update with nested relational data.
-	 */
-	public function updateWithRelations(CollectionInterface $collection, string $id, array $input, array $nestedInput): ?array;
-
-	/**
-	 * Handle M2M operations (connect, disconnect, create) for a relation.
-	 */
-	public function handleM2M(CollectionInterface $collection, string $parentId, M2MRelation $relation, array $operations): void;
-
-	/**
 	 * Run aggregate queries (count, sum, avg, min, max) with optional groupBy.
 	 * Returns array of aggregate result rows.
 	 */
 	public function aggregate(CollectionInterface $collection, array $params = []): array;
+
+	/**
+	 * Run a group of writes atomically.
+	 */
+	public function transaction(callable $callback): mixed;
+
+	/**
+	 * Connect a many-to-many relation row.
+	 */
+	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void;
+
+	/**
+	 * Disconnect a many-to-many relation row.
+	 */
+	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void;
 
 	/**
 	 * Clear internal caches (DataLoader state). Called after each request.

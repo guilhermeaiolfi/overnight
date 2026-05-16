@@ -132,4 +132,19 @@ final class FieldSelectorTest extends TestCase
 		$this->assertContains('id', $result['columns']);
 		$this->assertContains('name', $result['columns']);
 	}
+
+	public function testParseTopLevelRelationAlias(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$collection = $registry->getCollection('user');
+
+		$result = $this->selector->parse($collection, 'id,recent_posts.title', [
+			'recent_posts' => 'posts',
+		]);
+
+		$this->assertArrayHasKey('recent_posts', $result['relations']);
+		$this->assertSame('posts', $result['relations']['recent_posts']['_relation']);
+		$this->assertContains('title', $result['relations']['recent_posts']['columns']);
+	}
 }

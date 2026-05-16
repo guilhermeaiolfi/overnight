@@ -6,12 +6,12 @@ namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreate;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
+use ON\RestApi\Event\ItemUpdate;
 use ON\RestApi\Resolver\RestResolverInterface;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\TestCase;
@@ -148,6 +148,137 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame(['attachment' => 'uploads/test.txt'], $resolver->lastCreateInput);
 	}
 
+	public function testCreateWithExistingPrimaryKeyFailsWithDuplicate(): void
+	{
+		$resolver = new ResolverSpy();
+		$service = $this->createService(
+			$this->createRegistryWithUsers(),
+			$resolver,
+			function (object $event): object {
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		);
+
+		try {
+			$service->create('user', ['id' => 1, 'name' => 'Existing']);
+			$this->fail('Expected duplicate error to be thrown.');
+		} catch (RestApiError $error) {
+			$this->assertSame(409, $error->getHttpStatus());
+			$this->assertSame('DUPLICATE', $error->getErrorCode());
+			$this->assertSame('id', $error->getField());
+		}
+	}
+
+	public function testNestedCreateDispatchesEventsForEachNodePath(): void
+	{
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+		$paths = [];
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event) use (&$paths): object {
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+					$paths[] = $event->getPathString();
+				}
+
+				return $event;
+			}
+		);
+
+		$created = $service->create('user', [
+			'name' => 'Nested User',
+			'email' => 'nested@test.com',
+			'posts' => [
+				['title' => 'Nested Post', 'content' => 'Content', 'status' => 'published'],
+			],
+		]);
+
+		$this->assertSame('Nested User', $created['name']);
+		$this->assertSame(['', 'posts.0'], $paths);
+	}
+
+	public function testNestedUpdateDispatchesEventsForEachNodePath(): void
+	{
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+		$paths = [];
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event) use (&$paths): object {
+				if ($event instanceof ItemUpdate) {
+					$event->allow();
+					$paths[] = $event->getPathString();
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->update('post', '1', [
+			'title' => 'Updated Post',
+			'comments' => [
+				['id' => 1, 'body' => 'Updated comment'],
+			],
+		]);
+
+		$this->assertSame('Updated Post', $result['title']);
+		$this->assertSame(['', 'comments.0'], $paths);
+	}
+
+	public function testNestedUpdateCreatesMissingChildWithExplicitId(): void
+	{
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event): object {
+				if ($event instanceof ItemCreate || $event instanceof ItemUpdate) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		);
+
+		$service->update('post', '1', [
+			'comments' => [
+				['id' => 999, 'body' => 'Created with explicit id', 'author' => 'Alice'],
+			],
+		]);
+
+		$comment = $resolver->get($registry->getCollection('comment'), '999');
+
+		$this->assertNotNull($comment);
+		$this->assertSame('Created with explicit id', $comment['body']);
+		$this->assertSame(1, (int) $comment['post_id']);
+	}
+
 	private function createRegistryWithUsers(): Registry
 	{
 		$registry = new Registry();
@@ -156,7 +287,7 @@ final class RestApiServiceTest extends TestCase
 		return $registry;
 	}
 
-	private function createService(Registry $registry, ResolverSpy $resolver, callable $listener): RestApiService
+	private function createService(Registry $registry, RestResolverInterface $resolver, callable $listener): RestApiService
 	{
 		$dispatcher = new class($listener) implements EventDispatcherInterface {
 			public function __construct(private $listener)
@@ -181,6 +312,8 @@ final class ResolverSpy implements RestResolverInterface
 	public array $aggregateResult = [];
 	public array $createResult = [];
 	public array $lastCreateInput = [];
+	public array $connected = [];
+	public array $disconnected = [];
 
 	public function list(CollectionInterface $collection, array $params = []): array
 	{
@@ -198,7 +331,7 @@ final class ResolverSpy implements RestResolverInterface
 	{
 		$this->lastCreateInput = $input;
 
-		return $this->createResult;
+		return $this->createResult === [] ? ['id' => 1] + $input : $this->createResult;
 	}
 
 	public function update(CollectionInterface $collection, string $id, array $input): ?array
@@ -211,25 +344,26 @@ final class ResolverSpy implements RestResolverInterface
 		return true;
 	}
 
-	public function createWithRelations(CollectionInterface $collection, array $input, array $nestedInput): array
-	{
-		return $this->create($collection, $input);
-	}
-
-	public function updateWithRelations(CollectionInterface $collection, string $id, array $input, array $nestedInput): ?array
-	{
-		return $this->update($collection, $id, $input);
-	}
-
-	public function handleM2M(CollectionInterface $collection, string $parentId, M2MRelation $relation, array $operations): void
-	{
-	}
-
 	public function aggregate(CollectionInterface $collection, array $params = []): array
 	{
 		$this->aggregateCalls++;
 
 		return $this->aggregateResult;
+	}
+
+	public function transaction(callable $callback): mixed
+	{
+		return $callback();
+	}
+
+	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
+	{
+		$this->connected[] = [$collection->getName(), $parentId, $relationName, $targetId];
+	}
+
+	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
+	{
+		$this->disconnected[] = [$collection->getName(), $parentId, $relationName, $targetId];
 	}
 
 	public function clearCache(): void
