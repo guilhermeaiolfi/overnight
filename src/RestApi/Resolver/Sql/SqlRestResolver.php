@@ -260,13 +260,13 @@ class SqlRestResolver extends AbstractRestResolver
 
 		$groupAliases = $this->getGroupByAliases($groupBy);
 		foreach ($groupBy as $field) {
-			$expression = $this->expressions->queryField($collection, (string) $field, $collection->getTable());
+			$expression = $this->expressions->value($collection, (string) $field, $collection->getTable());
 			if ($expression === null) {
 				continue;
 			}
 
 			$query->groupBy($expression);
-			$selectExpression = $this->expressions->selectedField(
+			$selectExpression = $this->expressions->select(
 				$collection,
 				(string) $field,
 				$collection->getTable(),
@@ -397,7 +397,7 @@ class SqlRestResolver extends AbstractRestResolver
 				$part = substr($part, 1);
 			}
 
-			$expression = $this->expressions->queryField($collection, $part, $collection->getTable());
+			$expression = $this->expressions->value($collection, $part, $collection->getTable());
 			if ($expression !== null) {
 				$query->orderBy($expression, $direction);
 			}
@@ -696,7 +696,7 @@ class SqlRestResolver extends AbstractRestResolver
 				$part = substr($part, 1);
 			}
 
-			$expression = $this->expressions->queryField($collection, $part, $collection->getTable());
+			$expression = $this->expressions->value($collection, $part, $collection->getTable());
 			if ($expression !== null) {
 				$orders[] = [
 					'expression' => $expression,

@@ -14,55 +14,25 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 class SqlExpressionBuilder
 {
 	private const FUNCTIONS = ['year', 'month', 'day', 'hour', 'date'];
+	private const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
 
 	public function __construct(
 		protected DatabaseInterface $database
 	) {
 	}
 
-	public function queryField(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
+	public function value(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
 	{
 		if ($collection->fields->has($value)) {
-			return $this->field($collection, $value, $tableAlias);
+			return $this->fieldExpression($collection, $value, $tableAlias);
 		}
 
-		return $this->functionField($collection, $value, $tableAlias);
+		return $this->functionExpression($collection, $value, $tableAlias);
 	}
 
-	public function field(CollectionInterface $collection, string $field, string $tableAlias): ?Expression
+	public function select(CollectionInterface $collection, string $value, string $tableAlias, string $alias): ?FragmentInterface
 	{
-		if (!$collection->fields->has($field)) {
-			return null;
-		}
-
-		return new Expression($tableAlias . '.' . $collection->fields->get($field)->getColumn());
-	}
-
-	public function functionField(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
-	{
-		$parsed = $this->parseFunction($value);
-		if ($parsed === null) {
-			return null;
-		}
-
-		[$function, $field] = $parsed;
-		$column = $this->field($collection, $field, $tableAlias);
-		if ($column === null) {
-			return null;
-		}
-
-		$compiledColumn = $this->compile($column);
-
-		return new Fragment($this->functionSql($function, $compiledColumn));
-	}
-
-	public function selectedField(CollectionInterface $collection, string $value, string $tableAlias, string $alias): ?FragmentInterface
-	{
-		if ($collection->fields->has($value)) {
-			return new Expression($tableAlias . '.' . $collection->fields->get($value)->getColumn() . ' AS ' . $alias);
-		}
-
-		$expression = $this->functionField($collection, $value, $tableAlias);
+		$expression = $this->value($collection, $value, $tableAlias);
 
 		return $expression === null ? null : $this->aliased($expression, $alias);
 	}
@@ -70,23 +40,21 @@ class SqlExpressionBuilder
 	public function aggregate(
 		string $function,
 		CollectionInterface $collection,
-		string $field,
+		string $value,
 		string $tableAlias,
 		string $alias,
 		bool $distinct = false
 	): ?FragmentInterface {
-		if ($field === '*' && strtolower($function) === 'count' && !$distinct) {
+		$function = strtolower($function);
+		if (!in_array($function, self::AGGREGATE_FUNCTIONS, true)) {
+			return null;
+		}
+
+		if ($value === '*' && $function === 'count' && !$distinct) {
 			return new Expression('COUNT(*) AS ' . $alias);
 		}
 
-		if ($collection->fields->has($field)) {
-			$column = $tableAlias . '.' . $collection->fields->get($field)->getColumn();
-			$distinctSql = $distinct ? 'DISTINCT ' : '';
-
-			return new Expression(strtoupper($function) . '(' . $distinctSql . $column . ') AS ' . $alias);
-		}
-
-		$expression = $this->functionField($collection, $field, $tableAlias);
+		$expression = $this->value($collection, $value, $tableAlias);
 		if ($expression === null) {
 			return null;
 		}
@@ -131,6 +99,33 @@ class SqlExpressionBuilder
 			$this->database->getPrefix(),
 			$expression
 		);
+	}
+
+	protected function fieldExpression(CollectionInterface $collection, string $field, string $tableAlias): ?Expression
+	{
+		if (!$collection->fields->has($field)) {
+			return null;
+		}
+
+		return new Expression($tableAlias . '.' . $collection->fields->get($field)->getColumn());
+	}
+
+	protected function functionExpression(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
+	{
+		$parsed = $this->parseFunction($value);
+		if ($parsed === null) {
+			return null;
+		}
+
+		[$function, $field] = $parsed;
+		$column = $this->fieldExpression($collection, $field, $tableAlias);
+		if ($column === null) {
+			return null;
+		}
+
+		$compiledColumn = $this->compile($column);
+
+		return new Fragment($this->functionSql($function, $compiledColumn));
 	}
 
 	protected function parseFunction(string $value): ?array

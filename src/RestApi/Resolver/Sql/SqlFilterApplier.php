@@ -80,7 +80,7 @@ class SqlFilterApplier
 		string $operator,
 		mixed $value
 	): void {
-		$expression = $this->expressions->queryField($collection, $field, $tableAlias);
+		$expression = $this->expressions->value($collection, $field, $tableAlias);
 		if ($expression === null) {
 			return;
 		}

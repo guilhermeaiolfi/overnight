@@ -387,7 +387,7 @@ class SqlFilterParser
 			return null;
 		}
 
-		$expression = $this->expressions->queryField($collection, $fieldName, $tableAlias);
+		$expression = $this->expressions->value($collection, $fieldName, $tableAlias);
 
 		return $expression === null ? null : $this->expressions->compile($expression);
 	}
