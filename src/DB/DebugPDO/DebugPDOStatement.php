@@ -64,7 +64,7 @@ class DebugPDOStatement extends PDOStatement
 		}
 
 		$trace->end($ex, $this->rowCount());
-		$this->pdo->emitEvent($trace, 'execute');
+		$this->pdo->recordQuery($trace);
 
 		if ($this->pdo->getAttribute(PDO::ATTR_ERRMODE) === PDO::ERRMODE_EXCEPTION && $ex !== null) {
 			throw $ex;

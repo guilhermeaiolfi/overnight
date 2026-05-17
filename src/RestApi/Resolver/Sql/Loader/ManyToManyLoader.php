@@ -24,7 +24,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			[$this->parentKeyAlias()],
 			[(string) $this->relation->getInnerKey()]
 		);
-		$parent->linkNode($this->responseName, $node);
+		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
 
 		return $node;
@@ -61,7 +61,13 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
 
 		if ($this->filters() !== null) {
-			$this->context->filterApplier->applyNode($query, $this->getTargetCollection(), $this->filters(), $targetAlias);
+			$this->context->filterApplier->applyNode(
+				$query,
+				$this->getTargetCollection(),
+				$this->filters(),
+				$targetAlias,
+				$this->context->aliases
+			);
 		}
 
 		foreach ($this->orderBy() as $order) {
@@ -112,16 +118,16 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 	private function parentKeyAlias(): string
 	{
-		return $this->parentKeyAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_parent_key');
+		return $this->parentKeyAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_parent_key');
 	}
 
 	private function junctionAlias(): string
 	{
-		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_junction');
+		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_junction');
 	}
 
 	private function targetAlias(): string
 	{
-		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_target');
+		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_target');
 	}
 }

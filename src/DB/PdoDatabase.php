@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\DB;
 
 use Exception;
+use ON\DB\DebugPDO\DebugPDO;
 use PDO;
 
 class PdoDatabase implements DatabaseInterface
@@ -36,8 +37,8 @@ class PdoDatabase implements DatabaseInterface
 				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
 			}
 
-			// Enable query logging via LoggingPDOStatement when debug is on
-			if (!empty($parameters["debug"])) {
+			// If no PDO wrapper is active, use a logging statement class for prepare/execute.
+			if (!empty($parameters["debug"]) && ! $this->connection instanceof DebugPDO) {
 				$this->connection->setAttribute(
 					PDO::ATTR_STATEMENT_CLASS,
 					[DebugPDO\LoggingPDOStatement::class, []]

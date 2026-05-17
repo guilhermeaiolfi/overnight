@@ -58,6 +58,44 @@ final class SqlRestResolverTest extends TestCase
 		}
 	}
 
+	public function testNestedRelationFiltersUseCollisionSafeAliases(): void
+	{
+		$registry = new Registry();
+		$registry->collection('node')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('parent_id', 'int')->type('int')->nullable(true)->end()
+			->field('label', 'string')->type('string')->nullable(false)->end()
+			->hasMany('child.node', 'node')->innerKey('id')->outerKey('parent_id')->end()
+			->hasMany('child_node', 'node')->innerKey('id')->outerKey('parent_id')->end()
+			->end();
+
+		$db = new SqliteTestDatabase([
+			'node' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'parent_id' => 'INTEGER NULL',
+					'label' => 'TEXT NOT NULL',
+				],
+				'rows' => [
+					['id' => 1, 'parent_id' => null, 'label' => 'root'],
+					['id' => 2, 'parent_id' => 1, 'label' => 'a'],
+					['id' => 3, 'parent_id' => 1, 'label' => 'b'],
+				],
+			],
+		]);
+		$resolver = $this->createResolver($registry, $db);
+		$collection = $registry->getCollection('node');
+
+		$result = $resolver->list($collection, $this->q($collection, [
+			'filter' => [
+				'child.node' => ['label' => ['_eq' => 'a']],
+				'child_node' => ['label' => ['_eq' => 'b']],
+			],
+		]));
+
+		$this->assertSame(['root'], array_column($result['items'], 'label'));
+	}
+
 	public function testListWithSearch(): void
 	{
 		$registry = new Registry();

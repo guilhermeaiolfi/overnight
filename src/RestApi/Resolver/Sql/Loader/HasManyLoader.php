@@ -17,7 +17,7 @@ class HasManyLoader extends AbstractRelationLoader
 			[(string) $this->relation->getOuterKey()],
 			[(string) $this->relation->getInnerKey()]
 		);
-		$parent->linkNode($this->responseName, $node);
+		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
 
 		return $node;

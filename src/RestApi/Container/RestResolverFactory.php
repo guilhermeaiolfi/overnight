@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Container;
 
 use ON\DB\DatabaseManager;
+use ON\DB\Cycle\CycleDatabase;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Resolver\RestResolverInterface;
@@ -24,12 +25,12 @@ class RestResolverFactory
 		}
 
 		$manager = $container->get(DatabaseManager::class);
-		$database = $manager->getDatabase();
-
-		if ($database === null) {
+		$cycle = $manager->getDatabase($config->get('database', 'cycle'));
+		if (!$cycle instanceof CycleDatabase) {
 			throw RestApiError::serviceUnavailable();
 		}
 
+		$database = $cycle->getConnection()->database($config->get('cycleDatabase', 'default'));
 		$defaultLimit = $config->get('defaultLimit', 100);
 		$maxLimit = $config->get('maxLimit', 1000);
 

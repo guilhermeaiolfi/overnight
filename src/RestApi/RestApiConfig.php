@@ -9,6 +9,8 @@ use ON\Config\Config;
 class RestApiConfig extends Config
 {
 	public string $endpointUri = '/items';
+	public string $database = 'cycle';
+	public string $cycleDatabase = 'default';
 	public int $defaultLimit = 100;
 	public int $maxLimit = 1000;
 	public int $rateLimit = 100;

@@ -4,9 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Clockwork;
 
-use Clockwork\Helpers\Serializer;
-use Clockwork\Helpers\StackFilter;
-use Clockwork\Helpers\StackTrace;
+use function clock;
 use Clockwork\Support\Vanilla\Clockwork;
 use Psr\Log\InvalidArgumentException;
 use Psr\Log\LoggerInterface;
@@ -15,7 +13,7 @@ use Stringable;
 class CycleDatabaseLogger implements LoggerInterface
 {
 	public function __construct(
-		protected Clockwork $clockwork
+		protected ?Clockwork $clockwork = null
 	) {
 
 	}
@@ -98,21 +96,15 @@ class CycleDatabaseLogger implements LoggerInterface
 	 */
 	public function info(string|Stringable $message, array $context = []): void
 	{
-		$filter = StackFilter::make()
-			->isNotVendor([ 'itsgoingd', 'guilhermeaiolfi', 'league' ])
-				  ->isNotNamespace([ 'Clockwork', 'League', 'Invoker' ])
-			->isNotFunction([ 'profileCall', 'emitEvent' ]);
+		$clockwork = function_exists('clock') ? clock() : $this->clockwork;
+		if (! $clockwork instanceof Clockwork) {
+			return;
+		}
 
-		$trace = StackTrace::get()->resolveViewName()->skip($filter);
-		$elapsed = isset($context["elapsed"]) ? (float) $context["elapsed"] : 0.0;
-
-		$this->clockwork->addDatabaseQuery(
-			$message,
+		ClockworkQueryRecorder::record(
+			(string) $message,
 			$context["parameters"] ?? null,
-			(int) floor($elapsed * 1000),
-			[
-				"trace" => (new Serializer())->trace($trace),
-			]
+			isset($context["elapsed"]) ? (float) $context["elapsed"] : 0.0
 		);
 	}
 

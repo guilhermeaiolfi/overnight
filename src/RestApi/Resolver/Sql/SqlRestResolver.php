@@ -6,7 +6,6 @@ namespace ON\RestApi\Resolver\Sql;
 
 use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
-use ON\DB\DatabaseInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
@@ -16,6 +15,7 @@ use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\GroupBySpec;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Node\RelationAggregateSelection;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SearchField;
 use ON\RestApi\Query\Node\SelectionSet;
@@ -27,26 +27,22 @@ use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
 use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
 use ON\RestApi\Resolver\Sql\Loader\QueryContext;
 use ON\RestApi\Resolver\Sql\Loader\RootLoader;
-use PDO;
 
 class SqlRestResolver extends AbstractRestResolver
 {
-	protected ?CycleDatabaseInterface $dbal = null;
 	protected SqlFilterApplier $filterApplier;
 	protected LoaderFactory $loaderFactory;
 
 	public function __construct(
 		protected Registry $registry,
-		protected DatabaseInterface $database,
+		protected CycleDatabaseInterface $database,
 		int $defaultLimit = 100,
 		int $maxLimit = 1000,
-		protected ?CycleDbalFactory $dbalFactory = null,
 		protected ?SqlExpressionCompiler $expressions = null
 	) {
 		parent::__construct($defaultLimit, $maxLimit);
-		$this->dbalFactory ??= new CycleDbalFactory();
-		$this->expressions ??= new SqlExpressionCompiler($this->getDatabase());
-		$this->filterApplier = new SqlFilterApplier($this->getDatabase(), $this->expressions);
+		$this->expressions ??= new SqlExpressionCompiler($this->database);
+		$this->filterApplier = new SqlFilterApplier($this->database, $this->expressions);
 		$this->loaderFactory = LoaderFactory::defaults();
 	}
 
@@ -57,17 +53,17 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
-		$fields = $this->fieldTreeFromSelection($querySpec->selection);
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
-		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
-		$fieldsForSelect = $fields;
-		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
-			$fieldsForSelect['fields'],
+		$selection = $this->selectionPlan($querySpec->selection);
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
+		$internalRelationKeyColumnNames = $this->relationKeyColumnNames($collection, $selection['relations']);
+		$fieldsForSelect = array_values(array_unique(array_merge(
+			$selection['fields'],
 			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
-		$query = $this->newSelectQuery($collection, $fieldsForSelect['fields']);
-		$this->filterApplier->applyNode($query, $collection, $querySpec->filter);
+		$aliases = new AliasRegistry();
+		$query = $this->newSelectQuery($collection, $fieldsForSelect);
+		$this->filterApplier->applyNode($query, $collection, $querySpec->filter, null, $aliases);
 		$this->applySearchField($query, $collection, $querySpec->search);
 
 		$meta = [];
@@ -91,9 +87,9 @@ class SqlRestResolver extends AbstractRestResolver
 			$items,
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
-			$fields['relations'],
-			$this->deepFromSelection($querySpec->selection),
-			$querySpec->selection->explicit
+			$selection['relations'],
+			$querySpec->selection->explicit,
+			$aliases
 		);
 
 		return [
@@ -108,16 +104,16 @@ class SqlRestResolver extends AbstractRestResolver
 			return $this->getVisibleById($collection, $id);
 		}
 
-		$fields = $this->fieldTreeFromSelection($querySpec->selection);
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
-		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
-		$fieldsForSelect = $fields;
-		$fieldsForSelect['fields'] = array_values(array_unique(array_merge(
-			$fieldsForSelect['fields'],
+		$selection = $this->selectionPlan($querySpec->selection);
+		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
+		$internalRelationKeyColumnNames = $this->relationKeyColumnNames($collection, $selection['relations']);
+		$fieldsForSelect = array_values(array_unique(array_merge(
+			$selection['fields'],
 			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
-		$query = $this->newSelectQuery($collection, $fieldsForSelect['fields']);
+		$aliases = new AliasRegistry();
+		$query = $this->newSelectQuery($collection, $fieldsForSelect);
 		$query->where($this->getPrimaryKeyColumn($collection), $id)->limit(1);
 		$rows = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
 		$item = $rows[0] ?? null;
@@ -131,9 +127,9 @@ class SqlRestResolver extends AbstractRestResolver
 			[$item],
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
-			$fields['relations'],
-			$this->deepFromSelection($querySpec->selection),
-			$querySpec->selection->explicit
+			$selection['relations'],
+			$querySpec->selection->explicit,
+			$aliases
 		);
 
 		return $items[0] ?? null;
@@ -251,7 +247,7 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 
 		$query = $this->getDatabase()->select()->from($collection->getTable());
-		$this->filterApplier->applyNode($query, $collection, $querySpec->filter);
+		$this->filterApplier->applyNode($query, $collection, $querySpec->filter, null, new AliasRegistry());
 		$this->applySearchField($query, $collection, $querySpec->search);
 
 		$selectExpressions = [];
@@ -304,7 +300,6 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function clearCache(): void
 	{
-		$this->dbal = null;
 	}
 
 	protected function newSelectQuery(CollectionInterface $collection, array $fieldNames = []): \Cycle\Database\Query\SelectQuery
@@ -319,7 +314,7 @@ class SqlRestResolver extends AbstractRestResolver
 		return $query;
 	}
 
-	protected function fieldTreeFromSelection(SelectionSet $selection): array
+	protected function selectionPlan(SelectionSet $selection): array
 	{
 		$fields = [];
 		$requestedFields = [];
@@ -339,10 +334,17 @@ class SqlRestResolver extends AbstractRestResolver
 			}
 
 			if ($node instanceof RelationSelection) {
-				$relations[$node->responseName] = $this->fieldTreeFromSelection($node->query->selection);
-				if ($node->relationName !== $node->responseName) {
-					$relations[$node->responseName]['_relation'] = $node->relationName;
-				}
+				$relations[] = $node;
+				continue;
+			}
+
+			if ($node instanceof RelationAggregateSelection) {
+				throw new RestApiError(
+					"Relation aggregate '{$node->responseName}' is not supported by the SQL REST resolver yet.",
+					'UNSUPPORTED_RELATION_AGGREGATE',
+					$node->responseName,
+					400
+				);
 			}
 		}
 
@@ -351,40 +353,6 @@ class SqlRestResolver extends AbstractRestResolver
 			'requestedFields' => array_values(array_unique($requestedFields)),
 			'relations' => $relations,
 		];
-	}
-
-	protected function deepFromSelection(SelectionSet $selection): array
-	{
-		$deep = [];
-		foreach ($selection->nodes as $node) {
-			if (!$node instanceof RelationSelection) {
-				continue;
-			}
-
-			$entry = [];
-			if ($node->query->filter !== null) {
-				$entry['_filterNode'] = $node->query->filter;
-			}
-			if ($node->query->search !== null) {
-				$entry['_searchNode'] = $node->query->search;
-			}
-			if ($node->query->sort !== []) {
-				$entry['_sortSpecs'] = $node->query->sort;
-			}
-			if ($node->query->pagination !== null) {
-				$entry['_pagination'] = $node->query->pagination;
-			}
-
-			foreach ($this->deepFromSelection($node->query->selection) as $nestedName => $nestedDeep) {
-				$entry[$nestedName] = $nestedDeep;
-			}
-
-			if ($entry !== []) {
-				$deep[$node->responseName] = $entry;
-			}
-		}
-
-		return $deep;
 	}
 
 	protected function applySearchField(object $query, CollectionInterface $collection, ?SearchField $search): void
@@ -540,8 +508,8 @@ class SqlRestResolver extends AbstractRestResolver
 		array $requestedColumnNames,
 		array $internalRelationKeyColumnNames,
 		array $relations,
-		array $deep,
-		bool $selectionExplicit = false
+		bool $selectionExplicit = false,
+		?AliasRegistry $aliases = null
 	): array {
 		if ($items === []) {
 			return [];
@@ -555,13 +523,12 @@ class SqlRestResolver extends AbstractRestResolver
 			$requestedColumnNames === [] && !$selectionExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$relations,
-			$deep,
 			new QueryContext(
-				$this->getDatabase(),
+				$this->database,
 				$this->registry,
 				$this->filterApplier,
 				$this->expressions,
-				new AliasRegistry()
+				$aliases ?? new AliasRegistry()
 			),
 			$this->loaderFactory
 		);
@@ -569,23 +536,9 @@ class SqlRestResolver extends AbstractRestResolver
 		return $loader->load();
 	}
 
-	protected function getConnection(): PDO
-	{
-		$connection = $this->database->getConnection();
-		if (!$connection instanceof PDO) {
-			throw new \RuntimeException('SQL REST resolver requires a PDO connection');
-		}
-
-		return $connection;
-	}
-
 	protected function getDatabase(): CycleDatabaseInterface
 	{
-		if ($this->dbal === null) {
-			$this->dbal = $this->dbalFactory->fromPdo($this->getConnection(), $this->database->getName());
-		}
-
-		return $this->dbal;
+		return $this->database;
 	}
 
 	protected function mapInputToColumns(CollectionInterface $collection, array $input): array
@@ -630,13 +583,12 @@ class SqlRestResolver extends AbstractRestResolver
 		return array_values(array_unique($fieldNames));
 	}
 
-	protected function getRelationKeyColumnNames(CollectionInterface $collection, array $relationFields): array
+	protected function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
 	{
 		$columnNames = [];
-		foreach ($relationFields as $relationName => $relationData) {
-			$targetRelationName = is_array($relationData) ? ($relationData['_relation'] ?? $relationName) : $relationName;
-			if ($collection->relations->has($targetRelationName)) {
-				$columnNames[] = (string) $collection->relations->get($targetRelationName)->getInnerKey();
+		foreach ($relations as $relation) {
+			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
+				$columnNames[] = (string) $collection->relations->get($relation->relationName)->getInnerKey();
 			}
 		}
 

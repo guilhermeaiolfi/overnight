@@ -4,27 +4,20 @@ declare(strict_types=1);
 
 namespace ON\DB\DebugPDO;
 
+use ON\Clockwork\ClockworkQueryRecorder;
 use PDO;
 use PDOException;
 use PDOStatement;
-use Psr\EventDispatcher\EventDispatcherInterface;
 use ReturnTypeWillChange;
 
 class DebugPDO extends PDO
 {
-	public ?EventDispatcherInterface $eventDispatcher = null;
-
 	protected PDO $pdo;
 
 	public function __construct(PDO $pdo)
 	{
 		$this->pdo = $pdo;
 		$this->pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [DebugPDOStatement::class, [$this]]);
-	}
-
-	public function setEventDispatcher(EventDispatcherInterface $dispatcher)
-	{
-		$this->eventDispatcher = $dispatcher;
 	}
 
 	public function beginTransaction(): bool
@@ -175,7 +168,7 @@ class DebugPDO extends PDO
 
 		$trace->end($ex);
 
-		$this->emitEvent($trace, $method);
+		$this->recordQuery($trace);
 
 		if ($this->pdo->getAttribute(PDO::ATTR_ERRMODE) === PDO::ERRMODE_EXCEPTION && $ex !== null) {
 			throw $ex;
@@ -184,12 +177,13 @@ class DebugPDO extends PDO
 		return $result;
 	}
 
-	public function emitEvent($trace, $type)
+	public function recordQuery($trace)
 	{
-		if ($this->eventDispatcher != false) {
-			$event = new QueryEvent("pdo.query", $trace, $type);
-			$this->eventDispatcher->dispatch($event);
-		}
+		ClockworkQueryRecorder::record(
+			$trace->getSql(),
+			$trace->getParameters(),
+			$trace->getDuration()
+		);
 	}
 
 	/**

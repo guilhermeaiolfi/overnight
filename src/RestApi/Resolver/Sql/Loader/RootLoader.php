@@ -7,6 +7,7 @@ namespace ON\RestApi\Resolver\Sql\Loader;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\RelationSelection;
 
 final class RootLoader
 {
@@ -22,8 +23,7 @@ final class RootLoader
 		private array $columns,
 		private array $requestedColumns,
 		private array $internalColumns,
-		private array $relationFields,
-		private array $deep,
+		private array $relations,
 		private QueryContext $context,
 		private LoaderFactory $factory
 	) {
@@ -36,7 +36,7 @@ final class RootLoader
 		}
 
 		$root = new RootNode($this->columns, [$this->getPrimaryKeyColumn($this->collection)]);
-		$configured = $this->configureRelations($root, $this->collection, $this->relationFields, $this->deep);
+		$configured = $this->configureRelations($root, $this->collection, $this->relations);
 
 		foreach ($this->rows as $row) {
 			$root->parseRow(0, $this->numericRow($row, $this->columns));
@@ -53,19 +53,17 @@ final class RootLoader
 		);
 	}
 
-	private function configureRelations(AbstractNode $parent, CollectionInterface $collection, array $relations, array $deep): array
+	private function configureRelations(AbstractNode $parent, CollectionInterface $collection, array $relations): array
 	{
 		$configured = [];
-		foreach ($relations as $relationName => $relationData) {
-			if (!is_array($relationData)) {
+		foreach ($relations as $relationSelection) {
+			if (!$relationSelection instanceof RelationSelection) {
 				continue;
 			}
 
 			$loader = $this->factory->relation(
 				$collection,
-				$relationName,
-				$relationData,
-				is_array($deep[$relationName] ?? null) ? $deep[$relationName] : [],
+				$relationSelection,
 				$this->context
 			);
 			if ($loader === null) {
@@ -78,8 +76,7 @@ final class RootLoader
 				$this->configureRelations(
 					$loader->getNode(),
 					$loader->getTargetCollection(),
-					$loader->getNestedRelations() ?? [],
-					$loader->getDeep()
+					$loader->getNestedRelations()
 				)
 			);
 			$configured[] = $loader;

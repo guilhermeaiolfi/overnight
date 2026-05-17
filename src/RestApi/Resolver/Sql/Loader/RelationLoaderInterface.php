@@ -35,7 +35,5 @@ interface RelationLoaderInterface extends LoaderInterface
 
 	public function getInternalColumns(): array;
 
-	public function getNestedRelations(?string $relationName = null): ?array;
-
-	public function getDeep(): array;
+	public function getNestedRelations(): array;
 }

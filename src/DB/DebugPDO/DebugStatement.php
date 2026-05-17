@@ -160,7 +160,17 @@ class DebugStatement
 	{
 		$params = [];
 		foreach ($this->parameters as $name => $param) {
-			$params[$name] = htmlentities($param ?: "", ENT_QUOTES, 'UTF-8', false);
+			if (is_string($param)) {
+				$params[$name] = htmlentities($param, ENT_QUOTES, 'UTF-8', false);
+				continue;
+			}
+
+			if (is_scalar($param) || $param === null) {
+				$params[$name] = $param;
+				continue;
+			}
+
+			$params[$name] = '[COMPLEX VALUE]';
 		}
 
 		return $params;

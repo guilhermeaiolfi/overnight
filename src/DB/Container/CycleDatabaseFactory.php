@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\DB\Container;
 
-use Clockwork\Support\Vanilla\Clockwork;
 use Cycle\Database\Database;
 use Cycle\ORM\Schema;
 use Cycle\Schema\Compiler;
@@ -35,7 +34,6 @@ class CycleDatabaseFactory
 	}
 
 	public function __invoke(
-		Clockwork $clockwork,
 		DatabaseConfig $dbCfg,
 		Registry $registry,
 		string $name
@@ -53,7 +51,7 @@ class CycleDatabaseFactory
 		}
 
 		if ($_ENV["APP_DEBUG"]) {
-			$logger = new CycleDatabaseLogger($clockwork);
+			$logger = new CycleDatabaseLogger();
 			$dbal->setLogger($logger);
 		}
 

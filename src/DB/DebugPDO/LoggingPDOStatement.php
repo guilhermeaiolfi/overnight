@@ -4,40 +4,23 @@ declare(strict_types=1);
 
 namespace ON\DB\DebugPDO;
 
+use ON\Clockwork\ClockworkQueryRecorder;
 use PDO;
 use PDOException;
 use PDOStatement;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 /**
- * A PDOStatement subclass that logs query execution to the event system.
+ * A PDOStatement subclass that records prepared-statement queries for Clockwork.
  *
  * Set as the statement class on a PDO connection via:
  *   $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [LoggingPDOStatement::class, []]);
- *
- * Then set the dispatcher:
- *   LoggingPDOStatement::setDispatcher($eventDispatcher);
- *
- * All prepare()+execute() calls will be logged. No PDO wrapper needed.
  */
 class LoggingPDOStatement extends PDOStatement
 {
-	protected static ?EventDispatcherInterface $dispatcher = null;
-
 	protected array $boundParameters = [];
 
 	protected function __construct()
 	{
-	}
-
-	public static function setDispatcher(?EventDispatcherInterface $dispatcher): void
-	{
-		static::$dispatcher = $dispatcher;
-	}
-
-	public static function getDispatcher(): ?EventDispatcherInterface
-	{
-		return static::$dispatcher;
 	}
 
 	public function bindColumn($column, &$param, $type = null, $maxlen = null, $driverdata = null): bool
@@ -83,10 +66,11 @@ class LoggingPDOStatement extends PDOStatement
 
 		$trace->end($ex, $ex === null ? $this->rowCount() : 0);
 
-		if (static::$dispatcher !== null) {
-			$event = new QueryEvent('pdo.query', $trace, 'execute');
-			static::$dispatcher->dispatch($event);
-		}
+		ClockworkQueryRecorder::record(
+			$trace->getSql(),
+			$trace->getParameters(),
+			$trace->getDuration()
+		);
 
 		if ($ex !== null) {
 			throw $ex;
