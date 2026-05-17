@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Registry;
-use ON\RestApi\FieldSelector;
+use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
 use ON\RestApi\Resolver\Sql\Loader\HasManyLoader;
 use ON\RestApi\Resolver\Sql\Loader\LoaderRegistry;
@@ -61,21 +63,29 @@ final class LoaderRegistryTest extends TestCase
 		);
 	}
 
-	public function testFieldSelectorSeparatesRequestedFieldsFromInternalPrimaryKey(): void
+	public function testDirectusParserKeepsInternalPrimaryKeysOutOfResponseFields(): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 
-		$fields = (new FieldSelector())->parse(
+		$query = (new DirectusQueryParser())->parse(
 			$registry->getCollection('user'),
-			'name,posts.tags.name'
+			['fields' => 'name,posts.tags.name']
 		);
 
-		$this->assertSame(['name'], array_values($fields['requestedFields']));
-		$this->assertContains('id', $fields['fields']);
-		$this->assertSame([], array_values($fields['relations']['posts']['requestedFields']));
-		$this->assertContains('id', $fields['relations']['posts']['fields']);
-		$this->assertSame(['name'], array_values($fields['relations']['posts']['relations']['tags']['requestedFields']));
+		$rootFields = array_values(array_filter($query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
+		$this->assertSame(['id', 'name'], array_map(fn (FieldSelection $node) => $node->field->field, $rootFields));
+		$this->assertTrue($rootFields[0]->internal);
+
+		$posts = $this->relation($query->selection->nodes, 'posts');
+		$postFields = array_values(array_filter($posts->query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
+		$this->assertSame(['id'], array_map(fn (FieldSelection $node) => $node->field->field, $postFields));
+		$this->assertTrue($postFields[0]->internal);
+
+		$tags = $this->relation($posts->query->selection->nodes, 'tags');
+		$tagFields = array_values(array_filter($tags->query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
+		$this->assertSame(['id', 'name'], array_map(fn (FieldSelection $node) => $node->field->field, $tagFields));
+		$this->assertTrue($tagFields[0]->internal);
 	}
 
 	public function testAliasRegistryCreatesReadableUniqueAliases(): void
@@ -85,5 +95,16 @@ final class LoaderRegistryTest extends TestCase
 		$this->assertSame('__on_tags_parent_key', $aliases->alias('__on_tags_parent_key'));
 		$this->assertSame('__on_tags_parent_key_1', $aliases->alias('__on_tags_parent_key'));
 		$this->assertSame('tags_parent_key', $aliases->alias('tags.parent-key'));
+	}
+
+	private function relation(array $nodes, string $name): RelationSelection
+	{
+		foreach ($nodes as $node) {
+			if ($node instanceof RelationSelection && $node->responseName === $name) {
+				return $node;
+			}
+		}
+
+		$this->fail("Relation {$name} was not selected.");
 	}
 }

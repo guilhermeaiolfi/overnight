@@ -7,6 +7,7 @@ namespace ON\RestApi\Event;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\QuerySpec;
 
 class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
@@ -42,6 +43,16 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 		$this->params = $params;
 	}
 
+	public function getQuerySpec(): ?QuerySpec
+	{
+		return ($this->params['querySpec'] ?? null) instanceof QuerySpec ? $this->params['querySpec'] : null;
+	}
+
+	public function setQuerySpec(QuerySpec $querySpec): void
+	{
+		$this->params['querySpec'] = $querySpec;
+	}
+
 	public function isAggregate(): bool
 	{
 		return $this->getAggregate() !== null;
@@ -49,16 +60,12 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 
 	public function getAggregate(): ?array
 	{
-		$aggregate = $this->params['aggregate'] ?? null;
-
-		return is_array($aggregate) && $aggregate !== [] ? $aggregate : null;
+		return $this->getQuerySpec()?->aggregate ?: null;
 	}
 
 	public function getGroupBy(): ?array
 	{
-		$groupBy = $this->params['groupBy'] ?? null;
-
-		return is_array($groupBy) && $groupBy !== [] ? $groupBy : null;
+		return $this->getQuerySpec()?->groupBy ?: null;
 	}
 
 	public function getResult(): ?array

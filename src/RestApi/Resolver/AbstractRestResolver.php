@@ -67,57 +67,8 @@ abstract class AbstractRestResolver implements RestResolverInterface
 		return $fields;
 	}
 
-	protected function parseArrayValue(mixed $value): array
-	{
-		if (is_array($value)) {
-			return $value;
-		}
-
-		return array_map('trim', explode(',', (string) $value));
-	}
-
-	protected function formatAggregateResult(array $rows, array $aggregates, array $groupBy): array
-	{
-		$groupAliases = $this->getGroupByAliases($groupBy);
-		$result = [];
-		foreach ($rows as $row) {
-			$entry = [];
-
-			foreach ($groupBy as $field) {
-				$alias = $groupAliases[$field] ?? $field;
-				if (array_key_exists($alias, $row)) {
-					$entry[$field] = $row[$alias];
-				}
-			}
-
-			foreach ($aggregates as $func => $fields) {
-				$fieldList = is_array($fields) ? $fields : [$fields];
-				foreach ($fieldList as $field) {
-					$alias = $this->aggregateAlias((string) $func, (string) $field);
-					if (array_key_exists($alias, $row)) {
-						$entry[$func][$field] = $row[$alias];
-					}
-				}
-			}
-
-			$result[] = $entry;
-		}
-
-		return $result;
-	}
-
 	protected function aggregateAlias(string $function, string $field): string
 	{
 		return preg_replace('/[^a-zA-Z0-9_]/', '_', $function . '_' . $field);
-	}
-
-	protected function getGroupByAliases(array $groupBy): array
-	{
-		$aliases = [];
-		foreach ($groupBy as $field) {
-			$aliases[$field] = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $field);
-		}
-
-		return $aliases;
 	}
 }

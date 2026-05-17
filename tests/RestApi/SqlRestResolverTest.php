@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Resolver\Sql\SqlFilterParser;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -29,7 +32,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('user'));
+		$result = $resolver->list($registry->getCollection('user'), $this->q($registry->getCollection('user')));
 
 		$this->assertArrayHasKey('items', $result);
 		$this->assertArrayHasKey('meta', $result);
@@ -45,9 +48,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['status' => ['_eq' => 'published']],
-		]);
+		]));
 
 		$this->assertCount(2, $result['items']);
 		foreach ($result['items'] as $item) {
@@ -62,9 +65,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'search' => 'PHP',
-		]);
+		]));
 
 		$this->assertGreaterThanOrEqual(1, count($result['items']));
 		$found = false;
@@ -83,9 +86,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'sort' => '-title',
-		]);
+		]));
 
 		$titles = array_column($result['items'], 'title');
 		$sorted = $titles;
@@ -100,10 +103,10 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'limit' => 2,
 			'offset' => 1,
-		]);
+		]));
 
 		$this->assertCount(2, $result['items']);
 		// Offset 1 skips the first row
@@ -118,10 +121,10 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createResolver($registry, $db);
 
 		// page=2 with limit=2 → offset=2
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'page' => 2,
 			'limit' => 2,
-		]);
+		]));
 
 		$this->assertCount(1, $result['items']);
 		$this->assertSame('GraphQL Guide', $result['items'][0]['title']);
@@ -136,14 +139,13 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = new SqlRestResolver(
 			$registry,
 			$db,
-			new SqlFilterParser(),
 			defaultLimit: 10,
 			maxLimit: 2
 		);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'limit' => 9999,
-		]);
+		]));
 
 		// maxLimit=2, so only 2 items returned even though 3 exist
 		$this->assertCount(2, $result['items']);
@@ -156,9 +158,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => ['fields' => ['id', 'title'], 'relations' => []],
-		]);
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title',
+		]));
 
 		$this->assertNotEmpty($result['items']);
 		$item = $result['items'][0];
@@ -169,28 +171,6 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayNotHasKey('status', $item);
 	}
 
-	public function testFieldSelectionDoesNotReturnUnrequestedColumnsWhenQuerySelectsThem(): void
-	{
-		$registry = new Registry();
-		$this->createFullSchema($registry);
-		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
-		$collection = $registry->getCollection('user');
-
-		$result = $resolver->list($collection, [
-			'fields' => [
-				'fields' => ['id', 'name', 'email', 'password'],
-				'requestedFields' => ['id', 'name'],
-				'relations' => [],
-			],
-		]);
-
-		$this->assertNotEmpty($result['items']);
-		$this->assertSame(['id', 'name'], array_keys($result['items'][0]));
-		$this->assertArrayNotHasKey('email', $result['items'][0]);
-		$this->assertArrayNotHasKey('password', $result['items'][0]);
-	}
-
 	public function testExplicitEmptyFieldSelectionDoesNotExpandToAllVisibleFields(): void
 	{
 		$registry = new Registry();
@@ -198,48 +178,22 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('user'), [
-			'fields' => [
-				'fields' => ['id'],
-				'requestedFields' => [],
-				'relations' => [],
-			],
-			'fieldsExplicit' => true,
-		]);
+		$result = $resolver->list($registry->getCollection('user'), $this->q($registry->getCollection('user'), [
+			'fields' => [],
+		]));
 
 		$this->assertNotEmpty($result['items']);
 		$this->assertSame([], $result['items'][0]);
 	}
 
-	public function testLegacyColumnsFieldTreeIsNormalized(): void
-	{
-		$registry = new Registry();
-		$this->createFullSchema($registry);
-		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
-
-		$result = $resolver->list($registry->getCollection('user'), [
-			'fields' => [
-				'columns' => ['id', 'name'],
-				'relations' => [],
-			],
-			'fieldsExplicit' => true,
-		]);
-
-		$this->assertNotEmpty($result['items']);
-		$this->assertSame(['id', 'name'], array_keys($result['items'][0]));
-	}
-
-	public function testListAcceptsPartialFieldTree(): void
+	public function testListWithoutExplicitFieldsUsesVisibleFields(): void
 	{
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => ['relations' => []],
-		]);
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post')));
 
 		$this->assertNotEmpty($result['items']);
 		$this->assertArrayHasKey('title', $result['items'][0]);
@@ -252,14 +206,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => [
-				'fields' => ['id', 'title'],
-				'relations' => [
-					'comments' => ['fields' => ['id', 'body'], 'relations' => []],
-				],
-			],
-		]);
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title,comments.id,comments.body',
+		]));
 
 		$this->assertNotEmpty($result['items']);
 		$phpTips = null;
@@ -283,19 +232,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('user'), [
-			'fields' => [
-				'fields' => ['id', 'name'],
-				'relations' => [
-					'posts' => [
-						'fields' => ['id', 'title'],
-						'relations' => [
-							'tags' => ['fields' => ['name'], 'relations' => []],
-						],
-					],
-				],
-			],
-		]);
+		$result = $resolver->list($registry->getCollection('user'), $this->q($registry->getCollection('user'), [
+			'fields' => 'id,name,posts.id,posts.title,posts.tags.name',
+		]));
 
 		$john = null;
 		foreach ($result['items'] as $item) {
@@ -326,14 +265,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => [
-				'fields' => ['id', 'title'],
-				'relations' => [
-					'author' => ['fields' => ['id', 'name'], 'relations' => []],
-				],
-			],
-		]);
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title,author.id,author.name',
+		]));
 
 		$this->assertNotEmpty($result['items']);
 		$item = $result['items'][0];
@@ -349,23 +283,13 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$resolver->list($registry->getCollection('post'), [
-			'fields' => [
-				'fields' => ['id', 'title'],
-				'relations' => [
-					'comments' => ['fields' => ['id'], 'relations' => []],
-				],
-			],
-		]);
+		$resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title,comments.id',
+		]));
 
-		$result = $resolver->list($registry->getCollection('post'), [
-			'fields' => [
-				'fields' => ['id', 'title'],
-				'relations' => [
-					'comments' => ['fields' => ['id', 'body'], 'relations' => []],
-				],
-			],
-		]);
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title,comments.id,comments.body',
+		]));
 
 		$phpTips = null;
 		foreach ($result['items'] as $item) {
@@ -387,18 +311,17 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 		$collection = $registry->getCollection('user');
-		$fields = (new \ON\RestApi\FieldSelector())->parse($collection, 'id,name,published_posts.title,draft_posts.title', [
-			'published_posts' => 'posts',
-			'draft_posts' => 'posts',
-		]);
-
-		$result = $resolver->list($collection, [
-			'fields' => $fields,
+		$result = $resolver->list($collection, $this->q($collection, [
+			'fields' => 'id,name,published_posts.title,draft_posts.title',
+			'alias' => [
+				'published_posts' => 'posts',
+				'draft_posts' => 'posts',
+			],
 			'deep' => [
 				'published_posts' => ['_filter' => ['status' => ['_eq' => 'published']]],
 				'draft_posts' => ['_filter' => ['status' => ['_eq' => 'draft']]],
 			],
-		]);
+		]));
 
 		$john = $result['items'][0];
 		$this->assertArrayHasKey('published_posts', $john);
@@ -415,10 +338,10 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'meta' => ['total_count', 'filter_count'],
 			'filter' => ['status' => ['_eq' => 'published']],
-		]);
+		]));
 
 		$this->assertArrayHasKey('total_count', $result['meta']);
 		$this->assertArrayHasKey('filter_count', $result['meta']);
@@ -437,7 +360,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$item = $resolver->get($registry->getCollection('user'), '1');
+		$item = $resolver->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user')));
 
 		$this->assertNotNull($item);
 		$this->assertSame(1, $item['id']);
@@ -451,7 +374,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$item = $resolver->get($registry->getCollection('user'), '999');
+		$item = $resolver->get($registry->getCollection('user'), '999', $this->q($registry->getCollection('user')));
 
 		$this->assertNull($item);
 	}
@@ -477,7 +400,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayHasKey('id', $created);
 
 		// Verify it persisted
-		$fetched = $resolver->get($registry->getCollection('user'), (string) $created['id']);
+		$fetched = $resolver->get($registry->getCollection('user'), (string) $created['id'], $this->q($registry->getCollection('user')));
 		$this->assertNotNull($fetched);
 		$this->assertSame('Alice', $fetched['name']);
 	}
@@ -490,9 +413,9 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createResolver($registry, $db);
 		$collection = $registry->getCollection('profile');
 
-		$filtered = $resolver->list($collection, [
+		$filtered = $resolver->list($collection, $this->q($collection, [
 			'filter' => ['displayName' => ['_eq' => 'Alice']],
-		]);
+		]));
 
 		$this->assertCount(1, $filtered['items']);
 		$this->assertSame('Alice', $filtered['items'][0]['displayName']);
@@ -523,17 +446,27 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createProfileDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('profile'), [
-			'fields' => [
-				'fields' => ['id', 'displayName'],
-				'relations' => [],
-			],
-			'fieldsExplicit' => true,
-		]);
+		$result = $resolver->list($registry->getCollection('profile'), $this->q($registry->getCollection('profile'), [
+			'fields' => 'id,displayName',
+		]));
 
 		$this->assertNotEmpty($result['items']);
 		$this->assertSame(['id', 'displayName'], array_keys($result['items'][0]));
 		$this->assertSame('Alice', $result['items'][0]['displayName']);
+	}
+
+	public function testDirectGetWithoutQuerySpecReturnsVisibleFieldNames(): void
+	{
+		$registry = new Registry();
+		$this->createProfileCollection($registry);
+		$db = $this->createProfileDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$item = $resolver->get($registry->getCollection('profile'), '1');
+
+		$this->assertSame(['id', 'displayName'], array_keys($item));
+		$this->assertSame('Alice', $item['displayName']);
+		$this->assertArrayNotHasKey('display_name', $item);
 	}
 
 	public function testMappedColumnNameIsRejectedOnWrite(): void
@@ -587,7 +520,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertTrue($deleted);
 
 		// Verify it's gone
-		$item = $resolver->get($registry->getCollection('user'), '1');
+		$item = $resolver->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user')));
 		$this->assertNull($item);
 	}
 
@@ -613,13 +546,13 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('user'));
+		$result = $resolver->list($registry->getCollection('user'), $this->q($registry->getCollection('user')));
 
 		foreach ($result['items'] as $item) {
 			$this->assertArrayNotHasKey('password', $item, 'Hidden field "password" should not appear in results');
 		}
 
-		$single = $resolver->get($registry->getCollection('user'), '1');
+		$single = $resolver->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user')));
 		$this->assertArrayNotHasKey('password', $single, 'Hidden field "password" should not appear in get()');
 	}
 
@@ -634,10 +567,10 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'search' => 'PHP',
 			'filter' => ['status' => ['_eq' => 'published']],
-		]);
+		]));
 
 		// Only "PHP Tips" matches both search=PHP and status=published
 		$this->assertCount(1, $result['items']);
@@ -651,9 +584,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['author.name' => ['_eq' => 'John']],
-		]);
+		]));
 
 		$this->assertCount(2, $result['items']);
 		$this->assertSame(['PHP Tips', 'Draft Post'], array_column($result['items'], 'title'));
@@ -666,9 +599,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->list($registry->getCollection('post'), [
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['tags.name' => ['_eq' => 'GraphQL']],
-		]);
+		]));
 
 		$this->assertCount(2, $result['items']);
 		$this->assertSame(['PHP Tips', 'GraphQL Guide'], array_column($result['items'], 'title'));
@@ -685,9 +618,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->aggregate($registry->getCollection('post'), [
+		$result = $resolver->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
-		]);
+		]));
 
 		$this->assertNotEmpty($result);
 		$this->assertSame(3, $result[0]['count']['id']);
@@ -700,10 +633,10 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->aggregate($registry->getCollection('post'), [
+		$result = $resolver->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
 			'groupBy' => ['status'],
-		]);
+		]));
 
 		$this->assertNotEmpty($result);
 
@@ -732,9 +665,9 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->aggregate($registry->getCollection('post'), [
+		$result = $resolver->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['countDistinct' => 'user_id'],
-		]);
+		]));
 
 		$this->assertSame(2, $result[0]['countDistinct']['user_id']);
 	}
@@ -746,10 +679,10 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$result = $resolver->aggregate($registry->getCollection('post'), [
+		$result = $resolver->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
 			'groupBy' => ['year(created_at)'],
-		]);
+		]));
 
 		$byYear = [];
 		foreach ($result as $row) {
@@ -766,13 +699,12 @@ final class SqlRestResolverTest extends TestCase
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
-		$service = new \ON\RestApi\RestApiService($registry, $resolver, null, [
-			'current_user' => 1,
-		]);
-
-		$result = $service->list('post', [
+		$service = new RestApiService($registry, $resolver);
+		$query = (new QueryNormalizer(['current_user' => 1]))->normalize($this->q($registry->getCollection('post'), [
 			'filter' => ['user_id' => ['_eq' => '$current_user']],
-		]);
+		]));
+
+		$result = $service->list('post', $query);
 
 		$this->assertSame(['PHP Tips', 'Draft Post'], array_column($result['items'], 'title'));
 	}
@@ -806,9 +738,9 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayHasKey('id', $created);
 
 		// Verify posts were created with the correct user_id
-		$posts = $resolver->list($registry->getCollection('post'), [
+		$posts = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['user_id' => ['_eq' => (string) $created['id']]],
-		]);
+		]));
 
 		$this->assertCount(2, $posts['items']);
 		$titles = array_column($posts['items'], 'title');
@@ -843,7 +775,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayHasKey('user_id', $created);
 
 		// Verify the author was created
-		$author = $resolver->get($registry->getCollection('user'), (string) $created['user_id']);
+		$author = $resolver->get($registry->getCollection('user'), (string) $created['user_id'], $this->q($registry->getCollection('user')));
 		$this->assertNotNull($author);
 		$this->assertSame('NewAuthor', $author['name']);
 	}
@@ -984,6 +916,11 @@ final class SqlRestResolverTest extends TestCase
 			$this->assertSame(0, $postDiff, 'Post should not be created if author creation was rolled back');
 		}
 		// If both succeeded (no error), that's also valid — atomicity is preserved
+	}
+
+	private function q(CollectionInterface $collection, array $params = []): QuerySpec
+	{
+		return (new DirectusQueryParser())->parse($collection, $params);
 	}
 
 	private function countRows(SqliteTestDatabase $db, string $table): int

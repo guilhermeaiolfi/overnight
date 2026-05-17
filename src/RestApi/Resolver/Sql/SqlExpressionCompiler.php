@@ -10,56 +10,65 @@ use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Injection\FragmentInterface;
 use Cycle\Database\Query\QueryParameters;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\AggregateExpression;
+use ON\RestApi\Query\Node\AggregateFunction;
+use ON\RestApi\Query\Node\ExpressionNode;
+use ON\RestApi\Query\Node\FieldExpression;
+use ON\RestApi\Query\Node\FunctionExpression;
+use ON\RestApi\Query\Node\ValueNode;
+use ON\RestApi\Query\Node\WildcardExpression;
 
-class SqlExpressionBuilder
+class SqlExpressionCompiler
 {
 	private const FUNCTIONS = ['year', 'month', 'day', 'hour', 'date'];
-	private const AGGREGATE_FUNCTIONS = ['count', 'sum', 'avg', 'min', 'max'];
 
 	public function __construct(
 		protected DatabaseInterface $database
 	) {
 	}
 
-	public function value(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
+	public function value(CollectionInterface $collection, ExpressionNode $expression, string $tableAlias): ?FragmentInterface
 	{
-		if ($collection->fields->has($value)) {
-			return $this->fieldExpression($collection, $value, $tableAlias);
+		if ($expression instanceof FieldExpression) {
+			return $this->fieldExpression($collection, $expression->field, $tableAlias);
 		}
 
-		return $this->functionExpression($collection, $value, $tableAlias);
+		if ($expression instanceof FunctionExpression) {
+			return $this->functionExpression($collection, $expression, $tableAlias);
+		}
+
+		if ($expression instanceof WildcardExpression) {
+			return new Expression('*');
+		}
+
+		return null;
 	}
 
-	public function select(CollectionInterface $collection, string $value, string $tableAlias, string $alias): ?FragmentInterface
+	public function select(CollectionInterface $collection, ExpressionNode $expressionNode, string $tableAlias, string $alias): ?FragmentInterface
 	{
-		$expression = $this->value($collection, $value, $tableAlias);
+		$expression = $this->value($collection, $expressionNode, $tableAlias);
 
 		return $expression === null ? null : $this->aliased($expression, $alias);
 	}
 
 	public function aggregate(
-		string $function,
 		CollectionInterface $collection,
-		string $value,
+		AggregateExpression $aggregate,
 		string $tableAlias,
-		string $alias,
-		bool $distinct = false
+		string $alias
 	): ?FragmentInterface {
-		$function = strtolower($function);
-		if (!in_array($function, self::AGGREGATE_FUNCTIONS, true)) {
-			return null;
-		}
+		$function = $aggregate->function->value;
 
-		if ($value === '*' && $function === 'count' && !$distinct) {
+		if ($aggregate->argument instanceof WildcardExpression && $aggregate->function === AggregateFunction::Count && !$aggregate->distinct) {
 			return new Expression('COUNT(*) AS ' . $alias);
 		}
 
-		$expression = $this->value($collection, $value, $tableAlias);
+		$expression = $this->value($collection, $aggregate->argument, $tableAlias);
 		if ($expression === null) {
 			return null;
 		}
 
-		$distinctSql = $distinct ? 'DISTINCT ' : '';
+		$distinctSql = $aggregate->distinct ? 'DISTINCT ' : '';
 
 		return new Fragment(
 			strtoupper($function) . '(' . $distinctSql . $this->compile($expression) . ') AS ' . $this->identifier($alias)
@@ -75,16 +84,26 @@ class SqlExpressionBuilder
 		return new Fragment($this->compile($expression) . ' AS ' . $this->identifier($alias));
 	}
 
-	public function isFunction(string $value): bool
+	public function alias(ExpressionNode $expression): string
 	{
-		return $this->parseFunction($value) !== null;
-	}
+		if ($expression instanceof FieldExpression) {
+			return $this->safeAlias($expression->field);
+		}
 
-	public function alias(string $value): string
-	{
-		$parsed = $this->parseFunction($value);
+		if ($expression instanceof FunctionExpression) {
+			return $this->safeAlias($expression->name . '_' . implode('_', array_map(
+				fn(ExpressionNode|ValueNode $argument) => $argument instanceof ExpressionNode
+					? $this->alias($argument)
+					: (string) $argument->value(),
+				$expression->arguments
+			)));
+		}
 
-		return preg_replace('/[^a-zA-Z0-9_]/', '_', $parsed === null ? $value : $parsed[0] . '_' . $parsed[1]);
+		if ($expression instanceof WildcardExpression) {
+			return 'all';
+		}
+
+		return $this->safeAlias($expression::class);
 	}
 
 	public function identifier(string $identifier): string
@@ -110,36 +129,30 @@ class SqlExpressionBuilder
 		return new Expression($tableAlias . '.' . $collection->fields->get($field)->getColumn());
 	}
 
-	protected function functionExpression(CollectionInterface $collection, string $value, string $tableAlias): ?FragmentInterface
+	protected function functionExpression(CollectionInterface $collection, FunctionExpression $expression, string $tableAlias): ?FragmentInterface
 	{
-		$parsed = $this->parseFunction($value);
-		if ($parsed === null) {
+		$function = strtolower($expression->name);
+		if (!in_array($function, self::FUNCTIONS, true)) {
 			return null;
 		}
 
-		[$function, $field] = $parsed;
-		$column = $this->fieldExpression($collection, $field, $tableAlias);
+		$argument = $expression->arguments[0] ?? null;
+		if (!$argument instanceof FieldExpression) {
+			return null;
+		}
+
+		$column = $this->fieldExpression($collection, $argument->field, $tableAlias);
 		if ($column === null) {
 			return null;
 		}
-
 		$compiledColumn = $this->compile($column);
 
 		return new Fragment($this->functionSql($function, $compiledColumn));
 	}
 
-	protected function parseFunction(string $value): ?array
+	protected function safeAlias(string $value): string
 	{
-		if (!preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$/', trim($value), $matches)) {
-			return null;
-		}
-
-		$function = strtolower($matches[1]);
-		if (!in_array($function, self::FUNCTIONS, true)) {
-			return null;
-		}
-
-		return [$function, $matches[2]];
+		return preg_replace('/[^a-zA-Z0-9_]/', '_', $value);
 	}
 
 	protected function functionSql(string $function, string $column): string

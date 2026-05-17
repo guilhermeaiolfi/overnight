@@ -12,12 +12,25 @@ use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\QueryParameters;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
+use ON\RestApi\Query\Node\BetweenFilter;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\ComparisonOperator;
+use ON\RestApi\Query\Node\EmptyFilter;
+use ON\RestApi\Query\Node\FieldExpression;
+use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Query\Node\LogicalFilter;
+use ON\RestApi\Query\Node\LogicalOperator;
+use ON\RestApi\Query\Node\NullFilter;
+use ON\RestApi\Query\Node\RelationExistsFilter;
+use ON\RestApi\Query\Node\SetFilter;
+use ON\RestApi\Query\Node\SetOperator;
+use ON\RestApi\Query\Node\ValueNode;
 
 class SqlFilterApplier
 {
 	public function __construct(
 		protected DatabaseInterface $database,
-		protected SqlExpressionBuilder $expressions
+		protected SqlExpressionCompiler $expressions
 	) {
 	}
 
@@ -29,6 +42,160 @@ class SqlFilterApplier
 		}
 
 		$this->applyGroup($query, $collection, $filters, $tableAlias ?? $collection->getTable());
+	}
+
+	public function applyNode(object $query, CollectionInterface $collection, ?FilterNode $filter, ?string $tableAlias = null): void
+	{
+		if ($filter === null) {
+			return;
+		}
+
+		$this->applyFilterNode($query, $collection, $filter, $tableAlias ?? $collection->getTable());
+	}
+
+	protected function applyFilterNode(object $query, CollectionInterface $collection, FilterNode $filter, string $tableAlias): void
+	{
+		if ($filter instanceof LogicalFilter) {
+			$this->applyLogicalFilter($query, $collection, $filter, $tableAlias);
+			return;
+		}
+
+		if ($filter instanceof RelationExistsFilter) {
+			$this->applyRelationFilterNode($query, $collection, $filter, $tableAlias);
+			return;
+		}
+
+		if ($filter instanceof ComparisonFilter) {
+			$this->applyComparisonFilter($query, $collection, $tableAlias, $filter);
+			return;
+		}
+
+		if ($filter instanceof SetFilter) {
+			$expression = $this->expressions->value($collection, $filter->left, $tableAlias);
+			if ($expression !== null) {
+				$query->where(
+					$expression,
+					$filter->operator === SetOperator::In ? 'IN' : 'NOT IN',
+					new Parameter(array_map(fn(ValueNode $value) => $value->value(), $filter->values))
+				);
+			}
+			return;
+		}
+
+		if ($filter instanceof BetweenFilter) {
+			$expression = $this->expressions->value($collection, $filter->left, $tableAlias);
+			if ($expression !== null) {
+				$query->where($expression, $filter->negated ? 'NOT BETWEEN' : 'BETWEEN', $filter->from->value(), $filter->to->value());
+			}
+			return;
+		}
+
+		if ($filter instanceof NullFilter) {
+			$expression = $this->expressions->value($collection, $filter->left, $tableAlias);
+			if ($expression !== null) {
+				$query->where($expression, $filter->negated ? '!=' : '=', null);
+			}
+			return;
+		}
+
+		if ($filter instanceof EmptyFilter) {
+			$expression = $this->expressions->value($collection, $filter->left, $tableAlias);
+			if ($expression === null) {
+				return;
+			}
+			$query->where(function ($nested) use ($expression, $filter) {
+				if ($filter->negated) {
+					$nested->where($expression, '!=', null);
+					$nested->where($expression, '!=', '');
+					return;
+				}
+
+				$nested->where($expression, '=', null);
+				$nested->orWhere($expression, '=', '');
+			});
+		}
+	}
+
+	protected function applyLogicalFilter(object $query, CollectionInterface $collection, LogicalFilter $filter, string $tableAlias): void
+	{
+		$query->where(function ($nested) use ($collection, $filter, $tableAlias) {
+			foreach ($filter->children as $index => $child) {
+				$method = $filter->operator === LogicalOperator::Or && $index > 0 ? 'orWhere' : 'where';
+				$nested->{$method}(fn($inner) => $this->applyFilterNode($inner, $collection, $child, $tableAlias));
+			}
+		});
+	}
+
+	protected function applyComparisonFilter(object $query, CollectionInterface $collection, string $tableAlias, ComparisonFilter $filter): void
+	{
+		$expression = $this->expressions->value($collection, $filter->left, $tableAlias);
+		if ($expression === null) {
+			return;
+		}
+
+		$value = $filter->right->value();
+		match ($filter->operator) {
+			ComparisonOperator::Eq => $query->where($expression, '=', $value),
+			ComparisonOperator::Neq => $query->where($expression, '!=', $value),
+			ComparisonOperator::Lt => $query->where($expression, '<', $value),
+			ComparisonOperator::Lte => $query->where($expression, '<=', $value),
+			ComparisonOperator::Gt => $query->where($expression, '>', $value),
+			ComparisonOperator::Gte => $query->where($expression, '>=', $value),
+			ComparisonOperator::Contains => $query->where($expression, 'LIKE', '%' . $value . '%'),
+			ComparisonOperator::NotContains => $query->whereNot($expression, 'LIKE', '%' . $value . '%'),
+			ComparisonOperator::StartsWith => $query->where($expression, 'LIKE', $value . '%'),
+			ComparisonOperator::EndsWith => $query->where($expression, 'LIKE', '%' . $value),
+		};
+	}
+
+	protected function applyRelationFilterNode(object $query, CollectionInterface $collection, RelationExistsFilter $filter, string $tableAlias): void
+	{
+		$relationName = $filter->relationName;
+		if (!$collection->relations->has($relationName)) {
+			return;
+		}
+
+		$relation = $collection->relations->get($relationName);
+		$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
+		if ($targetCollection === null) {
+			return;
+		}
+
+		$targetAlias = $this->buildAlias($tableAlias . '__' . $filter->responseName);
+		$subQuery = $this->database->select(new Fragment('1'));
+
+		if ($relation->isJunction() && $relation instanceof M2MRelation) {
+			$through = $relation->through;
+			$junctionAlias = $this->buildAlias($targetAlias . '__junction');
+			$subQuery
+				->from($through->getCollection() . ' AS ' . $junctionAlias)
+				->innerJoin($targetCollection->getTable(), $targetAlias)
+				->on(
+					$junctionAlias . '.' . $through->getOuterKey(),
+					'=',
+					$targetAlias . '.' . $this->getPrimaryKeyColumn($targetCollection)
+				)
+				->where(
+					new Expression($junctionAlias . '.' . $through->getInnerKey()),
+					'=',
+					new Expression($tableAlias . '.' . $relation->getInnerKey())
+				);
+		} else {
+			$subQuery
+				->from($targetCollection->getTable() . ' AS ' . $targetAlias)
+				->where(
+					new Expression($targetAlias . '.' . $relation->getOuterKey()),
+					'=',
+					new Expression($tableAlias . '.' . $relation->getInnerKey())
+				);
+		}
+
+		$this->applyNode($subQuery, $targetCollection, $filter->filter, $targetAlias);
+		if ($relation->getWhere() !== []) {
+			$this->apply($subQuery, $targetCollection, $relation->getWhere(), $targetAlias);
+		}
+
+		$query->where($this->exists($subQuery));
 	}
 
 	protected function applyGroup(object $query, CollectionInterface $collection, array $filters, string $tableAlias): void
@@ -80,7 +247,7 @@ class SqlFilterApplier
 		string $operator,
 		mixed $value
 	): void {
-		$expression = $this->expressions->value($collection, $field, $tableAlias);
+		$expression = $this->expressions->value($collection, new FieldExpression($field), $tableAlias);
 		if ($expression === null) {
 			return;
 		}
@@ -275,4 +442,5 @@ class SqlFilterApplier
 	{
 		return preg_replace('/[^a-zA-Z0-9_]/', '_', $value);
 	}
+
 }

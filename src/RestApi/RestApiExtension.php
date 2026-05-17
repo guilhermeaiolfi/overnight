@@ -54,6 +54,7 @@ class RestApiExtension extends AbstractExtension
 		$debug = $this->app->isDebug();
 		$defaultLimit = $config->get('defaultLimit', 100);
 		$maxLimit = $config->get('maxLimit', 1000);
+		$dynamicVariables = $config->get('dynamicVariables', []);
 
 		$service = $container->get(RestApiService::class);
 
@@ -69,6 +70,7 @@ class RestApiExtension extends AbstractExtension
 				'endpointUri' => $path,
 				'defaultLimit' => $defaultLimit,
 				'maxLimit' => $maxLimit,
+				'dynamicVariables' => $dynamicVariables,
 				'debug' => $debug,
 			]
 		);

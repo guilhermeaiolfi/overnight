@@ -9,6 +9,9 @@ use Laminas\Diactoros\Response\JsonResponse;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RequestComplete;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\RestApiService;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -94,38 +97,15 @@ class RestMiddleware implements MiddlewareInterface
 	protected function handleList(ServerRequestInterface $request, CollectionInterface $collection): ResponseInterface
 	{
 		$query = $this->getQueryParams($request);
+		$querySpec = $this->querySpec($collection, $query);
 
-		// Parse fields once in the middleware — resolvers receive the normalized structure
-		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
-		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null, $aliases);
-
-		// Parse meta param: "total_count,filter_count" → ['total_count', 'filter_count']
-		$rawMeta = $query['meta'] ?? null;
-		$meta = $rawMeta === null ? [] : (is_array($rawMeta) ? $rawMeta : array_map('trim', explode(',', $rawMeta)));
-
-		$params = [
-			'filter'       => $query['filter'] ?? [],
-			'sort'         => $query['sort'] ?? null,
-			'fields'       => $parsedFields,
-			'fieldsExplicit' => array_key_exists('fields', $query),
-			'limit'        => $this->resolveLimit($query),
-			'offset'       => isset($query['offset']) ? (int) $query['offset'] : null,
-			'page'         => isset($query['page']) ? (int) $query['page'] : null,
-			'search'       => $query['search'] ?? null,
-			'meta'         => $meta,
-			'deep'         => $query['deep'] ?? [],
-			'aggregate'    => $query['aggregate'] ?? null,
-			'groupBy'      => $query['groupBy'] ?? null,
-			'alias'        => $aliases,
-		];
-
-		// Aggregate shortcut — no event, just return data
-		if ($params['aggregate'] !== null) {
-			$rows = $this->restApi->aggregate($collection, $params);
+		// Aggregate responses use the same parsed AST but keep the Directus response shape.
+		if ($querySpec->aggregate !== []) {
+			$rows = $this->restApi->aggregate($collection, $querySpec);
 			return $this->jsonResponse(['data' => $rows]);
 		}
 
-		$result = $this->restApi->list($collection, $params);
+		$result = $this->restApi->list($collection, $querySpec);
 
 		$body = [
 			'data' => $result['items'] ?? [],
@@ -147,19 +127,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleGet(ServerRequestInterface $request, CollectionInterface $collection, string $id): ResponseInterface
 	{
-		$query = $this->getQueryParams($request);
-
-		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
-		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null, $aliases);
-
-		$params = [
-			'fields'       => $parsedFields,
-			'fieldsExplicit' => array_key_exists('fields', $query),
-			'deep'         => $query['deep'] ?? null,
-			'alias'        => $aliases,
-		];
-
-		$item = $this->restApi->get($collection, $id, $params);
+		$item = $this->restApi->get($collection, $id, $this->querySpec($collection, $this->getQueryParams($request)));
 		if ($item === null) {
 			throw RestApiError::notFound();
 		}
@@ -434,14 +402,15 @@ class RestMiddleware implements MiddlewareInterface
 		return $options;
 	}
 
-	protected function resolveLimit(array $query): int
+	protected function querySpec(CollectionInterface $collection, array $query): QuerySpec
 	{
-		$default = $this->options['defaultLimit'] ?? 100;
-		$max = $this->options['maxLimit'] ?? 1000;
+		$parser = new DirectusQueryParser(
+			defaultLimit: (int) ($this->options['defaultLimit'] ?? 100),
+			maxLimit: (int) ($this->options['maxLimit'] ?? 1000)
+		);
+		$normalizer = new QueryNormalizer($this->options['dynamicVariables'] ?? []);
 
-		$limit = isset($query['limit']) ? (int) $query['limit'] : $default;
-
-		return min(max($limit, 1), $max);
+		return $normalizer->normalize($parser->parse($collection, $query));
 	}
 
 	protected function getQueryParams(ServerRequestInterface $request): array

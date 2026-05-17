@@ -60,8 +60,8 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			)
 			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
 
-		if ($this->filters() !== []) {
-			$this->context->filterApplier->apply($query, $this->getTargetCollection(), $this->filters(), $targetAlias);
+		if ($this->filters() !== null) {
+			$this->context->filterApplier->applyNode($query, $this->getTargetCollection(), $this->filters(), $targetAlias);
 		}
 
 		foreach ($this->orderBy() as $order) {

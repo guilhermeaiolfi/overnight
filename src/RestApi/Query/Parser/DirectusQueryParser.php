@@ -109,6 +109,8 @@ final class DirectusQueryParser implements QueryParserInterface
 			$nodes[] = $this->parseRelationSelection($collection, $responseName, $subPaths, $aliases, $deep, $scope);
 		}
 
+		$this->includePrimaryKey($collection, $nodes);
+
 		return new SelectionSet($nodes, true);
 	}
 
@@ -177,6 +179,12 @@ final class DirectusQueryParser implements QueryParserInterface
 
 		$nodes = [];
 		foreach ($filters as $key => $value) {
+			if (is_string($key) && str_contains($key, '.')) {
+				[$relationKey, $nestedKey] = explode('.', $key, 2);
+				$value = [$nestedKey => $value];
+				$key = $relationKey;
+			}
+
 			if ($key === '_and' || $key === '_or') {
 				if (!is_array($value)) {
 					continue;
@@ -431,5 +439,29 @@ final class DirectusQueryParser implements QueryParserInterface
 	private function joinScope(string $scope, string $name): string
 	{
 		return $scope === '' ? $name : $scope . '.' . $name;
+	}
+
+	/**
+	 * @param list<SelectionNode> $nodes
+	 */
+	private function includePrimaryKey(CollectionInterface $collection, array &$nodes): void
+	{
+		$primary = $collection->getPrimaryKey();
+		if (is_array($primary)) {
+			$primary = $primary[0] ?? null;
+		}
+
+		if ($primary === null) {
+			return;
+		}
+
+		$primaryName = $primary->getName();
+		foreach ($nodes as $node) {
+			if ($node instanceof FieldSelection && $node->field->field === $primaryName) {
+				return;
+			}
+		}
+
+		array_unshift($nodes, new FieldSelection(new FieldExpression($primaryName), $primaryName, null, true));
 	}
 }

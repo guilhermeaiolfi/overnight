@@ -12,6 +12,8 @@ use ON\RestApi\Event\ItemCreate;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Resolver\RestResolverInterface;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\TestCase;
@@ -33,7 +35,7 @@ final class RestApiServiceTest extends TestCase
 		);
 
 		try {
-			$service->list('user');
+			$service->list('user', $this->q($this->createRegistryWithUsers()->getCollection('user')));
 			$this->fail('Expected forbidden error to be thrown.');
 		} catch (RestApiError $error) {
 			$this->assertSame(403, $error->getHttpStatus());
@@ -57,7 +59,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->list('user');
+		$result = $service->list('user', $this->q($this->createRegistryWithUsers()->getCollection('user')));
 
 		$this->assertSame([['id' => 1, 'name' => 'John']], $result['items']);
 		$this->assertSame(1, $resolver->listCalls);
@@ -78,7 +80,7 @@ final class RestApiServiceTest extends TestCase
 		);
 
 		try {
-			$service->get('user', '1');
+			$service->get('user', '1', $this->q($this->createRegistryWithUsers()->getCollection('user')));
 			$this->fail('Expected unauthenticated error to be thrown.');
 		} catch (RestApiError $error) {
 			$this->assertSame(401, $error->getHttpStatus());
@@ -95,7 +97,8 @@ final class RestApiServiceTest extends TestCase
 			function (object $event): object {
 				if ($event instanceof ItemList) {
 					$this->assertTrue($event->isAggregate());
-					$this->assertSame(['count' => 'id'], $event->getAggregate());
+					$this->assertSame('count', $event->getAggregate()[0]->responseFunction);
+					$this->assertSame('id', $event->getAggregate()[0]->responseField);
 					$event->allow();
 					$event->setResult([['count' => ['id' => 99]]]);
 					$event->preventDefault();
@@ -105,9 +108,9 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->aggregate('user', [
+		$result = $service->aggregate('user', $this->q($this->createRegistryWithUsers()->getCollection('user'), [
 			'aggregate' => ['count' => 'id'],
-		]);
+		]));
 
 		$this->assertSame([['count' => ['id' => 99]]], $result);
 		$this->assertSame(0, $resolver->aggregateCalls);
@@ -339,7 +342,7 @@ final class RestApiServiceTest extends TestCase
 			],
 		]);
 
-		$comment = $resolver->get($registry->getCollection('comment'), '999');
+		$comment = $resolver->get($registry->getCollection('comment'), '999', $this->q($registry->getCollection('comment')));
 
 		$this->assertNotNull($comment);
 		$this->assertSame('Created with explicit id', $comment['body']);
@@ -369,6 +372,11 @@ final class RestApiServiceTest extends TestCase
 
 		return new RestApiService($registry, $resolver, $dispatcher);
 	}
+
+	private function q(CollectionInterface $collection, array $params = []): QuerySpec
+	{
+		return (new DirectusQueryParser())->parse($collection, $params);
+	}
 }
 
 final class ResolverSpy implements RestResolverInterface
@@ -383,14 +391,14 @@ final class ResolverSpy implements RestResolverInterface
 	public array $disconnected = [];
 	public array $missingIds = [];
 
-	public function list(CollectionInterface $collection, array $params = []): array
+	public function list(CollectionInterface $collection, QuerySpec $query): array
 	{
 		$this->listCalls++;
 
 		return $this->listResult;
 	}
 
-	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
+	public function get(CollectionInterface $collection, string $id, ?QuerySpec $query = null): ?array
 	{
 		if (in_array($id, $this->missingIds, true)) {
 			return null;
@@ -416,7 +424,7 @@ final class ResolverSpy implements RestResolverInterface
 		return true;
 	}
 
-	public function aggregate(CollectionInterface $collection, array $params = []): array
+	public function aggregate(CollectionInterface $collection, QuerySpec $query): array
 	{
 		$this->aggregateCalls++;
 

@@ -7,6 +7,7 @@ namespace ON\RestApi\Event;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\QuerySpec;
 
 class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
@@ -45,6 +46,16 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 	public function setParams(array $params): void
 	{
 		$this->params = $params;
+	}
+
+	public function getQuerySpec(): ?QuerySpec
+	{
+		return ($this->params['querySpec'] ?? null) instanceof QuerySpec ? $this->params['querySpec'] : null;
+	}
+
+	public function setQuerySpec(QuerySpec $querySpec): void
+	{
+		$this->params['querySpec'] = $querySpec;
 	}
 
 	public function getResult(): ?array

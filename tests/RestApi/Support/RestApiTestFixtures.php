@@ -6,7 +6,6 @@ namespace Tests\ON\RestApi\Support;
 
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Resolver\Sql\SqlFilterParser;
 use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
 
@@ -242,7 +241,6 @@ trait RestApiTestFixtures
 		return new SqlRestResolver(
 			$registry,
 			$db,
-			new SqlFilterParser(),
 		);
 	}
 }

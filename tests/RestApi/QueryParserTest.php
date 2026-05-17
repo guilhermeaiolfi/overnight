@@ -160,9 +160,9 @@ final class QueryParserTest extends TestCase
 		$this->assertSame($cmsAuthor->relationName, $directusAuthor->relationName);
 		$this->assertSame(
 			$cmsAuthor->query->selection->nodes[0]->responseName,
-			$directusAuthor->query->selection->nodes[0]->responseName
+			$this->firstPublicField($directusAuthor->query->selection->nodes)->responseName
 		);
-		$this->assertInstanceOf(FieldExpression::class, $directusAuthor->query->selection->nodes[0]->field);
+		$this->assertInstanceOf(FieldExpression::class, $this->firstPublicField($directusAuthor->query->selection->nodes)->field);
 	}
 
 	/**
@@ -179,5 +179,19 @@ final class QueryParserTest extends TestCase
 		}
 
 		return $relations;
+	}
+
+	/**
+	 * @param list<object> $nodes
+	 */
+	private function firstPublicField(array $nodes): FieldSelection
+	{
+		foreach ($nodes as $node) {
+			if ($node instanceof FieldSelection && !$node->internal) {
+				return $node;
+			}
+		}
+
+		$this->fail('No public field selection found.');
 	}
 }

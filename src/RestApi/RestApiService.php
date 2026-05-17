@@ -17,6 +17,7 @@ use ON\RestApi\Event\ItemDelete;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Resolver\RestResolverInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -25,8 +26,7 @@ class RestApiService
 	public function __construct(
 		protected Registry $registry,
 		protected RestResolverInterface $resolver,
-		protected ?EventDispatcherInterface $eventDispatcher = null,
-		protected array $dynamicVariables = []
+		protected ?EventDispatcherInterface $eventDispatcher = null
 	) {
 	}
 
@@ -51,13 +51,6 @@ class RestApiService
 		return $this->registry->getCollections();
 	}
 
-	public function parseFields(string|CollectionInterface $collection, ?string $fields, array $aliases = []): array
-	{
-		$collection = is_string($collection) ? $this->getCollection($collection) : $collection;
-
-		return (new FieldSelector())->parse($collection, $fields, $aliases);
-	}
-
 	public function getPrimaryKeyName(string|CollectionInterface $collection): string
 	{
 		$collection = $this->resolveCollection($collection);
@@ -74,16 +67,16 @@ class RestApiService
 		return 'id';
 	}
 
-	public function list(string|CollectionInterface $collection, array $params = []): array
+	public function list(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
 		$collection = $this->resolveCollection($collection);
-		$params = $this->normalizeParams($collection, $params);
+		$params = $this->eventParams($options, $querySpec);
 
 		if ($this->shouldDispatchEvents($params)) {
 			$event = new ItemList($collection, $params);
 			$this->dispatchEvent($event);
 			$this->assertAuthorized($event);
-			$params = $event->getParams();
+			$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 			if ($event->isDefaultPrevented()) {
 				return [
@@ -93,7 +86,7 @@ class RestApiService
 			}
 		}
 
-		$result = $this->resolver->list($collection, $params);
+		$result = $this->resolver->list($collection, $querySpec);
 		if (isset($event)) {
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
@@ -101,25 +94,25 @@ class RestApiService
 		return $result;
 	}
 
-	public function get(string|CollectionInterface $collection, string $id, array $params = []): ?array
+	public function get(string|CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null, array $options = []): ?array
 	{
 		$collection = $this->resolveCollection($collection);
-		$params = $this->normalizeParams($collection, $params);
+		$params = $querySpec === null ? $options : $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->resolver->get($collection, $id, $params);
+			return $this->resolver->get($collection, $id, $querySpec);
 		}
 
 		$event = new ItemGet($collection, $id, $params);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
-		$params = $event->getParams();
+		$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult();
 		}
 
-		$event->setResult($this->resolver->get($collection, $id, $params));
+		$event->setResult($this->resolver->get($collection, $id, $querySpec));
 		return $event->getResult();
 	}
 
@@ -188,25 +181,25 @@ class RestApiService
 		return $this->resolver->delete($collection, $id);
 	}
 
-	public function aggregate(string|CollectionInterface $collection, array $params = []): array
+	public function aggregate(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
 		$collection = $this->resolveCollection($collection);
-		$params = $this->normalizeParams($collection, $params);
+		$params = $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->resolver->aggregate($collection, $params);
+			return $this->resolver->aggregate($collection, $querySpec);
 		}
 
 		$event = new ItemList($collection, $params);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
-		$params = $event->getParams();
+		$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
 		}
 
-		$result = $this->resolver->aggregate($collection, $params);
+		$result = $this->resolver->aggregate($collection, $querySpec);
 		$event->setResult($result);
 
 		return $event->getResult() ?? [];
@@ -224,7 +217,8 @@ class RestApiService
 
 	public function getItemETag(string|CollectionInterface $collection, string $id): string
 	{
-		$current = $this->get($collection, $id, ['dispatchEvents' => false]);
+		$collection = $this->resolveCollection($collection);
+		$current = $this->get($collection, $id, null, ['dispatchEvents' => false]);
 
 		if ($current === null) {
 			throw RestApiError::notFound();
@@ -256,7 +250,7 @@ class RestApiService
 		$operation = $mode;
 
 		if ($mode === 'upsert') {
-			$operation = $id !== null && $this->resolver->get($collection, $id, ['fields' => ['fields' => [], 'relations' => []]]) !== null
+			$operation = $id !== null && $this->resolver->get($collection, $id) !== null
 				? 'update'
 				: 'create';
 		}
@@ -280,7 +274,7 @@ class RestApiService
 
 		if ($operation === 'create') {
 			$createId = $this->inputPrimaryKeyValue($collection, $input);
-			if ($createId !== null && $this->resolver->get($collection, (string) $createId, ['fields' => ['fields' => [], 'relations' => []]]) !== null) {
+			if ($createId !== null && $this->resolver->get($collection, (string) $createId) !== null) {
 				throw new RestApiError(
 					"A record with this {$this->getPrimaryKeyName($collection)} already exists.",
 					'DUPLICATE',
@@ -630,13 +624,9 @@ class RestApiService
 		return $input;
 	}
 
-	protected function normalizeParams(CollectionInterface $collection, array $params): array
+	protected function eventParams(array $params, QuerySpec $querySpec): array
 	{
-		$params = $this->resolveDynamicVariables($params);
-
-		if (! array_key_exists('fields', $params) || is_string($params['fields']) || $params['fields'] === null) {
-			$params['fields'] = $this->parseFields($collection, $params['fields'] ?? null, $params['alias'] ?? []);
-		}
+		$params['querySpec'] = $querySpec;
 
 		return $params;
 	}
@@ -644,33 +634,5 @@ class RestApiService
 	protected function shouldDispatchEvents(array $options): bool
 	{
 		return $this->eventDispatcher !== null && ($options['dispatchEvents'] ?? true);
-	}
-
-	protected function resolveDynamicVariables(mixed $value): mixed
-	{
-		if (is_array($value)) {
-			foreach ($value as $key => $item) {
-				$value[$key] = $this->resolveDynamicVariables($item);
-			}
-
-			return $value;
-		}
-
-		if (!is_string($value) || !str_starts_with($value, '$')) {
-			return $value;
-		}
-
-		$name = substr($value, 1);
-		$resolver = $this->dynamicVariables[$name] ?? $this->dynamicVariables[$value] ?? null;
-
-		if ($resolver === null) {
-			return match ($name) {
-				'now' => date('Y-m-d H:i:s'),
-				'today' => date('Y-m-d'),
-				default => $value,
-			};
-		}
-
-		return is_callable($resolver) ? $resolver() : $resolver;
 	}
 }

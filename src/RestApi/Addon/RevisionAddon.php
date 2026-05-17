@@ -71,7 +71,12 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->restApi->get($event->getCollection(), $event->getId(), ['dispatchEvents' => false]);
+		$currentItem = $this->restApi->get(
+			$event->getCollection(),
+			$event->getId(),
+			null,
+			['dispatchEvents' => false]
+		);
 
 		$this->writeRevision($collectionName, $event->getId(), 'update', $currentItem, $event->getInput());
 	}
@@ -84,7 +89,12 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->restApi->get($event->getCollection(), $event->getId(), ['dispatchEvents' => false]);
+		$currentItem = $this->restApi->get(
+			$event->getCollection(),
+			$event->getId(),
+			null,
+			['dispatchEvents' => false]
+		);
 
 		$this->writeRevision($collectionName, $event->getId(), 'delete', $currentItem, null);
 	}

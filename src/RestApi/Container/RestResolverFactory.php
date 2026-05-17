@@ -8,7 +8,6 @@ use ON\DB\DatabaseManager;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Resolver\RestResolverInterface;
-use ON\RestApi\Resolver\Sql\SqlFilterParser;
 use ON\RestApi\Resolver\Sql\SqlRestResolver;
 use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
@@ -37,7 +36,6 @@ class RestResolverFactory
 		return new SqlRestResolver(
 			$registry,
 			$database,
-			new SqlFilterParser(),
 			$defaultLimit,
 			$maxLimit
 		);

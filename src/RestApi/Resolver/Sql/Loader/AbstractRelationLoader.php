@@ -14,6 +14,10 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Query\Node\PaginationSpec;
+use ON\RestApi\Query\Node\SortDirection;
+use ON\RestApi\Query\Node\SortSpec;
 
 abstract class AbstractRelationLoader implements RelationLoaderInterface
 {
@@ -127,40 +131,35 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return $this->deep;
 	}
 
-	public function filters(): array
+	public function filters(): ?FilterNode
 	{
-		return !empty($this->deep['_filter']) && is_array($this->deep['_filter'])
-			? $this->deep['_filter']
-			: [];
+		return ($this->deep['_filterNode'] ?? null) instanceof FilterNode
+			? $this->deep['_filterNode']
+			: null;
 	}
 
 	public function orderBy(): array
 	{
-		if (empty($this->deep['_sort'])) {
+		$sortSpecs = $this->deep['_sortSpecs'] ?? [];
+		if (!is_array($sortSpecs) || $sortSpecs === []) {
 			return [];
 		}
 
 		$orders = [];
-		foreach (array_map('trim', explode(',', (string) $this->deep['_sort'])) as $part) {
-			if ($part === '') {
+		foreach ($sortSpecs as $sortSpec) {
+			if (!$sortSpec instanceof SortSpec) {
 				continue;
-			}
-
-			$direction = 'ASC';
-			if (str_starts_with($part, '-')) {
-				$direction = 'DESC';
-				$part = substr($part, 1);
 			}
 
 			$expression = $this->context->expressions->value(
 				$this->targetCollection,
-				$part,
+				$sortSpec->expression,
 				$this->targetCollection->getTable()
 			);
 			if ($expression !== null) {
 				$orders[] = [
 					'expression' => $expression,
-					'direction' => $direction,
+					'direction' => $sortSpec->direction === SortDirection::Desc ? 'DESC' : 'ASC',
 				];
 			}
 		}
@@ -170,12 +169,16 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	public function limit(): ?int
 	{
-		return isset($this->deep['_limit']) ? (int) $this->deep['_limit'] : null;
+		$pagination = $this->pagination();
+
+		return $pagination?->limit;
 	}
 
 	public function offset(): ?int
 	{
-		return isset($this->deep['_offset']) ? (int) $this->deep['_offset'] : null;
+		$pagination = $this->pagination();
+
+		return $pagination?->offset;
 	}
 
 	protected function baseQuery(array $columns): SelectQuery
@@ -186,8 +189,8 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	protected function applyRelationQueryOptions(SelectQuery $query): void
 	{
-		if ($this->filters() !== []) {
-			$this->context->filterApplier->apply($query, $this->targetCollection, $this->filters());
+		if ($this->filters() !== null) {
+			$this->context->filterApplier->applyNode($query, $this->targetCollection, $this->filters());
 		}
 
 		foreach ($this->orderBy() as $order) {
@@ -404,4 +407,10 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 		return array_values(array_unique($columns));
 	}
+
+	private function pagination(): ?PaginationSpec
+	{
+		return ($this->deep['_pagination'] ?? null) instanceof PaginationSpec ? $this->deep['_pagination'] : null;
+	}
+
 }

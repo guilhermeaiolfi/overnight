@@ -11,6 +11,17 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Query\Node\AggregateSpec;
+use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\GroupBySpec;
+use ON\RestApi\Query\Node\PaginationSpec;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Query\Node\SearchField;
+use ON\RestApi\Query\Node\SelectionSet;
+use ON\RestApi\Query\Node\SortDirection;
+use ON\RestApi\Query\Node\SortSpec;
+use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\AbstractRestResolver;
 use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
 use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
@@ -27,16 +38,14 @@ class SqlRestResolver extends AbstractRestResolver
 	public function __construct(
 		protected Registry $registry,
 		protected DatabaseInterface $database,
-		protected SqlFilterParser $filterParser,
 		int $defaultLimit = 100,
 		int $maxLimit = 1000,
 		protected ?CycleDbalFactory $dbalFactory = null,
-		protected ?SqlExpressionBuilder $expressions = null
+		protected ?SqlExpressionCompiler $expressions = null
 	) {
 		parent::__construct($defaultLimit, $maxLimit);
 		$this->dbalFactory ??= new CycleDbalFactory();
-		$this->expressions ??= new SqlExpressionBuilder($this->getDatabase());
-		$this->filterParser->setExpressionBuilder($this->expressions);
+		$this->expressions ??= new SqlExpressionCompiler($this->getDatabase());
 		$this->filterApplier = new SqlFilterApplier($this->getDatabase(), $this->expressions);
 		$this->loaderFactory = LoaderFactory::defaults();
 	}
@@ -46,9 +55,9 @@ class SqlRestResolver extends AbstractRestResolver
 		return $this->getDatabase()->transaction($callback);
 	}
 
-	public function list(CollectionInterface $collection, array $params = []): array
+	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
-		$fields = $this->normalizeFieldTree($params['fields'] ?? []);
+		$fields = $this->fieldTreeFromSelection($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
@@ -58,11 +67,11 @@ class SqlRestResolver extends AbstractRestResolver
 		)));
 
 		$query = $this->newSelectQuery($collection, $fieldsForSelect['fields']);
-		$this->applyFilters($query, $collection, $params['filter'] ?? []);
-		$this->applySearch($query, $collection, $params['search'] ?? null);
+		$this->filterApplier->applyNode($query, $collection, $querySpec->filter);
+		$this->applySearchField($query, $collection, $querySpec->search);
 
 		$meta = [];
-		$requestedMeta = $params['meta'] ?? [];
+		$requestedMeta = $querySpec->meta;
 		if (in_array('total_count', $requestedMeta, true)) {
 			$meta['total_count'] = $this->getDatabase()->select()
 				->from($collection->getTable())
@@ -73,8 +82,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$meta['filter_count'] = (clone $query)->count();
 		}
 
-		$this->applySort($query, $collection, $params['sort'] ?? null);
-		$this->applyPagination($query, $params);
+		$this->applySortSpecs($query, $collection, $querySpec->sort);
+		$this->applyPaginationSpec($query, $querySpec->pagination);
 
 		$items = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
 		$items = $this->loadRootItems(
@@ -83,8 +92,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$fields['relations'],
-			$params['deep'] ?? [],
-			(bool) ($params['fieldsExplicit'] ?? false)
+			$this->deepFromSelection($querySpec->selection),
+			$querySpec->selection->explicit
 		);
 
 		return [
@@ -93,9 +102,13 @@ class SqlRestResolver extends AbstractRestResolver
 		];
 	}
 
-	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
+	public function get(CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null): ?array
 	{
-		$fields = $this->normalizeFieldTree($params['fields'] ?? []);
+		if ($querySpec === null) {
+			return $this->getVisibleById($collection, $id);
+		}
+
+		$fields = $this->fieldTreeFromSelection($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
@@ -119,8 +132,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$fields['relations'],
-			$params['deep'] ?? [],
-			(bool) ($params['fieldsExplicit'] ?? false)
+			$this->deepFromSelection($querySpec->selection),
+			$querySpec->selection->explicit
 		);
 
 		return $items[0] ?? null;
@@ -231,24 +244,23 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 	}
 
-	public function aggregate(CollectionInterface $collection, array $params = []): array
+	public function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
-		$aggregates = $params['aggregate'] ?? [];
-		$groupBy = $this->parseArrayValue($params['groupBy'] ?? []);
-
-		if ($aggregates === []) {
+		if ($querySpec->aggregate === []) {
 			return [];
 		}
 
 		$query = $this->getDatabase()->select()->from($collection->getTable());
-		$this->applyFilters($query, $collection, $params['filter'] ?? []);
-		$this->applySearch($query, $collection, $params['search'] ?? null);
+		$this->filterApplier->applyNode($query, $collection, $querySpec->filter);
+		$this->applySearchField($query, $collection, $querySpec->search);
 
 		$selectExpressions = [];
 
-		$groupAliases = $this->getGroupByAliases($groupBy);
-		foreach ($groupBy as $field) {
-			$expression = $this->expressions->value($collection, (string) $field, $collection->getTable());
+		foreach ($querySpec->groupBy as $group) {
+			if (!$group instanceof GroupBySpec) {
+				continue;
+			}
+			$expression = $this->expressions->value($collection, $group->expression, $collection->getTable());
 			if ($expression === null) {
 				continue;
 			}
@@ -256,43 +268,27 @@ class SqlRestResolver extends AbstractRestResolver
 			$query->groupBy($expression);
 			$selectExpression = $this->expressions->select(
 				$collection,
-				(string) $field,
+				$group->expression,
 				$collection->getTable(),
-				$groupAliases[$field]
+				$group->alias ?? $this->expressions->alias($group->expression)
 			);
 			if ($selectExpression !== null) {
 				$selectExpressions[] = $selectExpression;
 			}
 		}
 
-		foreach ([
-			'count' => 'COUNT',
-			'sum' => 'SUM',
-			'avg' => 'AVG',
-			'min' => 'MIN',
-			'max' => 'MAX',
-			'countDistinct' => 'COUNT',
-			'sumDistinct' => 'SUM',
-			'avgDistinct' => 'AVG',
-		] as $allowedFunction => $sqlFunction) {
-			if (!array_key_exists($allowedFunction, $aggregates)) {
+		foreach ($querySpec->aggregate as $aggregate) {
+			if (!$aggregate instanceof AggregateSpec) {
 				continue;
 			}
-
-			$fieldList = is_array($aggregates[$allowedFunction]) ? $aggregates[$allowedFunction] : [$aggregates[$allowedFunction]];
-			foreach ($fieldList as $field) {
-				$alias = $this->aggregateAlias($allowedFunction, (string) $field);
-				$expression = $this->expressions->aggregate(
-					$sqlFunction,
-					$collection,
-					(string) $field,
-					$collection->getTable(),
-					$alias,
-					str_ends_with($allowedFunction, 'Distinct')
-				);
-				if ($expression !== null) {
-					$selectExpressions[] = $expression;
-				}
+			$expression = $this->expressions->aggregate(
+				$collection,
+				$aggregate->expression,
+				$collection->getTable(),
+				$this->aggregateAlias($aggregate->responseFunction, $aggregate->responseField)
+			);
+			if ($expression !== null) {
+				$selectExpressions[] = $expression;
 			}
 		}
 
@@ -303,7 +299,7 @@ class SqlRestResolver extends AbstractRestResolver
 		$query->columns($selectExpressions);
 		$rows = $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
 
-		return $this->formatAggregateResult($rows, $aggregates, $groupBy);
+		return $this->formatAggregateRows($rows, $querySpec->aggregate, $querySpec->groupBy);
 	}
 
 	public function clearCache(): void
@@ -323,6 +319,186 @@ class SqlRestResolver extends AbstractRestResolver
 		return $query;
 	}
 
+	protected function fieldTreeFromSelection(SelectionSet $selection): array
+	{
+		$fields = [];
+		$requestedFields = [];
+		$relations = [];
+
+		foreach ($selection->nodes as $node) {
+			if ($node instanceof WildcardSelection) {
+				return ['fields' => [], 'requestedFields' => [], 'relations' => []];
+			}
+
+			if ($node instanceof FieldSelection) {
+				$fields[] = $node->field->field;
+				if (!$node->internal) {
+					$requestedFields[] = $node->field->field;
+				}
+				continue;
+			}
+
+			if ($node instanceof RelationSelection) {
+				$relations[$node->responseName] = $this->fieldTreeFromSelection($node->query->selection);
+				if ($node->relationName !== $node->responseName) {
+					$relations[$node->responseName]['_relation'] = $node->relationName;
+				}
+			}
+		}
+
+		return [
+			'fields' => array_values(array_unique($fields)),
+			'requestedFields' => array_values(array_unique($requestedFields)),
+			'relations' => $relations,
+		];
+	}
+
+	protected function deepFromSelection(SelectionSet $selection): array
+	{
+		$deep = [];
+		foreach ($selection->nodes as $node) {
+			if (!$node instanceof RelationSelection) {
+				continue;
+			}
+
+			$entry = [];
+			if ($node->query->filter !== null) {
+				$entry['_filterNode'] = $node->query->filter;
+			}
+			if ($node->query->search !== null) {
+				$entry['_searchNode'] = $node->query->search;
+			}
+			if ($node->query->sort !== []) {
+				$entry['_sortSpecs'] = $node->query->sort;
+			}
+			if ($node->query->pagination !== null) {
+				$entry['_pagination'] = $node->query->pagination;
+			}
+
+			foreach ($this->deepFromSelection($node->query->selection) as $nestedName => $nestedDeep) {
+				$entry[$nestedName] = $nestedDeep;
+			}
+
+			if ($entry !== []) {
+				$deep[$node->responseName] = $entry;
+			}
+		}
+
+		return $deep;
+	}
+
+	protected function applySearchField(object $query, CollectionInterface $collection, ?SearchField $search): void
+	{
+		$this->applySearch($query, $collection, $search?->term);
+	}
+
+	/**
+	 * @param list<SortSpec> $sort
+	 */
+	protected function applySortSpecs(object $query, CollectionInterface $collection, array $sort): void
+	{
+		foreach ($sort as $item) {
+			if (!$item instanceof SortSpec) {
+				continue;
+			}
+
+			$expression = $this->expressions->value($collection, $item->expression, $collection->getTable());
+			if ($expression !== null) {
+				$query->orderBy($expression, $item->direction === SortDirection::Desc ? 'DESC' : 'ASC');
+			}
+		}
+	}
+
+	protected function applyPaginationSpec(object $query, ?PaginationSpec $pagination): void
+	{
+		$limit = $pagination?->limit ?? $this->defaultLimit;
+		$limit = min($limit, $this->maxLimit);
+		if ($limit < 1) {
+			$limit = $this->defaultLimit;
+		}
+
+		$query->limit($limit);
+
+		$offset = $pagination?->offset ?? 0;
+		if ($offset > 0) {
+			$query->offset($offset);
+		}
+	}
+
+	protected function getVisibleById(CollectionInterface $collection, string $id): ?array
+	{
+		$columns = $this->getVisibleFields($collection);
+		$statement = $this->getDatabase()
+			->select()
+			->from($collection->getTable())
+			->columns($columns)
+			->where($this->getPrimaryKeyColumn($collection), $id)
+			->limit(1)
+			->run();
+
+		try {
+			$row = $statement->fetch(CycleStatementInterface::FETCH_ASSOC);
+		} finally {
+			$statement->close();
+		}
+
+		if (!is_array($row)) {
+			return null;
+		}
+
+		$item = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
+
+			$column = $field->getColumn();
+			if (array_key_exists($column, $row)) {
+				$item[(string) $fieldName] = $row[$column];
+			}
+		}
+
+		return $item;
+	}
+
+	/**
+	 * @param list<AggregateSpec> $aggregates
+	 * @param list<GroupBySpec> $groupBy
+	 */
+	protected function formatAggregateRows(array $rows, array $aggregates, array $groupBy): array
+	{
+		$result = [];
+		foreach ($rows as $row) {
+			$entry = [];
+			foreach ($groupBy as $group) {
+				if (!$group instanceof GroupBySpec) {
+					continue;
+				}
+
+				$responseName = $group->responseName;
+				$alias = $group->alias ?? $this->expressions->alias($group->expression);
+				if (array_key_exists($alias, $row)) {
+					$entry[$responseName] = $row[$alias];
+				}
+			}
+
+			foreach ($aggregates as $aggregate) {
+				if (!$aggregate instanceof AggregateSpec) {
+					continue;
+				}
+
+				$alias = $this->aggregateAlias($aggregate->responseFunction, $aggregate->responseField);
+				if (array_key_exists($alias, $row)) {
+					$entry[$aggregate->responseFunction][$aggregate->responseField] = $row[$alias];
+				}
+			}
+
+			$result[] = $entry;
+		}
+
+		return $result;
+	}
+
 	protected function buildSelectColumnNames(CollectionInterface $collection, ?array $fieldNames): ?array
 	{
 		if ($fieldNames === null || $fieldNames === []) {
@@ -337,15 +513,6 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 
 		return $columnNames === [] ? null : $columnNames;
-	}
-
-	protected function applyFilters(object $query, CollectionInterface $collection, array $filters): void
-	{
-		if ($filters === []) {
-			return;
-		}
-
-		$this->filterApplier->apply($query, $collection, $filters);
 	}
 
 	protected function applySearch(object $query, CollectionInterface $collection, ?string $search): void
@@ -367,51 +534,6 @@ class SqlRestResolver extends AbstractRestResolver
 		});
 	}
 
-	protected function applySort(object $query, CollectionInterface $collection, ?string $sort): void
-	{
-		if ($sort === null || $sort === '') {
-			return;
-		}
-
-		foreach (array_map('trim', explode(',', $sort)) as $part) {
-			if ($part === '') {
-				continue;
-			}
-
-			$direction = 'ASC';
-			if (str_starts_with($part, '-')) {
-				$direction = 'DESC';
-				$part = substr($part, 1);
-			}
-
-			$expression = $this->expressions->value($collection, $part, $collection->getTable());
-			if ($expression !== null) {
-				$query->orderBy($expression, $direction);
-			}
-		}
-	}
-
-	protected function applyPagination(object $query, array $params): void
-	{
-		$limit = isset($params['limit']) ? (int) $params['limit'] : $this->defaultLimit;
-		$limit = min($limit, $this->maxLimit);
-		if ($limit < 1) {
-			$limit = $this->defaultLimit;
-		}
-
-		$offset = null;
-		if (isset($params['offset'])) {
-			$offset = (int) $params['offset'];
-		} elseif (isset($params['page'])) {
-			$offset = (max(1, (int) $params['page']) - 1) * $limit;
-		}
-
-		$query->limit($limit);
-		if ($offset !== null && $offset > 0) {
-			$query->offset($offset);
-		}
-	}
-
 	protected function loadRootItems(
 		CollectionInterface $collection,
 		array $items,
@@ -419,7 +541,7 @@ class SqlRestResolver extends AbstractRestResolver
 		array $internalRelationKeyColumnNames,
 		array $relations,
 		array $deep,
-		bool $fieldsExplicit = false
+		bool $selectionExplicit = false
 	): array {
 		if ($items === []) {
 			return [];
@@ -430,7 +552,7 @@ class SqlRestResolver extends AbstractRestResolver
 			$collection,
 			$items,
 			$columns,
-			$requestedColumnNames === [] && !$fieldsExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
+			$requestedColumnNames === [] && !$selectionExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$relations,
 			$deep,
@@ -445,15 +567,6 @@ class SqlRestResolver extends AbstractRestResolver
 		);
 
 		return $loader->load();
-	}
-
-	protected function normalizeFieldTree(array $fields): array
-	{
-		$fields['fields'] = $fields['fields'] ?? $fields['columns'] ?? [];
-		$fields['requestedFields'] = $fields['requestedFields'] ?? $fields['fields'];
-		$fields['relations'] = $fields['relations'] ?? [];
-
-		return $fields;
 	}
 
 	protected function getConnection(): PDO
