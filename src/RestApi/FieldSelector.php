@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Error\RestApiError;
 
 class FieldSelector
 {
@@ -54,9 +55,14 @@ class FieldSelector
 			if (count($parts) === 1) {
 				// Scalar field
 				if ($collection->fields->has($first)) {
-					$fields[] = $first;
-					$requestedFields[] = $first;
+					if (!$collection->fields->get($first)->isHidden()) {
+						$fields[] = $first;
+						$requestedFields[] = $first;
+					}
+					continue;
 				}
+
+				throw RestApiError::invalidField($first);
 			} else {
 				// Relation path
 				if ($collection->relations->has($first) || isset($aliases[$first])) {
@@ -64,7 +70,10 @@ class FieldSelector
 						$relations[$first] = [];
 					}
 					$relations[$first][] = $parts[1];
+					continue;
 				}
+
+				throw RestApiError::invalidField($first);
 			}
 		}
 

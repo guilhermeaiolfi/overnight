@@ -9,36 +9,38 @@ use Cycle\ORM\Parser\SingularNode;
 
 class HasOneLoader extends AbstractRelationLoader
 {
-	public function configureNode(AbstractNode $parent, string $name): AbstractNode
+	public function configureNode(AbstractNode $parent): AbstractNode
 	{
 		$node = new SingularNode(
-			$this->load->getSelectColumns(),
-			[$this->getPrimaryKeyColumn($this->load->targetCollection)],
-			[(string) $this->load->relation->getOuterKey()],
-			[(string) $this->load->relation->getInnerKey()]
+			$this->getSelectColumns(),
+			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
+			[(string) $this->relation->getOuterKey()],
+			[(string) $this->relation->getInnerKey()]
 		);
-		$parent->linkNode($name, $node);
+		$parent->linkNode($this->responseName, $node);
+		$this->setNode($node);
 
 		return $node;
 	}
 
-	public function load(AbstractNode $node): void
+	public function load(): void
 	{
+		$node = $this->getNode();
 		$parentIds = $this->flattenedReferenceValues($node);
 		if ($parentIds === []) {
 			return;
 		}
 
-		$columns = $this->load->getSelectColumns();
+		$columns = $this->getSelectColumns();
 		$query = $this->baseQuery($columns)
-			->where((string) $this->load->relation->getOuterKey(), 'IN', $parentIds);
+			->where((string) $this->relation->getOuterKey(), 'IN', $parentIds);
 		$this->applyRelationQueryOptions($query);
 
-		if ($this->load->limit() !== null || $this->load->offset() !== null) {
+		if ($this->limit() !== null || $this->offset() !== null) {
 			$query = $this->limitedSubquery(
 				$query,
 				$columns,
-				$this->load->targetCollection->getTable() . '.' . (string) $this->load->relation->getOuterKey()
+				$this->getTargetCollection()->getTable() . '.' . (string) $this->relation->getOuterKey()
 			);
 		}
 

@@ -132,6 +132,9 @@ class Field implements FieldInterface
 	public function sensible(bool $sensible): self
 	{
 		$this->sensible = $sensible;
+		if ($sensible) {
+			$this->hidden(true);
+		}
 
 		return $this;
 	}

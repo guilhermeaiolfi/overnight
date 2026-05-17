@@ -93,7 +93,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleList(ServerRequestInterface $request, CollectionInterface $collection): ResponseInterface
 	{
-		$query = $request->getQueryParams();
+		$query = $this->getQueryParams($request);
 
 		// Parse fields once in the middleware — resolvers receive the normalized structure
 		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
@@ -147,7 +147,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleGet(ServerRequestInterface $request, CollectionInterface $collection, string $id): ResponseInterface
 	{
-		$query = $request->getQueryParams();
+		$query = $this->getQueryParams($request);
 
 		$aliases = is_array($query['alias'] ?? null) ? $query['alias'] : [];
 		$parsedFields = $this->restApi->parseFields($collection, $query['fields'] ?? null, $aliases);
@@ -442,6 +442,14 @@ class RestMiddleware implements MiddlewareInterface
 		$limit = isset($query['limit']) ? (int) $query['limit'] : $default;
 
 		return min(max($limit, 1), $max);
+	}
+
+	protected function getQueryParams(ServerRequestInterface $request): array
+	{
+		$query = [];
+		parse_str($request->getUri()->getQuery(), $query);
+
+		return array_replace($query, $request->getQueryParams());
 	}
 
 	protected function matchesBasePath(string $path, string $basePath): bool

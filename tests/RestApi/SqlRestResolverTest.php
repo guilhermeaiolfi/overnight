@@ -169,6 +169,82 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayNotHasKey('status', $item);
 	}
 
+	public function testFieldSelectionDoesNotReturnUnrequestedColumnsWhenQuerySelectsThem(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$collection = $registry->getCollection('user');
+
+		$result = $resolver->list($collection, [
+			'fields' => [
+				'fields' => ['id', 'name', 'email', 'password'],
+				'requestedFields' => ['id', 'name'],
+				'relations' => [],
+			],
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$this->assertSame(['id', 'name'], array_keys($result['items'][0]));
+		$this->assertArrayNotHasKey('email', $result['items'][0]);
+		$this->assertArrayNotHasKey('password', $result['items'][0]);
+	}
+
+	public function testExplicitEmptyFieldSelectionDoesNotExpandToAllVisibleFields(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('user'), [
+			'fields' => [
+				'fields' => ['id'],
+				'requestedFields' => [],
+				'relations' => [],
+			],
+			'fieldsExplicit' => true,
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$this->assertSame([], $result['items'][0]);
+	}
+
+	public function testLegacyColumnsFieldTreeIsNormalized(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('user'), [
+			'fields' => [
+				'columns' => ['id', 'name'],
+				'relations' => [],
+			],
+			'fieldsExplicit' => true,
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$this->assertSame(['id', 'name'], array_keys($result['items'][0]));
+	}
+
+	public function testListAcceptsPartialFieldTree(): void
+	{
+		$registry = new Registry();
+		$this->createPostCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('post'), [
+			'fields' => ['relations' => []],
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$this->assertArrayHasKey('title', $result['items'][0]);
+	}
+
 	public function testListWithRelationLoading(): void
 	{
 		$registry = new Registry();
@@ -198,6 +274,49 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayHasKey('comments', $phpTips);
 		$this->assertCount(2, $phpTips['comments']);
 		$this->assertArrayHasKey('body', $phpTips['comments'][0]);
+	}
+
+	public function testListWithDeeplyNestedRelationLoading(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('user'), [
+			'fields' => [
+				'fields' => ['id', 'name'],
+				'relations' => [
+					'posts' => [
+						'fields' => ['id', 'title'],
+						'relations' => [
+							'tags' => ['fields' => ['name'], 'relations' => []],
+						],
+					],
+				],
+			],
+		]);
+
+		$john = null;
+		foreach ($result['items'] as $item) {
+			if ($item['name'] === 'John') {
+				$john = $item;
+				break;
+			}
+		}
+
+		$this->assertNotNull($john, 'Expected to find John');
+		$this->assertArrayHasKey('posts', $john);
+
+		$postsByTitle = [];
+		foreach ($john['posts'] as $post) {
+			$postsByTitle[$post['title']] = $post;
+		}
+
+		$this->assertArrayHasKey('PHP Tips', $postsByTitle);
+		$this->assertSame(['PHP', 'GraphQL'], array_column($postsByTitle['PHP Tips']['tags'], 'name'));
+		$this->assertArrayNotHasKey('user_id', $postsByTitle['PHP Tips']);
+		$this->assertArrayNotHasKey('id', $postsByTitle['PHP Tips']['tags'][0]);
 	}
 
 	public function testBelongsToRelationLoadsWithoutReturningUnrequestedForeignKey(): void
@@ -376,22 +495,60 @@ final class SqlRestResolverTest extends TestCase
 		]);
 
 		$this->assertCount(1, $filtered['items']);
-		$this->assertSame('Alice', $filtered['items'][0]['display_name']);
+		$this->assertSame('Alice', $filtered['items'][0]['displayName']);
+		$this->assertArrayNotHasKey('display_name', $filtered['items'][0]);
 
 		$created = $resolver->create($collection, [
 			'displayName' => 'Charlie',
 		]);
 
-		$this->assertSame('Charlie', $created['display_name']);
+		$this->assertSame('Charlie', $created['displayName']);
+		$this->assertArrayNotHasKey('display_name', $created);
 
 		$updated = $resolver->update($collection, (string) $created['id'], [
 			'displayName' => 'Charles',
 		]);
 
-		$this->assertSame('Charles', $updated['display_name']);
+		$this->assertSame('Charles', $updated['displayName']);
+		$this->assertArrayNotHasKey('display_name', $updated);
 		$stmt = $db->getConnection()->prepare('SELECT display_name FROM profile WHERE id = ?');
 		$stmt->execute([$created['id']]);
 		$this->assertSame('Charles', $stmt->fetchColumn());
+	}
+
+	public function testMappedFieldSelectionReturnsFieldNames(): void
+	{
+		$registry = new Registry();
+		$this->createProfileCollection($registry);
+		$db = $this->createProfileDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('profile'), [
+			'fields' => [
+				'fields' => ['id', 'displayName'],
+				'relations' => [],
+			],
+			'fieldsExplicit' => true,
+		]);
+
+		$this->assertNotEmpty($result['items']);
+		$this->assertSame(['id', 'displayName'], array_keys($result['items'][0]));
+		$this->assertSame('Alice', $result['items'][0]['displayName']);
+	}
+
+	public function testMappedColumnNameIsRejectedOnWrite(): void
+	{
+		$registry = new Registry();
+		$this->createProfileCollection($registry);
+		$db = $this->createProfileDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$this->expectException(\ON\RestApi\Error\RestApiError::class);
+		$this->expectExceptionMessage("Invalid field 'display_name'.");
+
+		$resolver->create($registry->getCollection('profile'), [
+			'display_name' => 'Column Leak',
+		]);
 	}
 
 	// -------------------------------------------------------------------------

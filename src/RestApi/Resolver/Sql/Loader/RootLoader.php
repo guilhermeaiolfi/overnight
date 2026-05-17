@@ -61,48 +61,55 @@ final class RootLoader
 				continue;
 			}
 
-			$relation = RelationLoad::create($collection, $relationName, $relationData, $deep[$relationName] ?? [], $this->context);
-			if ($relation === null) {
+			$loader = $this->factory->relation(
+				$collection,
+				$relationName,
+				$relationData,
+				is_array($deep[$relationName] ?? null) ? $deep[$relationName] : [],
+				$this->context
+			);
+			if ($loader === null) {
 				continue;
 			}
 
-			$relation->configure($parent, $this->factory);
-			$relation->prepare();
-			$relation->setChildren(
+			$loader->configureNode($parent);
+			$loader->prepare();
+			$loader->setChildren(
 				$this->configureRelations(
-					$relation->node(),
-					$relation->targetCollection,
-					$relation->getNestedRelations(),
-					$relation->deep
+					$loader->getNode(),
+					$loader->getTargetCollection(),
+					$loader->getNestedRelations() ?? [],
+					$loader->getDeep()
 				)
 			);
-			$configured[] = $relation;
+			$configured[] = $loader;
 		}
 
 		return $configured;
 	}
 
 	/**
-	 * @param list<RelationLoad> $relations
+	 * @param list<RelationLoaderInterface> $relations
 	 */
 	private function loadRelations(array $relations): void
 	{
 		foreach ($relations as $relation) {
 			$relation->load();
-			$this->loadRelations($relation->children());
+			$this->loadRelations($relation->getChildren());
 		}
 	}
 
 	private function cleanRows(CollectionInterface $collection, array $rows, array $requestedColumns, array $internalColumns, array $configured): array
 	{
 		$visible = array_flip($this->getVisibleFields($collection));
-		$relationKeys = array_flip(array_map(fn(RelationLoad $relation) => $relation->responseName, $configured));
+		$requested = array_intersect_key(array_flip($requestedColumns), $visible);
+		$relationKeys = array_flip(array_map(fn(RelationLoaderInterface $relation) => $relation->getResponseName(), $configured));
 		foreach ($rows as &$row) {
-			$row = array_intersect_key($row, $visible + $relationKeys);
+			$row = array_intersect_key($row, $requested + $relationKeys);
 			$row = $this->stripInternalColumns($row, $internalColumns, $requestedColumns);
 
 			foreach ($configured as $relation) {
-				$name = $relation->responseName;
+				$name = $relation->getResponseName();
 				$value = $row[$name] ?? null;
 				if ($value === null) {
 					continue;
@@ -112,16 +119,18 @@ final class RootLoader
 					? $this->cleanRelationRow($relation, $value)
 					: array_map(fn(array $item) => $this->cleanRelationRow($relation, $item), $value);
 			}
+
+			$row = $this->mapColumnsToFields($collection, $row);
 		}
 		unset($row);
 
 		return $rows;
 	}
 
-	private function cleanRelationRow(RelationLoad $relation, array $row): array
+	private function cleanRelationRow(RelationLoaderInterface $relation, array $row): array
 	{
-		$visible = array_flip($this->getVisibleFields($relation->targetCollection));
-		$nestedRelationKeys = array_flip(array_map(fn(RelationLoad $child) => $child->responseName, $relation->children()));
+		$visible = array_flip($this->getVisibleFields($relation->getTargetCollection()));
+		$nestedRelationKeys = array_flip(array_map(fn(RelationLoaderInterface $child) => $child->getResponseName(), $relation->getChildren()));
 		$syntheticKeys = array_flip(array_filter(array_keys($row), fn(string $key) => str_starts_with($key, '__on_')));
 		$row = array_intersect_key($row, $visible + $nestedRelationKeys + $syntheticKeys);
 		$row = $this->stripInternalColumns($row, $relation->getInternalColumns(), $relation->getRequestedColumns());
@@ -131,18 +140,18 @@ final class RootLoader
 			}
 		}
 
-		foreach ($relation->children() as $child) {
-			$value = $row[$child->responseName] ?? null;
+		foreach ($relation->getChildren() as $child) {
+			$value = $row[$child->getResponseName()] ?? null;
 			if ($value === null) {
 				continue;
 			}
 
-			$row[$child->responseName] = $child->isSingle()
+			$row[$child->getResponseName()] = $child->isSingle()
 				? $this->cleanRelationRow($child, $value)
 				: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 		}
 
-		return $row;
+		return $this->mapColumnsToFields($relation->getTargetCollection(), $row);
 	}
 
 	private function numericRow(array $row, array $columns): array
@@ -186,6 +195,20 @@ final class RootLoader
 		}
 
 		return $primary->getColumn();
+	}
+
+	private function mapColumnsToFields(CollectionInterface $collection, array $row): array
+	{
+		$mapped = [];
+		foreach ($row as $key => $value) {
+			$name = $collection->fields->hasColumn((string) $key)
+				? $collection->fields->getKeyByColumnName((string) $key)
+				: $key;
+
+			$mapped[$name] = $value;
+		}
+
+		return $mapped;
 	}
 
 }

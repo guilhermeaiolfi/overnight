@@ -52,6 +52,11 @@ class RestApiError extends \RuntimeException
 		return new self('Invalid JSON in request body.', 'INVALID_JSON', null, 400);
 	}
 
+	public static function invalidField(string $field): self
+	{
+		return new self("Invalid field '{$field}'.", 'INVALID_FIELD', $field, 400);
+	}
+
 	public static function methodNotAllowed(): self
 	{
 		return new self('Method not allowed.', 'METHOD_NOT_ALLOWED', null, 405);

@@ -48,7 +48,7 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function list(CollectionInterface $collection, array $params = []): array
 	{
-		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
+		$fields = $this->normalizeFieldTree($params['fields'] ?? []);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
@@ -83,7 +83,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$fields['relations'],
-			$params['deep'] ?? []
+			$params['deep'] ?? [],
+			(bool) ($params['fieldsExplicit'] ?? false)
 		);
 
 		return [
@@ -94,7 +95,7 @@ class SqlRestResolver extends AbstractRestResolver
 
 	public function get(CollectionInterface $collection, string $id, array $params = []): ?array
 	{
-		$fields = $params['fields'] ?? ['fields' => [], 'relations' => []];
+		$fields = $this->normalizeFieldTree($params['fields'] ?? []);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $fields['requestedFields'] ?? $fields['fields']);
 		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $fields['relations']);
 		$fieldsForSelect = $fields;
@@ -118,7 +119,8 @@ class SqlRestResolver extends AbstractRestResolver
 			$requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$fields['relations'],
-			$params['deep'] ?? []
+			$params['deep'] ?? [],
+			(bool) ($params['fieldsExplicit'] ?? false)
 		);
 
 		return $items[0] ?? null;
@@ -133,6 +135,8 @@ class SqlRestResolver extends AbstractRestResolver
 				->run();
 
 			return $this->get($collection, (string) $lastId) ?? [];
+		} catch (RestApiError $e) {
+			throw $e;
 		} catch (\Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
@@ -151,6 +155,8 @@ class SqlRestResolver extends AbstractRestResolver
 				->run();
 
 			return $this->get($collection, $id);
+		} catch (RestApiError $e) {
+			throw $e;
 		} catch (\Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
@@ -412,7 +418,8 @@ class SqlRestResolver extends AbstractRestResolver
 		array $requestedColumnNames,
 		array $internalRelationKeyColumnNames,
 		array $relations,
-		array $deep
+		array $deep,
+		bool $fieldsExplicit = false
 	): array {
 		if ($items === []) {
 			return [];
@@ -423,7 +430,7 @@ class SqlRestResolver extends AbstractRestResolver
 			$collection,
 			$items,
 			$columns,
-			$requestedColumnNames === [] ? $this->getVisibleFields($collection) : $requestedColumnNames,
+			$requestedColumnNames === [] && !$fieldsExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$relations,
 			$deep,
@@ -438,6 +445,15 @@ class SqlRestResolver extends AbstractRestResolver
 		);
 
 		return $loader->load();
+	}
+
+	protected function normalizeFieldTree(array $fields): array
+	{
+		$fields['fields'] = $fields['fields'] ?? $fields['columns'] ?? [];
+		$fields['requestedFields'] = $fields['requestedFields'] ?? $fields['fields'];
+		$fields['relations'] = $fields['relations'] ?? [];
+
+		return $fields;
 	}
 
 	protected function getConnection(): PDO
@@ -463,7 +479,12 @@ class SqlRestResolver extends AbstractRestResolver
 	{
 		$mapped = [];
 		foreach ($input as $fieldName => $value) {
-			$mapped[$this->fieldOrColumnToColumn($collection, (string) $fieldName)] = $value;
+			$fieldName = (string) $fieldName;
+			if (!$collection->fields->has($fieldName)) {
+				throw RestApiError::invalidField($fieldName);
+			}
+
+			$mapped[$collection->fields->get($fieldName)->getColumn()] = $value;
 		}
 
 		return $mapped;
@@ -473,7 +494,12 @@ class SqlRestResolver extends AbstractRestResolver
 	{
 		$columnNames = [];
 		foreach ($fieldNames as $fieldName) {
-			$columnNames[] = $this->fieldOrColumnToColumn($collection, (string) $fieldName);
+			$fieldName = (string) $fieldName;
+			if (!$collection->fields->has($fieldName)) {
+				throw RestApiError::invalidField($fieldName);
+			}
+
+			$columnNames[] = $collection->fields->get($fieldName)->getColumn();
 		}
 
 		return array_values(array_unique($columnNames));
@@ -504,23 +530,17 @@ class SqlRestResolver extends AbstractRestResolver
 		return array_values(array_unique($columnNames));
 	}
 
-	protected function fieldOrColumnToColumn(CollectionInterface $collection, string $fieldOrColumn): string
-	{
-		return $collection->fields->has($fieldOrColumn)
-			? $collection->fields->get($fieldOrColumn)->getColumn()
-			: $fieldOrColumn;
-	}
-
 	protected function convertDatabaseError(\Throwable $e, CollectionInterface $collection): RestApiError
 	{
 		$message = $e->getMessage();
 
 		if (str_contains($message, 'UNIQUE constraint') || str_contains($message, 'Duplicate entry')) {
 			if (preg_match('/column[s]?\s+[`\']?(\w+)/i', $message, $matches)) {
+				$field = $this->columnToFieldName($collection, $matches[1]);
 				return new RestApiError(
-					"A record with this {$matches[1]} already exists.",
+					"A record with this {$field} already exists.",
 					'DUPLICATE',
-					$matches[1],
+					$field,
 					409,
 					$e
 				);
@@ -531,10 +551,11 @@ class SqlRestResolver extends AbstractRestResolver
 
 		if (str_contains($message, 'NOT NULL constraint') || str_contains($message, 'cannot be null')) {
 			if (preg_match('/[`\']?(\w+)[`\']?\s+(?:cannot be null|NOT NULL)/i', $message, $matches)) {
+				$field = $this->columnToFieldName($collection, $matches[1]);
 				return new RestApiError(
-					"The field {$matches[1]} is required.",
+					"The field {$field} is required.",
 					'REQUIRED_FIELD',
-					$matches[1],
+					$field,
 					400,
 					$e
 				);
@@ -548,5 +569,12 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 
 		return new RestApiError('Database operation failed.', 'DATABASE_ERROR', null, 500, $e);
+	}
+
+	protected function columnToFieldName(CollectionInterface $collection, string $column): string
+	{
+		return $collection->fields->hasColumn($column)
+			? $collection->fields->getKeyByColumnName($column)
+			: $column;
 	}
 }

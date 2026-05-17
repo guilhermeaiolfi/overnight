@@ -16,41 +16,43 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;
 
-	public function configureNode(AbstractNode $parent, string $name): AbstractNode
+	public function configureNode(AbstractNode $parent): AbstractNode
 	{
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
-			[$this->getPrimaryKeyColumn($this->load->targetCollection)],
+			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
 			[$this->parentKeyAlias()],
-			[(string) $this->load->relation->getInnerKey()]
+			[(string) $this->relation->getInnerKey()]
 		);
-		$parent->linkNode($name, $node);
+		$parent->linkNode($this->responseName, $node);
+		$this->setNode($node);
 
 		return $node;
 	}
 
-	public function load(AbstractNode $node): void
+	public function load(): void
 	{
-		if (!$this->load->relation instanceof M2MRelation) {
+		if (!$this->relation instanceof M2MRelation) {
 			return;
 		}
 
+		$node = $this->getNode();
 		$parentIds = $this->flattenedReferenceValues($node);
 		if ($parentIds === []) {
 			return;
 		}
 
-		$through = $this->load->relation->through;
+		$through = $this->relation->through;
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
 		$throughInnerKey = (string) $through->getInnerKey();
 		$throughOuterKey = (string) $through->getOuterKey();
-		$targetPkColumn = $this->getPrimaryKeyColumn($this->load->targetCollection);
+		$targetPkColumn = $this->getPrimaryKeyColumn($this->getTargetCollection());
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias, $throughInnerKey);
-		$query = $this->load->context->database->select($selectColumns)
+		$query = $this->context->database->select($selectColumns)
 			->from($through->getCollection() . ' AS ' . $junctionAlias)
-			->innerJoin($this->load->targetCollection->getTable(), $targetAlias)
+			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias)
 			->on(
 				$junctionAlias . '.' . $throughOuterKey,
 				'=',
@@ -58,11 +60,11 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			)
 			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
 
-		if ($this->load->filters() !== []) {
-			$this->load->context->filterApplier->apply($query, $this->load->targetCollection, $this->load->filters(), $targetAlias);
+		if ($this->filters() !== []) {
+			$this->context->filterApplier->apply($query, $this->getTargetCollection(), $this->filters(), $targetAlias);
 		}
 
-		foreach ($this->load->orderBy() as $order) {
+		foreach ($this->orderBy() as $order) {
 			if (!is_array($order) || !isset($order['expression'])) {
 				continue;
 			}
@@ -70,7 +72,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
 		}
 
-		if ($this->load->limit() !== null || $this->load->offset() !== null) {
+		if ($this->limit() !== null || $this->offset() !== null) {
 			$query = $this->limitedSubqueryWithColumns(
 				$query,
 				$selectColumns,
@@ -84,7 +86,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 	private function resultNodeColumns(): array
 	{
-		$columns = $this->load->getSelectColumns();
+		$columns = $this->getSelectColumns();
 		$alias = $this->parentKeyAlias();
 		if (!in_array($alias, $columns, true)) {
 			$columns[] = $alias;
@@ -96,7 +98,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	private function selectColumns(string $targetAlias, string $junctionAlias, string $throughInnerKey): array
 	{
 		$columns = [];
-		foreach ($this->load->getSelectColumns() as $column) {
+		foreach ($this->getSelectColumns() as $column) {
 			$columns[] = new Expression($targetAlias . '.' . $column);
 		}
 		$columns[] = new Fragment(
@@ -110,16 +112,16 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 	private function parentKeyAlias(): string
 	{
-		return $this->parentKeyAlias ??= $this->load->context->aliases->alias('__on_' . $this->load->responseName . '_parent_key');
+		return $this->parentKeyAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_parent_key');
 	}
 
 	private function junctionAlias(): string
 	{
-		return $this->junctionAlias ??= $this->load->context->aliases->alias('__on_' . $this->load->responseName . '_junction');
+		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_junction');
 	}
 
 	private function targetAlias(): string
 	{
-		return $this->targetAlias ??= $this->load->context->aliases->alias('__on_' . $this->load->responseName . '_target');
+		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->responseName . '_target');
 	}
 }

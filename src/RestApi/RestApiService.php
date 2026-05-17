@@ -64,11 +64,11 @@ class RestApiService
 		$pk = $collection->getPrimaryKey();
 
 		if ($pk instanceof FieldInterface) {
-			return $pk->getColumn();
+			return $pk->getName();
 		}
 
 		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getColumn();
+			return $pk[0]->getName();
 		}
 
 		return 'id';
@@ -293,11 +293,10 @@ class RestApiService
 		[$scalarInput, $relations] = $this->splitNodeInput($collection, $input);
 		$beforeParent = [];
 		$afterParent = [];
-		$primaryKey = $this->getPrimaryKeyName($collection);
 
 		foreach ($relations as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
-			if ($this->relationBelongsOnParent($relation, $primaryKey)) {
+			if ($this->relationBelongsOnParent($collection, $relation)) {
 				$beforeParent[$relationName] = $relationInput;
 				continue;
 			}
@@ -309,6 +308,7 @@ class RestApiService
 			$relation = $collection->relations->get($relationName);
 			$targetCollection = $this->getCollection($relation->getCollection());
 			$innerKey = (string) $relation->getInnerKey();
+			$innerField = $this->columnToFieldName($collection, $innerKey);
 
 			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
 				$targetId = $this->inputPrimaryKeyValue($targetCollection, $relationInput);
@@ -324,10 +324,10 @@ class RestApiService
 				);
 
 				if ($target !== null) {
-					$scalarInput[$innerKey] = $this->targetKeyValue($targetCollection, $target, (string) $relation->getOuterKey());
+					$scalarInput[$innerField] = $this->targetKeyValue($targetCollection, $target, (string) $relation->getOuterKey());
 				}
 			} elseif (!is_array($relationInput)) {
-				$scalarInput[$innerKey] = $relationInput;
+				$scalarInput[$innerField] = $relationInput;
 			}
 		}
 
@@ -397,7 +397,7 @@ class RestApiService
 					continue;
 				}
 
-				$item[(string) $relation->getOuterKey()] = $this->targetKeyValue($collection, $parent, (string) $relation->getInnerKey());
+				$item[$this->columnToFieldName($targetCollection, (string) $relation->getOuterKey())] = $this->targetKeyValue($collection, $parent, (string) $relation->getInnerKey());
 				$itemPath = $relation->getCardinality() === 'many'
 					? [...$path, $relationName, $index]
 					: [...$path, $relationName];
@@ -495,9 +495,9 @@ class RestApiService
 		return [$scalar, $relations];
 	}
 
-	protected function relationBelongsOnParent(RelationInterface $relation, string $primaryKey): bool
+	protected function relationBelongsOnParent(CollectionInterface $collection, RelationInterface $relation): bool
 	{
-		return !$relation->isJunction() && (string) $relation->getInnerKey() !== $primaryKey;
+		return !$relation->isJunction() && (string) $relation->getInnerKey() !== $this->getPrimaryKeyColumn($collection);
 	}
 
 	protected function normalizeRelationItems(mixed $input): array
@@ -514,11 +514,6 @@ class RestApiService
 		$primaryKey = $this->getPrimaryKeyName($collection);
 		if (array_key_exists($primaryKey, $input)) {
 			return $input[$primaryKey];
-		}
-
-		if ($collection->fields->hasColumn($primaryKey)) {
-			$fieldName = $collection->fields->getKeyByColumnName($primaryKey);
-			return $input[$fieldName] ?? null;
 		}
 
 		return null;
@@ -541,6 +536,30 @@ class RestApiService
 		}
 
 		return null;
+	}
+
+	protected function columnToFieldName(CollectionInterface $collection, string $column): string
+	{
+		if ($collection->fields->hasColumn($column)) {
+			return $collection->fields->getKeyByColumnName($column);
+		}
+
+		throw RestApiError::invalidField($column);
+	}
+
+	protected function getPrimaryKeyColumn(CollectionInterface $collection): string
+	{
+		$pk = $collection->getPrimaryKey();
+
+		if ($pk instanceof FieldInterface) {
+			return $pk->getColumn();
+		}
+
+		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
+			return $pk[0]->getColumn();
+		}
+
+		return 'id';
 	}
 
 	protected function isAssociativeArray(array $value): bool

@@ -61,6 +61,10 @@ interface FieldInterface
 
 	public function isSearchable(): ?bool;
 
+	public function sensible(bool $sensible): self;
+
+	public function getSensible(): bool;
+
 	public function required(bool $required): self;
 
 	public function isRequired(): bool;
