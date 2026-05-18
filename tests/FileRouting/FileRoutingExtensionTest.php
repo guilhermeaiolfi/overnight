@@ -79,7 +79,8 @@ final class FileRoutingExtensionTest extends TestCase
 			new ViewManager($viewConfig, $container, new RequestStack()),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
-			$config
+			$config,
+			$container
 		);
 
 		$result = $page->index($request);
@@ -131,7 +132,8 @@ final class FileRoutingExtensionTest extends TestCase
 			new ViewManager($viewConfig, $container, new RequestStack()),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
-			$config
+			$config,
+			$container
 		);
 
 		$result = $page->index($request);
@@ -280,7 +282,8 @@ PHP
 			new ViewManager($viewConfig, $container, new RequestStack()),
 			$this->createMock(RouterInterface::class),
 			$viewConfig,
-			$config
+			$config,
+			$container
 		);
 
 		$viewResult = $page->index($request);
