@@ -156,7 +156,7 @@ class CycleRegistryGenerator implements GeneratorInterface
 	{
 		$cycle_relation = new CycleRelation();
 		$cycle_relation
-			->setTarget($on_relation->getCollection())
+			->setTarget($on_relation->getCollectionName())
 			->setType($this->resolveRelationType($on_relation));
 
 		// TODO: convert options map
@@ -172,14 +172,14 @@ class CycleRegistryGenerator implements GeneratorInterface
 			->set("load", $on_relation->getLoadStrategy())
 			->set("cascade", $on_relation->isCascade())
 			->set("nullable", $on_relation->isNullable())
-			->set("innerKey", $on_relation->getInnerKey())
-			->set("outerKey", $on_relation->getOuterKey());
+			->set("innerKey", $on_relation->getInnerField()->getColumn())
+			->set("outerKey", $on_relation->getOuterField()->getColumn());
 
 		if ($on_relation instanceof M2MRelation) {
 			$options
-				->set('through', $on_relation->through->getCollection())
-				->set('throughInnerKey', $on_relation->through->getInnerKey())
-				->set('throughOuterKey', $on_relation->through->getOuterKey());
+				->set('through', $on_relation->through->getCollection()->getTable())
+				->set('throughInnerKey', $on_relation->through->getInnerField()->getColumn())
+				->set('throughOuterKey', $on_relation->through->getOuterField()->getColumn());
 		}
 	}
 

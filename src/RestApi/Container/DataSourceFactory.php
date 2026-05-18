@@ -8,14 +8,14 @@ use ON\DB\DatabaseManager;
 use ON\DB\Cycle\CycleDatabase;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Resolver\RestResolverInterface;
-use ON\RestApi\Resolver\Sql\SqlRestResolver;
+use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
 
-class RestResolverFactory
+class DataSourceFactory
 {
-	public function __invoke(ContainerInterface $container): RestResolverInterface
+	public function __invoke(ContainerInterface $container): DataSourceInterface
 	{
 		$config = $container->get(RestApiConfig::class);
 		$registry = $container->get(Registry::class);
@@ -34,7 +34,7 @@ class RestResolverFactory
 		$defaultLimit = $config->get('defaultLimit', 100);
 		$maxLimit = $config->get('maxLimit', 1000);
 
-		return new SqlRestResolver(
+		return new SqlDataSource(
 			$registry,
 			$database,
 			$defaultLimit,

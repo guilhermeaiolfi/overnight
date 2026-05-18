@@ -171,10 +171,7 @@ class SqlFilterApplier
 		}
 
 		$relation = $collection->relations->get($relationName);
-		$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
-		if ($targetCollection === null) {
-			return;
-		}
+		$targetCollection = $relation->getCollection();
 
 		$targetAlias = $aliases->alias($tableAlias . '__' . $filter->responseName);
 		$subQuery = $this->database->select(new Fragment('1'));
@@ -183,25 +180,25 @@ class SqlFilterApplier
 			$through = $relation->through;
 			$junctionAlias = $aliases->alias($targetAlias . '__junction');
 			$subQuery
-				->from($through->getCollection() . ' AS ' . $junctionAlias)
+				->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 				->innerJoin($targetCollection->getTable(), $targetAlias)
 				->on(
-					$junctionAlias . '.' . $through->getOuterKey(),
+					$junctionAlias . '.' . $through->getOuterField()->getColumn(),
 					'=',
 					$targetAlias . '.' . $this->getPrimaryKeyColumn($targetCollection)
 				)
 				->where(
-					new Expression($junctionAlias . '.' . $through->getInnerKey()),
+					new Expression($junctionAlias . '.' . $through->getInnerField()->getColumn()),
 					'=',
-					new Expression($tableAlias . '.' . $relation->getInnerKey())
+					new Expression($tableAlias . '.' . $relation->getInnerField()->getColumn())
 				);
 		} else {
 			$subQuery
 				->from($targetCollection->getTable() . ' AS ' . $targetAlias)
 				->where(
-					new Expression($targetAlias . '.' . $relation->getOuterKey()),
+					new Expression($targetAlias . '.' . $relation->getOuterField()->getColumn()),
 					'=',
-					new Expression($tableAlias . '.' . $relation->getInnerKey())
+					new Expression($tableAlias . '.' . $relation->getInnerField()->getColumn())
 				);
 		}
 

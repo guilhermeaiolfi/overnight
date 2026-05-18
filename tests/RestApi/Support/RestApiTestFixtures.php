@@ -6,8 +6,7 @@ namespace Tests\ON\RestApi\Support;
 
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Resolver\Sql\SqlRestResolver;
-use Tests\ON\GraphQL\Support\SqliteTestDatabase;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 trait RestApiTestFixtures
 {
@@ -117,9 +116,9 @@ trait RestApiTestFixtures
 			->end();
 	}
 
-	protected function createTestDatabase(): SqliteTestDatabase
+	protected function createTestDatabase(): CycleSqliteTestDatabase
 	{
-		return new SqliteTestDatabase([
+		return new CycleSqliteTestDatabase([
 			'user' => [
 				'columns' => [
 					'id' => 'INTEGER PRIMARY KEY',
@@ -150,9 +149,9 @@ trait RestApiTestFixtures
 		]);
 	}
 
-	protected function createFullDatabase(): SqliteTestDatabase
+	protected function createFullDatabase(): CycleSqliteTestDatabase
 	{
-		return new SqliteTestDatabase([
+		return new CycleSqliteTestDatabase([
 			'user' => [
 				'columns' => [
 					'id' => 'INTEGER PRIMARY KEY',
@@ -220,9 +219,9 @@ trait RestApiTestFixtures
 		]);
 	}
 
-	protected function createProfileDatabase(): SqliteTestDatabase
+	protected function createProfileDatabase(): CycleSqliteTestDatabase
 	{
-		return new SqliteTestDatabase([
+		return new CycleSqliteTestDatabase([
 			'profile' => [
 				'columns' => [
 					'id' => 'INTEGER PRIMARY KEY',
@@ -236,11 +235,11 @@ trait RestApiTestFixtures
 		]);
 	}
 
-	protected function createResolver(Registry $registry, SqliteTestDatabase $db): SqlRestResolver
+	protected function createResolver(Registry $registry, CycleSqliteTestDatabase $db): SqlDataSource
 	{
-		return new SqlRestResolver(
+		return new SqlDataSource(
 			$registry,
-			$db,
+			$db->database(),
 		);
 	}
 }

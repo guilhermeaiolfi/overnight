@@ -39,12 +39,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		protected RelationSelection $selection,
 		protected QueryContext $context
 	) {
-		$targetCollection = $this->context->registry->getCollection($this->relation->getCollection());
-		if ($targetCollection === null) {
-			throw new \LogicException("Target collection {$this->relation->getCollection()} is not registered.");
-		}
-
-		$this->targetCollection = $targetCollection;
+		$this->targetCollection = $this->relation->getCollection();
 		$this->columns = $this->buildColumns();
 	}
 
@@ -333,7 +328,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 	{
 		$fieldNames = $this->selectedFieldNames();
 		$requestedFieldNames = $this->requestedFieldNames();
-		$requiredKey = (string) $this->relation->getOuterKey();
+		$requiredKey = $this->relation->getOuterField()->getColumn();
 
 		if ($fieldNames !== []) {
 			$selected = [];
@@ -396,7 +391,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		$columns = [];
 		foreach ($relations as $relation) {
 			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				$columns[] = (string) $collection->relations->get($relation->relationName)->getInnerKey();
+				$columns[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
 			}
 		}
 

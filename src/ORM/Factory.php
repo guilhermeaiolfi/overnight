@@ -129,7 +129,7 @@ final class Factory implements FactoryInterface
 		]*/
 		$loader = $relation->getLoader();
 
-		return new $loader($registry, $this, $registry->getCollection($relation->getCollection()), $relation, $options);
+		return new $loader($registry, $this, $relation->getCollection(), $relation, $options);
 	}
 
 	public function database(?string $database = null): DatabaseInterface

@@ -140,7 +140,7 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 		foreach ($collection->relations as $name => $relation) {
 			$relations[] = [
 				'name' => $name,
-				'collection' => $relation->getCollection(),
+				'collection' => $relation->getCollectionName(),
 				'cardinality' => $relation->getCardinality(),
 				'junction' => $relation->isJunction(),
 				'innerKey' => $relation->getInnerKey(),

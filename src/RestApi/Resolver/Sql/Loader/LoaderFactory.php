@@ -36,10 +36,6 @@ final class LoaderFactory
 		}
 
 		$relation = $source->relations->get($targetRelationName);
-		if ($context->registry->getCollection($relation->getCollection()) === null) {
-			return null;
-		}
-
 		$class = $this->registry->resolve($source, $selection->responseName, $relation);
 
 		return new $class($relation, $selection, $context);

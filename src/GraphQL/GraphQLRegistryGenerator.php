@@ -132,11 +132,11 @@ class GraphQLRegistryGenerator
 
 	protected function convertRelation(RelationInterface $relation): array
 	{
-		$targetType = $this->getTypeName($relation->getCollection());
+		$targetType = $this->getTypeName($relation->getCollectionName());
 		$targetTypeObj = $this->types[$targetType] ?? null;
 
 		if ($targetTypeObj === null) {
-			$targetTypeObj = $this->buildFallbackType($relation->getCollection());
+			$targetTypeObj = $this->buildFallbackType($relation->getCollectionName());
 			$this->types[$targetType] = $targetTypeObj;
 		}
 
@@ -354,8 +354,8 @@ class GraphQLRegistryGenerator
 		// Add nested relation fields for create input types (not update)
 		if (!$forUpdate) {
 			foreach ($collection->relations as $relationName => $relation) {
-				$targetCollectionName = $relation->getCollection();
-				$targetCollection = $this->ormRegistry->getCollection($targetCollectionName);
+				$targetCollectionName = $relation->getCollectionName();
+				$targetCollection = $relation->getCollection();
 
 				if ($targetCollection === null) {
 					continue;

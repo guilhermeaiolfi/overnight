@@ -14,7 +14,7 @@ use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdate;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Resolver\RestResolverInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\TestCase;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -357,7 +357,7 @@ final class RestApiServiceTest extends TestCase
 		return $registry;
 	}
 
-	private function createService(Registry $registry, RestResolverInterface $resolver, callable $listener): RestApiService
+	private function createService(Registry $registry, DataSourceInterface $resolver, callable $listener): RestApiService
 	{
 		$dispatcher = new class($listener) implements EventDispatcherInterface {
 			public function __construct(private $listener)
@@ -379,7 +379,7 @@ final class RestApiServiceTest extends TestCase
 	}
 }
 
-final class ResolverSpy implements RestResolverInterface
+final class ResolverSpy implements DataSourceInterface
 {
 	public int $listCalls = 0;
 	public int $aggregateCalls = 0;

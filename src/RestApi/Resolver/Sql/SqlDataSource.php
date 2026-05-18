@@ -22,13 +22,13 @@ use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
-use ON\RestApi\Resolver\AbstractRestResolver;
+use ON\RestApi\Resolver\AbstractDataSource;
 use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
 use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
 use ON\RestApi\Resolver\Sql\Loader\QueryContext;
 use ON\RestApi\Resolver\Sql\Loader\RootLoader;
 
-class SqlRestResolver extends AbstractRestResolver
+class SqlDataSource extends AbstractDataSource
 {
 	protected SqlFilterApplier $filterApplier;
 	protected LoaderFactory $loaderFactory;
@@ -199,9 +199,9 @@ class SqlRestResolver extends AbstractRestResolver
 
 		$through = $relation->through;
 		$this->insertJunctionRow(
-			$through->getCollection(),
-			(string) $through->getInnerKey(),
-			(string) $through->getOuterKey(),
+			$through->getCollection()->getTable(),
+			$through->getInnerField()->getColumn(),
+			$through->getOuterField()->getColumn(),
 			$parentId,
 			$targetId
 		);
@@ -219,9 +219,9 @@ class SqlRestResolver extends AbstractRestResolver
 		}
 
 		$through = $relation->through;
-		$this->getDatabase()->delete($through->getCollection())
-			->where($through->getInnerKey(), $parentId)
-			->where($through->getOuterKey(), $targetId)
+		$this->getDatabase()->delete($through->getCollection()->getTable())
+			->where($through->getInnerField()->getColumn(), $parentId)
+			->where($through->getOuterField()->getColumn(), $targetId)
 			->run();
 	}
 
@@ -588,7 +588,7 @@ class SqlRestResolver extends AbstractRestResolver
 		$columnNames = [];
 		foreach ($relations as $relation) {
 			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				$columnNames[] = (string) $collection->relations->get($relation->relationName)->getInnerKey();
+				$columnNames[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
 			}
 		}
 

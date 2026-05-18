@@ -7,7 +7,7 @@ namespace ON\RestApi\Resolver;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\FieldInterface;
 
-abstract class AbstractRestResolver implements RestResolverInterface
+abstract class AbstractDataSource implements DataSourceInterface
 {
 	public function __construct(
 		protected int $defaultLimit = 100,

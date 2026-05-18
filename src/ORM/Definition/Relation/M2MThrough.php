@@ -4,12 +4,15 @@ declare(strict_types=1);
 
 namespace ON\ORM\Definition\Relation;
 
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Field\FieldInterface;
+
 class M2MThrough
 {
-	protected string $collection;
-	protected mixed $inner_key;
-	protected mixed $outer_key;
-	protected array $where;
+	protected string $collectionName;
+	protected ?string $inner_key = null;
+	protected ?string $outer_key = null;
+	protected array $where = [];
 
 	public function __construct(
 		protected M2MRelation $m2m
@@ -17,40 +20,68 @@ class M2MThrough
 
 	}
 
-	public function collection(string $collection): self
+	public function collection(string $collectionName): self
 	{
-		$this->collection = $collection;
+		$this->collectionName = $collectionName;
 
 		return $this;
 	}
 
-	public function getCollection(): string
+	public function getCollectionName(): string
 	{
-		return $this->collection;
+		return $this->collectionName;
 	}
 
-	public function innerKey(mixed $key): self
+	public function getCollection(): CollectionInterface
 	{
-		$this->inner_key = $key;
+		$collection = $this->m2m->getParent()->getRegistry()->getCollection($this->collectionName);
+		if ($collection === null) {
+			throw new \LogicException("Target collection {$this->collectionName} is not registered.");
+		}
+
+		return $collection;
+	}
+
+	public function innerKey(string $fieldName): self
+	{
+		$this->inner_key = $fieldName;
 
 		return $this;
 	}
 
-	public function getInnerKey(): mixed
+	public function getInnerKey(): string
 	{
+		if ($this->inner_key === null) {
+			throw new \LogicException('Inner key is not defined for many-to-many through relation.');
+		}
+
 		return $this->inner_key;
 	}
 
-	public function outerKey(mixed $key): self
+	public function getInnerField(): FieldInterface
 	{
-		$this->outer_key = $key;
+		return $this->getCollection()->fields->get($this->getInnerKey());
+	}
+
+	public function outerKey(string $fieldName): self
+	{
+		$this->outer_key = $fieldName;
 
 		return $this;
 	}
 
-	public function getOuterKey(): mixed
+	public function getOuterKey(): string
 	{
+		if ($this->outer_key === null) {
+			throw new \LogicException('Outer key is not defined for many-to-many through relation.');
+		}
+
 		return $this->outer_key;
+	}
+
+	public function getOuterField(): FieldInterface
+	{
+		return $this->getCollection()->fields->get($this->getOuterKey());
 	}
 
 	public function where(array $where): self

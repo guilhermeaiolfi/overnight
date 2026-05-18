@@ -39,26 +39,13 @@ class HasOneRelation extends AbstractRelation
 
 		$parentCollection = $this->parent;
 
-		$inner_key = $this->getInnerKey();
-		$outer_key = $this->getOuterKey();
-	
+		$innerField = $this->getInnerField();
+		$outerField = $this->getOuterField();
 
-		if (! isset($inner_key) || ! isset($outer_key)) {
-			return null;
-		}
-
-		$registry = $parentCollection->getRegistry();
-
-		$targetCollection = $registry->getCollection($this->getCollection());
-
-		if ($targetCollection === null) {
-			return null;
-		}
-
-		$type = $targetCollection->fields->get($outer_key)->getType();
+		$type = $outerField->getType();
 
 		// not necessarly we are creating this field, it could exist already
-		$field = $parentCollection->field($inner_key);
+		$field = $parentCollection->field($innerField->getName());
 		$field
 			->setGeneratedFromRelation($parentCollection->getName())
 			->type($type);

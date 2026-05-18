@@ -132,14 +132,10 @@ class CycleResolver implements GraphQLResolverInterface
 				}
 
 				$relation = $collection->relations->get($relationName);
-				$targetCollection = $this->registry->getCollection($relation->getCollection());
+				$targetCollection = $relation->getCollection();
 
-				if ($targetCollection === null) {
-					continue;
-				}
-
-				$innerKey = $relation->getInnerKey();
-				$outerKey = $relation->getOuterKey();
+				$innerKey = $relation->getInnerField()->getName();
+				$outerKey = $relation->getOuterField()->getName();
 				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
 				$parentKeyValue = $entity->{$innerKey} ?? null;
 				$targetEntityClass = $targetCollection->getEntity();
@@ -198,14 +194,10 @@ class CycleResolver implements GraphQLResolverInterface
 		}
 
 		// Fallback: query the relation via repository
-		$targetCollection = $this->registry->getCollection($relation->getCollection());
+		$targetCollection = $relation->getCollection();
 
-		if ($targetCollection === null) {
-			return $relation->getCardinality() === 'single' ? null : [];
-		}
-
-		$outerKey = $relation->getOuterKey();
-		$innerKey = $relation->getInnerKey();
+		$outerKey = $relation->getOuterField()->getName();
+		$innerKey = $relation->getInnerField()->getName();
 		$role = $targetCollection->getName();
 
 		// Cycle convention: innerKey is on source entity, outerKey is on target entity

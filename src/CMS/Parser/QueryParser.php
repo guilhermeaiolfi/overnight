@@ -56,7 +56,7 @@ class QueryParser
 		if ($collection->relations->has($token)) {
 			$relation = $collection->relations->get($token);
 			$collection = $this->registry->getCollection($currentNode->collection);
-			$relationCollection = $this->registry->getCollection($relation->getCollection());
+			$relationCollection = $relation->getCollection();
 
 			$node = null;
 

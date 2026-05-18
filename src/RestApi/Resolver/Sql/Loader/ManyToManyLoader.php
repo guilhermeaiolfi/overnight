@@ -22,7 +22,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			$this->resultNodeColumns(),
 			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
 			[$this->parentKeyAlias()],
-			[(string) $this->relation->getInnerKey()]
+			[$this->relation->getInnerField()->getColumn()]
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -45,13 +45,13 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		$through = $this->relation->through;
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
-		$throughInnerKey = (string) $through->getInnerKey();
-		$throughOuterKey = (string) $through->getOuterKey();
+		$throughInnerKey = $through->getInnerField()->getColumn();
+		$throughOuterKey = $through->getOuterField()->getColumn();
 		$targetPkColumn = $this->getPrimaryKeyColumn($this->getTargetCollection());
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias, $throughInnerKey);
 		$query = $this->context->database->select($selectColumns)
-			->from($through->getCollection() . ' AS ' . $junctionAlias)
+			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias)
 			->on(
 				$junctionAlias . '.' . $throughOuterKey,

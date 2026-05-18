@@ -55,7 +55,7 @@ class VerifyNamesNormalizer
 		if ($isRelation) {
 			foreach ($node->children as $child) {
 				$relation = $collection->relations->get($node->name);
-				$collection = $this->registry->getCollection($relation->getCollection());
+				$collection = $relation->getCollection();
 				$this->executeNode($root, $child, $collection);
 			}
 		}

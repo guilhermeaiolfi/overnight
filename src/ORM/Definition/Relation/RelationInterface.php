@@ -6,6 +6,7 @@ namespace ON\ORM\Definition\Relation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Display\DisplayInterface;
+use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Display\RawDisplay;
 use ON\ORM\Definition\Interface\InterfaceInterface;
 
@@ -23,9 +24,11 @@ interface RelationInterface
 
 	public function getName(): string;
 
-	public function collection(string $collection): self;
+	public function collection(string $collectionName): self;
 
-	public function getCollection(): string;
+	public function getCollectionName(): string;
+
+	public function getCollection(): CollectionInterface;
 
 	public function nullable(bool $nullable): self;
 
@@ -39,13 +42,17 @@ interface RelationInterface
 
 	public function getLoadStrategy(): string;
 
-	public function innerKey(mixed $key): self;
+	public function innerKey(string $fieldName): self;
 
-	public function getInnerKey(): mixed;
+	public function getInnerKey(): string;
 
-	public function outerKey(mixed $key): self;
+	public function getInnerField(): FieldInterface;
 
-	public function getOuterKey(): mixed;
+	public function outerKey(string $fieldName): self;
+
+	public function getOuterKey(): string;
+
+	public function getOuterField(): FieldInterface;
 
 	public function loader(string $loader): self;
 

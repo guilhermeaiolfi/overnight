@@ -14,8 +14,8 @@ class HasOneLoader extends AbstractRelationLoader
 		$node = new SingularNode(
 			$this->getSelectColumns(),
 			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
-			[(string) $this->relation->getOuterKey()],
-			[(string) $this->relation->getInnerKey()]
+			[$this->relation->getOuterField()->getColumn()],
+			[$this->relation->getInnerField()->getColumn()]
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -33,14 +33,14 @@ class HasOneLoader extends AbstractRelationLoader
 
 		$columns = $this->getSelectColumns();
 		$query = $this->baseQuery($columns)
-			->where((string) $this->relation->getOuterKey(), 'IN', $parentIds);
+			->where($this->relation->getOuterField()->getColumn(), 'IN', $parentIds);
 		$this->applyRelationQueryOptions($query);
 
 		if ($this->limit() !== null || $this->offset() !== null) {
 			$query = $this->limitedSubquery(
 				$query,
 				$columns,
-				$this->getTargetCollection()->getTable() . '.' . (string) $this->relation->getOuterKey()
+				$this->getTargetCollection()->getTable() . '.' . $this->relation->getOuterField()->getColumn()
 			);
 		}
 

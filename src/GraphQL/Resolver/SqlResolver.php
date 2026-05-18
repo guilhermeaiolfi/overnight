@@ -180,25 +180,20 @@ class SqlResolver implements GraphQLResolverInterface
 				}
 
 				$relation = $collection->relations->get($relationName);
-				$targetCollectionName = $relation->getCollection();
-				$targetCollection = $this->ormRegistry->getCollection($targetCollectionName);
-
-				if ($targetCollection === null) {
-					continue;
-				}
+				$targetCollection = $relation->getCollection();
 
 				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
-				$innerKey = $relation->getInnerKey();
-				$outerKey = $relation->getOuterKey();
-				$parentKeyValue = $parent->{$innerKey} ?? $parentId;
+				$innerKeyColumn = $relation->getInnerField()->getColumn();
+				$outerKeyColumn = $relation->getOuterField()->getColumn();
+				$parentKeyValue = $parent->{$innerKeyColumn} ?? $parentId;
 
 				if ($relation->getCardinality() === 'many') {
 					foreach ($relationData as $childInput) {
-						$childInput[$outerKey] = $parentKeyValue;
+						$childInput[$outerKeyColumn] = $parentKeyValue;
 						$this->resolveCreate($targetCollection, $childInput);
 					}
 				} else {
-					$relationData[$outerKey] = $parentKeyValue;
+					$relationData[$outerKeyColumn] = $parentKeyValue;
 					$this->resolveCreate($targetCollection, $relationData);
 				}
 			}
@@ -217,9 +212,10 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
 	{
-		$collectionName = $relation->getCollection();
-		$innerKey = $relation->getInnerKey();
-		$outerKey = $relation->getOuterKey();
+		$collection = $relation->getCollection();
+		$collectionName = $collection->getName();
+		$innerKey = $relation->getInnerField()->getColumn();
+		$outerKey = $relation->getOuterField()->getColumn();
 
 		// innerKey is on the source entity, outerKey is on the target entity (Cycle convention)
 		$sourceId = is_array($source)
@@ -228,11 +224,6 @@ class SqlResolver implements GraphQLResolverInterface
 
 		if ($sourceId === null) {
 			return $relation->getCardinality() === 'single' ? null : [];
-		}
-
-		$collection = $this->ormRegistry->getCollection($collectionName);
-		if ($collection === null) {
-			throw new \RuntimeException("Collection not found: {$collectionName}");
 		}
 
 		$table = $collection->getTable();

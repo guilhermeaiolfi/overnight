@@ -57,7 +57,7 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 			}
 
 			foreach ($collection->relations as $name => $relation) {
-				$parts[] = 'rel:' . $name . ':' . $relation->getCollection();
+				$parts[] = 'rel:' . $name . ':' . $relation->getCollectionName();
 			}
 		}
 

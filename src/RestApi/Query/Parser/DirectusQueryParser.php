@@ -131,7 +131,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		$relation = $collection->relations->get($relationName);
-		$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
+		$targetCollection = $relation->getCollection();
 		if ($targetCollection === null) {
 			throw RestApiError::invalidField($responseName);
 		}
@@ -211,7 +211,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			$relationName = $this->relationName($collection, $key, $aliases, $scope);
 			if ($relationName !== null && !$this->isOperatorArray($value)) {
 				$relation = $collection->relations->get($relationName);
-				$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
+				$targetCollection = $relation->getCollection();
 				if ($targetCollection === null) {
 					continue;
 				}

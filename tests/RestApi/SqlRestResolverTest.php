@@ -9,11 +9,11 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
-use ON\RestApi\Resolver\Sql\SqlRestResolver;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
-use Tests\ON\GraphQL\Support\SqliteTestDatabase;
+use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 #[RequiresPhpExtension('pdo_sqlite')]
@@ -69,7 +69,7 @@ final class SqlRestResolverTest extends TestCase
 			->hasMany('child_node', 'node')->innerKey('id')->outerKey('parent_id')->end()
 			->end();
 
-		$db = new SqliteTestDatabase([
+		$db = new CycleSqliteTestDatabase([
 			'node' => [
 				'columns' => [
 					'id' => 'INTEGER PRIMARY KEY',
@@ -174,9 +174,9 @@ final class SqlRestResolverTest extends TestCase
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
 		// maxLimit = 1000 by default; set a custom one
-		$resolver = new SqlRestResolver(
+		$resolver = new SqlDataSource(
 			$registry,
-			$db,
+			$db->database(),
 			defaultLimit: 10,
 			maxLimit: 2
 		);
@@ -472,9 +472,9 @@ final class SqlRestResolverTest extends TestCase
 
 		$this->assertSame('Charles', $updated['displayName']);
 		$this->assertArrayNotHasKey('display_name', $updated);
-		$stmt = $db->getConnection()->prepare('SELECT display_name FROM profile WHERE id = ?');
-		$stmt->execute([$created['id']]);
+		$stmt = $db->database()->query('SELECT display_name FROM profile WHERE id = ?', [$created['id']]);
 		$this->assertSame('Charles', $stmt->fetchColumn());
+		$stmt->close();
 	}
 
 	public function testMappedFieldSelectionReturnsFieldNames(): void
@@ -846,12 +846,11 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame('Tagged Post', $created['title']);
 
 		// Verify junction rows exist
-		$pdo = $db->getConnection();
-		$stmt = $pdo->prepare('SELECT tag_id FROM post_tag WHERE post_id = ? ORDER BY tag_id');
-		$stmt->execute([$created['id']]);
-		$tagIds = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = ? ORDER BY tag_id', [$created['id']]);
+		$tagIds = $stmt->fetchAll();
+		$stmt->close();
 
-		$this->assertSame([1, 2], array_map('intval', $tagIds));
+		$this->assertSame([1, 2], array_map('intval', array_column($tagIds, 'tag_id')));
 	}
 
 	public function testNestedM2MDisconnect(): void
@@ -866,12 +865,11 @@ final class SqlRestResolverTest extends TestCase
 		$service->update('post', '1', ['tags' => ['disconnect' => [1]]], ['dispatchEvents' => false]);
 
 		// Verify only tag 2 remains
-		$pdo = $db->getConnection();
-		$stmt = $pdo->prepare('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
-		$stmt->execute();
-		$tagIds = $stmt->fetchAll(\PDO::FETCH_COLUMN);
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
+		$tagIds = $stmt->fetchAll();
+		$stmt->close();
 
-		$this->assertSame([2], array_map('intval', $tagIds));
+		$this->assertSame([2], array_map('intval', array_column($tagIds, 'tag_id')));
 	}
 
 	// -------------------------------------------------------------------------
@@ -913,10 +911,8 @@ final class SqlRestResolverTest extends TestCase
 		}
 
 		// For a reliable rollback test, manually trigger a transaction failure
-		$pdo = $db->getConnection();
-
 		// Add a UNIQUE constraint to test with
-		$pdo->exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON user(email)');
+		$db->database()->execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_user_email ON user(email)');
 
 		$userCountBefore = $this->countRows($db, 'user');
 		$postCountBefore = $this->countRows($db, 'post');
@@ -961,9 +957,11 @@ final class SqlRestResolverTest extends TestCase
 		return (new DirectusQueryParser())->parse($collection, $params);
 	}
 
-	private function countRows(SqliteTestDatabase $db, string $table): int
+	private function countRows(CycleSqliteTestDatabase $db, string $table): int
 	{
-		$stmt = $db->getConnection()->query("SELECT COUNT(*) FROM `{$table}`");
-		return (int) $stmt->fetchColumn();
+		$stmt = $db->database()->query("SELECT COUNT(*) FROM `{$table}`");
+		$count = (int) $stmt->fetchColumn();
+		$stmt->close();
+		return $count;
 	}
 }

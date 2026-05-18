@@ -14,9 +14,9 @@ use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
 use ON\RestApi\Container\RestApiServiceFactory;
-use ON\RestApi\Container\RestResolverFactory;
+use ON\RestApi\Container\DataSourceFactory;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Resolver\RestResolverInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 
@@ -41,7 +41,7 @@ class RestApiExtension extends AbstractExtension
 		$containerConfig = $event->config->get(ContainerConfig::class);
 		$containerConfig->addFactories([
 			RestApiService::class => RestApiServiceFactory::class,
-			RestResolverInterface::class => RestResolverFactory::class,
+			DataSourceInterface::class => DataSourceFactory::class,
 		]);
 	}
 

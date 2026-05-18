@@ -6,6 +6,7 @@ namespace ON\ORM\Definition\Relation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Display\DisplayTrait;
+use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Interface\InterfaceTrait;
 use ON\ORM\Definition\MetadataTrait;
 
@@ -23,11 +24,11 @@ abstract class AbstractRelation implements RelationInterface
 	// lazy || eager
 	protected string $load = "lazy";
 
-	protected mixed $inner_key = null;
+	protected ?string $inner_key = null;
 
-	protected mixed $outer_key = null;
+	protected ?string $outer_key = null;
 
-	protected string $collection;
+	protected string $collectionName;
 
 	protected string $name;
 
@@ -61,16 +62,26 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->name;
 	}
 
-	public function collection(string $collection): self
+	public function collection(string $collectionName): self
 	{
-		$this->collection = $collection;
+		$this->collectionName = $collectionName;
 
 		return $this;
 	}
 
-	public function getCollection(): string
+	public function getCollectionName(): string
 	{
-		return $this->collection;
+		return $this->collectionName;
+	}
+
+	public function getCollection(): CollectionInterface
+	{
+		$collection = $this->parent->getRegistry()->getCollection($this->collectionName);
+		if ($collection === null) {
+			throw new \LogicException("Target collection {$this->collectionName} is not registered.");
+		}
+
+		return $collection;
 	}
 
 	public function nullable(bool $nullable): self
@@ -133,28 +144,46 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->load;
 	}
 
-	public function innerKey(mixed $key): self
+	public function innerKey(string $fieldName): self
 	{
-		$this->inner_key = $key;
+		$this->inner_key = $fieldName;
 
 		return $this;
 	}
 
-	public function getInnerKey(): mixed
+	public function getInnerKey(): string
 	{
+		if ($this->inner_key === null) {
+			throw new \LogicException("Inner key is not defined for relation {$this->name}.");
+		}
+
 		return $this->inner_key;
 	}
 
-	public function outerKey(mixed $key): self
+	public function getInnerField(): FieldInterface
 	{
-		$this->outer_key = $key;
+		return $this->parent->fields->get($this->getInnerKey());
+	}
+
+	public function outerKey(string $fieldName): self
+	{
+		$this->outer_key = $fieldName;
 
 		return $this;
 	}
 
-	public function getOuterKey(): mixed
+	public function getOuterKey(): string
 	{
+		if ($this->outer_key === null) {
+			throw new \LogicException("Outer key is not defined for relation {$this->name}.");
+		}
+
 		return $this->outer_key;
+	}
+
+	public function getOuterField(): FieldInterface
+	{
+		return $this->getCollection()->fields->get($this->getOuterKey());
 	}
 
 	public function loader(string $loader): self

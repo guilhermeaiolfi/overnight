@@ -7,7 +7,7 @@ namespace ON\RestApi\Resolver;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\QuerySpec;
 
-interface RestResolverInterface
+interface DataSourceInterface
 {
 	/**
 	 * List items with filtering, sorting, pagination, field selection.

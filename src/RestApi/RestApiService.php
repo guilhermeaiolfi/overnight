@@ -18,19 +18,19 @@ use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdate;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Resolver\RestResolverInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class RestApiService
 {
 	public function __construct(
 		protected Registry $registry,
-		protected RestResolverInterface $resolver,
+		protected DataSourceInterface $resolver,
 		protected ?EventDispatcherInterface $eventDispatcher = null
 	) {
 	}
 
-	public function getResolver(): RestResolverInterface
+	public function getResolver(): DataSourceInterface
 	{
 		return $this->resolver;
 	}
@@ -300,9 +300,8 @@ class RestApiService
 
 		foreach ($beforeParent as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
-			$targetCollection = $this->getCollection($relation->getCollection());
-			$innerKey = (string) $relation->getInnerKey();
-			$innerField = $this->columnToFieldName($collection, $innerKey);
+			$targetCollection = $relation->getCollection();
+			$innerField = $relation->getInnerField()->getName();
 
 			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
 				$targetId = $this->inputPrimaryKeyValue($targetCollection, $relationInput);
@@ -318,7 +317,7 @@ class RestApiService
 				);
 
 				if ($target !== null) {
-					$scalarInput[$innerField] = $this->targetKeyValue($targetCollection, $target, (string) $relation->getOuterKey());
+					$scalarInput[$innerField] = $this->targetKeyValue($targetCollection, $target, $relation->getOuterField()->getName());
 				}
 			} elseif (!is_array($relationInput)) {
 				$scalarInput[$innerField] = $relationInput;
@@ -368,7 +367,7 @@ class RestApiService
 
 		foreach ($relations as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
-			$targetCollection = $this->getCollection($relation->getCollection());
+			$targetCollection = $relation->getCollection();
 
 			if ($relation->isJunction()) {
 				$this->persistManyToManyRelation(
@@ -391,7 +390,7 @@ class RestApiService
 					continue;
 				}
 
-				$item[$this->columnToFieldName($targetCollection, (string) $relation->getOuterKey())] = $this->targetKeyValue($collection, $parent, (string) $relation->getInnerKey());
+				$item[$relation->getOuterField()->getName()] = $this->targetKeyValue($collection, $parent, $relation->getInnerField()->getName());
 				$itemPath = $relation->getCardinality() === 'many'
 					? [...$path, $relationName, $index]
 					: [...$path, $relationName];
@@ -491,7 +490,7 @@ class RestApiService
 
 	protected function relationBelongsOnParent(CollectionInterface $collection, RelationInterface $relation): bool
 	{
-		return !$relation->isJunction() && (string) $relation->getInnerKey() !== $this->getPrimaryKeyColumn($collection);
+		return !$relation->isJunction() && $relation->getInnerField()->getColumn() !== $this->getPrimaryKeyColumn($collection);
 	}
 
 	protected function normalizeRelationItems(mixed $input): array

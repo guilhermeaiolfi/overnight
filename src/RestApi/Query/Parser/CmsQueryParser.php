@@ -67,10 +67,7 @@ final class CmsQueryParser
 
 		if ($node instanceof RelationNode || $collection->relations->has($node->name)) {
 			$relation = $collection->relations->get($node->name);
-			$targetCollection = $collection->getRegistry()->getCollection($relation->getCollection());
-			if ($targetCollection === null) {
-				throw new \InvalidArgumentException("Collection '{$relation->getCollection()}' is not registered.");
-			}
+			$targetCollection = $relation->getCollection();
 
 			return new RelationSelection(
 				$node->name,
