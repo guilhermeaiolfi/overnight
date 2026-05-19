@@ -103,7 +103,6 @@ class PipelineExtension extends AbstractExtension
 			EmitterInterface::class => EmitterFactory::class,
 			ErrorHandler::class => ErrorHandlerFactory::class,
 			MiddlewareContainer::class => MiddlewareContainerFactory::class,
-			RequestStack::class => fn () => new RequestStack(),
 			ErrorResponseGenerator::class => ErrorResponseGeneratorFactory::class,
 			'ON\Whoops' => WhoopsFactory::class,
 			'ON\WhoopsPageHandler' => WhoopsPageHandlerFactory::class,

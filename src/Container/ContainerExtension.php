@@ -116,55 +116,56 @@ class ContainerExtension extends AbstractExtension
 		$write_proxies_to_file = $config->get("write_proxies", true);
 		$builder->writeProxiesToFile($write_proxies_to_file, $this->cache_path);
 
-		if (! $this->hasCache()) {
-			// lets build the container
+		// Always register runtime definitions with the builder. Compiled containers
+		// optimize get(), but calls to make() still consult the live definition
+		// source, so skipping these definitions after the first compilation breaks
+		// factory-backed entries such as CycleDatabase.
+		$this->definitions = [];
 
-			// default dependencies
-			$this->definitions[ExecutorInterface::class] = factory(ExecutorFactory::class);
+		// default dependencies
+		$this->definitions[ExecutorInterface::class] = factory(ExecutorFactory::class);
 
-			foreach ($config->get('definitions.services', []) as $name => $service) {
-				$this->definitions[$name] = is_object($service) ? $service : create($service);
+		foreach ($config->get('definitions.services', []) as $name => $service) {
+			$this->definitions[$name] = is_object($service) ? $service : create($service);
+		}
+
+		foreach ($config->get('definitions.factories', []) as $name => $factory) {
+			$this->definitions[$name] = factory($factory);
+		}
+
+		foreach ($config->get('definitions.invokables', []) as $key => $object) {
+			$name = is_numeric($key) ? $object : $key;
+			$this->definitions[$name] = create($object);
+			if ($name !== $object) {
+				// create an alias to the service itself
+				$this->definitions[$object] = get($name);
 			}
+		}
 
-			foreach ($config->get('definitions.factories', []) as $name => $factory) {
-				$this->definitions[$name] = factory($factory);
+		foreach ($config->get('definitions.autowires', []) as $name) {
+			$this->definitions[$name] = autowire($name);
+		}
+
+		foreach ($config->get('definitions.aliases', []) as $alias => $target) {
+			$this->definitions[$alias] = get((string) $target);
+		}
+
+		foreach ($config->get('definitions.delegators', []) as $name => $delegators) {
+			foreach ($delegators as $delegator) {
+				$previous = $name . '-' . ++$this->delegatorCounter;
+				$this->definitions[$previous] = $this->definitions[$name];
+				$this->definitions[$name] = $this->createDelegatorFactory($delegator, $previous, $name);
 			}
+		}
 
+		$builder->addDefinitions($this->definitions);
 
-			foreach ($config->get('definitions.invokables', []) as $key => $object) {
-				$name = is_numeric($key) ? $object : $key;
-				$this->definitions[$name] = create($object);
-				if ($name !== $object) {
-					// create an alias to the service itself
-					$this->definitions[$object] = get($name);
-				}
-			}
-
-			foreach ($config->get('definitions.autowires', []) as $name) {
-				$this->definitions[$name] = autowire($name);
-			}
-
-			foreach ($config->get('definitions.aliases', []) as $alias => $target) {
-				$this->definitions[$alias] = get((string) $target);
-			}
-
-			foreach ($config->get('definitions.delegators', []) as $name => $delegators) {
-				foreach ($delegators as $delegator) {
-					$previous = $name . '-' . ++$this->delegatorCounter;
-					$this->definitions[$previous] = $this->definitions[$name];
-					$this->definitions[$name] = $this->createDelegatorFactory($delegator, $previous, $name);
-				}
-			}
-
-			$builder->addDefinitions($this->definitions);
-
-			if (! $config->get("enable_cache", false)) {
-				$builder->addDefinitions(
-					new ConfigDefinitionSource(
-						$config
-					)
-				);
-			}
+		if (! $config->get("enable_cache", false)) {
+			$builder->addDefinitions(
+				new ConfigDefinitionSource(
+					$config
+				)
+			);
 		}
 
 		// default autowire is true

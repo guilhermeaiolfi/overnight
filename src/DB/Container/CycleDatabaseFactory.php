@@ -84,32 +84,43 @@ class CycleDatabaseFactory
 			mkdir($dir, 0777, true);
 		}
 
-		file_put_contents($this->cacheFile, serialize($schema));
+		$tmpFile = $this->cacheFile . '.tmp';
+		file_put_contents($tmpFile, serialize($schema), LOCK_EX);
+		rename($tmpFile, $this->cacheFile);
 	}
 
 	protected function readCache(Registry $registry, $dbal): ?array
 	{
-
 		if (! $this->isCacheClean($registry)) {
-			$cycleRegistry = new CycleRegistry($dbal);
-			$schema = (new Compiler())->compile($cycleRegistry, [
-				new CycleRegistryGenerator($registry),
-				new GenerateRelations(), // generate entity relations
-				new GenerateModifiers(), // generate changes from schema modifiers
-				new ValidateEntities(),  // make sure all entity schemas are correct
-				new RenderTables(),      // declare table schemas
-				new RenderRelations(),   // declare relation keys and indexes
-				new RenderModifiers(),   // render all schema modifiers
-				new ForeignKeys(),             // Define foreign key constraints
-				//new Schema\Generator\SyncTables(),        // sync table changes to database
-				new GenerateTypecast(),
-			]);
-
-			$this->saveCache($schema);
-
-			return $schema;
+			return $this->compileSchema($registry, $dbal);
 		}
 
-		return unserialize(file_get_contents($this->cacheFile));
+		$cached = @unserialize((string) file_get_contents($this->cacheFile));
+		if (is_array($cached)) {
+			return $cached;
+		}
+
+		return $this->compileSchema($registry, $dbal);
+	}
+
+	protected function compileSchema(Registry $registry, $dbal): array
+	{
+		$cycleRegistry = new CycleRegistry($dbal);
+		$schema = (new Compiler())->compile($cycleRegistry, [
+			new CycleRegistryGenerator($registry),
+			new GenerateRelations(), // generate entity relations
+			new GenerateModifiers(), // generate changes from schema modifiers
+			new ValidateEntities(),  // make sure all entity schemas are correct
+			new RenderTables(),      // declare table schemas
+			new RenderRelations(),   // declare relation keys and indexes
+			new RenderModifiers(),   // render all schema modifiers
+			new ForeignKeys(),             // Define foreign key constraints
+			//new Schema\Generator\SyncTables(),        // sync table changes to database
+			new GenerateTypecast(),
+		]);
+
+		$this->saveCache($schema);
+
+		return $schema;
 	}
 }

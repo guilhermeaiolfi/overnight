@@ -130,26 +130,16 @@ class ConfigExtension extends AbstractExtension
 		$context->emit(new ConfigConfigureEvent($this));
 
 		$env = $_ENV['APP_ENV'] ?? 'production';
-		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $env), Glob::GLOB_BRACE, true);
-		$deferredFiles = [];
+		$files = array_values(array_filter(
+			Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $env), Glob::GLOB_BRACE, true),
+			static fn (string $file): bool => ! str_ends_with(str_replace('\\', '/', $file), 'config/extensions.php')
+		));
 
 		foreach ($files as $file) {
-			if ($this->isAlwaysUncachedFile($file)) {
-				if (! in_array($file, $this->cacheExceptions, true)) {
-					$this->cacheExceptions[] = $file;
-				}
-				$deferredFiles[] = $file;
-				continue;
-			}
-
 			$this->processFile($file);
 		}
 
 		$this->saveCache();
-
-		foreach ($deferredFiles as $file) {
-			$this->processFile($file);
-		}
 
 		$context->emit(new ConfigReadyEvent($this));
 	}
@@ -235,12 +225,5 @@ class ConfigExtension extends AbstractExtension
 			'cacheExceptions' => $this->cacheExceptions,
 		]);
 		file_put_contents($this->cachePath, $content);
-	}
-
-	protected function isAlwaysUncachedFile(string $file): bool
-	{
-		$normalized = str_replace('\\', '/', $file);
-
-		return str_ends_with($normalized, 'config/extensions.php');
 	}
 }
