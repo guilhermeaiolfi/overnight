@@ -131,12 +131,25 @@ class ConfigExtension extends AbstractExtension
 
 		$env = $_ENV['APP_ENV'] ?? 'production';
 		$files = Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $env), Glob::GLOB_BRACE, true);
+		$deferredFiles = [];
 
 		foreach ($files as $file) {
+			if ($this->isAlwaysUncachedFile($file)) {
+				if (! in_array($file, $this->cacheExceptions, true)) {
+					$this->cacheExceptions[] = $file;
+				}
+				$deferredFiles[] = $file;
+				continue;
+			}
+
 			$this->processFile($file);
 		}
 
 		$this->saveCache();
+
+		foreach ($deferredFiles as $file) {
+			$this->processFile($file);
+		}
 
 		$context->emit(new ConfigReadyEvent($this));
 	}
@@ -176,7 +189,7 @@ class ConfigExtension extends AbstractExtension
 			$className = get_class($obj);
 			$this->data[$className] = $obj;
 			$this->instances[$className] = $obj;
-			if (! in_array($file, $this->cacheExceptions)) {
+			if (! in_array($file, $this->cacheExceptions, true)) {
 				$this->cacheExceptions[] = $file;
 			}
 		}
@@ -184,7 +197,7 @@ class ConfigExtension extends AbstractExtension
 
 	protected function loadCache(): bool
 	{
-		if ($this->cachePath && file_exists($this->cachePath) && !$this->options["debug"]) {
+		if ($this->cachePath && file_exists($this->cachePath) && ! $this->options["debug"]) {
 			$content = file_get_contents($this->cachePath);
 			if ($content) {
 				$cache = unserialize($content);
@@ -212,16 +225,22 @@ class ConfigExtension extends AbstractExtension
 
 		$dataToCache = $this->data;
 		foreach ($dataToCache as $key => $value) {
-			if (is_object($value) && !($value instanceof Config)) {
+			if (is_object($value) && ! ($value instanceof Config)) {
 				unset($dataToCache[$key]);
 			}
 		}
 
 		$content = serialize([
 			'data' => $dataToCache,
-			'cacheExceptions' => $this->cacheExceptions
+			'cacheExceptions' => $this->cacheExceptions,
 		]);
 		file_put_contents($this->cachePath, $content);
 	}
 
+	protected function isAlwaysUncachedFile(string $file): bool
+	{
+		$normalized = str_replace('\\', '/', $file);
+
+		return str_ends_with($normalized, 'config/extensions.php');
+	}
 }

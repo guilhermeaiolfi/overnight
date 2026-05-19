@@ -12,7 +12,7 @@ use Psr\Http\Message\UploadedFileInterface;
 class FileUpload implements HasEventNameInterface, PreventableEventInterface
 {
 	private bool $defaultPrevented = false;
-	private ?string $storedPath = null;
+	private mixed $storedValue = null;
 
 	public function __construct(
 		protected CollectionInterface $collection,
@@ -48,12 +48,22 @@ class FileUpload implements HasEventNameInterface, PreventableEventInterface
 
 	public function getStoredPath(): ?string
 	{
-		return $this->storedPath;
+		return is_string($this->storedValue) ? $this->storedValue : null;
 	}
 
 	public function setStoredPath(string $path): void
 	{
-		$this->storedPath = $path;
+		$this->storedValue = $path;
+	}
+
+	public function getStoredValue(): mixed
+	{
+		return $this->storedValue;
+	}
+
+	public function setStoredValue(mixed $value): void
+	{
+		$this->storedValue = $value;
 	}
 
 	public function preventDefault(): void

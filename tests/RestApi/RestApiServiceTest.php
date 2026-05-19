@@ -151,6 +151,41 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame(['attachment' => 'uploads/test.txt'], $resolver->lastCreateInput);
 	}
 
+	public function testFileUploadEventCanStoreScalarValue(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('attachment_id', 'upload')->type('upload')->nullable(true)->end()
+			->end();
+
+		$resolver = new ResolverSpy();
+		$resolver->createResult = ['id' => 1, 'attachment_id' => 42];
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event): object {
+				if ($event instanceof FileUpload) {
+					$event->setStoredValue(42);
+				}
+
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->create('asset', [], [
+			'files' => ['attachment_id' => new UploadedFileStub()],
+		]);
+
+		$this->assertSame(['id' => 1, 'attachment_id' => 42], $result);
+		$this->assertSame(['attachment_id' => 42], $resolver->lastCreateInput);
+	}
+
 	public function testCreateWithExistingPrimaryKeyFailsWithDuplicate(): void
 	{
 		$resolver = new ResolverSpy();
@@ -349,6 +384,59 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame(1, (int) $comment['post_id']);
 	}
 
+	public function testNestedCreateHandlesChildFileUploads(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
+			->end();
+
+		$registry->collection('attachment')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('asset_id', 'int')->type('int')->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
+			->end();
+
+		$resolver = new NestedUploadResolverSpy();
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event): object {
+				if ($event instanceof FileUpload && $event->getCollection()->getName() === 'attachment') {
+					$event->setStoredValue(99);
+				}
+
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->create('asset', [
+			'title' => 'Asset',
+			'attachments' => [
+				['title' => 'Attachment one'],
+			],
+		], [
+			'files' => [
+				'attachments' => [
+					['file_id' => new UploadedFileStub()],
+				],
+			],
+		]);
+
+		$this->assertSame('Asset', $result['title']);
+		$this->assertCount(2, $resolver->createCalls);
+		$this->assertSame('attachment', $resolver->createCalls[1]['collection']);
+		$this->assertSame(99, $resolver->createCalls[1]['input']['file_id']);
+	}
+
 	private function createRegistryWithUsers(): Registry
 	{
 		$registry = new Registry();
@@ -428,6 +516,81 @@ final class ResolverSpy implements DataSourceInterface
 	{
 		$this->aggregateCalls++;
 
+		return $this->aggregateResult;
+	}
+
+	public function transaction(callable $callback): mixed
+	{
+		return $callback();
+	}
+
+	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
+	{
+		$this->connected[] = [$collection->getName(), $parentId, $relationName, $targetId];
+	}
+
+	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
+	{
+		$this->disconnected[] = [$collection->getName(), $parentId, $relationName, $targetId];
+	}
+
+	public function clearCache(): void
+	{
+	}
+}
+
+final class NestedUploadResolverSpy implements DataSourceInterface
+{
+	public array $listResult = ['items' => [], 'meta' => []];
+	public array $aggregateResult = [];
+	public array $createCalls = [];
+	public array $connected = [];
+	public array $disconnected = [];
+	private array $stored = [];
+
+	public function list(CollectionInterface $collection, QuerySpec $query): array
+	{
+		return $this->listResult;
+	}
+
+	public function create(CollectionInterface $collection, array $input): array
+	{
+		$record = $input + ['id' => count($this->createCalls) + 1];
+		$this->createCalls[] = [
+			'collection' => $collection->getName(),
+			'input' => $input,
+		];
+		$this->stored[$collection->getName()][(string) $record['id']] = $record;
+
+		return $record;
+	}
+
+	public function get(CollectionInterface $collection, string $id, ?QuerySpec $query = null): ?array
+	{
+		if (isset($this->stored[$collection->getName()][$id])) {
+			return $this->stored[$collection->getName()][$id];
+		}
+
+		return ['id' => $id];
+	}
+
+	public function update(CollectionInterface $collection, string $id, array $input): ?array
+	{
+		$record = ['id' => $id] + $input;
+		$this->stored[$collection->getName()][$id] = $record;
+
+		return $record;
+	}
+
+	public function delete(CollectionInterface $collection, string $id): bool
+	{
+		unset($this->stored[$collection->getName()][$id]);
+
+		return true;
+	}
+
+	public function aggregate(CollectionInterface $collection, QuerySpec $query): array
+	{
 		return $this->aggregateResult;
 	}
 

@@ -119,11 +119,10 @@ class RestApiService
 	public function create(string|CollectionInterface $collection, array $input, array $options = []): array
 	{
 		$collection = $this->resolveCollection($collection);
-		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('create', $collection, $input, null, [], $collection, $input, $dispatchEvents)
+			fn() => $this->saveNode('create', $collection, $input, null, [], $collection, $input, $dispatchEvents, $options['files'] ?? [])
 		);
 	}
 
@@ -131,11 +130,10 @@ class RestApiService
 	{
 		$collection = $this->resolveCollection($collection);
 		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
-		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('update', $collection, $input, $id, [], $collection, $input, $dispatchEvents)
+			fn() => $this->saveNode('update', $collection, $input, $id, [], $collection, $input, $dispatchEvents, $options['files'] ?? [])
 		);
 	}
 
@@ -153,11 +151,10 @@ class RestApiService
 			);
 		}
 
-		$input = $this->handleFileUploads($collection, $input, $options['files'] ?? []);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('upsert', $collection, $input, (string) $id, [], $collection, $input, $dispatchEvents) ?? []
+			fn() => $this->saveNode('upsert', $collection, $input, (string) $id, [], $collection, $input, $dispatchEvents, $options['files'] ?? []) ?? []
 		);
 	}
 
@@ -243,8 +240,10 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents
+		bool $dispatchEvents,
+		array $files = []
 	): ?array {
+		$input = $this->handleFileUploads($collection, $input, $files);
 		$id ??= $this->inputPrimaryKeyValue($collection, $input);
 		$id = $id === null ? null : (string) $id;
 		$operation = $mode;
@@ -302,6 +301,7 @@ class RestApiService
 			$relation = $collection->relations->get($relationName);
 			$targetCollection = $relation->getCollection();
 			$innerField = $relation->getInnerField()->getName();
+			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
 
 			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
 				$targetId = $this->inputPrimaryKeyValue($targetCollection, $relationInput);
@@ -313,7 +313,8 @@ class RestApiService
 					[...$path, $relationName],
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents
+					$dispatchEvents,
+					$relationFiles
 				);
 
 				if ($target !== null) {
@@ -339,7 +340,8 @@ class RestApiService
 			$path,
 			$rootCollection,
 			$rootInput,
-			$dispatchEvents
+			$dispatchEvents,
+			$files
 		);
 
 		if (isset($event)) {
@@ -357,7 +359,8 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents
+		bool $dispatchEvents,
+		array $files = []
 	): array {
 		if ($relations === []) {
 			return $parent;
@@ -368,6 +371,7 @@ class RestApiService
 		foreach ($relations as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
 			$targetCollection = $relation->getCollection();
+			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
 
 			if ($relation->isJunction()) {
 				$this->persistManyToManyRelation(
@@ -379,7 +383,8 @@ class RestApiService
 					[...$path, $relationName],
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents
+					$dispatchEvents,
+					$relationFiles
 				);
 				continue;
 			}
@@ -395,6 +400,9 @@ class RestApiService
 					? [...$path, $relationName, $index]
 					: [...$path, $relationName];
 				$itemId = $this->inputPrimaryKeyValue($targetCollection, $item);
+				$itemFiles = $relation->getCardinality() === 'many'
+					? (is_array($relationFiles[$index] ?? null) ? $relationFiles[$index] : [])
+					: $relationFiles;
 
 				$this->saveNode(
 					'upsert',
@@ -404,7 +412,8 @@ class RestApiService
 					$itemPath,
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents
+					$dispatchEvents,
+					$itemFiles
 				);
 			}
 		}
@@ -421,7 +430,8 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents
+		bool $dispatchEvents,
+		array $files = []
 	): void {
 		if (!is_array($operations)) {
 			$this->resolver->connectManyToMany($collection, $parentId, $relationName, $operations);
@@ -457,7 +467,8 @@ class RestApiService
 				[...$path, 'create', $index],
 				$rootCollection,
 				$rootInput,
-				$dispatchEvents
+				$dispatchEvents,
+				is_array($files['create'][$index] ?? null) ? $files['create'][$index] : []
 			);
 			$this->resolver->connectManyToMany(
 				$collection,
@@ -613,8 +624,8 @@ class RestApiService
 			$event = new FileUpload($collection, $name, $files[$name]);
 			$this->dispatchEvent($event);
 
-			if ($event->getStoredPath() !== null) {
-				$input[$name] = $event->getStoredPath();
+			if ($event->getStoredValue() !== null) {
+				$input[$name] = $event->getStoredValue();
 			} else {
 				throw RestApiError::fileHandlerMissing($name);
 			}
