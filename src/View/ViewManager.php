@@ -164,25 +164,24 @@ class ViewManager
 		if ($sectionDefinition instanceof Route) {
 			return [
 				'type' => 'uri',
-				"uri" => $sectionDefinition->getPath(),
-			];
-		}
-
-		if (is_array($sectionDefinition) && array_is_list($sectionDefinition)) {
-			return [
-				'type' => 'uri',
-				'uri' => $sectionDefinition[0] ?? '',
+				'uri' => $sectionDefinition->getPath(),
 			];
 		}
 
 		if (is_array($sectionDefinition)) {
+			if (array_is_list($sectionDefinition)) {
+				return [
+					'type' => 'uri',
+					'uri' => $sectionDefinition[0] ?? '',
+				];
+			}
+
 			if (array_key_exists('content', $sectionDefinition)) {
 				return [
 					'type' => 'content',
 					'content' => (string) $sectionDefinition['content'],
 				];
 			}
-
 
 			if (isset($sectionDefinition['template'])) {
 				return [
@@ -203,7 +202,6 @@ class ViewManager
 				];
 			}
 
-
 			if ($this->config->getRendererNameFromTemplateExtension($sectionDefinition) !== null) {
 				return [
 					'type' => 'template',
@@ -219,7 +217,6 @@ class ViewManager
 		}
 
 		throw new RuntimeException('Invalid section configuration.');
-
 	}
 
 	protected function renderSections(

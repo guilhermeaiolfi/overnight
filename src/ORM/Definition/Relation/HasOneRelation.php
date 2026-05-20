@@ -36,6 +36,9 @@ class HasOneRelation extends AbstractRelation
 	// creates the field into the parent collection
 	public function generateField(): ?FieldInterface
 	{
+		if ($this->inner_key === null || $this->outer_key === null) {
+			return null;
+		}
 
 		$parentCollection = $this->parent;
 

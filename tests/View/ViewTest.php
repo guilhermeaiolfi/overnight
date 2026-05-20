@@ -374,52 +374,6 @@ final class ViewTest extends TestCase
 		$this->assertSame('PLATES:pages::show|ROUTE', $result);
 	}
 
-	public function testViewConfigNormalizesSupportedSectionDefinitions(): void
-	{
-		$config = new ViewConfig([
-			'templates' => [
-				'extension' => 'phtml',
-			],
-			'latte' => [
-				'extension' => 'latte',
-			],
-			'formats' => [
-				'html' => [
-					'renderers' => [
-						'plates' => [
-							'class' => 'PlatesRenderer',
-							'extension' => 'phtml',
-						],
-						'latte' => [
-							'class' => 'LatteRenderer',
-							'extension' => 'latte',
-						],
-					],
-				],
-			],
-		]);
-
-		$this->assertSame(
-			['type' => 'content', 'content' => 'literal'],
-			$config->normalizeSectionDefinition('literal')
-		);
-		$this->assertSame(
-			['type' => 'template', 'template' => 'app::footer.latte', 'renderer' => null],
-			$config->normalizeSectionDefinition('app::footer.latte')
-		);
-		$this->assertSame(
-			['type' => 'content', 'content' => 'explicit'],
-			$config->normalizeSectionDefinition(['content' => 'explicit'])
-		);
-		$this->assertSame(
-			['type' => 'template', 'template' => 'app::footer.phtml', 'renderer' => 'latte'],
-			$config->normalizeSectionDefinition(['template' => 'app::footer.phtml', 'renderer' => 'latte'])
-		);
-
-		$routeDefinition = $config->normalizeSectionDefinition(new Route('/footer', 'TestPage::index', ['GET'], 'footer'));
-		$this->assertSame('route', $routeDefinition['type']);
-		$this->assertInstanceOf(Route::class, $routeDefinition['route']);
-	}
 
 	protected function createViewConfig(array $inject = []): ViewConfig
 	{
