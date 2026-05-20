@@ -296,6 +296,27 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertArrayNotHasKey('id', $postsByTitle['PHP Tips']['tags'][0]);
 	}
 
+	public function testListWithManyToManySharedTargetLoadsForEachParent(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$result = $resolver->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'fields' => 'id,title,tags.id,tags.name',
+			'sort' => 'id',
+		]));
+
+		$postsByTitle = [];
+		foreach ($result['items'] as $post) {
+			$postsByTitle[$post['title']] = $post;
+		}
+
+		$this->assertSame(['PHP', 'GraphQL'], array_column($postsByTitle['PHP Tips']['tags'], 'name'));
+		$this->assertSame(['GraphQL', 'REST'], array_column($postsByTitle['GraphQL Guide']['tags'], 'name'));
+	}
+
 	public function testBelongsToRelationLoadsWithoutReturningUnrequestedForeignKey(): void
 	{
 		$registry = new Registry();

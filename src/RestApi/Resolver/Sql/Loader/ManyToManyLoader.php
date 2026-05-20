@@ -5,23 +5,30 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver\Sql\Loader;
 
 use Cycle\Database\Injection\Expression;
-use Cycle\Database\Injection\Fragment;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Relation\M2MRelation;
+use ON\RestApi\Query\Node\RelationSelection;
 
 final class ManyToManyLoader extends AbstractRelationLoader
 {
-	private ?string $parentKeyAlias = null;
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;
+
+	public function __construct(
+		private M2MRelation $manyToMany,
+		RelationSelection $selection,
+		QueryContext $context
+	) {
+		parent::__construct($manyToMany, $selection, $context);
+	}
 
 	public function configureNode(AbstractNode $parent): AbstractNode
 	{
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
-			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
-			[$this->parentKeyAlias()],
+			$this->pivotPrimaryKeyColumns(),
+			[$this->throughInnerKeyColumn()],
 			[$this->relation->getInnerField()->getColumn()]
 		);
 		$parent->linkNode($this->getResponseName(), $node);
@@ -32,17 +39,13 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 	public function load(): void
 	{
-		if (!$this->relation instanceof M2MRelation) {
-			return;
-		}
-
 		$node = $this->getNode();
 		$parentIds = $this->flattenedReferenceValues($node);
 		if ($parentIds === []) {
 			return;
 		}
 
-		$through = $this->relation->through;
+		$through = $this->manyToMany->through;
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
 		$throughInnerKey = $through->getInnerField()->getColumn();
@@ -93,12 +96,11 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	private function resultNodeColumns(): array
 	{
 		$columns = $this->getSelectColumns();
-		$alias = $this->parentKeyAlias();
-		if (!in_array($alias, $columns, true)) {
-			$columns[] = $alias;
+		foreach ($this->pivotNodeColumns() as $column) {
+			$columns[] = $column;
 		}
 
-		return $columns;
+		return array_values(array_unique($columns));
 	}
 
 	private function selectColumns(string $targetAlias, string $junctionAlias, string $throughInnerKey): array
@@ -107,18 +109,36 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		foreach ($this->getSelectColumns() as $column) {
 			$columns[] = new Expression($targetAlias . '.' . $column);
 		}
-		$columns[] = new Fragment(
-			$this->compile(new Expression($junctionAlias . '.' . $throughInnerKey))
-			. ' AS '
-			. $this->identifier($this->parentKeyAlias())
-		);
+		foreach ($this->pivotNodeColumns() as $column) {
+			$columns[] = new Expression($junctionAlias . '.' . $column);
+		}
 
 		return $columns;
 	}
 
-	private function parentKeyAlias(): string
+	private function pivotNodeColumns(): array
 	{
-		return $this->parentKeyAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_parent_key');
+		return array_values(array_unique([
+			$this->throughInnerKeyColumn(),
+			...$this->pivotPrimaryKeyColumns(),
+		]));
+	}
+
+	private function pivotPrimaryKeyColumns(): array
+	{
+		$columns = [];
+		foreach ((array) $this->manyToMany->through->getCollection()->getPrimaryKey() as $field) {
+			$columns[] = $field->getColumn();
+		}
+
+		return $columns !== []
+			? $columns
+			: [$this->throughInnerKeyColumn(), $this->manyToMany->through->getOuterField()->getColumn()];
+	}
+
+	private function throughInnerKeyColumn(): string
+	{
+		return $this->manyToMany->through->getInnerField()->getColumn();
 	}
 
 	private function junctionAlias(): string
