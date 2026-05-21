@@ -186,6 +186,42 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame(['attachment_id' => 42], $resolver->lastCreateInput);
 	}
 
+	public function testFileUploadRunsBeforeTransactionStarts(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('attachment_id', 'upload')->type('upload')->nullable(true)->end()
+			->end();
+
+		$resolver = new ResolverSpy();
+		$uploadWasInTransaction = null;
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			function (object $event) use ($resolver, &$uploadWasInTransaction): object {
+				if ($event instanceof FileUpload) {
+					$uploadWasInTransaction = $resolver->inTransaction;
+					$event->setStoredValue(42);
+				}
+
+				if ($event instanceof ItemCreate) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		);
+
+		$service->create('asset', [], [
+			'files' => ['attachment_id' => new UploadedFileStub()],
+		]);
+
+		$this->assertFalse($uploadWasInTransaction);
+		$this->assertSame(1, $resolver->transactionCalls);
+	}
+
 	public function testCreateWithExistingPrimaryKeyFailsWithDuplicate(): void
 	{
 		$resolver = new ResolverSpy();
@@ -478,6 +514,8 @@ final class ResolverSpy implements DataSourceInterface
 	public array $connected = [];
 	public array $disconnected = [];
 	public array $missingIds = [];
+	public bool $inTransaction = false;
+	public int $transactionCalls = 0;
 
 	public function list(CollectionInterface $collection, QuerySpec $query): array
 	{
@@ -521,7 +559,14 @@ final class ResolverSpy implements DataSourceInterface
 
 	public function transaction(callable $callback): mixed
 	{
-		return $callback();
+		$this->transactionCalls++;
+		$this->inTransaction = true;
+
+		try {
+			return $callback();
+		} finally {
+			$this->inTransaction = false;
+		}
 	}
 
 	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void

@@ -120,9 +120,10 @@ class RestApiService
 	{
 		$collection = $this->resolveCollection($collection);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('create', $collection, $input, null, [], $collection, $input, $dispatchEvents, $options['files'] ?? [])
+			fn() => $this->saveNode('create', $collection, $input, null, [], $collection, $input, $dispatchEvents)
 		);
 	}
 
@@ -131,9 +132,10 @@ class RestApiService
 		$collection = $this->resolveCollection($collection);
 		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('update', $collection, $input, $id, [], $collection, $input, $dispatchEvents, $options['files'] ?? [])
+			fn() => $this->saveNode('update', $collection, $input, $id, [], $collection, $input, $dispatchEvents)
 		);
 	}
 
@@ -152,9 +154,10 @@ class RestApiService
 		}
 
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 
 		return $this->resolver->transaction(
-			fn() => $this->saveNode('upsert', $collection, $input, (string) $id, [], $collection, $input, $dispatchEvents, $options['files'] ?? []) ?? []
+			fn() => $this->saveNode('upsert', $collection, $input, (string) $id, [], $collection, $input, $dispatchEvents) ?? []
 		);
 	}
 
@@ -240,10 +243,8 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents,
-		array $files = []
+		bool $dispatchEvents
 	): ?array {
-		$input = $this->handleFileUploads($collection, $input, $files);
 		$id ??= $this->inputPrimaryKeyValue($collection, $input);
 		$id = $id === null ? null : (string) $id;
 		$operation = $mode;
@@ -301,7 +302,6 @@ class RestApiService
 			$relation = $collection->relations->get($relationName);
 			$targetCollection = $relation->getCollection();
 			$innerField = $relation->getInnerField()->getName();
-			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
 
 			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
 				$targetId = $this->inputPrimaryKeyValue($targetCollection, $relationInput);
@@ -313,8 +313,7 @@ class RestApiService
 					[...$path, $relationName],
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents,
-					$relationFiles
+					$dispatchEvents
 				);
 
 				if ($target !== null) {
@@ -340,8 +339,7 @@ class RestApiService
 			$path,
 			$rootCollection,
 			$rootInput,
-			$dispatchEvents,
-			$files
+			$dispatchEvents
 		);
 
 		if (isset($event)) {
@@ -359,8 +357,7 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents,
-		array $files = []
+		bool $dispatchEvents
 	): array {
 		if ($relations === []) {
 			return $parent;
@@ -371,7 +368,6 @@ class RestApiService
 		foreach ($relations as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
 			$targetCollection = $relation->getCollection();
-			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
 
 			if ($relation->isJunction()) {
 				$this->persistManyToManyRelation(
@@ -383,8 +379,7 @@ class RestApiService
 					[...$path, $relationName],
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents,
-					$relationFiles
+					$dispatchEvents
 				);
 				continue;
 			}
@@ -400,9 +395,6 @@ class RestApiService
 					? [...$path, $relationName, $index]
 					: [...$path, $relationName];
 				$itemId = $this->inputPrimaryKeyValue($targetCollection, $item);
-				$itemFiles = $relation->getCardinality() === 'many'
-					? (is_array($relationFiles[$index] ?? null) ? $relationFiles[$index] : [])
-					: $relationFiles;
 
 				$this->saveNode(
 					'upsert',
@@ -412,8 +404,7 @@ class RestApiService
 					$itemPath,
 					$rootCollection,
 					$rootInput,
-					$dispatchEvents,
-					$itemFiles
+					$dispatchEvents
 				);
 			}
 		}
@@ -430,8 +421,7 @@ class RestApiService
 		array $path,
 		CollectionInterface $rootCollection,
 		array $rootInput,
-		bool $dispatchEvents,
-		array $files = []
+		bool $dispatchEvents
 	): void {
 		if (!is_array($operations)) {
 			$this->resolver->connectManyToMany($collection, $parentId, $relationName, $operations);
@@ -467,8 +457,7 @@ class RestApiService
 				[...$path, 'create', $index],
 				$rootCollection,
 				$rootInput,
-				$dispatchEvents,
-				is_array($files['create'][$index] ?? null) ? $files['create'][$index] : []
+				$dispatchEvents
 			);
 			$this->resolver->connectManyToMany(
 				$collection,
@@ -628,6 +617,61 @@ class RestApiService
 				$input[$name] = $event->getStoredValue();
 			} else {
 				throw RestApiError::fileHandlerMissing($name);
+			}
+		}
+
+		return $input;
+	}
+
+	protected function handleFileUploadsRecursive(CollectionInterface $collection, array $input, array $files): array
+	{
+		if ($files === []) {
+			return $input;
+		}
+
+		$input = $this->handleFileUploads($collection, $input, $files);
+		[, $relations] = $this->splitNodeInput($collection, $input);
+
+		foreach ($relations as $relationName => $relationInput) {
+			$relation = $collection->relations->get($relationName);
+			$targetCollection = $relation->getCollection();
+			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
+
+			if ($relation->isJunction()) {
+				if (!is_array($relationInput) || !$this->isAssociativeArray($relationInput)) {
+					continue;
+				}
+
+				foreach ($this->normalizeRelationItems($relationInput['create'] ?? []) as $index => $item) {
+					if (!is_array($item)) {
+						continue;
+					}
+
+					$input[$relationName]['create'][$index] = $this->handleFileUploadsRecursive(
+						$targetCollection,
+						$item,
+						is_array($relationFiles['create'][$index] ?? null) ? $relationFiles['create'][$index] : []
+					);
+				}
+
+				continue;
+			}
+
+			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
+				$input[$relationName] = $this->handleFileUploadsRecursive($targetCollection, $relationInput, $relationFiles);
+				continue;
+			}
+
+			foreach ($this->normalizeRelationItems($relationInput) as $index => $item) {
+				if (!is_array($item)) {
+					continue;
+				}
+
+				$input[$relationName][$index] = $this->handleFileUploadsRecursive(
+					$targetCollection,
+					$item,
+					is_array($relationFiles[$index] ?? null) ? $relationFiles[$index] : []
+				);
 			}
 		}
 
