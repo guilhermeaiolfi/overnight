@@ -8,6 +8,7 @@ use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 
 interface RelationLoaderInterface extends LoaderInterface
 {
@@ -42,7 +43,8 @@ interface RelationLoaderInterface extends LoaderInterface
 	public function normalizePayload(
 		string $operation,
 		mixed $input,
-		MutationStateInterface $source
+		MutationStateInterface $source,
+		DataSourceInterface $dataSource
 	): array;
 
 	public function create(

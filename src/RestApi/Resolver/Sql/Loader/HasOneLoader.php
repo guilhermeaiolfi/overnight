@@ -8,6 +8,11 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\ComparisonOperator;
+use ON\RestApi\Query\Node\FieldExpression;
+use ON\RestApi\Query\Node\LiteralValue;
+use ON\RestApi\Resolver\DataSourceInterface;
 
 class HasOneLoader extends AbstractRelationLoader
 {
@@ -52,54 +57,71 @@ class HasOneLoader extends AbstractRelationLoader
 	public function normalizePayload(
 		string $operation,
 		mixed $input,
-		MutationStateInterface $source
+		MutationStateInterface $source,
+		DataSourceInterface $dataSource
 	): array {
-		$payload = parent::normalizePayload($operation, $input, $source);
-		if (!is_array($input)) {
+		$payload = parent::normalizePayload($operation, $input, $source, $dataSource);
+
+		if ($input === null) {
+			if ($operation !== 'create') {
+				$this->normalizeOmittedChildren($payload, $this->currentRelationRows($dataSource, $source));
+			}
+
 			return $payload;
 		}
 
 		$targetCollection = $this->relation->getCollection();
-		if ($this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
-			foreach (['create', 'update'] as $operation) {
-				foreach ($this->normalizeRelationItems($input[$operation] ?? []) as $item) {
+		$relationKey = $this->relation->getOuterField()->getName();
+		$parentId = $source->getValue($this->relation->getInnerField()->getName());
+
+		if (is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
+			foreach (['create', 'update'] as $mutation) {
+				foreach ($this->normalizeRelationItems($input[$mutation] ?? []) as $item) {
 					if (!is_array($item)) {
 						continue;
 					}
 
-					$item[$this->relation->getOuterField()->getName()] = $source->getValue($this->relation->getInnerField()->getName());
-					$payload[$operation][] = $item;
+					if ($mutation === 'create') {
+						$item[$relationKey] = $parentId;
+					}
+
+					$payload[$mutation][] = $item;
 				}
 			}
 
-			foreach ($this->normalizeRelationItems($input['connect'] ?? []) as $targetId) {
-				$payload['update'][] = [
-					$this->getPrimaryKeyName($targetCollection) => $targetId,
-					$this->relation->getOuterField()->getName() => $source->getValue($this->relation->getInnerField()->getName()),
-				];
-			}
-
-			foreach ($this->normalizeRelationItems($input['disconnect'] ?? []) as $targetId) {
-				$payload['update'][] = [
-					$this->getPrimaryKeyName($targetCollection) => $targetId,
-					$this->relation->getOuterField()->getName() => null,
-				];
-			}
-
 			$payload['delete'] = $this->normalizeRelationItems($input['delete'] ?? []);
+			$payload['connect'] = $this->normalizeRelationItems($input['connect'] ?? []);
+			$payload['disconnect'] = $this->normalizeRelationItems($input['disconnect'] ?? []);
 
 			return $payload;
 		}
 
-		foreach ($this->normalizeRelationItems($input) as $item) {
-			if (!is_array($item)) {
-				continue;
-			}
+		if (!is_array($input)) {
+			$payload['connect'][] = $input;
+			return $payload;
+		}
 
-			$item[$this->relation->getOuterField()->getName()] = $source->getValue($this->relation->getInnerField()->getName());
-			$this->inputPrimaryKeyValue($targetCollection, $item) === null
-				? $payload['create'][] = $item
-				: $payload['update'][] = $item;
+		// Basic payloads describe the desired final relation state, so we diff
+		// them against the current row before queueing any writes.
+		$current = $operation === 'create' ? null : ($this->currentRelationRows($dataSource, $source)[0] ?? null);
+		$currentId = is_array($current) ? $this->inputPrimaryKeyValue($targetCollection, $current) : null;
+		$desired = $input;
+		$desiredId = $this->inputPrimaryKeyValue($targetCollection, $desired);
+
+		if ($desiredId === null && $currentId !== null) {
+			$desired[$this->getPrimaryKeyName($targetCollection)] = $currentId;
+			$desiredId = $currentId;
+		}
+		if ($currentId !== null && $desiredId !== null && $currentId !== $desiredId) {
+			$this->normalizeOmittedChildren($payload, [$current]);
+			$payload['connect'][] = $desiredId;
+		}
+
+		$desired[$relationKey] = $parentId;
+		foreach ($this->normalizeRelationItems($input) as $item) {
+			$this->inputPrimaryKeyValue($targetCollection, $desired) === null
+				? $payload['create'][] = $desired
+				: $payload['update'][] = $desired;
 		}
 
 		return $payload;
@@ -111,17 +133,55 @@ class HasOneLoader extends AbstractRelationLoader
 		array $children,
 		MutationQueue $queue
 	): void {
+		$parentId = $source->getValue($this->relation->getInnerField()->getName());
+		$targetCollection = $this->getTargetCollection();
+		$relationKey = $this->relation->getOuterField()->getName();
+
+		foreach ($payload['connect'] ?? [] as $targetId) {
+			$queue->queueUpdate(
+				$targetCollection,
+				new ComparisonFilter(
+					new FieldExpression($this->getPrimaryKeyName($targetCollection)),
+					ComparisonOperator::Eq,
+					new LiteralValue($targetId)
+				),
+				[$relationKey => $parentId]
+			);
+		}
+
+		foreach ($payload['disconnect'] ?? [] as $targetId) {
+			$queue->queueUpdate(
+				$targetCollection,
+				new ComparisonFilter(
+					new FieldExpression($this->getPrimaryKeyName($targetCollection)),
+					ComparisonOperator::Eq,
+					new LiteralValue($targetId)
+				),
+				[$relationKey => null]
+			);
+		}
+
 		$this->queueChildMutations($children, $queue);
 	}
 
-	protected function hasOperationPayload(array $input): bool
+	protected function normalizeOmittedChildren(array &$payload, array $currentRows): void
 	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-			if (array_key_exists($key, $input)) {
-				return true;
+		foreach ($currentRows as $row) {
+			if (!is_array($row)) {
+				continue;
 			}
-		}
 
-		return false;
+			$id = $this->inputPrimaryKeyValue($this->getTargetCollection(), $row);
+			if ($id === null) {
+				continue;
+			}
+
+			if ($this->relation->isCascade() || !$this->relation->isNullable()) {
+				$payload['delete'][] = $id;
+				continue;
+			}
+
+			$payload['disconnect'][] = $id;
+		}
 	}
 }

@@ -6,21 +6,20 @@ namespace ON\RestApi\Resolver\Sql\Loader;
 
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 
 class BelongsToLoader extends HasOneLoader
 {
 	public function normalizePayload(
 		string $operation,
 		mixed $input,
-		MutationStateInterface $source
+		MutationStateInterface $source,
+		DataSourceInterface $dataSource
 	): array {
-		$payload = [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-			'connect' => [],
-			'disconnect' => [],
-		];
+		$payload = $this->emptyMutationPayload();
+		$currentParent = $operation === 'create' ? null : $this->currentParentRow($dataSource, $source);
+		$currentId = is_array($currentParent) ? ($currentParent[$this->relation->getInnerField()->getName()] ?? null) : null;
+
 		if (is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
 			foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
 				$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
@@ -31,14 +30,37 @@ class BelongsToLoader extends HasOneLoader
 
 		if (is_array($input) && $this->isAssociativeArray($input)) {
 			$targetCollection = $this->relation->getCollection();
-			$this->inputPrimaryKeyValue($targetCollection, $input) === null
+			$id = $this->inputPrimaryKeyValue($targetCollection, $input);
+			if ($id === null && $currentId !== null) {
+				$input[$this->getPrimaryKeyName($targetCollection)] = $currentId;
+				$id = $currentId;
+			}
+
+			if ($currentId !== null && $id !== null && $currentId !== $id) {
+				$payload['disconnect'][] = $currentId;
+				$payload['connect'][] = $id;
+			}
+
+			$id === null
 				? $payload['create'][] = $input
 				: $payload['update'][] = $input;
 
 			return $payload;
 		}
 
+		if ($input === null) {
+			if ($currentId !== null) {
+				$payload['disconnect'][] = $currentId;
+			}
+
+			return $payload;
+		}
+
 		if (!is_array($input)) {
+			if ($currentId !== null && $currentId !== $input) {
+				$payload['disconnect'][] = $currentId;
+			}
+
 			$payload['connect'][] = $input;
 		}
 

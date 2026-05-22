@@ -17,7 +17,10 @@ use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\LogicalFilter;
 use ON\RestApi\Query\Node\LogicalOperator;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Resolver\DataSourceInterface;
 
 final class ManyToManyLoader extends AbstractRelationLoader
 {
@@ -163,9 +166,30 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	public function normalizePayload(
 		string $operation,
 		mixed $input,
-		MutationStateInterface $source
+		MutationStateInterface $source,
+		DataSourceInterface $dataSource
 	): array {
-		$payload = parent::normalizePayload($operation, $input, $source);
+		$payload = parent::normalizePayload($operation, $input, $source, $dataSource);
+		$throughCollection = $this->manyToMany->through->getCollection();
+		$throughOuterKey = $this->manyToMany->through->getOuterField()->getName();
+		$throughPrimaryKey = $this->getPrimaryKeyName($throughCollection);
+		$currentRows = $operation === 'create' ? [] : $this->currentPivotRows($dataSource, $source);
+		$currentByPivotId = [];
+		$currentByTargetId = [];
+		foreach ($currentRows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+
+			$pivotId = $this->inputPrimaryKeyValue($throughCollection, $row);
+			$targetId = $row[$throughOuterKey] ?? null;
+			if ($pivotId !== null) {
+				$currentByPivotId[(string) $pivotId] = $row;
+			}
+			if ($targetId !== null) {
+				$currentByTargetId[(string) $targetId] = $row;
+			}
+		}
 
 		if (!is_array($input)) {
 			$payload['connect'][] = $input;
@@ -175,22 +199,88 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 		if ($this->isAssociativeArray($input)) {
 			foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-				$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
+				foreach ($this->normalizeRelationItems($input[$key] ?? []) as $item) {
+					$payload[$key][] = $this->normalizeDetailedItem($key, $item, $source);
+				}
 			}
 
 			return $payload;
 		}
 
-		$targetCollection = $this->relation->getCollection();
+		$seenPivot = [];
+		$seenTarget = [];
 		foreach ($input as $item) {
 			if (!is_array($item)) {
 				$payload['connect'][] = $item;
+				$seenTarget[(string) $item] = true;
 				continue;
 			}
 
-			$this->inputPrimaryKeyValue($targetCollection, $item) === null
-				? $payload['create'][] = $item
-				: $payload['update'][] = $item;
+			if ($this->isThroughPayload($item)) {
+				$pivotId = array_key_exists($throughPrimaryKey, $item) ? $item[$throughPrimaryKey] : null;
+				$targetId = $item[$throughOuterKey] ?? null;
+
+				if ($pivotId !== null && isset($currentByPivotId[(string) $pivotId])) {
+					$seenPivot[(string) $pivotId] = true;
+					$payload['update'][] = $this->throughMutationState($source, $item);
+					continue;
+				}
+
+				if ($targetId !== null && isset($currentByTargetId[(string) $targetId])) {
+					$existing = $currentByTargetId[(string) $targetId];
+					$existingPivotId = $this->inputPrimaryKeyValue($throughCollection, $existing);
+					if ($existingPivotId !== null) {
+						$seenPivot[(string) $existingPivotId] = true;
+						$item[$throughPrimaryKey] = $existingPivotId;
+					}
+					$seenTarget[(string) $targetId] = true;
+					$payload['update'][] = $this->throughMutationState($source, $item);
+					continue;
+				}
+
+				if ($targetId !== null) {
+					$seenTarget[(string) $targetId] = true;
+				}
+				$payload['create'][] = $this->throughMutationState($source, $item);
+				continue;
+			}
+
+			$targetCollection = $this->relation->getCollection();
+			$targetId = $this->inputPrimaryKeyValue($targetCollection, $item);
+			if ($targetId === null) {
+				$payload['create'][] = $item;
+				continue;
+			}
+
+			$seenTarget[(string) $targetId] = true;
+			if (isset($currentByTargetId[(string) $targetId])) {
+				$payload['update'][] = $item;
+				continue;
+			}
+
+			$payload['connect'][] = $targetId;
+			if (count($item) > 1) {
+				$payload['update'][] = $item;
+			}
+		}
+
+		foreach ($currentRows as $row) {
+			if (!is_array($row)) {
+				continue;
+			}
+
+			$pivotId = $this->inputPrimaryKeyValue($throughCollection, $row);
+			$targetId = $row[$throughOuterKey] ?? null;
+			if ($pivotId !== null && isset($seenPivot[(string) $pivotId])) {
+				continue;
+			}
+			if ($targetId !== null && isset($seenTarget[(string) $targetId])) {
+				continue;
+			}
+
+			if ($targetId !== null) {
+				$payload['disconnect'][] = $targetId;
+			}
 		}
 
 		return $payload;
@@ -216,10 +306,77 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 		$targetCollection = $this->relation->getCollection();
 		foreach ($children['create'] ?? [] as $created) {
-			if ($created instanceof MutationStateInterface) {
+			if ($created instanceof MutationStateInterface && $created->getCollection() === $targetCollection) {
 				$this->connect($queue, $parentId, $created->getValue($this->getPrimaryKeyName($targetCollection)));
 			}
 		}
+	}
+
+	private function normalizeDetailedItem(string $operation, mixed $item, MutationStateInterface $source): mixed
+	{
+		if (!is_array($item)) {
+			return $item;
+		}
+
+		if (in_array($operation, ['connect', 'disconnect'], true)) {
+			return $item;
+		}
+
+		if (!$this->isThroughPayload($item)) {
+			return $item;
+		}
+
+		if ($operation === 'delete') {
+			return $item;
+		}
+
+		return $this->throughMutationState($source, $item);
+	}
+
+	private function throughMutationState(MutationStateInterface $source, array $item): \ON\RestApi\Mutation\NestedMutationInput
+	{
+		$through = $this->manyToMany->through;
+		$item[$through->getInnerField()->getName()] = $source->getValue($this->relation->getInnerField()->getName());
+
+		return $this->nestedMutation($through->getCollection(), $item);
+	}
+
+	private function isThroughPayload(array $item): bool
+	{
+		$through = $this->manyToMany->through->getCollection();
+		$target = $this->getTargetCollection();
+
+		foreach (array_keys($item) as $key) {
+			if ((string) $key === $this->manyToMany->through->getOuterField()->getName()) {
+				return true;
+			}
+
+			if ($through->fields->has((string) $key) && !$target->fields->has((string) $key)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private function currentPivotRows(DataSourceInterface $dataSource, MutationStateInterface $source): array
+	{
+		$parentId = $source->resolveValue($source->getValue($this->relation->getInnerField()->getName()));
+		$through = $this->manyToMany->through;
+		$result = $dataSource->list(
+			$through->getCollection(),
+			new QuerySpec(
+				$through->getCollection()->getName(),
+				new SelectionSet(),
+				new ComparisonFilter(
+					new FieldExpression($through->getInnerField()->getName()),
+					ComparisonOperator::Eq,
+					new LiteralValue($parentId)
+				)
+			)
+		);
+
+		return $result['items'] ?? [];
 	}
 
 	private function connect(MutationQueue $queue, mixed $parentId, mixed $targetId): void

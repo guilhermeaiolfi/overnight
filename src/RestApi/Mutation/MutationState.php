@@ -66,6 +66,10 @@ final class MutationState implements MutationStateInterface
 		}
 
 		if (is_string($value)) {
+			if (!array_key_exists($value, $this->values) && ($this->row === null || !array_key_exists($value, $this->row))) {
+				return $value;
+			}
+
 			$value = $this->getValue($value);
 
 			return $value instanceof ValueRef ? $value->resolve() : $value;

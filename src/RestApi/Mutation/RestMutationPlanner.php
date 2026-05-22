@@ -15,6 +15,11 @@ use ON\RestApi\Event\ItemDeleted;
 use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdated;
 use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Mutation\NestedMutationInput;
+use ON\RestApi\Event\RelationConnected;
+use ON\RestApi\Event\RelationConnecting;
+use ON\RestApi\Event\RelationDisconnected;
+use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
 use ON\RestApi\Resolver\Sql\Loader\RootLoader;
@@ -222,7 +227,7 @@ final class RestMutationPlanner
 			return null;
 		}
 
-		$payload = $handler->normalizePayload($operation, $relationInput, $state);
+		$payload = $handler->normalizePayload($operation, $relationInput, $state, $this->dataSource);
 		$target = $handler->getTargetCollection();
 		$children = [
 			'create' => [],
@@ -230,36 +235,41 @@ final class RestMutationPlanner
 			'delete' => [],
 		];
 
+		$this->scheduleRelationLifecycleEvents($collection, $relationName, $target, $state, $path, $payload);
+
 		foreach ($payload['create'] ?? [] as $index => $item) {
-			if (!is_array($item)) {
+			[$childCollection, $childInput] = $this->childMutationInput($target, $item);
+			if ($childInput === null) {
 				continue;
 			}
 
-			$child = $this->planSaveNode('create', $target, $item, null, $this->relationChildPath($path, $relationInput, 'create', $index));
+			$child = $this->planSaveNode('create', $childCollection, $childInput, null, $this->relationChildPath($path, $relationInput, 'create', $index));
 			if ($child !== null) {
 				$children[$child['operation']][] = $child;
 			}
 		}
 
 		foreach ($payload['update'] ?? [] as $index => $item) {
-			if (!is_array($item)) {
+			[$childCollection, $childInput] = $this->childMutationInput($target, $item);
+			if ($childInput === null) {
 				continue;
 			}
 
-			$id = $this->inputPrimaryKeyValue($target, $item);
-			$child = $this->planSaveNode('upsert', $target, $item, $id === null ? null : (string) $id, $this->relationChildPath($path, $relationInput, 'update', $index));
+			$id = $this->inputPrimaryKeyValue($childCollection, $childInput);
+			$child = $this->planSaveNode('upsert', $childCollection, $childInput, $id === null ? null : (string) $id, $this->relationChildPath($path, $relationInput, 'update', $index));
 			if ($child !== null) {
 				$children[$child['operation']][] = $child;
 			}
 		}
 
 		foreach ($payload['delete'] ?? [] as $index => $item) {
-			$id = is_array($item) ? $this->inputPrimaryKeyValue($target, $item) : $item;
+			[$childCollection, $childInput] = $this->childMutationInput($target, $item);
+			$id = is_array($childInput) ? $this->inputPrimaryKeyValue($childCollection, $childInput) : $childInput;
 			if ($id === null) {
 				continue;
 			}
 
-			$child = $this->planDeleteNode($target, (string) $id, $this->relationChildPath($path, $relationInput, 'delete', $index));
+			$child = $this->planDeleteNode($childCollection, (string) $id, $this->relationChildPath($path, $relationInput, 'delete', $index));
 			if ($child !== null) {
 				$children['delete'][] = $child;
 			}
@@ -285,6 +295,31 @@ final class RestMutationPlanner
 		$this->afterEvents[] = $operation === 'create'
 			? new ItemCreated($collection, $state, $path, $this->rootCollection, $this->rootState)
 			: new ItemUpdated($collection, $state, $path, $this->rootCollection, $this->rootState);
+	}
+
+	private function scheduleRelationLifecycleEvents(
+		CollectionInterface $collection,
+		string $relationName,
+		CollectionInterface $targetCollection,
+		MutationStateInterface $state,
+		array $path,
+		array $payload
+	): void {
+		if (!$this->dispatchEvents) {
+			return;
+		}
+
+		foreach ($payload['connect'] ?? [] as $index => $target) {
+			$targetPath = [...$path, 'connect', $index];
+			$this->dispatchEvent(new RelationConnecting($collection, $relationName, $targetCollection, $state, $target, $targetPath, $this->rootCollection, $this->rootState));
+			$this->afterEvents[] = new RelationConnected($collection, $relationName, $targetCollection, $state, $target, $targetPath, $this->rootCollection, $this->rootState);
+		}
+
+		foreach ($payload['disconnect'] ?? [] as $index => $target) {
+			$targetPath = [...$path, 'disconnect', $index];
+			$this->dispatchEvent(new RelationDisconnecting($collection, $relationName, $targetCollection, $state, $target, $targetPath, $this->rootCollection, $this->rootState));
+			$this->afterEvents[] = new RelationDisconnected($collection, $relationName, $targetCollection, $state, $target, $targetPath, $this->rootCollection, $this->rootState);
+		}
 	}
 
 	private function relationChildPath(array $path, mixed $rawInput, string $operation, int|string $index): array
@@ -363,5 +398,17 @@ final class RestMutationPlanner
 			AuthState::Unauthenticated => throw RestApiError::unauthenticated(),
 			AuthState::Forbidden, AuthState::Pending => throw RestApiError::forbidden(),
 		};
+	}
+
+	/**
+	 * @return array{0: CollectionInterface, 1: mixed}
+	 */
+	private function childMutationInput(CollectionInterface $defaultCollection, mixed $item): array
+	{
+		if ($item instanceof NestedMutationInput) {
+			return [$item->getCollection(), $item->getData()];
+		}
+
+		return [$defaultCollection, $item];
 	}
 }

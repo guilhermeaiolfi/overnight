@@ -14,6 +14,7 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Mutation\NestedMutationInput;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Query\Node\ComparisonFilter;
@@ -23,10 +24,13 @@ use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\PaginationSpec;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
+use ON\RestApi\Resolver\DataSourceInterface;
 
 abstract class AbstractRelationLoader implements RelationLoaderInterface
 {
@@ -508,15 +512,10 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 	public function normalizePayload(
 		string $operation,
 		mixed $input,
-		MutationStateInterface $source
+		MutationStateInterface $source,
+		DataSourceInterface $dataSource
 	): array {
-		return [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-			'connect' => [],
-			'disconnect' => [],
-		];
+		return $this->emptyMutationPayload();
 	}
 
 	protected function mutate(
@@ -596,6 +595,72 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		}
 
 		return $this->isAssociativeArray($value) ? [$value] : $value;
+	}
+
+	protected function emptyMutationPayload(): array
+	{
+		return [
+			'create' => [],
+			'update' => [],
+			'delete' => [],
+			'connect' => [],
+			'disconnect' => [],
+		];
+	}
+
+	protected function hasOperationPayload(array $input): bool
+	{
+		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+			if (array_key_exists($key, $input)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	protected function currentRelationRows(DataSourceInterface $dataSource, MutationStateInterface $source): array
+	{
+		$parentId = $source->getValue($this->relation->getInnerField()->getName());
+		if ($parentId instanceof \ON\RestApi\Mutation\ValueRef && !$parentId->isReady()) {
+			return [];
+		}
+
+		$result = $dataSource->list(
+			$this->getTargetCollection(),
+			new QuerySpec(
+				$this->getTargetCollection()->getName(),
+				new SelectionSet(),
+				new ComparisonFilter(
+					new FieldExpression($this->relation->getOuterField()->getName()),
+					ComparisonOperator::Eq,
+					new LiteralValue($source->resolveValue($parentId))
+				)
+			)
+		);
+
+		return $result['items'] ?? [];
+	}
+
+	protected function currentParentRow(DataSourceInterface $dataSource, MutationStateInterface $source): ?array
+	{
+		$primaryKey = $this->getPrimaryKeyName($source->getCollection());
+		$id = $source->getValue($primaryKey);
+		if ($id instanceof \ON\RestApi\Mutation\ValueRef && !$id->isReady()) {
+			return null;
+		}
+
+		$id = $source->resolveValue($id);
+		if ($id === null || $id === '') {
+			return null;
+		}
+
+		return $dataSource->get($source->getCollection(), (string) $id);
+	}
+
+	protected function nestedMutation(CollectionInterface $collection, array $data): NestedMutationInput
+	{
+		return new NestedMutationInput($collection, $data);
 	}
 
 }
