@@ -7,6 +7,15 @@ namespace ON\RestApi\Resolver\Sql\Loader;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Field\FieldInterface;
+use ON\RestApi\Mutation\MutationDeleteTaskInterface;
+use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\MutationTaskInterface;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\ComparisonOperator;
+use ON\RestApi\Query\Node\FieldExpression;
+use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\RelationSelection;
 
 final class RootLoader
@@ -51,6 +60,85 @@ final class RootLoader
 			$this->internalColumns,
 			$configured
 		);
+	}
+
+	/**
+	 * @return array{task: ?MutationTaskInterface, deleteTask: ?MutationDeleteTaskInterface, deleteEvents: list<array{0: CollectionInterface, 1: MutationStateInterface, 2: MutationDeleteTaskInterface, 3: array}>}
+	 */
+	public static function persistMutation(array $node, MutationQueue $queue): array
+	{
+		$task = null;
+		$deleteTask = null;
+		$deleteEvents = [];
+		$operation = $node['operation'];
+		$collection = $node['collection'];
+		$state = $node['state'];
+
+		if ($operation === 'create') {
+			$task = $queue->queueInsert($state);
+		} elseif ($operation === 'update') {
+			$task = $queue->queueUpdate(
+				$collection,
+				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection))),
+				$state
+			);
+		} elseif ($operation === 'delete') {
+			$deleteTask = $queue->queueDelete(
+				$collection,
+				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection)))
+			);
+			$deleteEvents[] = [$collection, $state, $deleteTask, $node['path']];
+		}
+
+		foreach ($node['relations'] ?? [] as $relation) {
+			$relation['handler']->{$operation}(
+				$relation['payload'],
+				$state,
+				self::childStates($relation['children']),
+				$queue
+			);
+
+			foreach ($relation['children'] as $group) {
+				foreach ($group as $child) {
+					$result = self::persistChildRelations($child, $queue);
+					$deleteEvents = [...$deleteEvents, ...$result['deleteEvents']];
+				}
+			}
+		}
+
+		return [
+			'task' => $task,
+			'deleteTask' => $deleteTask,
+			'deleteEvents' => $deleteEvents,
+		];
+	}
+
+	/**
+	 * @return array{deleteEvents: list<array{0: CollectionInterface, 1: MutationStateInterface, 2: MutationDeleteTaskInterface, 3: array}>}
+	 */
+	private static function persistChildRelations(array $node, MutationQueue $queue): array
+	{
+		$deleteEvents = [];
+		$operation = $node['operation'];
+		$state = $node['state'];
+
+		foreach ($node['relations'] ?? [] as $relation) {
+			$relation['handler']->{$operation}(
+				$relation['payload'],
+				$state,
+				self::childStates($relation['children']),
+				$queue
+			);
+
+			foreach ($relation['children'] as $group) {
+				foreach ($group as $child) {
+					$result = self::persistChildRelations($child, $queue);
+					$deleteEvents = [...$deleteEvents, ...$result['deleteEvents']];
+				}
+			}
+		}
+
+		return ['deleteEvents' => $deleteEvents];
 	}
 
 	private function configureRelations(AbstractNode $parent, CollectionInterface $collection, array $relations): array
@@ -206,6 +294,47 @@ final class RootLoader
 		}
 
 		return $mapped;
+	}
+
+	private static function childStates(array $children): array
+	{
+		$states = [
+			'create' => [],
+			'update' => [],
+			'delete' => [],
+		];
+
+		foreach ($children as $operation => $group) {
+			foreach ($group as $child) {
+				$states[$operation][] = $child['state'];
+			}
+		}
+
+		return $states;
+	}
+
+	private static function primaryKeyCriteria(CollectionInterface $collection, mixed $id): ComparisonFilter
+	{
+		return new ComparisonFilter(
+			new FieldExpression(self::getPrimaryKeyName($collection)),
+			ComparisonOperator::Eq,
+			new LiteralValue($id)
+		);
+	}
+
+	private static function getPrimaryKeyName(CollectionInterface $collection): string
+	{
+		$pk = $collection->getPrimaryKey();
+
+		if ($pk instanceof FieldInterface) {
+			return $pk->getName();
+		}
+
+		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
+			return $pk[0]->getName();
+		}
+
+		return 'id';
 	}
 
 }

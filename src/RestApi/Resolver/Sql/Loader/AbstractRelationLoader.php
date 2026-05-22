@@ -14,8 +14,14 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\ComparisonOperator;
+use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SortDirection;
@@ -36,8 +42,8 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	public function __construct(
 		protected RelationInterface $relation,
-		protected RelationSelection $selection,
-		protected QueryContext $context
+		protected ?RelationSelection $selection = null,
+		protected ?QueryContext $context = null
 	) {
 		$this->targetCollection = $this->relation->getCollection();
 		$this->columns = $this->buildColumns();
@@ -99,6 +105,10 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	public function getNestedRelations(): array
 	{
+		if ($this->selection === null) {
+			return [];
+		}
+
 		$relations = [];
 		foreach ($this->selection->query->selection->nodes as $node) {
 			if ($node instanceof RelationSelection) {
@@ -121,11 +131,19 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	public function filters(): ?FilterNode
 	{
+		if ($this->selection === null) {
+			return null;
+		}
+
 		return $this->selection->query->filter;
 	}
 
 	public function orderBy(): array
 	{
+		if ($this->selection === null) {
+			return [];
+		}
+
 		if ($this->selection->query->sort === []) {
 			return [];
 		}
@@ -400,11 +418,19 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	private function pagination(): ?PaginationSpec
 	{
+		if ($this->selection === null) {
+			return null;
+		}
+
 		return $this->selection->query->pagination;
 	}
 
 	private function selectedFieldNames(): array
 	{
+		if ($this->selection === null) {
+			return [];
+		}
+
 		if (!$this->selection->query->selection->explicit || $this->hasWildcardSelection()) {
 			return [];
 		}
@@ -421,6 +447,10 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	private function requestedFieldNames(): array
 	{
+		if ($this->selection === null) {
+			return [];
+		}
+
 		if (!$this->selection->query->selection->explicit || $this->hasWildcardSelection()) {
 			return [];
 		}
@@ -437,6 +467,10 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	private function hasWildcardSelection(): bool
 	{
+		if ($this->selection === null) {
+			return false;
+		}
+
 		foreach ($this->selection->query->selection->nodes as $node) {
 			if ($node instanceof WildcardSelection) {
 				return true;
@@ -444,6 +478,124 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		}
 
 		return false;
+	}
+
+	public function create(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->mutate($payload, $source, $children, $queue);
+	}
+
+	public function update(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->mutate($payload, $source, $children, $queue);
+	}
+
+	public function delete(
+		array $payload,
+		MutationStateInterface $source,
+		MutationQueue $queue
+	): void {
+	}
+
+	public function normalizePayload(
+		string $operation,
+		mixed $input,
+		MutationStateInterface $source
+	): array {
+		return [
+			'create' => [],
+			'update' => [],
+			'delete' => [],
+			'connect' => [],
+			'disconnect' => [],
+		];
+	}
+
+	protected function mutate(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+	}
+
+	protected function queueChildMutations(array $children, MutationQueue $queue): void
+	{
+		foreach ($children['create'] ?? [] as $state) {
+			if ($state instanceof MutationStateInterface) {
+				$queue->queueInsert($state);
+			}
+		}
+
+		foreach ($children['update'] ?? [] as $state) {
+			if ($state instanceof MutationStateInterface) {
+				$queue->queueUpdate(
+					$state->getCollection(),
+					$this->primaryKeyCriteria($state),
+					$state
+				);
+			}
+		}
+
+		foreach ($children['delete'] ?? [] as $state) {
+			if ($state instanceof MutationStateInterface) {
+				$queue->queueDelete($state->getCollection(), $this->primaryKeyCriteria($state));
+			}
+		}
+	}
+
+	protected function primaryKeyCriteria(MutationStateInterface $state): ComparisonFilter
+	{
+		$primaryKey = $this->getPrimaryKeyName($state->getCollection());
+
+		return new ComparisonFilter(
+			new FieldExpression($primaryKey),
+			ComparisonOperator::Eq,
+			new LiteralValue($state->getValue($primaryKey))
+		);
+	}
+
+	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	{
+		$primaryKey = $this->getPrimaryKeyName($collection);
+
+		return array_key_exists($primaryKey, $input) ? $input[$primaryKey] : null;
+	}
+
+	protected function getPrimaryKeyName(CollectionInterface $collection): string
+	{
+		$primary = $collection->getPrimaryKey();
+		if (is_array($primary)) {
+			$primary = reset($primary);
+		}
+
+		return $primary?->getName() ?? 'id';
+	}
+
+	protected function isAssociativeArray(array $value): bool
+	{
+		if ($value === []) {
+			return false;
+		}
+
+		return array_keys($value) !== range(0, count($value) - 1);
+	}
+
+	protected function normalizeRelationItems(mixed $value): array
+	{
+		if (!is_array($value)) {
+			return [];
+		}
+
+		return $this->isAssociativeArray($value) ? [$value] : $value;
 	}
 
 }

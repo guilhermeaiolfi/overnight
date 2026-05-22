@@ -40,4 +40,16 @@ final class LoaderFactory
 
 		return new $class($relation, $selection, $context);
 	}
+
+	public function mutation(CollectionInterface $source, string $relationName): ?RelationLoaderInterface
+	{
+		if (!$source->relations->has($relationName)) {
+			return null;
+		}
+
+		$relation = $source->relations->get($relationName);
+		$class = $this->registry->resolve($source, $relationName, $relation);
+
+		return new $class($relation);
+	}
 }

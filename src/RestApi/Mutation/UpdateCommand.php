@@ -1,0 +1,43 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\RestApi\Mutation;
+
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Resolver\DataSourceInterface;
+
+final class UpdateCommand extends AbstractMutationCommand
+{
+	private MutationStateInterface $state;
+
+	public function __construct(
+		private CollectionInterface $collection,
+		private FilterNode $criteria,
+		private array|MutationStateInterface $input
+	) {
+		$this->state = $input instanceof MutationStateInterface
+			? $input
+			: new MutationState($collection, $input);
+	}
+
+	public function getTask(): MutationTaskInterface
+	{
+		return new MutationTask($this->state);
+	}
+
+	public function isReady(): bool
+	{
+		$input = $this->input instanceof MutationStateInterface ? $this->input->getData() : $this->input;
+
+		return $this->valuesReady($this->criteria) && $this->valuesReady($input);
+	}
+
+	public function execute(DataSourceInterface $dataSource): void
+	{
+		$input = $this->input instanceof MutationStateInterface ? $this->input->getData() : $this->input;
+		$row = $dataSource->update($this->collection, $this->resolveValue($this->criteria), $this->resolveValue($input));
+		$this->state->markReady($row ?? []);
+	}
+}

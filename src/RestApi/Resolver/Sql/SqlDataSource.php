@@ -8,10 +8,10 @@ use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\AggregateSpec;
 use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\GroupBySpec;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\QuerySpec;
@@ -138,12 +138,15 @@ class SqlDataSource extends AbstractDataSource
 	public function create(CollectionInterface $collection, array $input): array
 	{
 		try {
+			$primaryKeyValue = $this->inputPrimaryKeyValue($collection, $input);
 			$input = $this->mapInputToColumns($collection, $input);
 			$lastId = $this->getDatabase()->insert($collection->getTable())
 				->values($input)
 				->run();
 
-			return $this->get($collection, (string) $lastId) ?? [];
+			$id = $lastId ?? $primaryKeyValue;
+
+			return $id === null ? [] : ($this->get($collection, (string) $id) ?? []);
 		} catch (RestApiError $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -151,19 +154,19 @@ class SqlDataSource extends AbstractDataSource
 		}
 	}
 
-	public function update(CollectionInterface $collection, string $id, array $input): ?array
+	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
 	{
 		try {
 			if ($input === []) {
-				return $this->get($collection, $id);
+				return $this->firstByCriteria($collection, $criteria);
 			}
 
-			$this->getDatabase()->update($collection->getTable())
-				->values($this->mapInputToColumns($collection, $input))
-				->where($this->getPrimaryKeyColumn($collection), $id)
-				->run();
+			$query = $this->getDatabase()->update($collection->getTable())
+				->values($this->mapInputToColumns($collection, $input));
+			$this->applyCriteriaFilter($query, $collection, $criteria);
+			$query->run();
 
-			return $this->get($collection, $id);
+			return $this->firstByCriteria($collection, $criteria);
 		} catch (RestApiError $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -171,72 +174,15 @@ class SqlDataSource extends AbstractDataSource
 		}
 	}
 
-	public function delete(CollectionInterface $collection, string $id): bool
+	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
 	{
 		try {
-			if ($this->get($collection, $id) === null) {
-				return false;
-			}
+			$query = $this->getDatabase()->delete($collection->getTable());
+			$this->applyCriteriaFilter($query, $collection, $criteria);
 
-			return $this->getDatabase()->delete($collection->getTable())
-				->where($this->getPrimaryKeyColumn($collection), $id)
-				->run() > 0;
+			return $query->run() > 0;
 		} catch (\Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
-		}
-	}
-
-	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		if (!$collection->relations->has($relationName)) {
-			return;
-		}
-
-		$relation = $collection->relations->get($relationName);
-		if (!$relation->isJunction()) {
-			return;
-		}
-
-		$through = $relation->through;
-		$this->insertJunctionRow(
-			$through->getCollection()->getTable(),
-			$through->getInnerField()->getColumn(),
-			$through->getOuterField()->getColumn(),
-			$parentId,
-			$targetId
-		);
-	}
-
-	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		if (!$collection->relations->has($relationName)) {
-			return;
-		}
-
-		$relation = $collection->relations->get($relationName);
-		if (!$relation->isJunction()) {
-			return;
-		}
-
-		$through = $relation->through;
-		$this->getDatabase()->delete($through->getCollection()->getTable())
-			->where($through->getInnerField()->getColumn(), $parentId)
-			->where($through->getOuterField()->getColumn(), $targetId)
-			->run();
-	}
-
-	protected function insertJunctionRow(string $table, string $innerCol, string $outerCol, mixed $parentId, mixed $targetId): void
-	{
-		try {
-			$this->getDatabase()->insert($table)->values([
-				$innerCol => $parentId,
-				$outerCol => $targetId,
-			])->run();
-		} catch (\Throwable $e) {
-			$message = $e->getMessage();
-			if (!str_contains($message, 'UNIQUE') && !str_contains($message, 'Duplicate')) {
-				throw $e;
-			}
 		}
 	}
 
@@ -554,6 +500,68 @@ class SqlDataSource extends AbstractDataSource
 		}
 
 		return $mapped;
+	}
+
+	protected function applyCriteriaFilter(object $query, CollectionInterface $collection, FilterNode $criteria): void
+	{
+		$this->filterApplier->applyNode($query, $collection, $criteria);
+	}
+
+	protected function firstByCriteria(CollectionInterface $collection, FilterNode $criteria): ?array
+	{
+		$query = $this->newSelectQuery($collection);
+		$this->applyCriteriaFilter($query, $collection, $criteria);
+		$query->limit(1);
+
+		$statement = $query->run();
+		try {
+			$row = $statement->fetch(CycleStatementInterface::FETCH_ASSOC);
+		} finally {
+			$statement->close();
+		}
+
+		return is_array($row) ? $this->mapRowToFields($collection, $row) : null;
+	}
+
+	protected function mapRowToFields(CollectionInterface $collection, array $row): array
+	{
+		$item = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
+
+			$column = $field->getColumn();
+			if (array_key_exists($column, $row)) {
+				$item[(string) $fieldName] = $row[$column];
+			}
+		}
+
+		return $item;
+	}
+
+	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	{
+		$primaryKeyName = $this->getPrimaryKeyName($collection);
+
+		if (array_key_exists($primaryKeyName, $input)) {
+			return $input[$primaryKeyName];
+		}
+
+		$primaryKeyColumn = $this->getPrimaryKeyColumn($collection);
+
+		return $input[$primaryKeyColumn] ?? null;
+	}
+
+	protected function getPrimaryKeyName(CollectionInterface $collection): string
+	{
+		$pk = $collection->getPrimaryKey();
+
+		if (is_array($pk)) {
+			$pk = reset($pk);
+		}
+
+		return $pk instanceof \ON\ORM\Definition\Field\FieldInterface ? $pk->getName() : 'id';
 	}
 
 	protected function fieldNamesToColumnNames(CollectionInterface $collection, array $fieldNames): array

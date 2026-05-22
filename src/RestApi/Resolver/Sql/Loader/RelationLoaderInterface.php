@@ -6,6 +6,8 @@ namespace ON\RestApi\Resolver\Sql\Loader;
 
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\MutationStateInterface;
 
 interface RelationLoaderInterface extends LoaderInterface
 {
@@ -36,4 +38,30 @@ interface RelationLoaderInterface extends LoaderInterface
 	public function getInternalColumns(): array;
 
 	public function getNestedRelations(): array;
+
+	public function normalizePayload(
+		string $operation,
+		mixed $input,
+		MutationStateInterface $source
+	): array;
+
+	public function create(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void;
+
+	public function update(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void;
+
+	public function delete(
+		array $payload,
+		MutationStateInterface $source,
+		MutationQueue $queue
+	): void;
 }

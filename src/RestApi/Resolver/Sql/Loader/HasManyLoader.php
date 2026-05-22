@@ -6,8 +6,7 @@ namespace ON\RestApi\Resolver\Sql\Loader;
 
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
-
-class HasManyLoader extends AbstractRelationLoader
+class HasManyLoader extends HasOneLoader
 {
 	public function configureNode(AbstractNode $parent): AbstractNode
 	{

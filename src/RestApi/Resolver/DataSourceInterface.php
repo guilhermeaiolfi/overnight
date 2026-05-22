@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 
 interface DataSourceInterface
@@ -24,17 +25,18 @@ interface DataSourceInterface
 	/**
 	 * Create a new item. Returns the created item as an associative array.
 	 */
-	public function create(CollectionInterface $collection, array $input): array;
+	public function create(CollectionInterface $collection, array $input): ?array;
 
 	/**
-	 * Update an item by ID. Returns the updated item, or null if not found.
+	 * Update items matching criteria. Returns the updated item when criteria
+	 * identifies a single item, or null when no item can be returned.
 	 */
-	public function update(CollectionInterface $collection, string $id, array $input): ?array;
+	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array;
 
 	/**
-	 * Delete an item by ID. Returns true if deleted, false if not found.
+	 * Delete items matching criteria. Returns true if at least one row was deleted.
 	 */
-	public function delete(CollectionInterface $collection, string $id): bool;
+	public function delete(CollectionInterface $collection, FilterNode $criteria): bool;
 
 	/**
 	 * Run aggregate queries (count, sum, avg, min, max) with optional groupBy.
@@ -46,16 +48,6 @@ interface DataSourceInterface
 	 * Run a group of writes atomically.
 	 */
 	public function transaction(callable $callback): mixed;
-
-	/**
-	 * Connect a many-to-many relation row.
-	 */
-	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void;
-
-	/**
-	 * Disconnect a many-to-many relation row.
-	 */
-	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void;
 
 	/**
 	 * Clear internal caches (DataLoader state). Called after each request.

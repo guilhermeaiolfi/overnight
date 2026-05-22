@@ -6,9 +6,9 @@ namespace ON\RestApi\Addon;
 
 use ON\DB\DatabaseManager;
 use ON\Event\EventsExtension;
-use ON\RestApi\Event\ItemCreate;
-use ON\RestApi\Event\ItemDelete;
-use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleting;
+use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\RestApiService;
 
 /**
@@ -47,12 +47,12 @@ class RevisionAddon implements RestApiAddonInterface
 		$this->table = $options['table'] ?? 'revisions';
 		$this->collections = $options['collections'] ?? null;
 
-		$this->events->registerListener('restapi.item.create', [$this, 'onItemCreate']);
-		$this->events->registerListener('restapi.item.update', [$this, 'onItemUpdate']);
-		$this->events->registerListener('restapi.item.delete', [$this, 'onItemDelete']);
+		$this->events->registerListener('restapi.item.creating', [$this, 'onItemCreate']);
+		$this->events->registerListener('restapi.item.updating', [$this, 'onItemUpdate']);
+		$this->events->registerListener('restapi.item.deleting', [$this, 'onItemDelete']);
 	}
 
-	public function onItemCreate(ItemCreate $event): void
+	public function onItemCreate(ItemCreating $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
 
@@ -60,10 +60,10 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$this->writeRevision($collectionName, '', 'create', null, $event->getInput());
+		$this->writeRevision($collectionName, '', 'create', null, $event->getState()->getData());
 	}
 
-	public function onItemUpdate(ItemUpdate $event): void
+	public function onItemUpdate(ItemUpdating $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
 
@@ -78,10 +78,10 @@ class RevisionAddon implements RestApiAddonInterface
 			['dispatchEvents' => false]
 		);
 
-		$this->writeRevision($collectionName, $event->getId(), 'update', $currentItem, $event->getInput());
+		$this->writeRevision($collectionName, $event->getId(), 'update', $currentItem, $event->getState()->getData());
 	}
 
-	public function onItemDelete(ItemDelete $event): void
+	public function onItemDelete(ItemDeleting $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
 

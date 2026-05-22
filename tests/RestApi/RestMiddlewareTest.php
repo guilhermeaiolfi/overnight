@@ -7,9 +7,11 @@ namespace Tests\ON\RestApi;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use ON\RestApi\Event\FileUpload;
-use ON\RestApi\Event\ItemCreate;
+use ON\RestApi\Event\ItemCreating;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Middleware\RestMiddleware;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -94,16 +96,18 @@ final class RestMiddlewareTest extends TestCase
 				return $record;
 			}
 
-			public function update(\ON\ORM\Definition\Collection\CollectionInterface $collection, string $id, array $input): ?array
+			public function update(\ON\ORM\Definition\Collection\CollectionInterface $collection, FilterNode $criteria, array $input): ?array
 			{
+				$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '1';
 				$record = ['id' => $id] + $input;
 				$this->stored[$collection->getName()][$id] = $record;
 
 				return $record;
 			}
 
-			public function delete(\ON\ORM\Definition\Collection\CollectionInterface $collection, string $id): bool
+			public function delete(\ON\ORM\Definition\Collection\CollectionInterface $collection, FilterNode $criteria): bool
 			{
+				$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '';
 				unset($this->stored[$collection->getName()][$id]);
 
 				return true;
@@ -117,14 +121,6 @@ final class RestMiddlewareTest extends TestCase
 			public function transaction(callable $callback): mixed
 			{
 				return $callback();
-			}
-
-			public function connectManyToMany(\ON\ORM\Definition\Collection\CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-			{
-			}
-
-			public function disconnectManyToMany(\ON\ORM\Definition\Collection\CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-			{
 			}
 
 			public function clearCache(): void
@@ -141,7 +137,7 @@ final class RestMiddlewareTest extends TestCase
 						$event->setStoredValue(501);
 					}
 
-					if ($event instanceof ItemCreate) {
+					if ($event instanceof ItemCreating) {
 						$event->allow();
 					}
 

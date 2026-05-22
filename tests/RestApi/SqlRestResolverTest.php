@@ -6,6 +6,7 @@ namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
@@ -487,7 +488,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame('Charlie', $created['displayName']);
 		$this->assertArrayNotHasKey('display_name', $created);
 
-		$updated = $resolver->update($collection, (string) $created['id'], [
+		$updated = $resolver->update($collection, $this->filter($collection, ['id' => ['_eq' => (string) $created['id']]]), [
 			'displayName' => 'Charles',
 		]);
 
@@ -554,7 +555,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$updated = $resolver->update($registry->getCollection('user'), '1', [
+		$updated = $resolver->update($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '1']]), [
 			'name' => 'Johnny',
 		]);
 
@@ -575,7 +576,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$deleted = $resolver->delete($registry->getCollection('user'), '1');
+		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '1']]));
 		$this->assertTrue($deleted);
 
 		// Verify it's gone
@@ -590,8 +591,22 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createTestDatabase();
 		$resolver = $this->createResolver($registry, $db);
 
-		$deleted = $resolver->delete($registry->getCollection('user'), '999');
+		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '999']]));
 		$this->assertFalse($deleted);
+	}
+
+	public function testDeleteWithInCriteria(): void
+	{
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_in' => ['1', '2']]]));
+
+		$this->assertTrue($deleted);
+		$this->assertNull($resolver->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user'))));
+		$this->assertNull($resolver->get($registry->getCollection('user'), '2', $this->q($registry->getCollection('user'))));
 	}
 
 	// -------------------------------------------------------------------------
@@ -976,6 +991,11 @@ final class SqlRestResolverTest extends TestCase
 	private function q(CollectionInterface $collection, array $params = []): QuerySpec
 	{
 		return (new DirectusQueryParser())->parse($collection, $params);
+	}
+
+	private function filter(CollectionInterface $collection, array $filter): FilterNode
+	{
+		return $this->q($collection, ['filter' => $filter])->filter;
 	}
 
 	private function countRows(CycleSqliteTestDatabase $db, string $table): int

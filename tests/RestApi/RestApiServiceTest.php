@@ -8,10 +8,13 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
-use ON\RestApi\Event\ItemCreate;
+use ON\RestApi\Event\ItemCreated;
+use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
-use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Resolver\DataSourceInterface;
@@ -135,7 +138,7 @@ final class RestApiServiceTest extends TestCase
 					$event->setStoredPath('uploads/test.txt');
 				}
 
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 				}
 
@@ -170,7 +173,7 @@ final class RestApiServiceTest extends TestCase
 					$event->setStoredValue(42);
 				}
 
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 				}
 
@@ -206,7 +209,7 @@ final class RestApiServiceTest extends TestCase
 					$event->setStoredValue(42);
 				}
 
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 				}
 
@@ -222,6 +225,36 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame(1, $resolver->transactionCalls);
 	}
 
+	public function testCreatedEventRunsAfterTransactionWithFinalRow(): void
+	{
+		$resolver = new ResolverSpy();
+		$resolver->createResult = ['id' => 123, 'name' => 'Created'];
+		$createdId = null;
+		$createdWasInTransaction = null;
+
+		$service = $this->createService(
+			$this->createRegistryWithUsers(),
+			$resolver,
+			function (object $event) use ($resolver, &$createdId, &$createdWasInTransaction): object {
+				if ($event instanceof ItemCreating) {
+					$event->allow();
+				}
+
+				if ($event instanceof ItemCreated) {
+					$createdWasInTransaction = $resolver->inTransaction;
+					$createdId = $event->getState()->resolveValue('id');
+				}
+
+				return $event;
+			}
+		);
+
+		$service->create('user', ['name' => 'Created']);
+
+		$this->assertFalse($createdWasInTransaction);
+		$this->assertSame(123, $createdId);
+	}
+
 	public function testCreateWithExistingPrimaryKeyFailsWithDuplicate(): void
 	{
 		$resolver = new ResolverSpy();
@@ -229,7 +262,7 @@ final class RestApiServiceTest extends TestCase
 			$this->createRegistryWithUsers(),
 			$resolver,
 			function (object $event): object {
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 				}
 
@@ -274,7 +307,7 @@ final class RestApiServiceTest extends TestCase
 			$this->createRegistryWithUsers(),
 			$resolver,
 			function (object $event) use (&$events): object {
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 					$events[] = 'create';
 				}
@@ -298,7 +331,7 @@ final class RestApiServiceTest extends TestCase
 			$this->createRegistryWithUsers(),
 			$resolver,
 			function (object $event) use (&$events): object {
-				if ($event instanceof ItemUpdate) {
+				if ($event instanceof ItemUpdating) {
 					$event->allow();
 					$events[] = 'update';
 				}
@@ -329,7 +362,7 @@ final class RestApiServiceTest extends TestCase
 			$registry,
 			$resolver,
 			function (object $event) use (&$paths): object {
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 					$paths[] = $event->getPathString();
 				}
@@ -365,7 +398,7 @@ final class RestApiServiceTest extends TestCase
 			$registry,
 			$resolver,
 			function (object $event) use (&$paths): object {
-				if ($event instanceof ItemUpdate) {
+				if ($event instanceof ItemUpdating) {
 					$event->allow();
 					$paths[] = $event->getPathString();
 				}
@@ -399,7 +432,7 @@ final class RestApiServiceTest extends TestCase
 			$registry,
 			$resolver,
 			function (object $event): object {
-				if ($event instanceof ItemCreate || $event instanceof ItemUpdate) {
+				if ($event instanceof ItemCreating || $event instanceof ItemUpdating) {
 					$event->allow();
 				}
 
@@ -446,7 +479,7 @@ final class RestApiServiceTest extends TestCase
 					$event->setStoredValue(99);
 				}
 
-				if ($event instanceof ItemCreate) {
+				if ($event instanceof ItemCreating) {
 					$event->allow();
 				}
 
@@ -511,8 +544,6 @@ final class ResolverSpy implements DataSourceInterface
 	public array $aggregateResult = [];
 	public array $createResult = [];
 	public array $lastCreateInput = [];
-	public array $connected = [];
-	public array $disconnected = [];
 	public array $missingIds = [];
 	public bool $inTransaction = false;
 	public int $transactionCalls = 0;
@@ -540,12 +571,14 @@ final class ResolverSpy implements DataSourceInterface
 		return $this->createResult === [] ? $input + ['id' => 1] : $this->createResult;
 	}
 
-	public function update(CollectionInterface $collection, string $id, array $input): ?array
+	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
 	{
+		$id = $criteria instanceof ComparisonFilter ? $criteria->right->value() : '1';
+
 		return ['id' => $id] + $input;
 	}
 
-	public function delete(CollectionInterface $collection, string $id): bool
+	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
 	{
 		return true;
 	}
@@ -569,16 +602,6 @@ final class ResolverSpy implements DataSourceInterface
 		}
 	}
 
-	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		$this->connected[] = [$collection->getName(), $parentId, $relationName, $targetId];
-	}
-
-	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		$this->disconnected[] = [$collection->getName(), $parentId, $relationName, $targetId];
-	}
-
 	public function clearCache(): void
 	{
 	}
@@ -589,8 +612,6 @@ final class NestedUploadResolverSpy implements DataSourceInterface
 	public array $listResult = ['items' => [], 'meta' => []];
 	public array $aggregateResult = [];
 	public array $createCalls = [];
-	public array $connected = [];
-	public array $disconnected = [];
 	private array $stored = [];
 
 	public function list(CollectionInterface $collection, QuerySpec $query): array
@@ -619,16 +640,18 @@ final class NestedUploadResolverSpy implements DataSourceInterface
 		return ['id' => $id];
 	}
 
-	public function update(CollectionInterface $collection, string $id, array $input): ?array
+	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
 	{
+		$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '1';
 		$record = ['id' => $id] + $input;
 		$this->stored[$collection->getName()][$id] = $record;
 
 		return $record;
 	}
 
-	public function delete(CollectionInterface $collection, string $id): bool
+	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
 	{
+		$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '';
 		unset($this->stored[$collection->getName()][$id]);
 
 		return true;
@@ -642,16 +665,6 @@ final class NestedUploadResolverSpy implements DataSourceInterface
 	public function transaction(callable $callback): mixed
 	{
 		return $callback();
-	}
-
-	public function connectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		$this->connected[] = [$collection->getName(), $parentId, $relationName, $targetId];
-	}
-
-	public function disconnectManyToMany(CollectionInterface $collection, string $parentId, string $relationName, mixed $targetId): void
-	{
-		$this->disconnected[] = [$collection->getName(), $parentId, $relationName, $targetId];
 	}
 
 	public function clearCache(): void

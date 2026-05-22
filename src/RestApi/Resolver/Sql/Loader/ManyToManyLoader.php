@@ -8,6 +8,15 @@ use Cycle\Database\Injection\Expression;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Relation\M2MRelation;
+use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Query\Node\ComparisonFilter;
+use ON\RestApi\Query\Node\ComparisonOperator;
+use ON\RestApi\Query\Node\FieldExpression;
+use ON\RestApi\Query\Node\LiteralValue;
+use ON\RestApi\Query\Node\LogicalFilter;
+use ON\RestApi\Query\Node\LogicalOperator;
 use ON\RestApi\Query\Node\RelationSelection;
 
 final class ManyToManyLoader extends AbstractRelationLoader
@@ -17,8 +26,8 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 	public function __construct(
 		private M2MRelation $manyToMany,
-		RelationSelection $selection,
-		QueryContext $context
+		?RelationSelection $selection = null,
+		?QueryContext $context = null
 	) {
 		parent::__construct($manyToMany, $selection, $context);
 	}
@@ -149,5 +158,95 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	private function targetAlias(): string
 	{
 		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_target');
+	}
+
+	public function normalizePayload(
+		string $operation,
+		mixed $input,
+		MutationStateInterface $source
+	): array {
+		$payload = parent::normalizePayload($operation, $input, $source);
+
+		if (!is_array($input)) {
+			$payload['connect'][] = $input;
+
+			return $payload;
+		}
+
+		if ($this->isAssociativeArray($input)) {
+			foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+				$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
+			}
+
+			return $payload;
+		}
+
+		$targetCollection = $this->relation->getCollection();
+		foreach ($input as $item) {
+			if (!is_array($item)) {
+				$payload['connect'][] = $item;
+				continue;
+			}
+
+			$this->inputPrimaryKeyValue($targetCollection, $item) === null
+				? $payload['create'][] = $item
+				: $payload['update'][] = $item;
+		}
+
+		return $payload;
+	}
+
+	protected function mutate(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->queueChildMutations($children, $queue);
+
+		$parentId = $source->getValue($this->relation->getInnerField()->getName());
+
+		foreach ($payload['disconnect'] ?? [] as $targetId) {
+			$this->disconnect($queue, $parentId, $targetId);
+		}
+
+		foreach ($payload['connect'] ?? [] as $targetId) {
+			$this->connect($queue, $parentId, $targetId);
+		}
+
+		$targetCollection = $this->relation->getCollection();
+		foreach ($children['create'] ?? [] as $created) {
+			if ($created instanceof MutationStateInterface) {
+				$this->connect($queue, $parentId, $created->getValue($this->getPrimaryKeyName($targetCollection)));
+			}
+		}
+	}
+
+	private function connect(MutationQueue $queue, mixed $parentId, mixed $targetId): void
+	{
+		$through = $this->manyToMany->through;
+
+		$queue->queueInsert(new MutationState($through->getCollection(), [
+			$through->getInnerField()->getName() => $parentId,
+			$through->getOuterField()->getName() => $targetId,
+		]), true);
+	}
+
+	private function disconnect(MutationQueue $queue, mixed $parentId, mixed $targetId): void
+	{
+		$through = $this->manyToMany->through;
+
+		$queue->queueDelete($through->getCollection(), new LogicalFilter(LogicalOperator::And, [
+			new ComparisonFilter(
+				new FieldExpression($through->getInnerField()->getName()),
+				ComparisonOperator::Eq,
+				new LiteralValue($parentId)
+			),
+			new ComparisonFilter(
+				new FieldExpression($through->getOuterField()->getName()),
+				ComparisonOperator::Eq,
+				new LiteralValue($targetId)
+			),
+		]));
 	}
 }
