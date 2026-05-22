@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 final class AliasRegistry
 {

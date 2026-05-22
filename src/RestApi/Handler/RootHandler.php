@@ -2,9 +2,8 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
-use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\FieldInterface;
@@ -16,9 +15,8 @@ use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\LiteralValue;
-use ON\RestApi\Query\Node\RelationSelection;
 
-final class RootLoader
+class RootHandler extends AbstractHandler
 {
 	/**
 	 * @param array<int, array<string, mixed>> $rows
@@ -27,15 +25,48 @@ final class RootLoader
 	 * @param array<int, string> $internalColumns
 	 */
 	public function __construct(
-		private CollectionInterface $collection,
-		private array $rows,
-		private array $columns,
-		private array $requestedColumns,
-		private array $internalColumns,
-		private array $relations,
-		private QueryContext $context,
-		private LoaderFactory $factory
+		CollectionInterface $collection,
+		private array $rows = [],
+		private array $columns = [],
+		private array $requestedColumns = [],
+		private array $internalColumns = []
 	) {
+		parent::__construct($collection, $collection->getName());
+	}
+
+	public function getTargetCollection(): CollectionInterface
+	{
+		return $this->getCollection();
+	}
+
+	public function isSingle(): bool
+	{
+		return false;
+	}
+
+	public function configureParserNode(\Cycle\ORM\Parser\AbstractNode $parent): \Cycle\ORM\Parser\AbstractNode
+	{
+		return $parent;
+	}
+
+	public function getSelectColumns(): array
+	{
+		return $this->columns;
+	}
+
+	public function getRequestedColumns(): array
+	{
+		return $this->requestedColumns;
+	}
+
+	public function getInternalColumns(): array
+	{
+		return $this->internalColumns;
+	}
+
+	public function getNestedRelations(): array
+	{
+		return [];
 	}
 
 	public function load(): array
@@ -44,29 +75,78 @@ final class RootLoader
 			return [];
 		}
 
-		$root = new RootNode($this->columns, [$this->getPrimaryKeyColumn($this->collection)]);
-		$configured = $this->configureRelations($root, $this->collection, $this->relations);
+		$this->parseRows();
 
+		return $this->result();
+	}
+
+	public function rootNode(): RootNode
+	{
+		$node = $this->getNodeOrNull();
+		if ($node instanceof RootNode) {
+			return $node;
+		}
+
+		$node = new RootNode($this->columns, [$this->getPrimaryKeyColumn($this->getCollection())]);
+		$this->setNode($node);
+
+		return $node;
+	}
+
+	public function parseRows(): void
+	{
+		if ($this->rows === []) {
+			return;
+		}
+
+		$root = $this->rootNode();
 		foreach ($this->rows as $row) {
 			$root->parseRow(0, $this->numericRow($row, $this->columns));
 		}
-
-		$this->loadRelations($configured);
-
-		return $this->cleanRows(
-			$this->collection,
-			$root->getResult(),
-			$this->requestedColumns,
-			$this->internalColumns,
-			$configured
-		);
 	}
 
-	public static function compileRootAction(array $node, MutationQueue $queue): MutationTaskInterface|MutationDeleteTaskInterface|null
+	public function result(): array
 	{
-		$operation = $node['operation'];
-		$collection = $node['collection'];
-		$state = $node['state'];
+		if ($this->rows === []) {
+			return [];
+		}
+
+		return $this->cleanRows($this->getCollection(), $this->rootNode()->getResult(), $this);
+	}
+
+	public function mutationCollection(string $operation, mixed $item): CollectionInterface
+	{
+		return $this->getCollection();
+	}
+
+	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	{
+		$primaryKey = self::getPrimaryKeyName($collection);
+
+		return array_key_exists($primaryKey, $input) ? $input[$primaryKey] : null;
+	}
+
+	public function normalizePayload(
+		string $operation,
+		mixed $input,
+		MutationStateInterface $source,
+		\ON\RestApi\Resolver\DataSourceInterface $dataSource
+	): array {
+		return [
+			'create' => [],
+			'update' => [],
+			'delete' => [],
+			'connect' => [],
+			'disconnect' => [],
+		];
+	}
+
+	public function compileRootAction(
+		string $operation,
+		MutationStateInterface $state,
+		MutationQueue $queue
+	): MutationTaskInterface|MutationDeleteTaskInterface|null {
+		$collection = $state->getCollection();
 
 		if ($operation === 'create') {
 			return $queue->queueInsert($state);
@@ -90,68 +170,26 @@ final class RootLoader
 		return null;
 	}
 
-	private function configureRelations(AbstractNode $parent, CollectionInterface $collection, array $relations): array
-	{
-		$configured = [];
-		foreach ($relations as $relationSelection) {
-			if (!$relationSelection instanceof RelationSelection) {
-				continue;
-			}
-
-			$loader = $this->factory->relation(
-				$collection,
-				$relationSelection,
-				$this->context
-			);
-			if ($loader === null) {
-				continue;
-			}
-
-			$loader->configureNode($parent);
-			$loader->prepare();
-			$loader->setChildren(
-				$this->configureRelations(
-					$loader->getNode(),
-					$loader->getTargetCollection(),
-					$loader->getNestedRelations()
-				)
-			);
-			$configured[] = $loader;
-		}
-
-		return $configured;
-	}
-
-	/**
-	 * @param list<RelationLoaderInterface> $relations
-	 */
-	private function loadRelations(array $relations): void
-	{
-		foreach ($relations as $relation) {
-			$relation->load();
-			$this->loadRelations($relation->getChildren());
-		}
-	}
-
-	private function cleanRows(CollectionInterface $collection, array $rows, array $requestedColumns, array $internalColumns, array $configured): array
+	private function cleanRows(CollectionInterface $collection, array $rows, HandlerInterface $handler): array
 	{
 		$visible = array_flip($this->getVisibleFields($collection));
-		$requested = array_intersect_key(array_flip($requestedColumns), $visible);
-		$relationKeys = array_flip(array_map(fn(RelationLoaderInterface $relation) => $relation->getResponseName(), $configured));
+		$requested = array_intersect_key(array_flip($handler->getRequestedColumns()), $visible);
+		$relationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
+
 		foreach ($rows as &$row) {
 			$row = array_intersect_key($row, $requested + $relationKeys);
-			$row = $this->stripInternalColumns($row, $internalColumns, $requestedColumns);
+			$row = $this->stripInternalColumns($row, $handler->getInternalColumns(), $handler->getRequestedColumns());
 
-			foreach ($configured as $relation) {
-				$name = $relation->getResponseName();
+			foreach ($handler->getChildren() as $child) {
+				$name = $child->getResponseName();
 				$value = $row[$name] ?? null;
 				if ($value === null) {
 					continue;
 				}
 
-				$row[$name] = $relation->isSingle()
-					? $this->cleanRelationRow($relation, $value)
-					: array_map(fn(array $item) => $this->cleanRelationRow($relation, $item), $value);
+				$row[$name] = $child->isSingle()
+					? $this->cleanRelationRow($child, $value)
+					: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 			}
 
 			$row = $this->mapColumnsToFields($collection, $row);
@@ -161,20 +199,21 @@ final class RootLoader
 		return $rows;
 	}
 
-	private function cleanRelationRow(RelationLoaderInterface $relation, array $row): array
+	private function cleanRelationRow(HandlerInterface $handler, array $row): array
 	{
-		$visible = array_flip($this->getVisibleFields($relation->getTargetCollection()));
-		$nestedRelationKeys = array_flip(array_map(fn(RelationLoaderInterface $child) => $child->getResponseName(), $relation->getChildren()));
+		$visible = array_flip($this->getVisibleFields($handler->getTargetCollection()));
+		$nestedRelationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
 		$syntheticKeys = array_flip(array_filter(array_keys($row), fn(string $key) => str_starts_with($key, '__on_')));
 		$row = array_intersect_key($row, $visible + $nestedRelationKeys + $syntheticKeys);
-		$row = $this->stripInternalColumns($row, $relation->getInternalColumns(), $relation->getRequestedColumns());
+		$row = $this->stripInternalColumns($row, $handler->getInternalColumns(), $handler->getRequestedColumns());
+
 		foreach (array_keys($row) as $key) {
 			if (str_starts_with((string) $key, '__on_')) {
 				unset($row[$key]);
 			}
 		}
 
-		foreach ($relation->getChildren() as $child) {
+		foreach ($handler->getChildren() as $child) {
 			$value = $row[$child->getResponseName()] ?? null;
 			if ($value === null) {
 				continue;
@@ -185,7 +224,7 @@ final class RootLoader
 				: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 		}
 
-		return $this->mapColumnsToFields($relation->getTargetCollection(), $row);
+		return $this->mapColumnsToFields($handler->getTargetCollection(), $row);
 	}
 
 	private function numericRow(array $row, array $columns): array
@@ -269,4 +308,12 @@ final class RootLoader
 		return 'id';
 	}
 
+	private function getNodeOrNull(): ?\Cycle\ORM\Parser\AbstractNode
+	{
+		try {
+			return $this->getNode();
+		} catch (\LogicException) {
+			return null;
+		}
+	}
 }

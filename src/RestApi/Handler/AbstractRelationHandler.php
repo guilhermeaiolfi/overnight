@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use Cycle\Database\Injection\Expression;
 use Cycle\Database\Injection\Fragment;
@@ -19,76 +19,34 @@ use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\DataSourceInterface;
 
-abstract class AbstractRelationLoader implements RelationLoaderInterface
+abstract class AbstractRelationHandler extends AbstractHandler
 {
 	/** @var array{select: array, requested: array, internal: array} */
 	private array $columns;
 
-	private ?AbstractNode $node = null;
-
-	/** @var list<RelationLoaderInterface> */
-	private array $children = [];
-
 	private CollectionInterface $targetCollection;
 
 	public function __construct(
+		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
 		protected ?RelationSelection $selection = null,
 		protected ?QueryContext $context = null
 	) {
+		parent::__construct($collection, $selection?->responseName ?? $relation->getName(), $relation->getName());
 		$this->targetCollection = $this->relation->getCollection();
 		$this->columns = $this->buildColumns();
-	}
-
-	public function prepare(): void
-	{
-	}
-
-	public function getNode(): AbstractNode
-	{
-		if ($this->node === null) {
-			throw new \LogicException('Relation loader has not been configured.');
-		}
-
-		return $this->node;
-	}
-
-	protected function setNode(AbstractNode $node): void
-	{
-		$this->node = $node;
-	}
-
-	/**
-	 * @return list<RelationLoaderInterface>
-	 */
-	public function getChildren(): array
-	{
-		return $this->children;
-	}
-
-	/**
-	 * @param list<RelationLoaderInterface> $children
-	 */
-	public function setChildren(array $children): void
-	{
-		$this->children = $children;
-	}
-
-	public function getResponseName(): string
-	{
-		return $this->selection->responseName;
 	}
 
 	public function getTargetCollection(): CollectionInterface
@@ -104,6 +62,16 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 	public function getSelectColumns(): array
 	{
 		return $this->columns['select'];
+	}
+
+	public function getRequestedColumns(): array
+	{
+		return $this->columns['requested'];
+	}
+
+	public function getInternalColumns(): array
+	{
+		return $this->columns['internal'];
 	}
 
 	public function getNestedRelations(): array
@@ -122,32 +90,14 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return $relations;
 	}
 
-	public function getRequestedColumns(): array
-	{
-		return $this->columns['requested'];
-	}
-
-	public function getInternalColumns(): array
-	{
-		return $this->columns['internal'];
-	}
-
 	public function filters(): ?FilterNode
 	{
-		if ($this->selection === null) {
-			return null;
-		}
-
-		return $this->selection->query->filter;
+		return $this->selection?->query->filter;
 	}
 
 	public function orderBy(): array
 	{
-		if ($this->selection === null) {
-			return [];
-		}
-
-		if ($this->selection->query->sort === []) {
+		if ($this->selection === null || $this->selection->query->sort === []) {
 			return [];
 		}
 
@@ -157,7 +107,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 				continue;
 			}
 
-			$expression = $this->context->expressions->value(
+			$expression = $this->context?->expressions->value(
 				$this->targetCollection,
 				$sortSpec->expression,
 				$this->targetCollection->getTable()
@@ -175,16 +125,12 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 	public function limit(): ?int
 	{
-		$pagination = $this->pagination();
-
-		return $pagination?->limit;
+		return $this->pagination()?->limit;
 	}
 
 	public function offset(): ?int
 	{
-		$pagination = $this->pagination();
-
-		return $pagination?->offset;
+		return $this->pagination()?->offset;
 	}
 
 	protected function baseQuery(array $columns): SelectQuery
@@ -253,8 +199,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		array $innerColumns,
 		array $outerColumns,
 		string $partitionColumn
-	): SelectQuery
-	{
+	): SelectQuery {
 		$rowNumberAlias = '__on_row_number';
 		$orderSql = $this->windowOrderSql();
 		$rowNumberSql = 'ROW_NUMBER() OVER (PARTITION BY '
@@ -342,170 +287,9 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return $this->context->database->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
 	}
 
-	/**
-	 * @return array{select: array, requested: array, internal: array}
-	 */
-	private function buildColumns(): array
+	public function mutationCollection(string $operation, mixed $item): CollectionInterface
 	{
-		$fieldNames = $this->selectedFieldNames();
-		$requestedFieldNames = $this->requestedFieldNames();
-		$requiredKey = $this->relation->getOuterField()->getColumn();
-
-		if ($fieldNames !== []) {
-			$selected = [];
-			foreach ($fieldNames as $fieldName) {
-				if ($this->targetCollection->fields->has($fieldName)) {
-					$selected[] = $this->targetCollection->fields->get($fieldName)->getColumn();
-				}
-			}
-
-			$requested = [];
-			foreach ($requestedFieldNames as $fieldName) {
-				if ($this->targetCollection->fields->has($fieldName)) {
-					$requested[] = $this->targetCollection->fields->get($fieldName)->getColumn();
-				}
-			}
-
-			$internal = [$requiredKey];
-			foreach (
-				$this->relationKeyColumnNames($this->targetCollection, $this->getNestedRelations())
-				as $nestedKey
-			) {
-				if (!in_array($nestedKey, $internal, true)) {
-					$internal[] = $nestedKey;
-				}
-			}
-			foreach ($internal as $column) {
-				if (!in_array($column, $selected, true)) {
-					$selected[] = $column;
-				}
-			}
-
-			return [
-				'select' => array_values(array_unique($selected)),
-				'requested' => array_values(array_unique($requested)),
-				'internal' => array_values(array_unique($internal)),
-			];
-		}
-
-		$visible = [];
-		foreach ($this->targetCollection->fields as $field) {
-			if (!$field->isHidden()) {
-				$visible[] = $field->getColumn();
-			}
-		}
-
-		$selected = $visible;
-		if (!in_array($requiredKey, $selected, true)) {
-			$selected[] = $requiredKey;
-		}
-
-		return [
-			'select' => array_values(array_unique($selected)),
-			'requested' => $visible,
-			'internal' => [$requiredKey],
-		];
-	}
-
-	private function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
-	{
-		$columns = [];
-		foreach ($relations as $relation) {
-			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				$columns[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
-			}
-		}
-
-		return array_values(array_unique($columns));
-	}
-
-	private function pagination(): ?PaginationSpec
-	{
-		if ($this->selection === null) {
-			return null;
-		}
-
-		return $this->selection->query->pagination;
-	}
-
-	private function selectedFieldNames(): array
-	{
-		if ($this->selection === null) {
-			return [];
-		}
-
-		if (!$this->selection->query->selection->explicit || $this->hasWildcardSelection()) {
-			return [];
-		}
-
-		$fields = [];
-		foreach ($this->selection->query->selection->nodes as $node) {
-			if ($node instanceof FieldSelection) {
-				$fields[] = $node->field->field;
-			}
-		}
-
-		return array_values(array_unique($fields));
-	}
-
-	private function requestedFieldNames(): array
-	{
-		if ($this->selection === null) {
-			return [];
-		}
-
-		if (!$this->selection->query->selection->explicit || $this->hasWildcardSelection()) {
-			return [];
-		}
-
-		$fields = [];
-		foreach ($this->selection->query->selection->nodes as $node) {
-			if ($node instanceof FieldSelection && !$node->internal) {
-				$fields[] = $node->field->field;
-			}
-		}
-
-		return array_values(array_unique($fields));
-	}
-
-	private function hasWildcardSelection(): bool
-	{
-		if ($this->selection === null) {
-			return false;
-		}
-
-		foreach ($this->selection->query->selection->nodes as $node) {
-			if ($node instanceof WildcardSelection) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	public function create(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		$this->mutate($payload, $source, $children, $queue);
-	}
-
-	public function update(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		$this->mutate($payload, $source, $children, $queue);
-	}
-
-	public function delete(
-		array $payload,
-		MutationStateInterface $source,
-		MutationQueue $queue
-	): void {
+		return $this->getTargetCollection();
 	}
 
 	public function normalizePayload(
@@ -515,19 +299,6 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		DataSourceInterface $dataSource
 	): array {
 		return $this->emptyMutationPayload();
-	}
-
-	public function mutationCollection(string $operation, mixed $item): CollectionInterface
-	{
-		return $this->getTargetCollection();
-	}
-
-	protected function mutate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
 	}
 
 	protected function queueChildMutations(array $children, MutationQueue $queue): void
@@ -540,11 +311,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 
 		foreach ($children['update'] ?? [] as $state) {
 			if ($state instanceof MutationStateInterface) {
-				$queue->queueUpdate(
-					$state->getCollection(),
-					$this->primaryKeyCriteria($state),
-					$state
-				);
+				$queue->queueUpdate($state->getCollection(), $this->primaryKeyCriteria($state), $state);
 			}
 		}
 
@@ -566,7 +333,7 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		);
 	}
 
-	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
 	{
 		$primaryKey = $this->getPrimaryKeyName($collection);
 
@@ -677,4 +444,131 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return $dataSource->get($source->getCollection(), (string) $id);
 	}
 
+	/**
+	 * @return array{select: array, requested: array, internal: array}
+	 */
+	private function buildColumns(): array
+	{
+		$fieldNames = $this->selectedFieldNames();
+		$requestedFieldNames = $this->requestedFieldNames();
+		$requiredKey = $this->relation->getOuterField()->getColumn();
+
+		if ($fieldNames !== []) {
+			$selected = [];
+			foreach ($fieldNames as $fieldName) {
+				if ($this->targetCollection->fields->has($fieldName)) {
+					$selected[] = $this->targetCollection->fields->get($fieldName)->getColumn();
+				}
+			}
+
+			$requested = [];
+			foreach ($requestedFieldNames as $fieldName) {
+				if ($this->targetCollection->fields->has($fieldName)) {
+					$requested[] = $this->targetCollection->fields->get($fieldName)->getColumn();
+				}
+			}
+
+			$internal = [$requiredKey];
+			foreach ($this->relationKeyColumnNames($this->targetCollection, $this->getNestedRelations()) as $nestedKey) {
+				if (!in_array($nestedKey, $internal, true)) {
+					$internal[] = $nestedKey;
+				}
+			}
+			foreach ($internal as $column) {
+				if (!in_array($column, $selected, true)) {
+					$selected[] = $column;
+				}
+			}
+
+			return [
+				'select' => array_values(array_unique($selected)),
+				'requested' => array_values(array_unique($requested)),
+				'internal' => array_values(array_unique($internal)),
+			];
+		}
+
+		$visible = $this->getVisibleFields($this->targetCollection);
+		$selected = $visible;
+		if (!in_array($requiredKey, $selected, true)) {
+			$selected[] = $requiredKey;
+		}
+
+		return [
+			'select' => array_values(array_unique($selected)),
+			'requested' => $visible,
+			'internal' => [$requiredKey],
+		];
+	}
+
+	private function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
+	{
+		$columns = [];
+		foreach ($relations as $relation) {
+			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
+				$columns[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
+			}
+		}
+
+		return array_values(array_unique($columns));
+	}
+
+	private function pagination(): ?PaginationSpec
+	{
+		return $this->selection?->query->pagination;
+	}
+
+	private function selectedFieldNames(): array
+	{
+		if (
+			$this->selection === null
+			|| !$this->selection->query->selection->explicit
+			|| $this->hasWildcardSelection()
+		) {
+			return [];
+		}
+
+		$fields = [];
+		foreach ($this->selection->query->selection->nodes as $node) {
+			if ($node instanceof FieldSelection) {
+				$fields[] = $node->field->field;
+			}
+		}
+
+		return array_values(array_unique($fields));
+	}
+
+	private function requestedFieldNames(): array
+	{
+		if (
+			$this->selection === null
+			|| !$this->selection->query->selection->explicit
+			|| $this->hasWildcardSelection()
+		) {
+			return [];
+		}
+
+		$fields = [];
+		foreach ($this->selection->query->selection->nodes as $node) {
+			if ($node instanceof FieldSelection && !$node->internal) {
+				$fields[] = $node->field->field;
+			}
+		}
+
+		return array_values(array_unique($fields));
+	}
+
+	private function hasWildcardSelection(): bool
+	{
+		if ($this->selection === null) {
+			return false;
+		}
+
+		foreach ($this->selection->query->selection->nodes as $node) {
+			if ($node instanceof WildcardSelection) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 }

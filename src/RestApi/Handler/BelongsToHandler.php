@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Resolver\DataSourceInterface;
 
-class BelongsToLoader extends HasOneLoader
+class BelongsToHandler extends HasOneHandler
 {
 	public function normalizePayload(
 		string $operation,
@@ -63,7 +63,7 @@ class BelongsToLoader extends HasOneLoader
 		return $payload;
 	}
 
-	protected function mutate(
+	protected function compileMutationPayload(
 		array $payload,
 		MutationStateInterface $source,
 		array $children,

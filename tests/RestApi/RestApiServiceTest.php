@@ -10,6 +10,7 @@ use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreated;
 use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdating;
@@ -398,7 +399,7 @@ final class RestApiServiceTest extends TestCase
 			$registry,
 			$resolver,
 			function (object $event) use (&$paths): object {
-				if ($event instanceof ItemUpdating) {
+				if ($event instanceof ItemUpdating || $event instanceof ItemDeleting) {
 					$event->allow();
 					$paths[] = $event->getPathString();
 				}
@@ -415,7 +416,7 @@ final class RestApiServiceTest extends TestCase
 		]);
 
 		$this->assertSame('Updated Post', $result['title']);
-		$this->assertSame(['', 'comments.0'], $paths);
+		$this->assertSame(['', 'comments.0', 'comments.delete.0'], $paths);
 	}
 
 	public function testNestedUpdateCreatesMissingChildWithExplicitId(): void
@@ -432,7 +433,7 @@ final class RestApiServiceTest extends TestCase
 			$registry,
 			$resolver,
 			function (object $event): object {
-				if ($event instanceof ItemCreating || $event instanceof ItemUpdating) {
+				if ($event instanceof ItemCreating || $event instanceof ItemUpdating || $event instanceof ItemDeleting) {
 					$event->allow();
 				}
 

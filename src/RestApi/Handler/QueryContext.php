@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use Cycle\Database\DatabaseInterface;
 use ON\ORM\Definition\Registry;

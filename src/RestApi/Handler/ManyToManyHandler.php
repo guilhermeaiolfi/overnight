@@ -2,11 +2,12 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use Cycle\Database\Injection\Expression;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
+use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
@@ -18,24 +19,25 @@ use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\LogicalFilter;
 use ON\RestApi\Query\Node\LogicalOperator;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Resolver\DataSourceInterface;
 
-final class ManyToManyLoader extends AbstractRelationLoader
+class ManyToManyHandler extends AbstractRelationHandler
 {
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;
 
 	public function __construct(
+		CollectionInterface $collection,
 		private M2MRelation $manyToMany,
 		?RelationSelection $selection = null,
 		?QueryContext $context = null
 	) {
-		parent::__construct($manyToMany, $selection, $context);
+		parent::__construct($collection, $manyToMany, $selection, $context);
 	}
 
-	public function configureNode(AbstractNode $parent): AbstractNode
+	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
@@ -49,12 +51,12 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		return $node;
 	}
 
-	public function load(): void
+	public function load(): mixed
 	{
 		$node = $this->getNode();
 		$parentIds = $this->flattenedReferenceValues($node);
 		if ($parentIds === []) {
-			return;
+			return null;
 		}
 
 		$through = $this->manyToMany->through;
@@ -64,15 +66,11 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		$throughOuterKey = $through->getOuterField()->getColumn();
 		$targetPkColumn = $this->getPrimaryKeyColumn($this->getTargetCollection());
 
-		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias, $throughInnerKey);
+		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
 		$query = $this->context->database->select($selectColumns)
 			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias)
-			->on(
-				$junctionAlias . '.' . $throughOuterKey,
-				'=',
-				$targetAlias . '.' . $targetPkColumn
-			)
+			->on($junctionAlias . '.' . $throughOuterKey, '=', $targetAlias . '.' . $targetPkColumn)
 			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
 
 		if ($this->filters() !== null) {
@@ -103,64 +101,8 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		}
 
 		$this->parseLoadedRows($node, $query);
-	}
 
-	private function resultNodeColumns(): array
-	{
-		$columns = $this->getSelectColumns();
-		foreach ($this->pivotNodeColumns() as $column) {
-			$columns[] = $column;
-		}
-
-		return array_values(array_unique($columns));
-	}
-
-	private function selectColumns(string $targetAlias, string $junctionAlias, string $throughInnerKey): array
-	{
-		$columns = [];
-		foreach ($this->getSelectColumns() as $column) {
-			$columns[] = new Expression($targetAlias . '.' . $column);
-		}
-		foreach ($this->pivotNodeColumns() as $column) {
-			$columns[] = new Expression($junctionAlias . '.' . $column);
-		}
-
-		return $columns;
-	}
-
-	private function pivotNodeColumns(): array
-	{
-		return array_values(array_unique([
-			$this->throughInnerKeyColumn(),
-			...$this->pivotPrimaryKeyColumns(),
-		]));
-	}
-
-	private function pivotPrimaryKeyColumns(): array
-	{
-		$columns = [];
-		foreach ((array) $this->manyToMany->through->getCollection()->getPrimaryKey() as $field) {
-			$columns[] = $field->getColumn();
-		}
-
-		return $columns !== []
-			? $columns
-			: [$this->throughInnerKeyColumn(), $this->manyToMany->through->getOuterField()->getColumn()];
-	}
-
-	private function throughInnerKeyColumn(): string
-	{
-		return $this->manyToMany->through->getInnerField()->getColumn();
-	}
-
-	private function junctionAlias(): string
-	{
-		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_junction');
-	}
-
-	private function targetAlias(): string
-	{
-		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_target');
+		return null;
 	}
 
 	public function normalizePayload(
@@ -176,6 +118,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		$currentRows = $operation === 'create' ? [] : $this->currentPivotRows($dataSource, $source);
 		$currentByPivotId = [];
 		$currentByTargetId = [];
+
 		foreach ($currentRows as $row) {
 			if (!is_array($row)) {
 				continue;
@@ -280,14 +223,42 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		return $payload;
 	}
 
-	public function mutationCollection(string $operation, mixed $item): \ON\ORM\Definition\Collection\CollectionInterface
+	public function mutationCollection(string $operation, mixed $item): CollectionInterface
 	{
 		return is_array($item) && $this->isThroughPayload($item)
 			? $this->manyToMany->through->getCollection()
 			: $this->getTargetCollection();
 	}
 
-	protected function mutate(
+	public function compileCreate(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->compileMutationPayload($payload, $source, $children, $queue);
+	}
+
+	public function compileUpdate(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->compileMutationPayload($payload, $source, $children, $queue);
+	}
+
+	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
+	{
+		$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
+	}
+
+	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
+	{
+		$this->disconnect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
+	}
+
+	private function compileMutationPayload(
 		array $payload,
 		MutationStateInterface $source,
 		array $children,
@@ -295,22 +266,75 @@ final class ManyToManyLoader extends AbstractRelationLoader
 	): void {
 		$this->queueChildMutations($children, $queue);
 
-		$parentId = $source->getValue($this->relation->getInnerField()->getName());
-
-		foreach ($payload['disconnect'] ?? [] as $targetId) {
-			$this->disconnect($queue, $parentId, $targetId);
+		foreach ($payload['disconnect'] ?? [] as $target) {
+			$this->compileDisconnect($target, $source, $queue);
 		}
 
-		foreach ($payload['connect'] ?? [] as $targetId) {
-			$this->connect($queue, $parentId, $targetId);
+		foreach ($payload['connect'] ?? [] as $target) {
+			$this->compileConnect($target, $source, $queue);
 		}
 
 		$targetCollection = $this->relation->getCollection();
 		foreach ($children['create'] ?? [] as $created) {
 			if ($created instanceof MutationStateInterface && $created->getCollection() === $targetCollection) {
-				$this->connect($queue, $parentId, $created->getValue($this->getPrimaryKeyName($targetCollection)));
+				$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $created->getValue($this->getPrimaryKeyName($targetCollection)));
 			}
 		}
+	}
+
+	private function resultNodeColumns(): array
+	{
+		$columns = $this->getSelectColumns();
+		foreach ($this->pivotNodeColumns() as $column) {
+			$columns[] = $column;
+		}
+
+		return array_values(array_unique($columns));
+	}
+
+	private function selectColumns(string $targetAlias, string $junctionAlias): array
+	{
+		$columns = [];
+		foreach ($this->getSelectColumns() as $column) {
+			$columns[] = new Expression($targetAlias . '.' . $column);
+		}
+		foreach ($this->pivotNodeColumns() as $column) {
+			$columns[] = new Expression($junctionAlias . '.' . $column);
+		}
+
+		return $columns;
+	}
+
+	private function pivotNodeColumns(): array
+	{
+		return array_values(array_unique([$this->throughInnerKeyColumn(), ...$this->pivotPrimaryKeyColumns()]));
+	}
+
+	private function pivotPrimaryKeyColumns(): array
+	{
+		$columns = [];
+		foreach ((array) $this->manyToMany->through->getCollection()->getPrimaryKey() as $field) {
+			$columns[] = $field->getColumn();
+		}
+
+		return $columns !== []
+			? $columns
+			: [$this->throughInnerKeyColumn(), $this->manyToMany->through->getOuterField()->getColumn()];
+	}
+
+	private function throughInnerKeyColumn(): string
+	{
+		return $this->manyToMany->through->getInnerField()->getColumn();
+	}
+
+	private function junctionAlias(): string
+	{
+		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_junction');
+	}
+
+	private function targetAlias(): string
+	{
+		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_target');
 	}
 
 	private function normalizeDetailedManyToManyPayload(array $input, MutationStateInterface $source): array

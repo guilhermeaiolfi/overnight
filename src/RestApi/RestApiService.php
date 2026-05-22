@@ -18,7 +18,7 @@ use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Mutation\RestMutationPlanner;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Resolver\DataSourceInterface;
-use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
+use ON\RestApi\Handler\HandlerFactory;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class RestApiService
@@ -27,9 +27,9 @@ class RestApiService
 		protected Registry $registry,
 		protected DataSourceInterface $dataSource,
 		protected ?EventDispatcherInterface $eventDispatcher = null,
-		protected ?LoaderFactory $relationHandlers = null
+		protected ?HandlerFactory $relationHandlers = null
 	) {
-		$this->relationHandlers ??= LoaderFactory::defaults();
+		$this->relationHandlers ??= HandlerFactory::defaults();
 	}
 
 	public function getDataSource(): DataSourceInterface

@@ -2,24 +2,24 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\RelationSelection;
 
-final class LoaderFactory
+class HandlerFactory
 {
 	public function __construct(
-		private LoaderRegistry $registry
+		private HandlerRegistry $registry
 	) {
 	}
 
 	public static function defaults(): self
 	{
-		return new self(LoaderRegistry::defaults());
+		return new self(HandlerRegistry::defaults());
 	}
 
-	public function registry(): LoaderRegistry
+	public function registry(): HandlerRegistry
 	{
 		return $this->registry;
 	}
@@ -28,20 +28,19 @@ final class LoaderFactory
 		CollectionInterface $source,
 		RelationSelection $selection,
 		QueryContext $context
-	): ?RelationLoaderInterface
-	{
-		$targetRelationName = $selection->relationName;
-		if (!$source->relations->has($targetRelationName)) {
+	): ?HandlerInterface {
+		$relationName = $selection->relationName;
+		if (!$source->relations->has($relationName)) {
 			return null;
 		}
 
-		$relation = $source->relations->get($targetRelationName);
+		$relation = $source->relations->get($relationName);
 		$class = $this->registry->resolve($source, $selection->responseName, $relation);
 
-		return new $class($relation, $selection, $context);
+		return new $class($source, $relation, $selection, $context);
 	}
 
-	public function mutation(CollectionInterface $source, string $relationName): ?RelationLoaderInterface
+	public function mutation(CollectionInterface $source, string $relationName): ?HandlerInterface
 	{
 		if (!$source->relations->has($relationName)) {
 			return null;
@@ -50,6 +49,6 @@ final class LoaderFactory
 		$relation = $source->relations->get($relationName);
 		$class = $this->registry->resolve($source, $relationName, $relation);
 
-		return new $class($relation);
+		return new $class($source, $relation);
 	}
 }

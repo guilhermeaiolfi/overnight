@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\BelongsToRelation;
@@ -11,64 +11,64 @@ use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
 
-final class LoaderRegistry
+class HandlerRegistry
 {
-	/** @var array<string, class-string<RelationLoaderInterface>> */
+	/** @var array<string, class-string<HandlerInterface>> */
 	private array $relations = [];
 
-	/** @var array<string, class-string<RelationLoaderInterface>> */
+	/** @var array<string, class-string<HandlerInterface>> */
 	private array $defaults = [];
 
 	public static function defaults(): self
 	{
 		return (new self())
-			->default('hasOne', HasOneLoader::class)
-			->default('belongsTo', BelongsToLoader::class)
-			->default('hasMany', HasManyLoader::class)
-			->default('manyToMany', ManyToManyLoader::class);
+			->default('hasOne', HasOneHandler::class)
+			->default('belongsTo', BelongsToHandler::class)
+			->default('hasMany', HasManyHandler::class)
+			->default('manyToMany', ManyToManyHandler::class);
 	}
 
 	/**
-	 * @param class-string<RelationLoaderInterface> $loaderClass
+	 * @param class-string<HandlerInterface> $handlerClass
 	 */
-	public function relation(string $collectionName, string $relationName, string $loaderClass): self
+	public function relation(string $collectionName, string $relationName, string $handlerClass): self
 	{
 		$key = $this->relationKey($collectionName, $relationName);
 		if (isset($this->relations[$key])) {
-			throw new \LogicException("Loader already registered for relation {$key}.");
+			throw new \LogicException("Handler already registered for relation {$key}.");
 		}
 
-		$this->relations[$key] = $loaderClass;
+		$this->relations[$key] = $handlerClass;
 
 		return $this;
 	}
 
 	/**
-	 * @param class-string<RelationLoaderInterface> $loaderClass
+	 * @param class-string<HandlerInterface> $handlerClass
 	 */
-	public function replaceRelation(string $collectionName, string $relationName, string $loaderClass): self
+	public function replaceRelation(string $collectionName, string $relationName, string $handlerClass): self
 	{
-		$this->relations[$this->relationKey($collectionName, $relationName)] = $loaderClass;
+		$this->relations[$this->relationKey($collectionName, $relationName)] = $handlerClass;
 
 		return $this;
 	}
 
 	/**
-	 * @param class-string<RelationLoaderInterface> $loaderClass
+	 * @param class-string<HandlerInterface> $handlerClass
 	 */
-	public function default(string $kind, string $loaderClass): self
+	public function default(string $kind, string $handlerClass): self
 	{
 		if (isset($this->defaults[$kind])) {
-			throw new \LogicException("Default loader already registered for {$kind}.");
+			throw new \LogicException("Default handler already registered for {$kind}.");
 		}
 
-		$this->defaults[$kind] = $loaderClass;
+		$this->defaults[$kind] = $handlerClass;
 
 		return $this;
 	}
 
 	/**
-	 * @return class-string<RelationLoaderInterface>
+	 * @return class-string<HandlerInterface>
 	 */
 	public function resolve(CollectionInterface $collection, string $responseName, RelationInterface $relation): string
 	{
@@ -82,7 +82,7 @@ final class LoaderRegistry
 			return $this->defaults[$kind];
 		}
 
-		throw new \RuntimeException("No REST SQL loader configured for {$key} ({$kind}).");
+		throw new \RuntimeException("No REST SQL handler configured for {$key} ({$kind}).");
 	}
 
 	private function relationKey(string $collectionName, string $relationName): string

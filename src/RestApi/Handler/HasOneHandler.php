@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Resolver\Sql\Loader;
+namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
@@ -14,9 +14,9 @@ use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Resolver\DataSourceInterface;
 
-class HasOneLoader extends AbstractRelationLoader
+class HasOneHandler extends AbstractRelationHandler
 {
-	public function configureNode(AbstractNode $parent): AbstractNode
+	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
 		$node = new SingularNode(
 			$this->getSelectColumns(),
@@ -30,12 +30,12 @@ class HasOneLoader extends AbstractRelationLoader
 		return $node;
 	}
 
-	public function load(): void
+	public function load(): mixed
 	{
 		$node = $this->getNode();
 		$parentIds = $this->flattenedReferenceValues($node);
 		if ($parentIds === []) {
-			return;
+			return null;
 		}
 
 		$columns = $this->getSelectColumns();
@@ -52,6 +52,8 @@ class HasOneLoader extends AbstractRelationLoader
 		}
 
 		$this->parseLoadedRows($node, $query);
+
+		return null;
 	}
 
 	public function normalizePayload(
@@ -91,8 +93,6 @@ class HasOneLoader extends AbstractRelationLoader
 			return $payload;
 		}
 
-		// Basic payloads describe the desired final relation state, so we diff
-		// them against the current row before queueing any writes.
 		$current = $operation === 'create' ? null : ($this->currentRelationRows($dataSource, $source)[0] ?? null);
 		$currentId = is_array($current) ? $this->inputPrimaryKeyValue($targetCollection, $current) : null;
 		$desired = $input;
@@ -117,38 +117,69 @@ class HasOneLoader extends AbstractRelationLoader
 		return $payload;
 	}
 
-	protected function mutate(
+	public function compileCreate(
 		array $payload,
 		MutationStateInterface $source,
 		array $children,
 		MutationQueue $queue
 	): void {
+		$this->compileMutationPayload($payload, $source, $children, $queue);
+	}
+
+	public function compileUpdate(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		$this->compileMutationPayload($payload, $source, $children, $queue);
+	}
+
+	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
+	{
 		$parentId = $source->getValue($this->relation->getInnerField()->getName());
 		$targetCollection = $this->getTargetCollection();
 		$relationKey = $this->relation->getOuterField()->getName();
 
-		foreach ($payload['connect'] ?? [] as $targetId) {
-			$queue->queueUpdate(
-				$targetCollection,
-				new ComparisonFilter(
-					new FieldExpression($this->getPrimaryKeyName($targetCollection)),
-					ComparisonOperator::Eq,
-					new LiteralValue($targetId)
-				),
-				[$relationKey => $parentId]
-			);
+		$queue->queueUpdate(
+			$targetCollection,
+			new ComparisonFilter(
+				new FieldExpression($this->getPrimaryKeyName($targetCollection)),
+				ComparisonOperator::Eq,
+				new LiteralValue($target)
+			),
+			[$relationKey => $parentId]
+		);
+	}
+
+	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
+	{
+		$targetCollection = $this->getTargetCollection();
+		$relationKey = $this->relation->getOuterField()->getName();
+
+		$queue->queueUpdate(
+			$targetCollection,
+			new ComparisonFilter(
+				new FieldExpression($this->getPrimaryKeyName($targetCollection)),
+				ComparisonOperator::Eq,
+				new LiteralValue($target)
+			),
+			[$relationKey => null]
+		);
+	}
+
+	protected function compileMutationPayload(
+		array $payload,
+		MutationStateInterface $source,
+		array $children,
+		MutationQueue $queue
+	): void {
+		foreach ($payload['connect'] ?? [] as $target) {
+			$this->compileConnect($target, $source, $queue);
 		}
 
-		foreach ($payload['disconnect'] ?? [] as $targetId) {
-			$queue->queueUpdate(
-				$targetCollection,
-				new ComparisonFilter(
-					new FieldExpression($this->getPrimaryKeyName($targetCollection)),
-					ComparisonOperator::Eq,
-					new LiteralValue($targetId)
-				),
-				[$relationKey => null]
-			);
+		foreach ($payload['disconnect'] ?? [] as $target) {
+			$this->compileDisconnect($target, $source, $queue);
 		}
 
 		$this->queueChildMutations($children, $queue);

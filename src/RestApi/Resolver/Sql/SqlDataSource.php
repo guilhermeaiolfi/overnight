@@ -23,15 +23,16 @@ use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\AbstractDataSource;
-use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
-use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
-use ON\RestApi\Resolver\Sql\Loader\QueryContext;
-use ON\RestApi\Resolver\Sql\Loader\RootLoader;
+use ON\RestApi\Handler\AliasRegistry;
+use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Handler\HandlerTree;
+use ON\RestApi\Handler\QueryContext;
+use ON\RestApi\Handler\RootHandler;
 
 class SqlDataSource extends AbstractDataSource
 {
 	protected SqlFilterApplier $filterApplier;
-	protected LoaderFactory $loaderFactory;
+	protected HandlerFactory $handlerFactory;
 
 	public function __construct(
 		protected Registry $registry,
@@ -43,7 +44,7 @@ class SqlDataSource extends AbstractDataSource
 		parent::__construct($defaultLimit, $maxLimit);
 		$this->expressions ??= new SqlExpressionCompiler($this->database);
 		$this->filterApplier = new SqlFilterApplier($this->database, $this->expressions);
-		$this->loaderFactory = LoaderFactory::defaults();
+		$this->handlerFactory = HandlerFactory::defaults();
 	}
 
 	public function transaction(callable $callback): mixed
@@ -462,12 +463,15 @@ class SqlDataSource extends AbstractDataSource
 		}
 
 		$columns = array_keys($items[0]);
-		$loader = new RootLoader(
+		$root = new RootHandler(
 			$collection,
 			$items,
 			$columns,
 			$requestedColumnNames === [] && !$selectionExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
-			$internalRelationKeyColumnNames,
+			$internalRelationKeyColumnNames
+		);
+
+		$tree = (new HandlerTree($root))->includeQueryRelations(
 			$relations,
 			new QueryContext(
 				$this->database,
@@ -476,10 +480,10 @@ class SqlDataSource extends AbstractDataSource
 				$this->expressions,
 				$aliases ?? new AliasRegistry()
 			),
-			$this->loaderFactory
+			$this->handlerFactory
 		);
 
-		return $loader->load();
+		return $tree->load();
 	}
 
 	protected function getDatabase(): CycleDatabaseInterface

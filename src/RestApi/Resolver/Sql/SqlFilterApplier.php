@@ -25,7 +25,7 @@ use ON\RestApi\Query\Node\SetFilter;
 use ON\RestApi\Query\Node\SetOperator;
 use ON\RestApi\Query\Node\ValueNode;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
+use ON\RestApi\Handler\AliasRegistry;
 
 class SqlFilterApplier
 {

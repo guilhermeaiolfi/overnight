@@ -20,15 +20,16 @@ use ON\RestApi\Event\RelationConnecting;
 use ON\RestApi\Event\RelationDisconnected;
 use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Resolver\DataSourceInterface;
-use ON\RestApi\Resolver\Sql\Loader\LoaderFactory;
-use ON\RestApi\Resolver\Sql\Loader\RelationLoaderInterface;
-use ON\RestApi\Resolver\Sql\Loader\RootLoader;
+use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Handler\HandlerInterface;
+use ON\RestApi\Handler\HandlerTree;
+use ON\RestApi\Handler\RootHandler;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class RestMutationPlanner
 {
-	private const RELATION_ACTIONS = ['create', 'update', 'delete', 'connect', 'disconnect'];
-	private const CHILD_MUTATION_ACTIONS = ['create', 'update', 'delete'];
+	private const ACTIONS = ['create', 'update', 'delete', 'connect', 'disconnect'];
+	private const CHILD_ACTIONS = ['create', 'update', 'delete'];
 
 	/** @var list<object> */
 	private array $afterEvents = [];
@@ -38,7 +39,7 @@ final class RestMutationPlanner
 
 	public function __construct(
 		private DataSourceInterface $dataSource,
-		private LoaderFactory $relationHandlers,
+		private HandlerFactory $handlers,
 		private ?EventDispatcherInterface $eventDispatcher,
 		private bool $dispatchEvents,
 		private MutationQueue $queue,
@@ -57,8 +58,18 @@ final class RestMutationPlanner
 		?string $id = null,
 		array $path = []
 	): ?MutationTaskInterface {
+		$state = $input instanceof MutationStateInterface ? $input : new MutationState($collection, $input);
+		if ($path === [] && $collection === $this->rootCollection) {
+			$state = $this->rootState;
+			if (is_array($input)) {
+				$state->setData($input);
+			}
+		}
+
+		$tree = (new HandlerTree(new RootHandler($collection)))
+			->includeMutationInput($state->getData(), $this->handlers);
 		$prevented = null;
-		$node = $this->planSaveNode($mode, $collection, $input, $id, $path, $prevented);
+		$node = $this->planSaveNode($mode, $tree->root(), $state, $id, $path, $prevented);
 		if ($node === null) {
 			return $prevented;
 		}
@@ -68,10 +79,19 @@ final class RestMutationPlanner
 
 	public function delete(CollectionInterface $collection, string $id, array $path = []): ?MutationDeleteTaskInterface
 	{
-		$prevented = null;
-		$node = $this->planDeleteNode($collection, $id, $path, $prevented);
-		if ($node === null) {
-			return $prevented;
+		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => $id]);
+		$node = [
+			'handler' => new RootHandler($collection),
+			'operation' => 'delete',
+			'collection' => $collection,
+			'state' => $state,
+			'path' => $path,
+			'relations' => [],
+		];
+
+		$beforeEvent = $this->scheduleNodeLifecycle($node);
+		if ($beforeEvent instanceof ItemDeleting && $beforeEvent->isDefaultPrevented()) {
+			return new MutationDeleteTask(static fn(): bool => $beforeEvent->getPreventedResult());
 		}
 
 		$this->compileNode($node);
@@ -100,32 +120,18 @@ final class RestMutationPlanner
 	 */
 	private function planSaveNode(
 		string $mode,
-		CollectionInterface $collection,
-		array|MutationStateInterface $input,
+		HandlerInterface $handler,
+		MutationStateInterface $state,
 		?string $id,
 		array $path,
 		?MutationTaskInterface &$prevented = null
 	): ?array {
-		$state = $input instanceof MutationStateInterface
-			? $input
-			: ($path === [] && $collection === $this->rootCollection
-				? $this->rootState
-				: new MutationState($collection, $input));
-		if (!$input instanceof MutationStateInterface && $state === $this->rootState) {
-			$state->setData($input);
-		}
-
+		$collection = $state->getCollection();
 		if ($id === null && $mode !== 'create') {
 			$id = $this->inputPrimaryKeyValue($collection, $state->getData());
 		}
 		$id = $id === null ? null : (string) $id;
-		$operation = $mode;
-
-		if ($mode === 'upsert') {
-			$operation = $id !== null && $this->dataSource->get($collection, $id) !== null
-				? 'update'
-				: 'create';
-		}
+		$operation = $this->resolveOperation($mode, $collection, $id);
 
 		if ($operation === 'update' && $id === null) {
 			return null;
@@ -134,110 +140,67 @@ final class RestMutationPlanner
 			$state->setValue($this->getPrimaryKeyName($collection), $id);
 		}
 
-		$beforeEvent = $this->scheduleLifecycleEvents($operation, $collection, $state, $path, id: $id);
-		if ($beforeEvent instanceof ItemCreating && $beforeEvent->isDefaultPrevented()) {
-			$prevented = new MutationTask(MutationState::fromRow($collection, $beforeEvent->getPreventedResult()));
-			return null;
-		}
-
-		if ($operation === 'create') {
-			$createId = $this->inputPrimaryKeyValue($collection, $state->getData());
-			if (
-				$createId !== null
-				&& !$createId instanceof ValueRef
-				&& $this->dataSource->get($collection, (string) $createId) !== null
-			) {
-				throw new RestApiError(
-					"A record with this {$this->getPrimaryKeyName($collection)} already exists.",
-					'DUPLICATE',
-					$this->getPrimaryKeyName($collection),
-					409
-				);
-			}
-		}
-
-		[$scalarInput, $relationInput] = $this->splitNodeInput($collection, $state->getData());
-		$state->setData($scalarInput);
-		$relations = $this->planRelations($operation, $collection, $relationInput, $state, $path);
-
-		$this->scheduleAfterSaveEvent($operation, $collection, $state, $path);
-
-		return [
+		$node = [
+			'handler' => $handler,
 			'operation' => $operation,
-			'collection' => $collection,
-			'state' => $state,
-			'path' => $path,
-			'relations' => $relations,
-		];
-	}
-
-	private function planDeleteNode(
-		CollectionInterface $collection,
-		string $id,
-		array $path,
-		?MutationDeleteTaskInterface &$prevented = null
-	): ?array {
-		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => $id]);
-
-		$beforeEvent = $this->scheduleLifecycleEvents('delete', $collection, $state, $path, id: $id);
-		if ($beforeEvent instanceof ItemDeleting && $beforeEvent->isDefaultPrevented()) {
-			$prevented = new MutationDeleteTask(static fn(): bool => $beforeEvent->getPreventedResult());
-			return null;
-		}
-
-		return [
-			'operation' => 'delete',
 			'collection' => $collection,
 			'state' => $state,
 			'path' => $path,
 			'relations' => [],
 		];
-	}
 
-	private function planRelation(
-		string $operation,
-		CollectionInterface $collection,
-		string $relationName,
-		mixed $relationInput,
-		MutationStateInterface $state,
-		array $path
-	): ?array {
-		$handler = $this->relationHandlers->mutation($collection, $relationName);
-		if ($handler === null) {
+		$beforeEvent = $this->scheduleNodeLifecycle($node);
+		if ($beforeEvent instanceof ItemCreating && $beforeEvent->isDefaultPrevented()) {
+			$prevented = new MutationTask(MutationState::fromRow($collection, $beforeEvent->getPreventedResult()));
 			return null;
 		}
 
-		$payload = $handler->normalizePayload($operation, $relationInput, $state, $this->dataSource);
-		$children = $this->planRelationActions($handler, $payload, $relationInput, $path);
-		$this->scheduleRelationEvents($collection, $relationName, $handler->getTargetCollection(), $state, $path, $payload);
+		$this->assertCreateIdAvailable($operation, $collection, $state);
 
-		return [
-			'handler' => $handler,
-			'payload' => $payload,
-			'children' => $children,
-		];
+		[$scalarInput, $relationInput] = $this->splitNodeInput($collection, $state->getData());
+		$state->setData($scalarInput);
+		$node['relations'] = $this->planRelations($operation, $state, $handler->getChildren(), $relationInput, $path);
+
+		$this->scheduleNodeLifecycle($node, true);
+
+		return $node;
 	}
 
 	private function planRelations(
 		string $operation,
-		CollectionInterface $collection,
-		array $relationInput,
 		MutationStateInterface $state,
+		array $handlers,
+		array $relationInput,
 		array $path
 	): array {
 		$relations = [];
-		foreach ($relationInput as $relationName => $input) {
-			$relation = $this->planRelation($operation, $collection, $relationName, $input, $state, [...$path, $relationName]);
-			if ($relation !== null) {
-				$relations[$relationName] = $relation;
+		foreach ($handlers as $handler) {
+			$relationName = $handler->getRelationName();
+			if ($relationName === null || !array_key_exists($relationName, $relationInput)) {
+				continue;
 			}
+
+			$rawInput = $relationInput[$relationName];
+			$payload = $handler->normalizePayload($operation, $rawInput, $state, $this->dataSource);
+			$children = $this->planRelationChildren($handler, $payload, $rawInput, [...$path, $relationName]);
+
+			$relation = [
+				'handler' => $handler,
+				'payload' => $payload,
+				'children' => $children,
+				'path' => [...$path, $relationName],
+				'state' => $state,
+			];
+
+			$this->scheduleRelationPayloadLifecycle($relation);
+			$relations[$relationName] = $relation;
 		}
 
 		return $relations;
 	}
 
-	private function planRelationActions(
-		RelationLoaderInterface $handler,
+	private function planRelationChildren(
+		HandlerInterface $handler,
 		array $payload,
 		mixed $rawInput,
 		array $path
@@ -248,9 +211,9 @@ final class RestMutationPlanner
 			'delete' => [],
 		];
 
-		foreach (self::CHILD_MUTATION_ACTIONS as $action) {
+		foreach (self::CHILD_ACTIONS as $action) {
 			foreach ($payload[$action] ?? [] as $index => $item) {
-				$child = $this->planRelationAction($handler, $action, $item, $rawInput, $path, $index);
+				$child = $this->planRelationChild($handler, $action, $item, $rawInput, $path, $index);
 				if ($child !== null) {
 					$children[$child['operation']][] = $child;
 				}
@@ -260,8 +223,8 @@ final class RestMutationPlanner
 		return $children;
 	}
 
-	private function planRelationAction(
-		RelationLoaderInterface $handler,
+	private function planRelationChild(
+		HandlerInterface $handler,
 		string $action,
 		mixed $item,
 		mixed $rawInput,
@@ -272,51 +235,200 @@ final class RestMutationPlanner
 			return null;
 		}
 
-		$childCollection = $handler->mutationCollection($action, $item);
+		$collection = $handler->mutationCollection($action, $item);
 		$childPath = $this->relationChildPath($path, $rawInput, $action, $index);
+		$childHandler = new RootHandler($collection);
+		foreach ($this->matchingChildHandlers($handler, $collection) as $nestedHandler) {
+			$childHandler->addChild($nestedHandler);
+		}
 
 		return match ($action) {
-			'create' => $this->planSaveNode('create', $childCollection, $item, null, $childPath),
+			'create' => $this->planSaveNode('create', $childHandler, new MutationState($collection, $item), null, $childPath),
 			'update' => $this->planSaveNode(
 				'upsert',
-				$childCollection,
-				$item,
-				($id = $this->inputPrimaryKeyValue($childCollection, $item)) === null ? null : (string) $id,
+				$childHandler,
+				new MutationState($collection, $item),
+				($id = $this->inputPrimaryKeyValue($collection, $item)) === null ? null : (string) $id,
 				$childPath
 			),
-			'delete' => $this->planDeleteActionNode($childCollection, $item, $childPath),
+			'delete' => $this->planDeleteChild($collection, $item, $childPath, $childHandler),
 			default => null,
 		};
 	}
 
-	private function planDeleteActionNode(CollectionInterface $collection, mixed $item, array $path): ?array
-	{
+	private function planDeleteChild(
+		CollectionInterface $collection,
+		mixed $item,
+		array $path,
+		HandlerInterface $handler
+	): ?array {
 		$id = is_array($item) ? $this->inputPrimaryKeyValue($collection, $item) : $item;
 		if ($id === null) {
 			return null;
 		}
 
-		return $this->planDeleteNode($collection, (string) $id, $path);
+		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => (string) $id]);
+		$node = [
+			'handler' => $handler,
+			'operation' => 'delete',
+			'collection' => $collection,
+			'state' => $state,
+			'path' => $path,
+			'relations' => [],
+		];
+
+		$beforeEvent = $this->scheduleNodeLifecycle($node);
+		if ($beforeEvent instanceof ItemDeleting && $beforeEvent->isDefaultPrevented()) {
+			return null;
+		}
+
+		return $node;
 	}
 
-	private function scheduleAfterSaveEvent(
-		string $operation,
-		CollectionInterface $collection,
-		MutationStateInterface $state,
-		array $path
-	): void {
-		$this->scheduleLifecycleEvents($operation, $collection, $state, $path, after: true);
+	private function compileNode(array $node): MutationTaskInterface|MutationDeleteTaskInterface|null
+	{
+		$task = $node['handler']->compileRootAction($node['operation'], $node['state'], $this->queue);
+		$this->storeDeleteTask($node, $task);
+		$this->compileRelationPlans($node['operation'], $node['state'], $node['relations']);
+
+		return $task;
 	}
 
-	private function scheduleLifecycleEvents(
+	private function compileRelationPlans(string $operation, MutationStateInterface $state, array $relations): void
+	{
+		foreach ($relations as $relation) {
+			$children = $this->relationChildStates($relation['children']);
+			match ($operation) {
+				'create' => $relation['handler']->compileCreate($relation['payload'], $state, $children, $this->queue),
+				'update' => $relation['handler']->compileUpdate($relation['payload'], $state, $children, $this->queue),
+				'delete' => $relation['handler']->compileDelete($relation['payload'], $state, $children, $this->queue),
+				default => null,
+			};
+
+			foreach (self::CHILD_ACTIONS as $action) {
+				foreach ($relation['children'][$action] ?? [] as $child) {
+					$this->compileRelationPlans($child['operation'], $child['state'], $child['relations']);
+				}
+			}
+		}
+	}
+
+	private function relationChildStates(array $children): array
+	{
+		$states = [
+			'create' => [],
+			'update' => [],
+			'delete' => [],
+		];
+
+		foreach (self::CHILD_ACTIONS as $operation) {
+			foreach ($children[$operation] ?? [] as $child) {
+				$states[$operation][] = $child['state'];
+			}
+		}
+
+		return $states;
+	}
+
+	private function matchingChildHandlers(HandlerInterface $handler, CollectionInterface $collection): array
+	{
+		$matches = [];
+		foreach ($handler->getChildren() as $child) {
+			if ($child->getCollection()->getName() === $collection->getName()) {
+				$matches[] = $child;
+			}
+		}
+
+		return $matches;
+	}
+
+	private function resolveOperation(string $mode, CollectionInterface $collection, ?string $id): string
+	{
+		if ($mode !== 'upsert') {
+			return $mode;
+		}
+
+		return $id !== null && $this->dataSource->get($collection, $id) !== null ? 'update' : 'create';
+	}
+
+	private function assertCreateIdAvailable(string $operation, CollectionInterface $collection, MutationStateInterface $state): void
+	{
+		if ($operation !== 'create') {
+			return;
+		}
+
+		$createId = $this->inputPrimaryKeyValue($collection, $state->getData());
+		if (
+			$createId !== null
+			&& !$createId instanceof ValueRef
+			&& $this->dataSource->get($collection, (string) $createId) !== null
+		) {
+			$primaryKey = $this->getPrimaryKeyName($collection);
+			throw new RestApiError(
+				"A record with this {$primaryKey} already exists.",
+				'DUPLICATE',
+				$primaryKey,
+				409
+			);
+		}
+	}
+
+	private function scheduleNodeLifecycle(array $node, bool $after = false): object|null
+	{
+		return $this->scheduleLifecycleEvent(
+			$node['operation'],
+			$node['collection'],
+			$node['state'],
+			$node['path'],
+			$after,
+			id: $node['operation'] !== 'create'
+				? (string) $node['state']->getValue($this->getPrimaryKeyName($node['collection']))
+				: null
+		);
+	}
+
+	private function scheduleRelationPayloadLifecycle(array $relation): void
+	{
+		foreach (self::ACTIONS as $operation) {
+			foreach ($relation['payload'][$operation] ?? [] as $index => $target) {
+				if (!in_array($operation, ['connect', 'disconnect'], true)) {
+					continue;
+				}
+
+				$path = [...$relation['path'], $operation, $index];
+				$this->scheduleLifecycleEvent(
+					$operation,
+					$relation['state']->getCollection(),
+					$relation['state'],
+					$path,
+					false,
+					$relation['handler']->getRelationName(),
+					$relation['handler']->getTargetCollection(),
+					$target
+				);
+				$this->scheduleLifecycleEvent(
+					$operation,
+					$relation['state']->getCollection(),
+					$relation['state'],
+					$path,
+					true,
+					$relation['handler']->getRelationName(),
+					$relation['handler']->getTargetCollection(),
+					$target
+				);
+			}
+		}
+	}
+
+	private function scheduleLifecycleEvent(
 		string $operation,
 		CollectionInterface $collection,
 		MutationStateInterface $state,
 		array $path,
+		bool $after = false,
 		?string $relationName = null,
 		?CollectionInterface $targetCollection = null,
 		mixed $target = null,
-		bool $after = false,
 		?string $id = null
 	): object|null {
 		if (!$this->dispatchEvents) {
@@ -355,95 +467,14 @@ final class RestMutationPlanner
 		return $event;
 	}
 
-	private function scheduleRelationEvents(
-		CollectionInterface $collection,
-		string $relationName,
-		CollectionInterface $targetCollection,
-		MutationStateInterface $state,
-		array $path,
-		array $payload
-	): void {
-		foreach (self::RELATION_ACTIONS as $operation) {
-			if (!in_array($operation, ['connect', 'disconnect'], true)) {
-				continue;
-			}
-
-			foreach ($payload[$operation] ?? [] as $index => $target) {
-				$targetPath = [...$path, $operation, $index];
-				$this->scheduleLifecycleEvents($operation, $collection, $state, $targetPath, $relationName, $targetCollection, $target, false);
-				$this->scheduleLifecycleEvents($operation, $collection, $state, $targetPath, $relationName, $targetCollection, $target, true);
-			}
-		}
-	}
-
-	private function compileNode(array $node): MutationTaskInterface|MutationDeleteTaskInterface|null
-	{
-		$task = RootLoader::compileRootAction($node, $this->queue);
-		$this->storeDeleteTask($node, $task);
-		$this->compileRelationPlans($node);
-
-		return $task;
-	}
-
-	private function compileRelationPlans(array $node): void
-	{
-		foreach ($node['relations'] ?? [] as $relation) {
-			$relation['handler']->{$node['operation']}(
-				$relation['payload'],
-				$node['state'],
-				$this->relationChildStates($relation['children']),
-				$this->queue
-			);
-
-			foreach (self::CHILD_MUTATION_ACTIONS as $action) {
-				foreach ($relation['children'][$action] ?? [] as $child) {
-					$this->compileRelationPlans($child);
-				}
-			}
-		}
-	}
-
-	private function relationChildStates(array $children): array
-	{
-		$states = [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-		];
-
-		foreach (self::CHILD_MUTATION_ACTIONS as $operation) {
-			foreach ($children[$operation] ?? [] as $child) {
-				$states[$operation][] = $child['state'];
-			}
-		}
-
-		return $states;
-	}
-
-	private function storeDeleteTask(array $node, MutationTaskInterface|MutationDeleteTaskInterface|null $task): void
-	{
-		if ($node['operation'] !== 'delete' || !$task instanceof MutationDeleteTaskInterface) {
-			return;
-		}
-
-		$this->afterDeleteEvents[] = [$node['collection'], $node['state'], $task, $node['path']];
-	}
-
-	private function lastDeleteTask(): ?MutationDeleteTaskInterface
-	{
-		if ($this->afterDeleteEvents === []) {
-			return null;
-		}
-
-		$last = $this->afterDeleteEvents[array_key_last($this->afterDeleteEvents)];
-
-		return $last[2];
-	}
-
 	private function relationChildPath(array $path, mixed $rawInput, string $operation, int|string $index): array
 	{
 		if (is_array($rawInput) && $this->isAssociativeArray($rawInput) && array_key_exists($operation, $rawInput)) {
 			return [...$path, $operation, $index];
+		}
+
+		if ($operation === 'delete') {
+			return [...$path, 'delete', $index];
 		}
 
 		return [...$path, $index];
@@ -467,6 +498,24 @@ final class RestMutationPlanner
 		}
 
 		return [$scalar, $relations];
+	}
+
+	private function storeDeleteTask(array $node, MutationTaskInterface|MutationDeleteTaskInterface|null $task): void
+	{
+		if ($node['operation'] !== 'delete' || !$task instanceof MutationDeleteTaskInterface) {
+			return;
+		}
+
+		$this->afterDeleteEvents[] = [$node['collection'], $node['state'], $task, $node['path']];
+	}
+
+	private function lastDeleteTask(): ?MutationDeleteTaskInterface
+	{
+		if ($this->afterDeleteEvents === []) {
+			return null;
+		}
+
+		return $this->afterDeleteEvents[array_key_last($this->afterDeleteEvents)][2];
 	}
 
 	private function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
@@ -507,7 +556,7 @@ final class RestMutationPlanner
 
 	private function assertAuthorized(object $event): void
 	{
-		if (! $event instanceof AuthorizationAwareEventInterface) {
+		if (!$event instanceof AuthorizationAwareEventInterface) {
 			return;
 		}
 

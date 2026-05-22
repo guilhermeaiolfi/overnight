@@ -8,10 +8,10 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Resolver\Sql\Loader\AliasRegistry;
-use ON\RestApi\Resolver\Sql\Loader\HasManyLoader;
-use ON\RestApi\Resolver\Sql\Loader\LoaderRegistry;
-use ON\RestApi\Resolver\Sql\Loader\ManyToManyLoader;
+use ON\RestApi\Handler\AliasRegistry;
+use ON\RestApi\Handler\HasManyLoader;
+use ON\RestApi\Handler\LoaderRegistry;
+use ON\RestApi\Handler\ManyToManyLoader;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
