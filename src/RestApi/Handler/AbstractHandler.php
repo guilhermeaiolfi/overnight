@@ -96,50 +96,19 @@ abstract class AbstractHandler implements HandlerInterface
 		$this->node = $node;
 	}
 
-	public function compileCreate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-	}
-
-	public function compileUpdate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-	}
-
-	public function compileDelete(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-	}
-
-	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
-	}
-
-	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
-	}
-
-	public function compileRootAction(
-		string $operation,
+	public function compileActions(
+		MutationQueue $queue,
 		MutationStateInterface $state,
-		MutationQueue $queue
+		array $actions,
+		array $children = []
 	): MutationTaskInterface|MutationDeleteTaskInterface|null {
 		$collection = $state->getCollection();
 
-		if ($operation === 'create') {
+		if (($actions['create'] ?? []) !== []) {
 			return $queue->queueInsert($state);
 		}
 
-		if ($operation === 'update') {
+		if (($actions['update'] ?? []) !== []) {
 			return $queue->queueUpdate(
 				$collection,
 				$this->primaryKeyCriteria($collection, $state->getValue($this->getPrimaryKeyName($collection))),
@@ -147,7 +116,7 @@ abstract class AbstractHandler implements HandlerInterface
 			);
 		}
 
-		if ($operation === 'delete') {
+		if (($actions['delete'] ?? []) !== []) {
 			return $queue->queueDelete(
 				$collection,
 				$this->primaryKeyCriteria($collection, $state->getValue($this->getPrimaryKeyName($collection)))

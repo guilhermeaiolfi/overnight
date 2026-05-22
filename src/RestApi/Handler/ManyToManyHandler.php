@@ -230,48 +230,20 @@ class ManyToManyHandler extends AbstractRelationHandler
 			: $this->getTargetCollection();
 	}
 
-	public function compileCreate(
-		array $payload,
+	public function compileActions(
+		MutationQueue $queue,
 		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		$this->compileMutationPayload($payload, $source, $children, $queue);
-	}
-
-	public function compileUpdate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		$this->compileMutationPayload($payload, $source, $children, $queue);
-	}
-
-	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
-		$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
-	}
-
-	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
-		$this->disconnect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
-	}
-
-	private function compileMutationPayload(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
+		array $actions,
+		array $children = []
+	): \ON\RestApi\Mutation\MutationTaskInterface|\ON\RestApi\Mutation\MutationDeleteTaskInterface|null {
 		$this->queueChildMutations($children, $queue);
 
-		foreach ($payload['disconnect'] ?? [] as $target) {
-			$this->compileDisconnect($target, $source, $queue);
+		foreach ($actions['disconnect'] ?? [] as $target) {
+			$this->disconnect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
 		}
 
-		foreach ($payload['connect'] ?? [] as $target) {
-			$this->compileConnect($target, $source, $queue);
+		foreach ($actions['connect'] ?? [] as $target) {
+			$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
 		}
 
 		$targetCollection = $this->relation->getCollection();
@@ -280,6 +252,8 @@ class ManyToManyHandler extends AbstractRelationHandler
 				$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $created->getValue($this->getPrimaryKeyName($targetCollection)));
 			}
 		}
+
+		return null;
 	}
 
 	private function resultNodeColumns(): array

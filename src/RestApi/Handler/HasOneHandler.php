@@ -117,26 +117,31 @@ class HasOneHandler extends AbstractRelationHandler
 		return $payload;
 	}
 
-	public function compileCreate(
-		array $payload,
+	public function compileActions(
+		MutationQueue $queue,
 		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		$this->compileMutationPayload($payload, $source, $children, $queue);
+		array $actions,
+		array $children = []
+	): \ON\RestApi\Mutation\MutationTaskInterface|\ON\RestApi\Mutation\MutationDeleteTaskInterface|null {
+		foreach ($actions['connect'] ?? [] as $target) {
+			$this->compileConnectionUpdate($queue, $source, $target, false);
+		}
+
+		foreach ($actions['disconnect'] ?? [] as $target) {
+			$this->compileConnectionUpdate($queue, $source, $target, true);
+		}
+
+		$this->queueChildMutations($children, $queue);
+
+		return null;
 	}
 
-	public function compileUpdate(
-		array $payload,
+	private function compileConnectionUpdate(
+		MutationQueue $queue,
 		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
+		mixed $target,
+		bool $disconnect
 	): void {
-		$this->compileMutationPayload($payload, $source, $children, $queue);
-	}
-
-	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
 		$parentId = $source->getValue($this->relation->getInnerField()->getName());
 		$targetCollection = $this->getTargetCollection();
 		$relationKey = $this->relation->getOuterField()->getName();
@@ -148,41 +153,8 @@ class HasOneHandler extends AbstractRelationHandler
 				ComparisonOperator::Eq,
 				new LiteralValue($target)
 			),
-			[$relationKey => $parentId]
+			[$relationKey => $disconnect ? null : $parentId]
 		);
-	}
-
-	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void
-	{
-		$targetCollection = $this->getTargetCollection();
-		$relationKey = $this->relation->getOuterField()->getName();
-
-		$queue->queueUpdate(
-			$targetCollection,
-			new ComparisonFilter(
-				new FieldExpression($this->getPrimaryKeyName($targetCollection)),
-				ComparisonOperator::Eq,
-				new LiteralValue($target)
-			),
-			[$relationKey => null]
-		);
-	}
-
-	protected function compileMutationPayload(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
-		foreach ($payload['connect'] ?? [] as $target) {
-			$this->compileConnect($target, $source, $queue);
-		}
-
-		foreach ($payload['disconnect'] ?? [] as $target) {
-			$this->compileDisconnect($target, $source, $queue);
-		}
-
-		$this->queueChildMutations($children, $queue);
 	}
 
 	protected function normalizeOmittedChildren(array &$payload, array $currentRows): void

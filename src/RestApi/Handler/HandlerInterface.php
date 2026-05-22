@@ -6,14 +6,13 @@ namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Mutation\MutationTaskInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
 
-interface HandlerInterface extends LoaderInterface
+interface HandlerInterface
 {
+	public function prepare(): void;
+
+	public function load(): mixed;
+
 	public function getParent(): ?self;
 
 	public function setParent(?self $parent): void;
@@ -48,46 +47,4 @@ interface HandlerInterface extends LoaderInterface
 	public function getInternalColumns(): array;
 
 	public function getNestedRelations(): array;
-
-	public function mutationCollection(string $operation, mixed $item): CollectionInterface;
-
-	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed;
-
-	public function normalizePayload(
-		string $operation,
-		mixed $input,
-		MutationStateInterface $source,
-		DataSourceInterface $dataSource
-	): array;
-
-	public function compileCreate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void;
-
-	public function compileUpdate(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void;
-
-	public function compileDelete(
-		array $payload,
-		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void;
-
-	public function compileConnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void;
-
-	public function compileDisconnect(mixed $target, MutationStateInterface $source, MutationQueue $queue): void;
-
-	public function compileRootAction(
-		string $operation,
-		MutationStateInterface $state,
-		MutationQueue $queue
-	): MutationTaskInterface|MutationDeleteTaskInterface|null;
 }

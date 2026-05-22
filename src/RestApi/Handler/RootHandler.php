@@ -7,16 +7,10 @@ namespace ON\RestApi\Handler;
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Field\FieldInterface;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Mutation\MutationTaskInterface;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\LiteralValue;
 
 class RootHandler extends AbstractHandler
+	implements MutationHandlerInterface
 {
 	/**
 	 * @param array<int, array<string, mixed>> $rows
@@ -132,42 +126,22 @@ class RootHandler extends AbstractHandler
 		MutationStateInterface $source,
 		\ON\RestApi\Resolver\DataSourceInterface $dataSource
 	): array {
-		return [
+		$payload = [
 			'create' => [],
 			'update' => [],
 			'delete' => [],
 			'connect' => [],
 			'disconnect' => [],
 		];
-	}
 
-	public function compileRootAction(
-		string $operation,
-		MutationStateInterface $state,
-		MutationQueue $queue
-	): MutationTaskInterface|MutationDeleteTaskInterface|null {
-		$collection = $state->getCollection();
+		match ($operation) {
+			'create' => $payload['create'][] = $input,
+			'update' => $payload['update'][] = $input,
+			'delete' => $payload['delete'][] = $source->getData(),
+			default => null,
+		};
 
-		if ($operation === 'create') {
-			return $queue->queueInsert($state);
-		}
-
-		if ($operation === 'update') {
-			return $queue->queueUpdate(
-				$collection,
-				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection))),
-				$state
-			);
-		}
-
-		if ($operation === 'delete') {
-			return $queue->queueDelete(
-				$collection,
-				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection)))
-			);
-		}
-
-		return null;
+		return $payload;
 	}
 
 	private function cleanRows(CollectionInterface $collection, array $rows, HandlerInterface $handler): array
@@ -282,15 +256,6 @@ class RootHandler extends AbstractHandler
 		}
 
 		return $mapped;
-	}
-
-	private static function primaryKeyCriteria(CollectionInterface $collection, mixed $id): ComparisonFilter
-	{
-		return new ComparisonFilter(
-			new FieldExpression(self::getPrimaryKeyName($collection)),
-			ComparisonOperator::Eq,
-			new LiteralValue($id)
-		);
 	}
 
 	private static function getPrimaryKeyName(CollectionInterface $collection): string

@@ -63,23 +63,23 @@ class BelongsToHandler extends HasOneHandler
 		return $payload;
 	}
 
-	protected function compileMutationPayload(
-		array $payload,
+	public function compileActions(
+		MutationQueue $queue,
 		MutationStateInterface $source,
-		array $children,
-		MutationQueue $queue
-	): void {
+		array $actions,
+		array $children = []
+	): \ON\RestApi\Mutation\MutationTaskInterface|\ON\RestApi\Mutation\MutationDeleteTaskInterface|null {
 		$innerField = $this->relation->getInnerField()->getName();
 		$outerField = $this->relation->getOuterField()->getName();
 
-		if (($payload['connect'] ?? []) !== []) {
-			$source->setValue($innerField, reset($payload['connect']));
-			return;
+		if (($actions['connect'] ?? []) !== []) {
+			$source->setValue($innerField, reset($actions['connect']));
+			return null;
 		}
 
-		if (($payload['disconnect'] ?? []) !== []) {
+		if (($actions['disconnect'] ?? []) !== []) {
 			$source->setValue($innerField, null);
-			return;
+			return null;
 		}
 
 		foreach (['create', 'update'] as $operation) {
@@ -92,5 +92,7 @@ class BelongsToHandler extends HasOneHandler
 		}
 
 		$this->queueChildMutations($children, $queue);
+
+		return null;
 	}
 }

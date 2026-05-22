@@ -24,6 +24,22 @@ class HandlerFactory
 		return $this->registry;
 	}
 
+	/**
+	 * @param array<int, array<string, mixed>> $rows
+	 * @param array<int, string> $columns
+	 * @param array<int, string> $requestedColumns
+	 * @param array<int, string> $internalColumns
+	 */
+	public function root(
+		CollectionInterface $collection,
+		array $rows = [],
+		array $columns = [],
+		array $requestedColumns = [],
+		array $internalColumns = []
+	): RootHandler {
+		return new RootHandler($collection, $rows, $columns, $requestedColumns, $internalColumns);
+	}
+
 	public function relation(
 		CollectionInterface $source,
 		RelationSelection $selection,
@@ -40,7 +56,7 @@ class HandlerFactory
 		return new $class($source, $relation, $selection, $context);
 	}
 
-	public function mutation(CollectionInterface $source, string $relationName): ?HandlerInterface
+	public function mutation(CollectionInterface $source, string $relationName): ?MutationHandlerInterface
 	{
 		if (!$source->relations->has($relationName)) {
 			return null;

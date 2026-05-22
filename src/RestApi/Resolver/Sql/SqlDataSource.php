@@ -25,7 +25,7 @@ use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\AbstractDataSource;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Handler\HandlerTree;
+use ON\RestApi\Handler\HandlerInterface;
 use ON\RestApi\Handler\QueryContext;
 use ON\RestApi\Handler\RootHandler;
 
@@ -249,7 +249,7 @@ class SqlDataSource extends AbstractDataSource
 	{
 	}
 
-	protected function newSelectQuery(CollectionInterface $collection, array $fieldNames = []): \Cycle\Database\Query\SelectQuery
+	public function newSelectQuery(CollectionInterface $collection, array $fieldNames = []): \Cycle\Database\Query\SelectQuery
 	{
 		$query = $this->getDatabase()->select()->from($collection->getTable());
 		$columns = $this->buildSelectColumnNames($collection, $fieldNames);
@@ -261,7 +261,7 @@ class SqlDataSource extends AbstractDataSource
 		return $query;
 	}
 
-	protected function selectionPlan(SelectionSet $selection): array
+	public function selectionPlan(SelectionSet $selection): array
 	{
 		$fields = [];
 		$requestedFields = [];
@@ -302,7 +302,7 @@ class SqlDataSource extends AbstractDataSource
 		];
 	}
 
-	protected function applySearchField(object $query, CollectionInterface $collection, ?SearchField $search): void
+	public function applySearchField(object $query, CollectionInterface $collection, ?SearchField $search): void
 	{
 		$this->applySearch($query, $collection, $search?->term);
 	}
@@ -310,7 +310,7 @@ class SqlDataSource extends AbstractDataSource
 	/**
 	 * @param list<SortSpec> $sort
 	 */
-	protected function applySortSpecs(object $query, CollectionInterface $collection, array $sort): void
+	public function applySortSpecs(object $query, CollectionInterface $collection, array $sort): void
 	{
 		foreach ($sort as $item) {
 			if (!$item instanceof SortSpec) {
@@ -324,7 +324,7 @@ class SqlDataSource extends AbstractDataSource
 		}
 	}
 
-	protected function applyPaginationSpec(object $query, ?PaginationSpec $pagination): void
+	public function applyPaginationSpec(object $query, ?PaginationSpec $pagination): void
 	{
 		$limit = $pagination?->limit ?? $this->defaultLimit;
 		$limit = min($limit, $this->maxLimit);
@@ -340,7 +340,7 @@ class SqlDataSource extends AbstractDataSource
 		}
 	}
 
-	protected function getVisibleById(CollectionInterface $collection, string $id): ?array
+	public function getVisibleById(CollectionInterface $collection, string $id): ?array
 	{
 		$columns = $this->getVisibleFields($collection);
 		$statement = $this->getDatabase()
@@ -374,6 +374,77 @@ class SqlDataSource extends AbstractDataSource
 		}
 
 		return $item;
+	}
+
+	protected function loadRootItems(
+		CollectionInterface $collection,
+		array $items,
+		array $requestedColumnNames,
+		array $internalRelationKeyColumnNames,
+		array $relations,
+		bool $selectionExplicit = false,
+		?AliasRegistry $aliases = null
+	): array {
+		if ($items === []) {
+			return [];
+		}
+
+		$columns = array_keys($items[0]);
+		$root = $this->handlerFactory->root(
+			$collection,
+			$items,
+			$columns,
+			$requestedColumnNames === [] && !$selectionExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
+			$internalRelationKeyColumnNames
+		);
+		$this->configureQueryHandlers(
+			$root,
+			$collection,
+			$relations,
+			new QueryContext(
+				$this->database,
+				$this->registry,
+				$this->filterApplier,
+				$this->expressions,
+				$aliases ?? new AliasRegistry()
+			)
+		);
+		$root->parseRows();
+		$this->loadQueryHandlers($root->getChildren());
+
+		return $root->result();
+	}
+
+	private function configureQueryHandlers(
+		HandlerInterface $parent,
+		CollectionInterface $collection,
+		array $relations,
+		QueryContext $context
+	): void {
+		$parentNode = $parent instanceof RootHandler ? $parent->rootNode() : $parent->getNode();
+		foreach ($relations as $selection) {
+			if (!$selection instanceof RelationSelection) {
+				continue;
+			}
+
+			$handler = $this->handlerFactory->relation($collection, $selection, $context);
+			if ($handler === null) {
+				continue;
+			}
+
+			$parent->addChild($handler);
+			$handler->configureParserNode($parentNode);
+			$handler->prepare();
+			$this->configureQueryHandlers($handler, $handler->getTargetCollection(), $handler->getNestedRelations(), $context);
+		}
+	}
+
+	private function loadQueryHandlers(array $handlers): void
+	{
+		foreach ($handlers as $handler) {
+			$handler->load();
+			$this->loadQueryHandlers($handler->getChildren());
+		}
 	}
 
 	/**
@@ -449,46 +520,30 @@ class SqlDataSource extends AbstractDataSource
 		});
 	}
 
-	protected function loadRootItems(
-		CollectionInterface $collection,
-		array $items,
-		array $requestedColumnNames,
-		array $internalRelationKeyColumnNames,
-		array $relations,
-		bool $selectionExplicit = false,
-		?AliasRegistry $aliases = null
-	): array {
-		if ($items === []) {
-			return [];
-		}
-
-		$columns = array_keys($items[0]);
-		$root = new RootHandler(
-			$collection,
-			$items,
-			$columns,
-			$requestedColumnNames === [] && !$selectionExplicit ? $this->getVisibleFields($collection) : $requestedColumnNames,
-			$internalRelationKeyColumnNames
-		);
-
-		$tree = (new HandlerTree($root))->includeQueryRelations(
-			$relations,
-			new QueryContext(
-				$this->database,
-				$this->registry,
-				$this->filterApplier,
-				$this->expressions,
-				$aliases ?? new AliasRegistry()
-			),
-			$this->handlerFactory
-		);
-
-		return $tree->load();
-	}
-
 	protected function getDatabase(): CycleDatabaseInterface
 	{
 		return $this->database;
+	}
+
+	public function database(): CycleDatabaseInterface
+	{
+		return $this->database;
+	}
+
+	public function filterApplier(): SqlFilterApplier
+	{
+		return $this->filterApplier;
+	}
+
+	public function newQueryContext(?AliasRegistry $aliases = null): QueryContext
+	{
+		return new QueryContext(
+			$this->database,
+			$this->registry,
+			$this->filterApplier,
+			$this->expressions,
+			$aliases ?? new AliasRegistry()
+		);
 	}
 
 	protected function mapInputToColumns(CollectionInterface $collection, array $input): array
@@ -568,7 +623,7 @@ class SqlDataSource extends AbstractDataSource
 		return $pk instanceof \ON\ORM\Definition\Field\FieldInterface ? $pk->getName() : 'id';
 	}
 
-	protected function fieldNamesToColumnNames(CollectionInterface $collection, array $fieldNames): array
+	public function fieldNamesToColumnNames(CollectionInterface $collection, array $fieldNames): array
 	{
 		$columnNames = [];
 		foreach ($fieldNames as $fieldName) {
@@ -583,7 +638,7 @@ class SqlDataSource extends AbstractDataSource
 		return array_values(array_unique($columnNames));
 	}
 
-	protected function columnNamesToFieldNames(CollectionInterface $collection, array $columnNames): array
+	public function columnNamesToFieldNames(CollectionInterface $collection, array $columnNames): array
 	{
 		$fieldNames = [];
 		foreach ($columnNames as $columnName) {
@@ -595,7 +650,7 @@ class SqlDataSource extends AbstractDataSource
 		return array_values(array_unique($fieldNames));
 	}
 
-	protected function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
+	public function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
 	{
 		$columnNames = [];
 		foreach ($relations as $relation) {

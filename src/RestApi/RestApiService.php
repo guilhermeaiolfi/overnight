@@ -16,9 +16,11 @@ use ON\RestApi\Event\ItemList;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Mutation\RestMutationPlanner;
+use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class RestApiService
@@ -88,7 +90,7 @@ class RestApiService
 			}
 		}
 
-		$result = $this->dataSource->list($collection, $querySpec);
+		$result = $this->queryList($collection, $querySpec);
 		if (isset($event)) {
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
@@ -102,7 +104,7 @@ class RestApiService
 		$params = $querySpec === null ? $options : $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->dataSource->get($collection, $id, $querySpec);
+			return $this->queryGet($collection, $id, $querySpec);
 		}
 
 		$event = new ItemGet($collection, $id, $params);
@@ -114,7 +116,7 @@ class RestApiService
 			return $event->getResult();
 		}
 
-		$event->setResult($this->dataSource->get($collection, $id, $querySpec));
+		$event->setResult($this->queryGet($collection, $id, $querySpec));
 		return $event->getResult();
 	}
 
@@ -274,6 +276,29 @@ class RestApiService
 			$rootCollection,
 			new MutationState($rootCollection, $rootInput)
 		);
+	}
+
+	protected function queryPlanner(): QueryPlanner
+	{
+		return new QueryPlanner($this->dataSource, $this->relationHandlers);
+	}
+
+	protected function queryList(CollectionInterface $collection, QuerySpec $querySpec): array
+	{
+		if ($this->dataSource instanceof SqlDataSource) {
+			return $this->queryPlanner()->list($collection, $querySpec);
+		}
+
+		return $this->dataSource->list($collection, $querySpec);
+	}
+
+	protected function queryGet(CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null): ?array
+	{
+		if ($this->dataSource instanceof SqlDataSource) {
+			return $this->queryPlanner()->get($collection, $id, $querySpec);
+		}
+
+		return $this->dataSource->get($collection, $id, $querySpec);
 	}
 
 	/**

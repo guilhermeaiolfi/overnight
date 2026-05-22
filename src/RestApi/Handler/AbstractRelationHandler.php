@@ -31,7 +31,7 @@ use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\DataSourceInterface;
 
-abstract class AbstractRelationHandler extends AbstractHandler
+abstract class AbstractRelationHandler extends AbstractHandler implements MutationHandlerInterface
 {
 	/** @var array{select: array, requested: array, internal: array} */
 	private array $columns;

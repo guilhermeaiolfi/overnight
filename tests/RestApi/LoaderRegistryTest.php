@@ -9,9 +9,9 @@ use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Handler\AliasRegistry;
-use ON\RestApi\Handler\HasManyLoader;
-use ON\RestApi\Handler\LoaderRegistry;
-use ON\RestApi\Handler\ManyToManyLoader;
+use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Handler\HasManyHandler;
+use ON\RestApi\Handler\ManyToManyHandler;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -24,27 +24,27 @@ final class LoaderRegistryTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 
-		$loaders = LoaderRegistry::defaults();
+		$loaders = HandlerRegistry::defaults();
 		$post = $registry->getCollection('post');
 		$user = $registry->getCollection('user');
 
 		$this->assertSame(
-			HasManyLoader::class,
+			HasManyHandler::class,
 			$loaders->resolve($user, 'posts', $user->relations->get('posts'))
 		);
 		$this->assertSame(
-			ManyToManyLoader::class,
+			ManyToManyHandler::class,
 			$loaders->resolve($post, 'tags', $post->relations->get('tags'))
 		);
 	}
 
 	public function testDuplicateRelationRegistrationFailsUnlessReplaced(): void
 	{
-		$loaders = LoaderRegistry::defaults();
-		$loaders->relation('post', 'tags', ManyToManyLoader::class);
+		$loaders = HandlerRegistry::defaults();
+		$loaders->relation('post', 'tags', ManyToManyHandler::class);
 
 		$this->expectException(\LogicException::class);
-		$loaders->relation('post', 'tags', ManyToManyLoader::class);
+		$loaders->relation('post', 'tags', ManyToManyHandler::class);
 	}
 
 	public function testRelationRegistrationCanBeReplacedExplicitly(): void
@@ -53,12 +53,12 @@ final class LoaderRegistryTest extends TestCase
 		$this->createFullSchema($registry);
 		$post = $registry->getCollection('post');
 
-		$loaders = LoaderRegistry::defaults();
-		$loaders->relation('post', 'tags', HasManyLoader::class);
-		$loaders->replaceRelation('post', 'tags', ManyToManyLoader::class);
+		$loaders = HandlerRegistry::defaults();
+		$loaders->relation('post', 'tags', HasManyHandler::class);
+		$loaders->replaceRelation('post', 'tags', ManyToManyHandler::class);
 
 		$this->assertSame(
-			ManyToManyLoader::class,
+			ManyToManyHandler::class,
 			$loaders->resolve($post, 'tags', $post->relations->get('tags'))
 		);
 	}

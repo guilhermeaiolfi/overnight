@@ -19,11 +19,9 @@ use ON\RestApi\Event\RelationConnected;
 use ON\RestApi\Event\RelationConnecting;
 use ON\RestApi\Event\RelationDisconnected;
 use ON\RestApi\Event\RelationDisconnecting;
-use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Handler\HandlerInterface;
-use ON\RestApi\Handler\HandlerTree;
-use ON\RestApi\Handler\RootHandler;
+use ON\RestApi\Handler\MutationHandlerInterface;
+use ON\RestApi\Resolver\DataSourceInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class RestMutationPlanner
@@ -66,10 +64,9 @@ final class RestMutationPlanner
 			}
 		}
 
-		$tree = (new HandlerTree(new RootHandler($collection)))
-			->includeMutationInput($state->getData(), $this->handlers);
+		$root = $this->handlers->root($collection);
 		$prevented = null;
-		$node = $this->planSaveNode($mode, $tree->root(), $state, $id, $path, $prevented);
+		$node = $this->planSaveNode($mode, $root, $state, $id, $path, $prevented);
 		if ($node === null) {
 			return $prevented;
 		}
@@ -80,12 +77,14 @@ final class RestMutationPlanner
 	public function delete(CollectionInterface $collection, string $id, array $path = []): ?MutationDeleteTaskInterface
 	{
 		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => $id]);
+		$handler = $this->handlers->root($collection);
 		$node = [
-			'handler' => new RootHandler($collection),
+			'handler' => $handler,
 			'operation' => 'delete',
 			'collection' => $collection,
 			'state' => $state,
 			'path' => $path,
+			'actions' => $handler->normalizePayload('delete', [], $state, $this->dataSource),
 			'relations' => [],
 		];
 
@@ -120,7 +119,7 @@ final class RestMutationPlanner
 	 */
 	private function planSaveNode(
 		string $mode,
-		HandlerInterface $handler,
+		MutationHandlerInterface $handler,
 		MutationStateInterface $state,
 		?string $id,
 		array $path,
@@ -146,6 +145,7 @@ final class RestMutationPlanner
 			'collection' => $collection,
 			'state' => $state,
 			'path' => $path,
+			'actions' => [],
 			'relations' => [],
 		];
 
@@ -159,7 +159,8 @@ final class RestMutationPlanner
 
 		[$scalarInput, $relationInput] = $this->splitNodeInput($collection, $state->getData());
 		$state->setData($scalarInput);
-		$node['relations'] = $this->planRelations($operation, $state, $handler->getChildren(), $relationInput, $path);
+		$node['actions'] = $handler->normalizePayload($operation, $scalarInput, $state, $this->dataSource);
+		$node['relations'] = $this->planRelations($operation, $collection, $state, $relationInput, $path);
 
 		$this->scheduleNodeLifecycle($node, true);
 
@@ -168,19 +169,18 @@ final class RestMutationPlanner
 
 	private function planRelations(
 		string $operation,
+		CollectionInterface $collection,
 		MutationStateInterface $state,
-		array $handlers,
 		array $relationInput,
 		array $path
 	): array {
 		$relations = [];
-		foreach ($handlers as $handler) {
-			$relationName = $handler->getRelationName();
-			if ($relationName === null || !array_key_exists($relationName, $relationInput)) {
+		foreach ($relationInput as $relationName => $rawInput) {
+			$handler = $this->handlers->mutation($collection, (string) $relationName);
+			if ($handler === null) {
 				continue;
 			}
 
-			$rawInput = $relationInput[$relationName];
 			$payload = $handler->normalizePayload($operation, $rawInput, $state, $this->dataSource);
 			$children = $this->planRelationChildren($handler, $payload, $rawInput, [...$path, $relationName]);
 
@@ -200,7 +200,7 @@ final class RestMutationPlanner
 	}
 
 	private function planRelationChildren(
-		HandlerInterface $handler,
+		MutationHandlerInterface $handler,
 		array $payload,
 		mixed $rawInput,
 		array $path
@@ -224,7 +224,7 @@ final class RestMutationPlanner
 	}
 
 	private function planRelationChild(
-		HandlerInterface $handler,
+		MutationHandlerInterface $handler,
 		string $action,
 		mixed $item,
 		mixed $rawInput,
@@ -237,10 +237,7 @@ final class RestMutationPlanner
 
 		$collection = $handler->mutationCollection($action, $item);
 		$childPath = $this->relationChildPath($path, $rawInput, $action, $index);
-		$childHandler = new RootHandler($collection);
-		foreach ($this->matchingChildHandlers($handler, $collection) as $nestedHandler) {
-			$childHandler->addChild($nestedHandler);
-		}
+		$childHandler = $this->handlers->root($collection);
 
 		return match ($action) {
 			'create' => $this->planSaveNode('create', $childHandler, new MutationState($collection, $item), null, $childPath),
@@ -260,7 +257,7 @@ final class RestMutationPlanner
 		CollectionInterface $collection,
 		mixed $item,
 		array $path,
-		HandlerInterface $handler
+		MutationHandlerInterface $handler
 	): ?array {
 		$id = is_array($item) ? $this->inputPrimaryKeyValue($collection, $item) : $item;
 		if ($id === null) {
@@ -274,6 +271,7 @@ final class RestMutationPlanner
 			'collection' => $collection,
 			'state' => $state,
 			'path' => $path,
+			'actions' => $handler->normalizePayload('delete', [], $state, $this->dataSource),
 			'relations' => [],
 		];
 
@@ -287,27 +285,26 @@ final class RestMutationPlanner
 
 	private function compileNode(array $node): MutationTaskInterface|MutationDeleteTaskInterface|null
 	{
-		$task = $node['handler']->compileRootAction($node['operation'], $node['state'], $this->queue);
+		$task = $node['handler']->compileActions($this->queue, $node['state'], $node['actions']);
 		$this->storeDeleteTask($node, $task);
-		$this->compileRelationPlans($node['operation'], $node['state'], $node['relations']);
+		$this->compileRelationPlans($node['state'], $node['relations']);
 
 		return $task;
 	}
 
-	private function compileRelationPlans(string $operation, MutationStateInterface $state, array $relations): void
+	private function compileRelationPlans(MutationStateInterface $state, array $relations): void
 	{
 		foreach ($relations as $relation) {
-			$children = $this->relationChildStates($relation['children']);
-			match ($operation) {
-				'create' => $relation['handler']->compileCreate($relation['payload'], $state, $children, $this->queue),
-				'update' => $relation['handler']->compileUpdate($relation['payload'], $state, $children, $this->queue),
-				'delete' => $relation['handler']->compileDelete($relation['payload'], $state, $children, $this->queue),
-				default => null,
-			};
+			$relation['handler']->compileActions(
+				$this->queue,
+				$state,
+				$relation['payload'],
+				$this->relationChildStates($relation['children'])
+			);
 
 			foreach (self::CHILD_ACTIONS as $action) {
 				foreach ($relation['children'][$action] ?? [] as $child) {
-					$this->compileRelationPlans($child['operation'], $child['state'], $child['relations']);
+					$this->compileRelationPlans($child['state'], $child['relations']);
 				}
 			}
 		}
@@ -328,18 +325,6 @@ final class RestMutationPlanner
 		}
 
 		return $states;
-	}
-
-	private function matchingChildHandlers(HandlerInterface $handler, CollectionInterface $collection): array
-	{
-		$matches = [];
-		foreach ($handler->getChildren() as $child) {
-			if ($child->getCollection()->getName() === $collection->getName()) {
-				$matches[] = $child;
-			}
-		}
-
-		return $matches;
 	}
 
 	private function resolveOperation(string $mode, CollectionInterface $collection, ?string $id): string
