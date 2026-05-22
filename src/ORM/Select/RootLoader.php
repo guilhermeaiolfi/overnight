@@ -83,7 +83,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPK(): array|string
 	{
-		$pk = $this->target->getPrimaryKey();
+		$pk = $this->target->getPrimaryKeyFields();
 		if (is_array($pk)) {
 			$result = [];
 			foreach ($pk as $field) {
@@ -103,7 +103,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPrimaryFields(): array
 	{
-		return $this->target->getPrimaryKey(true);
+		return $this->target->getPrimaryKey()->getFieldNames();
 	}
 
 	/**
@@ -155,6 +155,6 @@ final class RootLoader extends AbstractLoader
 
 	protected function initNode(): RootNode
 	{
-		return new RootNode($this->columnNames(), (array)$this->target->getPrimaryKey(true));
+		return new RootNode($this->columnNames(), $this->target->getPrimaryKey()->getFieldNames());
 	}
 }

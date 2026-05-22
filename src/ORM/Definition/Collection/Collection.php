@@ -260,7 +260,7 @@ class Collection implements CollectionInterface
 	}
 
 	/** @return FieldInterface[]|FieldInterface */
-	public function getPrimaryKey(): mixed
+	public function getPrimaryKeyFields(): mixed
 	{
 		$pk = [];
 		foreach ($this->fields as $name => $field) {
@@ -273,6 +273,19 @@ class Collection implements CollectionInterface
 		}
 
 		return $pk;
+	}
+
+	public function getPrimaryKey(): PrimaryKeyDefinition
+	{
+		$primary = $this->getPrimaryKeyFields();
+		if ($primary instanceof FieldInterface) {
+			return new PrimaryKeyDefinition($this, [$primary]);
+		}
+
+		return new PrimaryKeyDefinition(
+			$this,
+			array_values(array_filter($primary, static fn(mixed $field): bool => $field instanceof FieldInterface))
+		);
 	}
 
 	public function end(): Registry

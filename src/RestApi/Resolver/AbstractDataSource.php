@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi\Resolver;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Field\FieldInterface;
 
 abstract class AbstractDataSource implements DataSourceInterface
 {
@@ -13,21 +12,6 @@ abstract class AbstractDataSource implements DataSourceInterface
 		protected int $defaultLimit = 100,
 		protected int $maxLimit = 1000
 	) {
-	}
-
-	public function getPrimaryKeyColumn(CollectionInterface $collection): string
-	{
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getColumn();
-		}
-
-		if (is_array($pk) && !empty($pk)) {
-			return $pk[0]->getColumn();
-		}
-
-		return 'id';
 	}
 
 	public function getVisibleFields(CollectionInterface $collection): array

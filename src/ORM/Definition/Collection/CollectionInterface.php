@@ -65,7 +65,9 @@ interface CollectionInterface
 	public function belongsTo(string $name, string $targetCollection): BelongsToRelation;
 
 	/** @return FieldInterface[]|FieldInterface */
-	public function getPrimaryKey(): mixed;
+	public function getPrimaryKeyFields(): mixed;
+
+	public function getPrimaryKey(): PrimaryKeyDefinition;
 
 	public function note(string $note): self;
 

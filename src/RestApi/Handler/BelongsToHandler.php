@@ -16,9 +16,9 @@ class BelongsToHandler extends HasOneHandler
 		MutationStateInterface $source,
 		SqlDataSource $dataSource
 	): array {
-		$payload = $this->emptyMutationPayload();
-		$currentParent = $operation === 'create' ? null : $this->currentParentRow($dataSource, $source);
-		$currentId = is_array($currentParent) ? ($currentParent[$this->relation->getInnerField()->getName()] ?? null) : null;
+		$payload = $this->getEmptyMutationPayload();
+		$currentParent = $operation === 'create' ? null : $this->getCurrentParentRow($dataSource, $source);
+		$currentId = is_array($currentParent) ? $this->getTargetIdentityFromSourceRow($currentParent) : null;
 
 		if ($this->isDetailedPayload($input)) {
 			return $this->normalizeDetailedPayload($input);
@@ -26,13 +26,17 @@ class BelongsToHandler extends HasOneHandler
 
 		if (is_array($input) && $this->isAssociativeArray($input)) {
 			$targetCollection = $this->relation->getCollection();
-			$id = $this->inputPrimaryKeyValue($targetCollection, $input);
+			$id = $this->getInputPrimaryKeyValue($targetCollection, $input);
 			if ($id === null && $currentId !== null) {
-				$input[$this->getPrimaryKeyName($targetCollection)] = $currentId;
+				$input += $currentId instanceof \ON\ORM\Definition\Collection\PrimaryKeyValue ? $currentId->values() : [];
 				$id = $currentId;
 			}
 
-			if ($currentId !== null && $id !== null && $currentId !== $id) {
+			if (
+				$currentId !== null
+				&& $id !== null
+				&& (string) $currentId !== ($id instanceof \ON\ORM\Definition\Collection\PrimaryKeyValue ? $id->toUrlId() : (string) $id)
+			) {
 				$payload['disconnect'][] = $currentId;
 				$payload['connect'][] = $id;
 			}
@@ -69,23 +73,28 @@ class BelongsToHandler extends HasOneHandler
 		array $actions,
 		array $children = []
 	): \ON\RestApi\Mutation\MutationTaskInterface|\ON\RestApi\Mutation\MutationDeleteTaskInterface|null {
-		$innerField = $this->relation->getInnerField()->getName();
-		$outerField = $this->relation->getOuterField()->getName();
-
 		if (($actions['connect'] ?? []) !== []) {
-			$source->setValue($innerField, reset($actions['connect']));
+			$target = reset($actions['connect']);
+			$identity = $target instanceof \ON\ORM\Definition\Collection\PrimaryKeyValue
+				? $target
+				: \ON\RestApi\Support\PrimaryKeyCriteria::normalize($this->getTargetCollection(), $target);
+			foreach ($this->relation->innerKeys() as $index => $key) {
+				$source->setValue($key, $identity->value($this->relation->outerKeys()[$index]));
+			}
 			return null;
 		}
 
 		if (($actions['disconnect'] ?? []) !== []) {
-			$source->setValue($innerField, null);
+			foreach ($this->relation->innerKeys() as $key) {
+				$source->setValue($key, null);
+			}
 			return null;
 		}
 
 		foreach (['create', 'update'] as $operation) {
 			foreach ($children[$operation] ?? [] as $target) {
 				if ($target instanceof MutationStateInterface) {
-					$source->setValue($innerField, $target->getValue($outerField));
+					$this->setSourceRelationValuesFromTargetState($source, $target);
 					break 2;
 				}
 			}

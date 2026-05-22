@@ -6,7 +6,7 @@ namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationStateInterface;
 
 class RootHandler extends AbstractHandler
@@ -81,7 +81,7 @@ class RootHandler extends AbstractHandler
 			return $node;
 		}
 
-		$node = new RootNode($this->columns, [$this->getPrimaryKeyColumn($this->getCollection())]);
+		$node = new RootNode($this->columns, $this->getPrimaryKeyColumns($this->getCollection()));
 		$this->setNode($node);
 
 		return $node;
@@ -113,11 +113,9 @@ class RootHandler extends AbstractHandler
 		return $this->getCollection();
 	}
 
-	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
 	{
-		$primaryKey = self::getPrimaryKeyName($collection);
-
-		return array_key_exists($primaryKey, $input) ? $input[$primaryKey] : null;
+		return $collection->getPrimaryKey()->extractFromInput($input);
 	}
 
 	public function normalizePayload(
@@ -234,14 +232,9 @@ class RootHandler extends AbstractHandler
 		return $visible;
 	}
 
-	private function getPrimaryKeyColumn(CollectionInterface $collection): string
+	private function getPrimaryKeyColumns(CollectionInterface $collection): array
 	{
-		$primary = $collection->getPrimaryKey();
-		if (is_array($primary)) {
-			$primary = reset($primary);
-		}
-
-		return $primary->getColumn();
+		return $collection->getPrimaryKey()->getColumns();
 	}
 
 	private function mapColumnsToFields(CollectionInterface $collection, array $row): array
@@ -256,21 +249,6 @@ class RootHandler extends AbstractHandler
 		}
 
 		return $mapped;
-	}
-
-	private static function getPrimaryKeyName(CollectionInterface $collection): string
-	{
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getName();
-		}
-
-		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getName();
-		}
-
-		return 'id';
 	}
 
 	private function getNodeOrNull(): ?\Cycle\ORM\Parser\AbstractNode

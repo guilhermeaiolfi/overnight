@@ -8,10 +8,12 @@ use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
 use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\AbstractDataSource;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 class SqlDataSource extends AbstractDataSource
 {
@@ -32,15 +34,20 @@ class SqlDataSource extends AbstractDataSource
 	public function create(CollectionInterface $collection, array $input): array
 	{
 		try {
-			$primaryKeyValue = $this->inputPrimaryKeyValue($collection, $input);
+			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($input);
 			$input = $this->mapInputToColumns($collection, $input);
 			$lastId = $this->getDatabase()->insert($collection->getTable())
 				->values($input)
 				->run();
 
-			$id = $lastId ?? $primaryKeyValue;
+			$id = $primaryKeyValue;
+			if ($id === null && $lastId !== null && !$collection->getPrimaryKey()->isComposite()) {
+				$id = $collection->getPrimaryKey()->extractFromInput([
+					$collection->getPrimaryKey()->getFieldNames()[0] => $lastId,
+				], false);
+			}
 
-			return $id === null ? [] : ($this->getVisibleById($collection, (string) $id) ?? []);
+			return $id === null ? [] : ($this->getVisibleByIdentity($collection, $id) ?? []);
 		} catch (RestApiError $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -119,10 +126,11 @@ class SqlDataSource extends AbstractDataSource
 		return (int) (clone $query)->count();
 	}
 
-	public function getVisibleById(CollectionInterface $collection, string $id): ?array
+	public function getVisibleByIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
 	{
 		$query = $this->select($collection, $this->visibleFieldNames($collection));
-		$query->where($this->getPrimaryKeyColumn($collection), $id)->limit(1);
+		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		$query->limit(1);
 		$row = $this->fetchOne($query);
 		if ($row === null) {
 			return null;
@@ -263,30 +271,6 @@ class SqlDataSource extends AbstractDataSource
 		return $collection->fields->hasColumn($column)
 			? $collection->fields->getKeyByColumnName($column)
 			: $column;
-	}
-
-	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
-	{
-		$primaryKeyName = $this->getPrimaryKeyName($collection);
-
-		if (array_key_exists($primaryKeyName, $input)) {
-			return $input[$primaryKeyName];
-		}
-
-		$primaryKeyColumn = $this->getPrimaryKeyColumn($collection);
-
-		return $input[$primaryKeyColumn] ?? null;
-	}
-
-	protected function getPrimaryKeyName(CollectionInterface $collection): string
-	{
-		$pk = $collection->getPrimaryKey();
-
-		if (is_array($pk)) {
-			$pk = reset($pk);
-		}
-
-		return $pk instanceof \ON\ORM\Definition\Field\FieldInterface ? $pk->getName() : 'id';
 	}
 
 	private function visibleFieldNames(CollectionInterface $collection): array

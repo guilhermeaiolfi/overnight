@@ -446,7 +446,7 @@ final class DirectusQueryParser implements QueryParserInterface
 	 */
 	private function includePrimaryKey(CollectionInterface $collection, array &$nodes): void
 	{
-		$primary = $collection->getPrimaryKey();
+		$primary = $collection->getPrimaryKeyFields();
 		if (is_array($primary)) {
 			$primary = $primary[0] ?? null;
 		}

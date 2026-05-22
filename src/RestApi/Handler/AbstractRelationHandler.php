@@ -13,6 +13,7 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Relation\RelationInterface;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
@@ -27,6 +28,7 @@ use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 abstract class AbstractRelationHandler extends AbstractHandler implements MutationHandlerInterface
 {
@@ -104,12 +106,12 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 
 	public function limit(): ?int
 	{
-		return $this->pagination()?->limit;
+		return $this->getPagination()?->limit;
 	}
 
 	public function offset(): ?int
 	{
-		return $this->pagination()?->offset;
+		return $this->getPagination()?->offset;
 	}
 
 	protected function baseQuery(array $columns): SelectQuery
@@ -166,6 +168,19 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		}
 
 		return $values;
+	}
+
+	/**
+	 * @return list<array<int|string, mixed>>
+	 */
+	protected function getReferenceValueSets(AbstractNode $node): array
+	{
+		$sets = [];
+		foreach ($this->referenceValues($node) as $set) {
+			$sets[] = is_array($set) ? $set : [$set];
+		}
+
+		return $sets;
 	}
 
 	protected function limitedSubquery(SelectQuery $inner, array $columns, string $partitionColumn): SelectQuery
@@ -259,16 +274,6 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $visible;
 	}
 
-	protected function getPrimaryKeyColumn(CollectionInterface $collection): string
-	{
-		$primary = $collection->getPrimaryKey();
-		if (is_array($primary)) {
-			$primary = reset($primary);
-		}
-
-		return $primary->getColumn();
-	}
-
 	protected function compile(FragmentInterface $expression): string
 	{
 		return $this->dataSource->getDatabase()->getDriver()->getQueryCompiler()->compile(
@@ -308,7 +313,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		MutationStateInterface $source,
 		SqlDataSource $dataSource
 	): array {
-		return $this->emptyMutationPayload();
+		return $this->getEmptyMutationPayload();
 	}
 
 	protected function queueChildMutations(array $children, MutationQueue $queue): void
@@ -332,32 +337,19 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		}
 	}
 
-	protected function primaryKeyCriteria(MutationStateInterface $state): ComparisonFilter
+	protected function primaryKeyCriteria(MutationStateInterface $state): FilterNode
 	{
-		$primaryKey = $this->getPrimaryKeyName($state->getCollection());
-
-		return new ComparisonFilter(
-			new FieldExpression($primaryKey),
-			ComparisonOperator::Eq,
-			new LiteralValue($state->getValue($primaryKey))
-		);
+		return PrimaryKeyCriteria::build($state->getCollection(), $this->getPrimaryKeyValueFromState($state));
 	}
 
-	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
 	{
-		$primaryKey = $this->getPrimaryKeyName($collection);
-
-		return array_key_exists($primaryKey, $input) ? $input[$primaryKey] : null;
+		return $collection->getPrimaryKey()->extractFromInput($input);
 	}
 
-	protected function getPrimaryKeyName(CollectionInterface $collection): string
+	protected function getPrimaryKeyColumns(CollectionInterface $collection): array
 	{
-		$primary = $collection->getPrimaryKey();
-		if (is_array($primary)) {
-			$primary = reset($primary);
-		}
-
-		return $primary?->getName() ?? 'id';
+		return $collection->getPrimaryKey()->getColumns();
 	}
 
 	protected function isAssociativeArray(array $value): bool
@@ -378,7 +370,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $this->isAssociativeArray($value) ? [$value] : $value;
 	}
 
-	protected function emptyMutationPayload(): array
+	protected function getEmptyMutationPayload(): array
 	{
 		return [
 			'create' => [],
@@ -407,7 +399,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 
 	protected function normalizeDetailedPayload(array $input): array
 	{
-		$payload = $this->emptyMutationPayload();
+		$payload = $this->getEmptyMutationPayload();
 		foreach (array_keys($payload) as $key) {
 			$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
 		}
@@ -415,35 +407,29 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $payload;
 	}
 
-	protected function currentRelationRows(SqlDataSource $dataSource, MutationStateInterface $source): array
+	protected function getCurrentRelationRows(SqlDataSource $dataSource, MutationStateInterface $source): array
 	{
-		$parentId = $source->getValue($this->relation->getInnerField()->getName());
-		if ($parentId instanceof \ON\RestApi\Mutation\ValueRef && !$parentId->isReady()) {
-			return [];
+		$fieldValueMap = [];
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$value = $source->getValue($innerKey);
+			if ($value instanceof \ON\RestApi\Mutation\ValueRef && !$value->isReady()) {
+				return [];
+			}
+
+			$fieldValueMap[$this->relation->outerKeys()[$index]] = $source->resolveValue($value);
 		}
 
-		return $this->fetchRowsByField(
-			$dataSource,
-			$this->getTargetCollection(),
-			$this->relation->getOuterField()->getName(),
-			$source->resolveValue($parentId)
-		);
+		return $this->fetchRowsByFields($dataSource, $this->getTargetCollection(), $fieldValueMap);
 	}
 
-	protected function currentParentRow(SqlDataSource $dataSource, MutationStateInterface $source): ?array
+	protected function getCurrentParentRow(SqlDataSource $dataSource, MutationStateInterface $source): ?array
 	{
-		$primaryKey = $this->getPrimaryKeyName($source->getCollection());
-		$id = $source->getValue($primaryKey);
-		if ($id instanceof \ON\RestApi\Mutation\ValueRef && !$id->isReady()) {
+		$identity = $this->getPrimaryKeyValueFromState($source, false);
+		if ($identity === null) {
 			return null;
 		}
 
-		$id = $source->resolveValue($id);
-		if ($id === null || $id === '') {
-			return null;
-		}
-
-		return $this->fetchRowById($dataSource, $source->getCollection(), (string) $id);
+		return $this->fetchRowByIdentity($dataSource, $source->getCollection(), $identity);
 	}
 
 	protected function fetchRowsByField(
@@ -467,19 +453,110 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		);
 	}
 
-	protected function fetchRowById(SqlDataSource $dataSource, CollectionInterface $collection, string $id): ?array
-	{
-		$fieldNames = $this->visibleFieldNames($collection);
-		$primaryKey = $this->getPrimaryKeyName($collection);
-		if (!in_array($primaryKey, $fieldNames, true)) {
-			$fieldNames[] = $primaryKey;
+	protected function fetchRowsByFields(
+		SqlDataSource $dataSource,
+		CollectionInterface $collection,
+		array $fieldValueMap,
+		?array $fieldNames = null
+	): array {
+		$fieldNames ??= $this->visibleFieldNames($collection);
+		foreach (array_keys($fieldValueMap) as $fieldName) {
+			if (!in_array((string) $fieldName, $fieldNames, true)) {
+				$fieldNames[] = (string) $fieldName;
+			}
 		}
 
 		$query = $dataSource->select($collection, $fieldNames);
-		$query->where($this->getPrimaryKeyColumn($collection), $id)->limit(1);
+		foreach ($fieldValueMap as $fieldName => $value) {
+			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
+		}
+
+		return array_map(
+			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
+			$dataSource->fetchAll($query)
+		);
+	}
+
+	protected function fetchRowByIdentity(
+		SqlDataSource $dataSource,
+		CollectionInterface $collection,
+		PrimaryKeyValue|string $identity
+	): ?array
+	{
+		$fieldNames = $this->visibleFieldNames($collection);
+		foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
+			if (!in_array($fieldName, $fieldNames, true)) {
+				$fieldNames[] = $fieldName;
+			}
+		}
+
+		$query = $dataSource->select($collection, $fieldNames);
+		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		$query->limit(1);
 		$row = $dataSource->fetchOne($query);
 
 		return $row === null ? null : $this->mapRowToFieldNames($collection, $row);
+	}
+
+	protected function getPrimaryKeyValueFromState(
+		MutationStateInterface $state,
+		bool $requireReady = true
+	): ?PrimaryKeyValue {
+		$values = [];
+
+		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
+			$value = $state->getValue($fieldName);
+			if ($value instanceof \ON\RestApi\Mutation\ValueRef) {
+				if (!$value->isReady() && $requireReady) {
+					return null;
+				}
+
+				$values[$fieldName] = $value;
+				continue;
+			}
+
+			if ($requireReady) {
+				$value = $state->resolveValue($value);
+			}
+
+			if ($value === null && !$state->isValueReady($fieldName)) {
+				return null;
+			}
+
+			$values[$fieldName] = $value;
+		}
+
+		return new PrimaryKeyValue($state->getCollection(), $values);
+	}
+
+	protected function applySourceValuesToTargetInput(array &$input, MutationStateInterface $source): void
+	{
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$input[$this->relation->outerKeys()[$index]] = $source->getValue($innerKey);
+		}
+	}
+
+	protected function getTargetIdentityFromSourceRow(array $row): ?PrimaryKeyValue
+	{
+		$values = [];
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			if (!array_key_exists($innerKey, $row)) {
+				return null;
+			}
+
+			$values[$this->relation->outerKeys()[$index]] = $row[$innerKey];
+		}
+
+		return new PrimaryKeyValue($this->getTargetCollection(), $values);
+	}
+
+	protected function setSourceRelationValuesFromTargetState(
+		MutationStateInterface $source,
+		MutationStateInterface $target
+	): void {
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$source->setValue($innerKey, $target->getValue($this->relation->outerKeys()[$index]));
+		}
 	}
 
 	/**
@@ -487,9 +564,12 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 	 */
 	private function buildColumns(): array
 	{
-		$fieldNames = $this->selectedFieldNames();
-		$requestedFieldNames = $this->requestedFieldNames();
-		$requiredKey = $this->relation->getOuterField()->getColumn();
+		$fieldNames = $this->getSelectedFieldNames();
+		$requestedFieldNames = $this->getRequestedFieldNames();
+		$requiredKey = array_map(
+			fn(string $fieldName): string => $this->targetCollection->fields->get($fieldName)->getColumn(),
+			$this->relation->outerKeys()
+		)[0];
 
 		if ($fieldNames !== []) {
 			$selected = [];
@@ -507,7 +587,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 			}
 
 			$internal = [$requiredKey];
-			foreach ($this->relationKeyColumnNames($this->targetCollection, $this->getNestedRelations()) as $nestedKey) {
+			foreach ($this->getRelationKeyColumnNames($this->targetCollection, $this->getNestedRelations()) as $nestedKey) {
 				if (!in_array($nestedKey, $internal, true)) {
 					$internal[] = $nestedKey;
 				}
@@ -538,24 +618,26 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		];
 	}
 
-	private function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
+	private function getRelationKeyColumnNames(CollectionInterface $collection, array $relations): array
 	{
 		$columns = [];
 		foreach ($relations as $relation) {
 			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				$columns[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
+				foreach ($collection->relations->get($relation->relationName)->innerKeys() as $fieldName) {
+					$columns[] = $collection->fields->get($fieldName)->getColumn();
+				}
 			}
 		}
 
 		return array_values(array_unique($columns));
 	}
 
-	private function pagination(): ?PaginationSpec
+	private function getPagination(): ?PaginationSpec
 	{
 		return $this->selection?->query->pagination;
 	}
 
-	private function selectedFieldNames(): array
+	private function getSelectedFieldNames(): array
 	{
 		if (
 			$this->selection === null
@@ -575,7 +657,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return array_values(array_unique($fields));
 	}
 
-	private function requestedFieldNames(): array
+	private function getRequestedFieldNames(): array
 	{
 		if (
 			$this->selection === null

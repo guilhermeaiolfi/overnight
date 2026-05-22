@@ -172,15 +172,25 @@ class CycleRegistryGenerator implements GeneratorInterface
 			->set("load", $on_relation->getLoadStrategy())
 			->set("cascade", $on_relation->isCascade())
 			->set("nullable", $on_relation->isNullable())
-			->set("innerKey", $on_relation->getInnerField()->getColumn())
-			->set("outerKey", $on_relation->getOuterField()->getColumn());
+			->set("innerKey", $this->relationColumns($on_relation->getParent(), $on_relation->innerKeys()))
+			->set("outerKey", $this->relationColumns($on_relation->getCollection(), $on_relation->outerKeys()));
 
 		if ($on_relation instanceof M2MRelation) {
 			$options
 				->set('through', $on_relation->through->getCollection()->getTable())
-				->set('throughInnerKey', $on_relation->through->getInnerField()->getColumn())
-				->set('throughOuterKey', $on_relation->through->getOuterField()->getColumn());
+				->set('throughInnerKey', $this->relationColumns($on_relation->through->getCollection(), $on_relation->through->throughInnerKeys()))
+				->set('throughOuterKey', $this->relationColumns($on_relation->through->getCollection(), $on_relation->through->throughOuterKeys()));
 		}
+	}
+
+	private function relationColumns(Collection $collection, array $keys): string|array
+	{
+		$columns = array_map(
+			static fn(string $key): string => $collection->fields->get($key)->getColumn(),
+			$keys
+		);
+
+		return count($columns) === 1 ? $columns[0] : $columns;
 	}
 
 	/**

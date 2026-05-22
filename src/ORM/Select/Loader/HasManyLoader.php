@@ -89,9 +89,9 @@ class HasManyLoader extends JoinableLoader
 
 		return new ArrayNode(
 			$this->columnNames(),
-			(array)$this->target->getPrimaryKey(true),
-			(array)$this->relation->getOuterKey(),
-			(array)$this->relation->getInnerKey()
+			$this->target->getPrimaryKey()->getFieldNames(),
+			$this->relation->outerKeys(),
+			$this->relation->innerKeys()
 		);
 	}
 }

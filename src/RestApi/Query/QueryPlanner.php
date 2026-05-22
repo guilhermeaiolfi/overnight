@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Query;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerInterface;
@@ -18,6 +19,7 @@ use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 final class QueryPlanner
 {
@@ -32,7 +34,7 @@ final class QueryPlanner
 	{
 		$selection = $this->selectionPlan($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
-		$internalRelationKeyColumnNames = $this->relationKeyColumnNames($collection, $selection['relations']);
+		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $selection['relations']);
 		$fieldsForSelect = array_values(array_unique(array_merge(
 			$selection['fields'],
 			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
@@ -74,22 +76,23 @@ final class QueryPlanner
 		];
 	}
 
-	public function get(CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null): ?array
+	public function get(CollectionInterface $collection, PrimaryKeyValue|string $identity, ?QuerySpec $querySpec = null): ?array
 	{
 		if ($querySpec === null) {
-			return $this->dataSource->getVisibleById($collection, $id);
+			return $this->dataSource->getVisibleByIdentity($collection, $identity);
 		}
 
 		$selection = $this->selectionPlan($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
-		$internalRelationKeyColumnNames = $this->relationKeyColumnNames($collection, $selection['relations']);
+		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $selection['relations']);
 		$fieldsForSelect = array_values(array_unique(array_merge(
 			$selection['fields'],
 			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
 		$query = $this->dataSource->select($collection, $fieldsForSelect);
-		$query->where($this->dataSource->getPrimaryKeyColumn($collection), $id)->limit(1);
+		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		$query->limit(1);
 		$row = $this->dataSource->fetchOne($query);
 		if ($row === null) {
 			return null;
@@ -268,12 +271,14 @@ final class QueryPlanner
 		return array_values(array_unique($fieldNames));
 	}
 
-	private function relationKeyColumnNames(CollectionInterface $collection, array $relations): array
+	private function getRelationKeyColumnNames(CollectionInterface $collection, array $relations): array
 	{
 		$columnNames = [];
 		foreach ($relations as $relation) {
 			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				$columnNames[] = $collection->relations->get($relation->relationName)->getInnerField()->getColumn();
+				foreach ($collection->relations->get($relation->relationName)->innerKeys() as $fieldName) {
+					$columnNames[] = $collection->fields->get($fieldName)->getColumn();
+				}
 			}
 		}
 

@@ -21,6 +21,7 @@ use ON\RestApi\Query\Node\LogicalOperator;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 class ManyToManyHandler extends AbstractRelationHandler
 {
@@ -43,8 +44,8 @@ class ManyToManyHandler extends AbstractRelationHandler
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
 			$this->pivotPrimaryKeyColumns(),
-			[$this->throughInnerKeyColumn()],
-			[$this->relation->getInnerField()->getColumn()]
+			$this->throughInnerKeyColumns(),
+			$this->relationInnerKeyColumns()
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -55,24 +56,42 @@ class ManyToManyHandler extends AbstractRelationHandler
 	public function load(): mixed
 	{
 		$node = $this->getNode();
-		$parentIds = $this->flattenedReferenceValues($node);
-		if ($parentIds === []) {
+		$parentKeySets = $this->getReferenceValueSets($node);
+		if ($parentKeySets === []) {
 			return null;
 		}
 
 		$through = $this->manyToMany->through;
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
-		$throughInnerKey = $through->getInnerField()->getColumn();
-		$throughOuterKey = $through->getOuterField()->getColumn();
-		$targetPkColumn = $this->getPrimaryKeyColumn($this->getTargetCollection());
+		$throughInnerKeys = $this->throughInnerKeyColumns();
+		$throughOuterKeys = $this->throughOuterKeyColumns();
+		$targetKeyColumns = $this->targetOuterKeyColumns();
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
 		$query = $this->dataSource->getDatabase()->select($selectColumns)
 			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
-			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias)
-			->on($junctionAlias . '.' . $throughOuterKey, '=', $targetAlias . '.' . $targetPkColumn)
-			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
+			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias);
+		foreach ($throughOuterKeys as $index => $throughOuterKey) {
+			$method = $index === 0 ? 'on' : 'andOn';
+			$query->{$method}($junctionAlias . '.' . $throughOuterKey, '=', $targetAlias . '.' . $targetKeyColumns[$index]);
+		}
+		if (count($throughInnerKeys) === 1) {
+			$query->where($junctionAlias . '.' . $throughInnerKeys[0], 'IN', array_map(
+				static fn(array $set): mixed => reset($set),
+				$parentKeySets
+			));
+		} else {
+			$query->where(function ($nested) use ($parentKeySets, $throughInnerKeys, $junctionAlias) {
+				foreach ($parentKeySets as $set) {
+					$conditions = [];
+					foreach (array_values($throughInnerKeys) as $index => $column) {
+						$conditions[$junctionAlias . '.' . $column] = array_values($set)[$index] ?? null;
+					}
+					$nested->orWhere($conditions);
+				}
+			});
+		}
 
 		if ($this->selection !== null) {
 			$this->querySpecCompiler->applyFilters(
@@ -100,7 +119,7 @@ class ManyToManyHandler extends AbstractRelationHandler
 				$query,
 				$selectColumns,
 				$this->resultNodeColumns(),
-				$junctionAlias . '.' . $throughInnerKey
+				$junctionAlias . '.' . $throughInnerKeys[0]
 			);
 		}
 
@@ -117,8 +136,8 @@ class ManyToManyHandler extends AbstractRelationHandler
 	): array {
 		$payload = parent::normalizePayload($operation, $input, $source, $dataSource);
 		$throughCollection = $this->manyToMany->through->getCollection();
-		$throughOuterKey = $this->manyToMany->through->getOuterField()->getName();
-		$throughPrimaryKey = $this->getPrimaryKeyName($throughCollection);
+		$throughOuterKeys = $this->manyToMany->through->throughOuterKeys();
+		$throughPrimaryKey = $throughCollection->getPrimaryKey()->getFieldNames()[0] ?? 'id';
 		$currentRows = $operation === 'create' ? [] : $this->currentPivotRows($dataSource, $source);
 		$currentByPivotId = [];
 		$currentByTargetId = [];
@@ -128,13 +147,13 @@ class ManyToManyHandler extends AbstractRelationHandler
 				continue;
 			}
 
-			$pivotId = $this->inputPrimaryKeyValue($throughCollection, $row);
-			$targetId = $row[$throughOuterKey] ?? null;
+			$pivotId = $this->getInputPrimaryKeyValue($throughCollection, $row);
+			$targetId = $this->extractThroughTargetIdentity($row);
 			if ($pivotId !== null) {
-				$currentByPivotId[(string) $pivotId] = $row;
+				$currentByPivotId[$pivotId->toUrlId()] = $row;
 			}
 			if ($targetId !== null) {
-				$currentByTargetId[(string) $targetId] = $row;
+				$currentByTargetId[$targetId->toUrlId()] = $row;
 			}
 		}
 
@@ -159,42 +178,45 @@ class ManyToManyHandler extends AbstractRelationHandler
 
 			if ($this->isThroughPayload($item)) {
 				$pivotId = array_key_exists($throughPrimaryKey, $item) ? $item[$throughPrimaryKey] : null;
-				$targetId = $item[$throughOuterKey] ?? null;
+				$targetId = $this->extractThroughTargetIdentity($item);
 
 				if ($pivotId !== null && isset($currentByPivotId[(string) $pivotId])) {
-					$seenPivot[(string) $pivotId] = true;
+					$key = $pivotId instanceof \ON\ORM\Definition\Collection\PrimaryKeyValue ? $pivotId->toUrlId() : (string) $pivotId;
+					$seenPivot[$key] = true;
 					$payload['update'][] = $this->normalizeThroughPayload($source, $item);
 					continue;
 				}
 
-				if ($targetId !== null && isset($currentByTargetId[(string) $targetId])) {
-					$existing = $currentByTargetId[(string) $targetId];
-					$existingPivotId = $this->inputPrimaryKeyValue($throughCollection, $existing);
+				if ($targetId !== null && isset($currentByTargetId[$targetId->toUrlId()])) {
+					$existing = $currentByTargetId[$targetId->toUrlId()];
+					$existingPivotId = $this->getInputPrimaryKeyValue($throughCollection, $existing);
 					if ($existingPivotId !== null) {
-						$seenPivot[(string) $existingPivotId] = true;
-						$item[$throughPrimaryKey] = $existingPivotId;
+						$seenPivot[$existingPivotId->toUrlId()] = true;
+						foreach ($existingPivotId->values() as $fieldName => $value) {
+							$item[$fieldName] = $value;
+						}
 					}
-					$seenTarget[(string) $targetId] = true;
+					$seenTarget[$targetId->toUrlId()] = true;
 					$payload['update'][] = $this->normalizeThroughPayload($source, $item);
 					continue;
 				}
 
 				if ($targetId !== null) {
-					$seenTarget[(string) $targetId] = true;
+					$seenTarget[$targetId->toUrlId()] = true;
 				}
 				$payload['create'][] = $this->normalizeThroughPayload($source, $item);
 				continue;
 			}
 
 			$targetCollection = $this->relation->getCollection();
-			$targetId = $this->inputPrimaryKeyValue($targetCollection, $item);
+			$targetId = $this->getInputPrimaryKeyValue($targetCollection, $item);
 			if ($targetId === null) {
 				$payload['create'][] = $item;
 				continue;
 			}
 
-			$seenTarget[(string) $targetId] = true;
-			if (isset($currentByTargetId[(string) $targetId])) {
+			$seenTarget[$targetId->toUrlId()] = true;
+			if (isset($currentByTargetId[$targetId->toUrlId()])) {
 				$payload['update'][] = $item;
 				continue;
 			}
@@ -210,12 +232,12 @@ class ManyToManyHandler extends AbstractRelationHandler
 				continue;
 			}
 
-			$pivotId = $this->inputPrimaryKeyValue($throughCollection, $row);
-			$targetId = $row[$throughOuterKey] ?? null;
-			if ($pivotId !== null && isset($seenPivot[(string) $pivotId])) {
+			$pivotId = $this->getInputPrimaryKeyValue($throughCollection, $row);
+			$targetId = $this->extractThroughTargetIdentity($row);
+			if ($pivotId !== null && isset($seenPivot[$pivotId->toUrlId()])) {
 				continue;
 			}
-			if ($targetId !== null && isset($seenTarget[(string) $targetId])) {
+			if ($targetId !== null && isset($seenTarget[$targetId->toUrlId()])) {
 				continue;
 			}
 
@@ -243,17 +265,21 @@ class ManyToManyHandler extends AbstractRelationHandler
 		$this->queueChildMutations($children, $queue);
 
 		foreach ($actions['disconnect'] ?? [] as $target) {
-			$this->disconnect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
+			$this->disconnect($queue, $this->getParentIdentityFromSource($source), $target);
 		}
 
 		foreach ($actions['connect'] ?? [] as $target) {
-			$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $target);
+			$this->connect($queue, $this->getParentIdentityFromSource($source), $target);
 		}
 
 		$targetCollection = $this->relation->getCollection();
 		foreach ($children['create'] ?? [] as $created) {
 			if ($created instanceof MutationStateInterface && $created->getCollection() === $targetCollection) {
-				$this->connect($queue, $source->getValue($this->relation->getInnerField()->getName()), $created->getValue($this->getPrimaryKeyName($targetCollection)));
+				$this->connect(
+					$queue,
+					$this->getParentIdentityFromSource($source),
+					$this->getPrimaryKeyValueFromState($created, false)?->toUrlId() ?? ''
+				);
 			}
 		}
 
@@ -285,24 +311,27 @@ class ManyToManyHandler extends AbstractRelationHandler
 
 	private function pivotNodeColumns(): array
 	{
-		return array_values(array_unique([$this->throughInnerKeyColumn(), ...$this->pivotPrimaryKeyColumns()]));
+		return array_values(array_unique([...$this->throughInnerKeyColumns(), ...$this->pivotPrimaryKeyColumns()]));
 	}
 
 	private function pivotPrimaryKeyColumns(): array
 	{
 		$columns = [];
-		foreach ((array) $this->manyToMany->through->getCollection()->getPrimaryKey() as $field) {
+		foreach ($this->manyToMany->through->getCollection()->getPrimaryKey()->getFields() as $field) {
 			$columns[] = $field->getColumn();
 		}
 
 		return $columns !== []
 			? $columns
-			: [$this->throughInnerKeyColumn(), $this->manyToMany->through->getOuterField()->getColumn()];
+			: [...$this->throughInnerKeyColumns(), ...$this->throughOuterKeyColumns()];
 	}
 
-	private function throughInnerKeyColumn(): string
+	private function throughInnerKeyColumns(): array
 	{
-		return $this->manyToMany->through->getInnerField()->getColumn();
+		return array_map(
+			fn(string $fieldName): string => $this->manyToMany->through->getCollection()->fields->get($fieldName)->getColumn(),
+			$this->manyToMany->through->throughInnerKeys()
+		);
 	}
 
 	private function junctionAlias(): string
@@ -339,7 +368,9 @@ class ManyToManyHandler extends AbstractRelationHandler
 	private function normalizeThroughPayload(MutationStateInterface $source, array $item): array
 	{
 		$through = $this->manyToMany->through;
-		$item[$through->getInnerField()->getName()] = $source->getValue($this->relation->getInnerField()->getName());
+		foreach ($this->manyToMany->through->throughInnerKeys() as $index => $throughInnerKey) {
+			$item[$throughInnerKey] = $source->getValue($this->relation->innerKeys()[$index]);
+		}
 
 		return $item;
 	}
@@ -350,7 +381,7 @@ class ManyToManyHandler extends AbstractRelationHandler
 		$target = $this->getTargetCollection();
 
 		foreach (array_keys($item) as $key) {
-			if ((string) $key === $this->manyToMany->through->getOuterField()->getName()) {
+			if (in_array((string) $key, $this->manyToMany->through->throughOuterKeys(), true)) {
 				return true;
 			}
 
@@ -364,42 +395,102 @@ class ManyToManyHandler extends AbstractRelationHandler
 
 	private function currentPivotRows(SqlDataSource $dataSource, MutationStateInterface $source): array
 	{
-		$parentId = $source->resolveValue($source->getValue($this->relation->getInnerField()->getName()));
 		$through = $this->manyToMany->through;
+		$fieldValueMap = [];
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$fieldValueMap[$through->throughInnerKeys()[$index]] = $source->resolveValue($source->getValue($innerKey));
+		}
 
-		return $this->fetchRowsByField(
-			$dataSource,
-			$through->getCollection(),
-			$through->getInnerField()->getName(),
-			$parentId
+		return $this->fetchRowsByFields($dataSource, $through->getCollection(), $fieldValueMap);
+	}
+
+	private function connect(MutationQueue $queue, PrimaryKeyValue $parentId, mixed $targetId): void
+	{
+		$through = $this->manyToMany->through;
+		$targetIdentity = $targetId instanceof PrimaryKeyValue
+			? $targetId
+			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
+		$payload = [];
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$payload[$through->throughInnerKeys()[$index]] = $parentId->value($innerKey);
+		}
+		foreach ($this->relation->outerKeys() as $index => $outerKey) {
+			$payload[$through->throughOuterKeys()[$index]] = $targetIdentity->value($outerKey);
+		}
+
+		$queue->queueInsert(new MutationState($through->getCollection(), $payload), true);
+	}
+
+	private function disconnect(MutationQueue $queue, PrimaryKeyValue $parentId, mixed $targetId): void
+	{
+		$through = $this->manyToMany->through;
+		$targetIdentity = $targetId instanceof PrimaryKeyValue
+			? $targetId
+			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
+		$filters = [];
+		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+			$filters[] = new ComparisonFilter(
+				new FieldExpression($through->throughInnerKeys()[$index]),
+				ComparisonOperator::Eq,
+				new LiteralValue($parentId->value($innerKey))
+			);
+		}
+		foreach ($this->relation->outerKeys() as $index => $outerKey) {
+			$filters[] = new ComparisonFilter(
+				new FieldExpression($through->throughOuterKeys()[$index]),
+				ComparisonOperator::Eq,
+				new LiteralValue($targetIdentity->value($outerKey))
+			);
+		}
+
+		$queue->queueDelete($through->getCollection(), new LogicalFilter(LogicalOperator::And, $filters));
+	}
+
+	private function relationInnerKeyColumns(): array
+	{
+		return array_map(
+			fn(string $fieldName): string => $this->getCollection()->fields->get($fieldName)->getColumn(),
+			$this->relation->innerKeys()
 		);
 	}
 
-	private function connect(MutationQueue $queue, mixed $parentId, mixed $targetId): void
+	private function throughOuterKeyColumns(): array
 	{
-		$through = $this->manyToMany->through;
-
-		$queue->queueInsert(new MutationState($through->getCollection(), [
-			$through->getInnerField()->getName() => $parentId,
-			$through->getOuterField()->getName() => $targetId,
-		]), true);
+		return array_map(
+			fn(string $fieldName): string => $this->manyToMany->through->getCollection()->fields->get($fieldName)->getColumn(),
+			$this->manyToMany->through->throughOuterKeys()
+		);
 	}
 
-	private function disconnect(MutationQueue $queue, mixed $parentId, mixed $targetId): void
+	private function targetOuterKeyColumns(): array
 	{
-		$through = $this->manyToMany->through;
+		return array_map(
+			fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
+			$this->relation->outerKeys()
+		);
+	}
 
-		$queue->queueDelete($through->getCollection(), new LogicalFilter(LogicalOperator::And, [
-			new ComparisonFilter(
-				new FieldExpression($through->getInnerField()->getName()),
-				ComparisonOperator::Eq,
-				new LiteralValue($parentId)
-			),
-			new ComparisonFilter(
-				new FieldExpression($through->getOuterField()->getName()),
-				ComparisonOperator::Eq,
-				new LiteralValue($targetId)
-			),
-		]));
+	private function getParentIdentityFromSource(MutationStateInterface $source): PrimaryKeyValue
+	{
+		$values = [];
+		foreach ($this->relation->innerKeys() as $key) {
+			$values[$key] = $source->getValue($key);
+		}
+
+		return new PrimaryKeyValue($this->getCollection(), $values);
+	}
+
+	private function extractThroughTargetIdentity(array $row): ?PrimaryKeyValue
+	{
+		$values = [];
+		foreach ($this->manyToMany->through->throughOuterKeys() as $index => $throughOuterKey) {
+			if (!array_key_exists($throughOuterKey, $row)) {
+				return null;
+			}
+
+			$values[$this->relation->outerKeys()[$index]] = $row[$throughOuterKey];
+		}
+
+		return new PrimaryKeyValue($this->getTargetCollection(), $values);
 	}
 }

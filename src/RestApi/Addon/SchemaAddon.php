@@ -143,8 +143,8 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 				'collection' => $relation->getCollectionName(),
 				'cardinality' => $relation->getCardinality(),
 				'junction' => $relation->isJunction(),
-				'innerKey' => $relation->getInnerKey(),
-				'outerKey' => $relation->getOuterKey(),
+				'innerKey' => count($relation->innerKeys()) === 1 ? $relation->getInnerKey() : $relation->innerKeys(),
+				'outerKey' => count($relation->outerKeys()) === 1 ? $relation->getOuterKey() : $relation->outerKeys(),
 			];
 		}
 		return $relations;

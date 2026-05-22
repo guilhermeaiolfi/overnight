@@ -55,9 +55,9 @@ class PivotLoader extends JoinableLoader
 
 		return new ArrayNode(
 			$this->columnNames(),
-			(array)$collection->getPrimaryKey(true),
-			(array)$this->relation->through->getOuterKey(),
-			(array)$this->relation->getInnerKey()
+			$collection->getPrimaryKey()->getFieldNames(),
+			$this->relation->through->throughOuterKeys(),
+			$this->relation->innerKeys()
 		);
 	}
 }

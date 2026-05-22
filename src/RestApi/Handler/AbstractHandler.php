@@ -6,15 +6,12 @@ namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\MutationTaskInterface;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\LiteralValue;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 abstract class AbstractHandler implements HandlerInterface
 {
@@ -111,7 +108,7 @@ abstract class AbstractHandler implements HandlerInterface
 		if (($actions['update'] ?? []) !== []) {
 			return $queue->queueUpdate(
 				$collection,
-				$this->primaryKeyCriteria($collection, $state->getValue($this->getPrimaryKeyName($collection))),
+				PrimaryKeyCriteria::build($collection, $this->statePrimaryKeyValue($state)),
 				$state
 			);
 		}
@@ -119,34 +116,20 @@ abstract class AbstractHandler implements HandlerInterface
 		if (($actions['delete'] ?? []) !== []) {
 			return $queue->queueDelete(
 				$collection,
-				$this->primaryKeyCriteria($collection, $state->getValue($this->getPrimaryKeyName($collection)))
+				PrimaryKeyCriteria::build($collection, $this->statePrimaryKeyValue($state))
 			);
 		}
 
 		return null;
 	}
 
-	private function primaryKeyCriteria(CollectionInterface $collection, mixed $id): ComparisonFilter
+	protected function statePrimaryKeyValue(MutationStateInterface $state): PrimaryKeyValue
 	{
-		return new ComparisonFilter(
-			new FieldExpression($this->getPrimaryKeyName($collection)),
-			ComparisonOperator::Eq,
-			new LiteralValue($id)
-		);
-	}
-
-	private function getPrimaryKeyName(CollectionInterface $collection): string
-	{
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getName();
+		$values = [];
+		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
+			$values[$fieldName] = $state->getValue($fieldName);
 		}
 
-		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getName();
-		}
-
-		return 'id';
+		return new PrimaryKeyValue($state->getCollection(), $values);
 	}
 }

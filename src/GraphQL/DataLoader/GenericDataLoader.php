@@ -226,7 +226,7 @@ class GenericDataLoader
 
 		$collection = $this->registry->getCollection($entity);
 
-		$pk = $collection->getPrimaryKey();
+		$pk = $collection->getPrimaryKeyFields();
 
 		if ($pk instanceof FieldInterface) {
 			return [$pk->getColumn()];

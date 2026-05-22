@@ -121,11 +121,11 @@ class ManyToManyLoader extends JoinableLoader
 
 		// Manually join pivoted table
 		if ($this->isJoined()) {
-			$parentKeys = (array)$this->relation->getInnerKey();
-			$throughOuterKeys = (array)$this->pivot->relation->through->getOuterKey();
+			$parentKeys = $this->relation->innerKeys();
+			$throughOuterKeys = $this->pivot->relation->through->throughOuterKeys();
 			$parentPrefix = $this->parent->getAlias() . '.';
 			$on = [];
-			foreach ((array)$this->pivot->relation->through->getInnerKey() as $i => $key) {
+			foreach ($this->pivot->relation->through->throughInnerKeys() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 			}
@@ -136,7 +136,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$on = [];
-			foreach ((array)$this->relation->getOuterKey() as $i => $key) {
+			foreach ($this->relation->outerKeys() as $i => $key) {
 				$field = $localPrefix . $this->fieldAlias($key);
 				$on[$field] = $pivotPrefix . $this->pivot->fieldAlias($throughOuterKeys[$i]);
 			}
@@ -150,9 +150,9 @@ class ManyToManyLoader extends JoinableLoader
 			// since underlying loader believes it's loaded)
 			$query->columns([]);
 
-			$outerKeyList = (array)$this->relation->getOuterKey();
+			$outerKeyList = $this->relation->outerKeys();
 			$on = [];
-			foreach ((array)$this->pivot->relation->through->getOuterKey() as $i => $key) {
+			foreach ($this->pivot->relation->through->throughOuterKeys() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $localPrefix . $this->fieldAlias($outerKeyList[$i]);
 			}
@@ -163,7 +163,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$fields = [];
-			foreach ((array)$this->pivot->relation->through->getInnerKey() as $key) {
+			foreach ($this->pivot->relation->through->throughInnerKeys() as $key) {
 				$fields[] = $pivotPrefix . $this->pivot->fieldAlias($key);
 			}
 
@@ -231,9 +231,9 @@ class ManyToManyLoader extends JoinableLoader
 
 		return new SingularNode(
 			$this->columnNames(),
-			(array)$collection->getPrimaryKey(true),
-			(array)$this->relation->getOuterKey(),
-			(array)$this->relation->through->getOuterKey()
+			$collection->getPrimaryKey()->getFieldNames(),
+			$this->relation->outerKeys(),
+			$this->relation->through->throughOuterKeys()
 		);
 	}
 }

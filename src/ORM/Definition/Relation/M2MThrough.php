@@ -10,8 +10,8 @@ use ON\ORM\Definition\Field\FieldInterface;
 class M2MThrough
 {
 	protected string $collectionName;
-	protected ?string $inner_key = null;
-	protected ?string $outer_key = null;
+	protected array $inner_keys = [];
+	protected array $outer_keys = [];
 	protected array $where = [];
 
 	public function __construct(
@@ -42,46 +42,78 @@ class M2MThrough
 		return $collection;
 	}
 
-	public function innerKey(string $fieldName): self
+	public function innerKey(string|array $fieldName): self
 	{
-		$this->inner_key = $fieldName;
+		$this->inner_keys = $this->normalizeKeys($fieldName, 'throughInnerKey');
+		$this->validateKeyCounts();
 
 		return $this;
 	}
 
-	public function getInnerKey(): string
+	public function getInnerKey(): string|array
 	{
-		if ($this->inner_key === null) {
-			throw new \LogicException('Inner key is not defined for many-to-many through relation.');
+		$keys = $this->throughInnerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getInnerKey() is only available for single-key through relations. Use throughInnerKeys() instead.');
 		}
 
-		return $this->inner_key;
+		return $keys[0];
 	}
 
 	public function getInnerField(): FieldInterface
 	{
-		return $this->getCollection()->fields->get($this->getInnerKey());
+		$keys = $this->throughInnerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getInnerField() is only available for single-key through relations. Use throughInnerKeys() instead.');
+		}
+
+		return $this->getCollection()->fields->get($keys[0]);
 	}
 
-	public function outerKey(string $fieldName): self
+	public function outerKey(string|array $fieldName): self
 	{
-		$this->outer_key = $fieldName;
+		$this->outer_keys = $this->normalizeKeys($fieldName, 'throughOuterKey');
+		$this->validateKeyCounts();
 
 		return $this;
 	}
 
-	public function getOuterKey(): string
+	public function getOuterKey(): string|array
 	{
-		if ($this->outer_key === null) {
-			throw new \LogicException('Outer key is not defined for many-to-many through relation.');
+		$keys = $this->throughOuterKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getOuterKey() is only available for single-key through relations. Use throughOuterKeys() instead.');
 		}
 
-		return $this->outer_key;
+		return $keys[0];
 	}
 
 	public function getOuterField(): FieldInterface
 	{
-		return $this->getCollection()->fields->get($this->getOuterKey());
+		$keys = $this->throughOuterKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getOuterField() is only available for single-key through relations. Use throughOuterKeys() instead.');
+		}
+
+		return $this->getCollection()->fields->get($keys[0]);
+	}
+
+	public function throughInnerKeys(): array
+	{
+		if ($this->inner_keys === []) {
+			throw new \LogicException('Inner key is not defined for many-to-many through relation.');
+		}
+
+		return $this->inner_keys;
+	}
+
+	public function throughOuterKeys(): array
+	{
+		if ($this->outer_keys === []) {
+			throw new \LogicException('Outer key is not defined for many-to-many through relation.');
+		}
+
+		return $this->outer_keys;
 	}
 
 	public function where(array $where): self
@@ -99,5 +131,68 @@ class M2MThrough
 	public function end(): M2MRelation
 	{
 		return $this->m2m;
+	}
+
+	private function normalizeKeys(string|array $fieldNames, string $context): array
+	{
+		$keys = is_array($fieldNames) ? array_values($fieldNames) : [$fieldNames];
+		if ($keys === []) {
+			throw new \InvalidArgumentException("{$context} cannot be empty.");
+		}
+
+		$normalized = [];
+		foreach ($keys as $fieldName) {
+			$fieldName = (string) $fieldName;
+			if ($fieldName === '') {
+				throw new \InvalidArgumentException("{$context} cannot contain empty key names.");
+			}
+			if (in_array($fieldName, $normalized, true)) {
+				throw new \InvalidArgumentException("{$context} cannot contain duplicate key '{$fieldName}'.");
+			}
+			$normalized[] = $fieldName;
+		}
+
+		return $normalized;
+	}
+
+	private function validateKeyCounts(): void
+	{
+		if ($this->inner_keys !== [] && $this->outer_keys !== [] && count($this->inner_keys) !== count($this->outer_keys)) {
+			throw new \InvalidArgumentException(
+				sprintf(
+					'Many-to-many through key count mismatch: throughInnerKeys has %d entries and throughOuterKeys has %d.',
+					count($this->inner_keys),
+					count($this->outer_keys)
+				)
+			);
+		}
+
+		try {
+			$relationInnerKeys = $this->m2m->innerKeys();
+			if ($this->inner_keys !== [] && count($this->inner_keys) !== count($relationInnerKeys)) {
+				throw new \InvalidArgumentException(
+					sprintf(
+						'Many-to-many through inner key count mismatch: relation innerKeys has %d entries and throughInnerKeys has %d.',
+						count($relationInnerKeys),
+						count($this->inner_keys)
+					)
+				);
+			}
+		} catch (\LogicException) {
+		}
+
+		try {
+			$relationOuterKeys = $this->m2m->outerKeys();
+			if ($this->outer_keys !== [] && count($this->outer_keys) !== count($relationOuterKeys)) {
+				throw new \InvalidArgumentException(
+					sprintf(
+						'Many-to-many through outer key count mismatch: relation outerKeys has %d entries and throughOuterKeys has %d.',
+						count($relationOuterKeys),
+						count($this->outer_keys)
+					)
+				);
+			}
+		} catch (\LogicException) {
+		}
 	}
 }

@@ -7,6 +7,7 @@ namespace ON\RestApi\Middleware;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RequestComplete;
 use ON\RestApi\Query\Node\QuerySpec;
@@ -127,7 +128,11 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleGet(ServerRequestInterface $request, CollectionInterface $collection, string $id): ResponseInterface
 	{
-		$item = $this->restApi->get($collection, $id, $this->querySpec($collection, $this->getQueryParams($request)));
+		$item = $this->restApi->get(
+			$collection,
+			$this->decodeRouteIdentity($collection, $id),
+			$this->querySpec($collection, $this->getQueryParams($request))
+		);
 		if ($item === null) {
 			throw RestApiError::notFound();
 		}
@@ -172,7 +177,7 @@ class RestMiddleware implements MiddlewareInterface
 		$this->validateInput($collection, $body, true);
 
 		$options = $this->getMutationOptions($request);
-		$result = $this->restApi->update($collection, $id, $body, $options);
+		$result = $this->restApi->update($collection, $this->decodeRouteIdentity($collection, $id), $body, $options);
 
 		if (empty($result)) {
 			throw RestApiError::notFound();
@@ -187,7 +192,7 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function handleDelete(ServerRequestInterface $request, CollectionInterface $collection, string $id): ResponseInterface
 	{
-		$deleted = $this->restApi->delete($collection, $id, $this->getMutationOptions($request));
+		$deleted = $this->restApi->delete($collection, $this->decodeRouteIdentity($collection, $id), $this->getMutationOptions($request));
 		if (!$deleted) {
 			throw RestApiError::notFound();
 		}
@@ -221,21 +226,30 @@ class RestMiddleware implements MiddlewareInterface
 			throw new RestApiError('Batch update expects an array of objects with primary keys.', 'INVALID_PAYLOAD', null, 400);
 		}
 
-		$pkName = $this->restApi->getPrimaryKeyName($collection);
-
 		$results = [];
 		foreach ($body as $item) {
-			$id = (string) ($item[$pkName] ?? '');
-			if ($id === '') {
-				throw new RestApiError("Each item must include the primary key '{$pkName}'.", 'MISSING_PRIMARY_KEY', $pkName, 400);
+			$identity = $collection->getPrimaryKey()->extractFromInput($item);
+			if ($identity === null) {
+				$missing = $collection->getPrimaryKey()->getMissingFieldNames($item);
+				throw new RestApiError(
+					"Each item must include the primary key field(s): " . implode(', ', $missing) . '.',
+					'MISSING_PRIMARY_KEY',
+					$missing[0] ?? null,
+					400
+				);
 			}
 
-			unset($item[$pkName]);
+			foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
+				unset($item[$fieldName]);
+			}
+			foreach ($collection->getPrimaryKey()->getColumns() as $columnName) {
+				unset($item[$columnName]);
+			}
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item, true);
 
 			$options = $this->getMutationOptions($request);
-			$updated = $this->restApi->update($collection, $id, $item, $options);
+			$updated = $this->restApi->update($collection, $identity, $item, $options);
 
 			$results[] = $updated ?? [];
 		}
@@ -252,9 +266,20 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		foreach ($body as $id) {
-			$id = (string) $id;
+			$identity = is_array($id)
+				? $collection->getPrimaryKey()->extractFromInput($id)
+				: $this->decodeRouteIdentity($collection, (string) $id);
+			if ($identity === null) {
+				$missing = is_array($id) ? $collection->getPrimaryKey()->getMissingFieldNames($id) : $collection->getPrimaryKey()->getFieldNames();
+				throw new RestApiError(
+					"Batch delete item is missing primary key field(s): " . implode(', ', $missing) . '.',
+					'MISSING_PRIMARY_KEY',
+					$missing[0] ?? null,
+					400
+				);
+			}
 
-			$this->restApi->delete($collection, $id, $this->getMutationOptions($request));
+			$this->restApi->delete($collection, $identity, $this->getMutationOptions($request));
 		}
 
 		return new EmptyResponse(204, ['Cache-Control' => 'no-cache']);
@@ -438,5 +463,12 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		return $path;
+	}
+
+	protected function decodeRouteIdentity(CollectionInterface $collection, string $id): PrimaryKeyValue
+	{
+		return $collection->getPrimaryKey()->isComposite()
+			? $collection->getPrimaryKey()->getValueFromUrlId($id)
+			: new PrimaryKeyValue($collection, [$collection->getPrimaryKey()->getFieldNames()[0] => $id]);
 	}
 }

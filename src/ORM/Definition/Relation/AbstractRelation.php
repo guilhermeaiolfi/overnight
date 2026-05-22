@@ -24,9 +24,9 @@ abstract class AbstractRelation implements RelationInterface
 	// lazy || eager
 	protected string $load = "lazy";
 
-	protected ?string $inner_key = null;
+	protected array $inner_keys = [];
 
-	protected ?string $outer_key = null;
+	protected array $outer_keys = [];
 
 	protected string $collectionName;
 
@@ -144,46 +144,78 @@ abstract class AbstractRelation implements RelationInterface
 		return $this->load;
 	}
 
-	public function innerKey(string $fieldName): self
+	public function innerKey(string|array $fieldName): self
 	{
-		$this->inner_key = $fieldName;
+		$this->inner_keys = $this->normalizeKeys($fieldName, 'innerKey');
+		$this->validateRelationKeys();
 
 		return $this;
 	}
 
-	public function getInnerKey(): string
+	public function getInnerKey(): string|array
 	{
-		if ($this->inner_key === null) {
+		$keys = $this->innerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getInnerKey() is only available for single-key relations. Use innerKeys() instead.');
+		}
+
+		return $keys[0];
+	}
+
+	public function innerKeys(): array
+	{
+		if ($this->inner_keys === []) {
 			throw new \LogicException("Inner key is not defined for relation {$this->name}.");
 		}
 
-		return $this->inner_key;
+		return $this->inner_keys;
 	}
 
 	public function getInnerField(): FieldInterface
 	{
-		return $this->parent->fields->get($this->getInnerKey());
+		$keys = $this->innerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getInnerField() is only available for single-key relations. Use innerKeys() instead.');
+		}
+
+		return $this->parent->fields->get($keys[0]);
 	}
 
-	public function outerKey(string $fieldName): self
+	public function outerKey(string|array $fieldName): self
 	{
-		$this->outer_key = $fieldName;
+		$this->outer_keys = $this->normalizeKeys($fieldName, 'outerKey');
+		$this->validateRelationKeys();
 
 		return $this;
 	}
 
-	public function getOuterKey(): string
+	public function getOuterKey(): string|array
 	{
-		if ($this->outer_key === null) {
+		$keys = $this->outerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getOuterKey() is only available for single-key relations. Use outerKeys() instead.');
+		}
+
+		return $keys[0];
+	}
+
+	public function outerKeys(): array
+	{
+		if ($this->outer_keys === []) {
 			throw new \LogicException("Outer key is not defined for relation {$this->name}.");
 		}
 
-		return $this->outer_key;
+		return $this->outer_keys;
 	}
 
 	public function getOuterField(): FieldInterface
 	{
-		return $this->getCollection()->fields->get($this->getOuterKey());
+		$keys = $this->outerKeys();
+		if (count($keys) !== 1) {
+			throw new \LogicException('getOuterField() is only available for single-key relations. Use outerKeys() instead.');
+		}
+
+		return $this->getCollection()->fields->get($keys[0]);
 	}
 
 	public function loader(string $loader): self
@@ -211,5 +243,65 @@ abstract class AbstractRelation implements RelationInterface
 	public function end(): CollectionInterface
 	{
 		return $this->parent;
+	}
+
+	protected function normalizeKeys(string|array $fieldNames, string $context): array
+	{
+		$keys = is_array($fieldNames) ? array_values($fieldNames) : [$fieldNames];
+		if ($keys === []) {
+			throw new \InvalidArgumentException("{$context} cannot be empty.");
+		}
+
+		$normalized = [];
+		foreach ($keys as $fieldName) {
+			$fieldName = (string) $fieldName;
+			if ($fieldName === '') {
+				throw new \InvalidArgumentException("{$context} cannot contain empty key names.");
+			}
+			if (in_array($fieldName, $normalized, true)) {
+				throw new \InvalidArgumentException("{$context} cannot contain duplicate key '{$fieldName}'.");
+			}
+			$normalized[] = $fieldName;
+		}
+
+		return $normalized;
+	}
+
+	protected function validateRelationKeys(): void
+	{
+		if ($this->inner_keys !== [] && $this->outer_keys !== [] && count($this->inner_keys) !== count($this->outer_keys)) {
+			throw new \InvalidArgumentException(
+				sprintf(
+					"Relation '%s' key count mismatch: innerKeys has %d entries and outerKeys has %d.",
+					$this->name ?? '(unnamed)',
+					count($this->inner_keys),
+					count($this->outer_keys)
+				)
+			);
+		}
+
+		if ($this->inner_keys !== [] && count($this->inner_keys) !== count(array_unique($this->inner_keys))) {
+			throw new \InvalidArgumentException("Relation '{$this->name}' contains duplicate inner keys.");
+		}
+
+		if ($this->outer_keys !== [] && count($this->outer_keys) !== count(array_unique($this->outer_keys))) {
+			throw new \InvalidArgumentException("Relation '{$this->name}' contains duplicate outer keys.");
+		}
+
+		$target = $this->parent->getRegistry()->getCollection($this->collectionName ?? '');
+		if ($target !== null && $this->outer_keys !== []) {
+			$targetPrimaryKeyCount = count($target->getPrimaryKey()->getFieldNames());
+			if ($targetPrimaryKeyCount !== count($this->outer_keys)) {
+				throw new \InvalidArgumentException(
+					sprintf(
+						"Relation '%s' outerKeys count %d does not match target collection '%s' primary key count %d.",
+						$this->name ?? '(unnamed)',
+						count($this->outer_keys),
+						$target->getName(),
+						$targetPrimaryKeyCount
+					)
+				);
+			}
+		}
 	}
 }

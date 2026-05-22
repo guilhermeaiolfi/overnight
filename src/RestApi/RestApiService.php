@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
@@ -21,6 +21,7 @@ use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class RestApiService
@@ -40,12 +41,12 @@ class RestApiService
 		return $this->dataSource;
 	}
 
-	public function getCollection(string $collectionName): CollectionInterface
+	public function getCollection(string|CollectionInterface $collectionName): CollectionInterface
 	{
 		$collection = $this->registry->getCollection($collectionName);
 
 		if ($collection === null || $collection->isHidden()) {
-			throw RestApiError::collectionNotFound($collectionName);
+			throw RestApiError::collectionNotFound(is_string($collectionName) ? $collectionName : $collectionName->getName());
 		}
 
 		return $collection;
@@ -56,25 +57,9 @@ class RestApiService
 		return $this->registry->getCollections();
 	}
 
-	public function getPrimaryKeyName(string|CollectionInterface $collection): string
-	{
-		$collection = $this->resolveCollection($collection);
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getName();
-		}
-
-		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getName();
-		}
-
-		return 'id';
-	}
-
 	public function list(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
-		$collection = $this->resolveCollection($collection);
+		$collection = $this->getCollection($collection);
 		$params = $this->eventParams($options, $querySpec);
 
 		if ($this->shouldDispatchEvents($params)) {
@@ -99,16 +84,22 @@ class RestApiService
 		return $result;
 	}
 
-	public function get(string|CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null, array $options = []): ?array
+	public function get(
+		string|CollectionInterface $collection,
+		PrimaryKeyValue|string $identity,
+		?QuerySpec $querySpec = null,
+		array $options = []
+	): ?array
 	{
-		$collection = $this->resolveCollection($collection);
+		$collection = $this->getCollection($collection);
+		$identity = $this->normalizeIdentity($collection, $identity);
 		$params = $querySpec === null ? $options : $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->queryGet($collection, $id, $querySpec);
+			return $this->queryGet($collection, $identity, $querySpec);
 		}
 
-		$event = new ItemGet($collection, $id, $params);
+		$event = new ItemGet($collection, $identity->toUrlId(), $params);
 		$this->dispatchEvent($event);
 		$this->assertAuthorized($event);
 		$querySpec = $event->getQuerySpec() ?? $querySpec;
@@ -117,13 +108,13 @@ class RestApiService
 			return $event->getResult();
 		}
 
-		$event->setResult($this->queryGet($collection, $id, $querySpec));
+		$event->setResult($this->queryGet($collection, $identity, $querySpec));
 		return $event->getResult();
 	}
 
 	public function create(string|CollectionInterface $collection, array $input, array $options = []): array
 	{
-		$collection = $this->resolveCollection($collection);
+		$collection = $this->getCollection($collection);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
@@ -140,15 +131,21 @@ class RestApiService
 		return $result;
 	}
 
-	public function update(string|CollectionInterface $collection, string $id, array $input, array $options = []): ?array
+	public function update(
+		string|CollectionInterface $collection,
+		PrimaryKeyValue|string $identity,
+		array $input,
+		array $options = []
+	): ?array
 	{
-		$collection = $this->resolveCollection($collection);
-		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
+		$collection = $this->getCollection($collection);
+		$identity = $this->normalizeIdentity($collection, $identity);
+		$this->checkIfMatch($collection, $identity, $options['ifMatch'] ?? null);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
-		$root = $planner->save('update', $collection, $input, $id);
+		$root = $planner->save('update', $collection, $input, $identity);
 
 		$result = $this->dataSource->transaction(function () use ($queue, $root): ?array {
 			$queue->execute($this->dataSource);
@@ -162,14 +159,16 @@ class RestApiService
 
 	public function upsert(string|CollectionInterface $collection, array $input, array $options = []): array
 	{
-		$collection = $this->resolveCollection($collection);
-		$id = $this->inputPrimaryKeyValue($collection, $input);
+		$collection = $this->getCollection($collection);
+		$primaryKey = $collection->getPrimaryKey();
+		$id = $primaryKey->extractFromInput($input);
 		if ($id === null) {
-			$primaryKey = $this->getPrimaryKeyName($collection);
+			$missing = $primaryKey->getMissingFieldNames($input);
+			$field = $missing[0] ?? null;
 			throw new RestApiError(
-				"Upsert requires primary key '{$primaryKey}'.",
+				"Upsert requires primary key field(s): " . implode(', ', $missing) . '.',
 				'MISSING_PRIMARY_KEY',
-				$primaryKey,
+				$field,
 				400
 			);
 		}
@@ -178,7 +177,7 @@ class RestApiService
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
-		$root = $planner->save('upsert', $collection, $input, (string) $id);
+		$root = $planner->save('upsert', $collection, $input, $id);
 
 		$result = $this->dataSource->transaction(function () use ($queue, $root): array {
 			$queue->execute($this->dataSource);
@@ -190,15 +189,20 @@ class RestApiService
 		return $result;
 	}
 
-	public function delete(string|CollectionInterface $collection, string $id, array $options = []): bool
+	public function delete(
+		string|CollectionInterface $collection,
+		PrimaryKeyValue|string $identity,
+		array $options = []
+	): bool
 	{
-		$collection = $this->resolveCollection($collection);
-		$this->checkIfMatch($collection, $id, $options['ifMatch'] ?? null);
+		$collection = $this->getCollection($collection);
+		$identity = $this->normalizeIdentity($collection, $identity);
+		$this->checkIfMatch($collection, $identity, $options['ifMatch'] ?? null);
 
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, [], $dispatchEvents);
-		$deleted = $planner->delete($collection, $id);
+		$deleted = $planner->delete($collection, $identity);
 
 		$result = $this->dataSource->transaction(function () use ($queue, $deleted): bool {
 			$queue->execute($this->dataSource);
@@ -212,7 +216,7 @@ class RestApiService
 
 	public function aggregate(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
-		$collection = $this->resolveCollection($collection);
+		$collection = $this->getCollection($collection);
 		$params = $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
@@ -244,21 +248,17 @@ class RestApiService
 		return 'W/"' . md5($jsonBody) . '"';
 	}
 
-	public function getItemETag(string|CollectionInterface $collection, string $id): string
+	public function getItemETag(string|CollectionInterface $collection, PrimaryKeyValue|string $identity): string
 	{
-		$collection = $this->resolveCollection($collection);
-		$current = $this->get($collection, $id, null, ['dispatchEvents' => false]);
+		$collection = $this->getCollection($collection);
+		$identity = $this->normalizeIdentity($collection, $identity);
+		$current = $this->get($collection, $identity, null, ['dispatchEvents' => false]);
 
 		if ($current === null) {
 			throw RestApiError::notFound();
 		}
 
 		return $this->computeETag(json_encode(['data' => $current]));
-	}
-
-	protected function resolveCollection(string|CollectionInterface $collection): CollectionInterface
-	{
-		return is_string($collection) ? $this->getCollection($collection) : $collection;
 	}
 
 	protected function mutationPlanner(
@@ -289,9 +289,9 @@ class RestApiService
 		return $this->queryPlanner()->list($collection, $querySpec);
 	}
 
-	protected function queryGet(CollectionInterface $collection, string $id, ?QuerySpec $querySpec = null): ?array
+	protected function queryGet(CollectionInterface $collection, PrimaryKeyValue $identity, ?QuerySpec $querySpec = null): ?array
 	{
-		return $this->queryPlanner()->get($collection, $id, $querySpec);
+		return $this->queryPlanner()->get($collection, $identity, $querySpec);
 	}
 
 	/**
@@ -323,31 +323,6 @@ class RestApiService
 		return $this->isAssociativeArray($input) ? [$input] : $input;
 	}
 
-	protected function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
-	{
-		$primaryKey = $this->getPrimaryKeyName($collection);
-		if (array_key_exists($primaryKey, $input)) {
-			return $input[$primaryKey];
-		}
-
-		return null;
-	}
-
-	protected function getPrimaryKeyColumn(CollectionInterface $collection): string
-	{
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getColumn();
-		}
-
-		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getColumn();
-		}
-
-		return 'id';
-	}
-
 	protected function isAssociativeArray(array $value): bool
 	{
 		if ($value === []) {
@@ -375,15 +350,24 @@ class RestApiService
 		};
 	}
 
-	protected function checkIfMatch(CollectionInterface $collection, string $id, ?string $ifMatch): void
+	protected function checkIfMatch(CollectionInterface $collection, PrimaryKeyValue $identity, ?string $ifMatch): void
 	{
 		if ($ifMatch === null || $ifMatch === '') {
 			return;
 		}
 
-		if ($ifMatch !== $this->getItemETag($collection, $id)) {
+		if ($ifMatch !== $this->getItemETag($collection, $identity)) {
 			throw RestApiError::preconditionFailed();
 		}
+	}
+
+	protected function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
+	{
+		if ($identity instanceof PrimaryKeyValue) {
+			return $identity;
+		}
+
+		return PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
 	protected function handleFileUploads(CollectionInterface $collection, array $input, array $files): array

@@ -8,11 +8,8 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 
 class HasOneHandler extends AbstractRelationHandler
 {
@@ -20,9 +17,15 @@ class HasOneHandler extends AbstractRelationHandler
 	{
 		$node = new SingularNode(
 			$this->getSelectColumns(),
-			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
-			[$this->relation->getOuterField()->getColumn()],
-			[$this->relation->getInnerField()->getColumn()]
+			$this->getPrimaryKeyColumns($this->getTargetCollection()),
+			array_map(
+				fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
+				$this->relation->outerKeys()
+			),
+			array_map(
+				fn(string $fieldName): string => $this->getCollection()->fields->get($fieldName)->getColumn(),
+				$this->relation->innerKeys()
+			)
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -33,21 +36,36 @@ class HasOneHandler extends AbstractRelationHandler
 	public function load(): mixed
 	{
 		$node = $this->getNode();
-		$parentIds = $this->flattenedReferenceValues($node);
-		if ($parentIds === []) {
+		$parentKeySets = $this->getReferenceValueSets($node);
+		if ($parentKeySets === []) {
 			return null;
 		}
 
 		$columns = $this->getSelectColumns();
-		$query = $this->baseQuery($columns)
-			->where($this->relation->getOuterField()->getColumn(), 'IN', $parentIds);
+		$query = $this->baseQuery($columns);
+		$outerKeyColumns = array_map(
+			fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
+			$this->relation->outerKeys()
+		);
+		if (count($outerKeyColumns) === 1) {
+			$query->where($outerKeyColumns[0], 'IN', array_map(
+				static fn(array $set): mixed => reset($set),
+				$parentKeySets
+			));
+		} else {
+			$query->where(function ($nested) use ($parentKeySets, $outerKeyColumns) {
+				foreach ($parentKeySets as $set) {
+					$nested->orWhere(array_combine($outerKeyColumns, array_values($set)));
+				}
+			});
+		}
 		$this->applyRelationQueryOptions($query);
 
 		if ($this->limit() !== null || $this->offset() !== null) {
 			$query = $this->limitedSubquery(
 				$query,
 				$columns,
-				$this->getTargetCollection()->getTable() . '.' . $this->relation->getOuterField()->getColumn()
+				$this->getTargetCollection()->getTable() . '.' . $outerKeyColumns[0]
 			);
 		}
 
@@ -66,50 +84,53 @@ class HasOneHandler extends AbstractRelationHandler
 
 		if ($input === null) {
 			if ($operation !== 'create') {
-				$this->normalizeOmittedChildren($payload, $this->currentRelationRows($dataSource, $source));
+				$this->normalizeOmittedChildren($payload, $this->getCurrentRelationRows($dataSource, $source));
 			}
 
 			return $payload;
 		}
 
 		$targetCollection = $this->relation->getCollection();
-		$relationKey = $this->relation->getOuterField()->getName();
-		$parentId = $source->getValue($this->relation->getInnerField()->getName());
-
 		if ($this->isDetailedPayload($input)) {
-			return $this->normalizeDetailedHasRelationPayload($input, $parentId, $relationKey);
+			return $this->normalizeDetailedHasRelationPayload($input, $source);
 		}
 
 		if (!is_array($input)) {
-			$current = $operation === 'create' ? null : ($this->currentRelationRows($dataSource, $source)[0] ?? null);
-			$currentId = is_array($current) ? $this->inputPrimaryKeyValue($targetCollection, $current) : null;
-			if ($currentId !== null && $currentId !== $input) {
+			$current = $operation === 'create' ? null : ($this->getCurrentRelationRows($dataSource, $source)[0] ?? null);
+			$currentId = is_array($current) ? $this->getInputPrimaryKeyValue($targetCollection, $current) : null;
+			if ($currentId !== null && $currentId->toUrlId() !== (string) $input) {
 				$this->normalizeOmittedChildren($payload, [$current]);
 			}
-			if ($currentId === null || $currentId !== $input) {
+			if ($currentId === null || $currentId->toUrlId() !== (string) $input) {
 				$payload['connect'][] = $input;
 			}
 
 			return $payload;
 		}
 
-		$current = $operation === 'create' ? null : ($this->currentRelationRows($dataSource, $source)[0] ?? null);
-		$currentId = is_array($current) ? $this->inputPrimaryKeyValue($targetCollection, $current) : null;
+		$current = $operation === 'create' ? null : ($this->getCurrentRelationRows($dataSource, $source)[0] ?? null);
+		$currentId = is_array($current) ? $this->getInputPrimaryKeyValue($targetCollection, $current) : null;
 		$desired = $input;
-		$desiredId = $this->inputPrimaryKeyValue($targetCollection, $desired);
+		$desiredId = $this->getInputPrimaryKeyValue($targetCollection, $desired);
 
 		if ($desiredId === null && $currentId !== null) {
-			$desired[$this->getPrimaryKeyName($targetCollection)] = $currentId;
+			foreach ($currentId->values() as $fieldName => $value) {
+				$desired[$fieldName] = $value;
+			}
 			$desiredId = $currentId;
 		}
-		if ($currentId !== null && $desiredId !== null && $currentId !== $desiredId) {
+		if (
+			$currentId !== null
+			&& $desiredId !== null
+			&& $currentId->toUrlId() !== $desiredId->toUrlId()
+		) {
 			$this->normalizeOmittedChildren($payload, [$current]);
 			$payload['connect'][] = $desiredId;
 		}
 
-		$desired[$relationKey] = $parentId;
+		$this->applySourceValuesToTargetInput($desired, $source);
 		foreach ($this->normalizeRelationItems($input) as $item) {
-			$this->inputPrimaryKeyValue($targetCollection, $desired) === null
+			$this->getInputPrimaryKeyValue($targetCollection, $desired) === null
 				? $payload['create'][] = $desired
 				: $payload['update'][] = $desired;
 		}
@@ -142,19 +163,23 @@ class HasOneHandler extends AbstractRelationHandler
 		mixed $target,
 		bool $disconnect
 	): void {
-		$parentId = $source->getValue($this->relation->getInnerField()->getName());
 		$targetCollection = $this->getTargetCollection();
-		$relationKey = $this->relation->getOuterField()->getName();
 
 		$queue->queueUpdate(
 			$targetCollection,
-			new ComparisonFilter(
-				new FieldExpression($this->getPrimaryKeyName($targetCollection)),
-				ComparisonOperator::Eq,
-				new LiteralValue($target)
-			),
-			[$relationKey => $disconnect ? null : $parentId]
+			PrimaryKeyCriteria::build($targetCollection, $target),
+			$this->connectionUpdatePayload($source, $disconnect)
 		);
+	}
+
+	private function connectionUpdatePayload(MutationStateInterface $source, bool $disconnect): array
+	{
+		$payload = [];
+		foreach ($this->relation->outerKeys() as $index => $outerKey) {
+			$payload[$outerKey] = $disconnect ? null : $source->getValue($this->relation->innerKeys()[$index]);
+		}
+
+		return $payload;
 	}
 
 	protected function normalizeOmittedChildren(array &$payload, array $currentRows): void
@@ -164,13 +189,13 @@ class HasOneHandler extends AbstractRelationHandler
 				continue;
 			}
 
-			$id = $this->inputPrimaryKeyValue($this->getTargetCollection(), $row);
+			$id = $this->getInputPrimaryKeyValue($this->getTargetCollection(), $row);
 			if ($id === null) {
 				continue;
 			}
 
 			if ($this->relation->isCascade() || !$this->relation->isNullable()) {
-				$payload['delete'][] = $id;
+				$payload['delete'][] = $id->values();
 				continue;
 			}
 
@@ -178,7 +203,7 @@ class HasOneHandler extends AbstractRelationHandler
 		}
 	}
 
-	protected function normalizeDetailedHasRelationPayload(array $input, mixed $parentId, string $relationKey): array
+	protected function normalizeDetailedHasRelationPayload(array $input, MutationStateInterface $source): array
 	{
 		$payload = $this->normalizeDetailedPayload($input);
 		foreach (['create', 'update'] as $mutation) {
@@ -189,7 +214,7 @@ class HasOneHandler extends AbstractRelationHandler
 				}
 
 				if ($mutation === 'create') {
-					$item[$relationKey] = $parentId;
+					$this->applySourceValuesToTargetInput($item, $source);
 				}
 
 				$payload[$mutation][$index] = $item;

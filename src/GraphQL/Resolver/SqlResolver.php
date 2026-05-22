@@ -348,7 +348,7 @@ class SqlResolver implements GraphQLResolverInterface
 
 	protected function getPrimaryKeyColumn(Collection $collection): string
 	{
-		$pk = $collection->getPrimaryKey();
+		$pk = $collection->getPrimaryKeyFields();
 
 		if ($pk instanceof FieldInterface) {
 			return $pk->getColumn();

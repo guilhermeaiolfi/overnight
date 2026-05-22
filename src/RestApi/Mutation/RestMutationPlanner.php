@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Field\FieldInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
@@ -22,6 +22,7 @@ use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\MutationHandlerInterface;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class RestMutationPlanner
@@ -53,7 +54,7 @@ final class RestMutationPlanner
 		string $mode,
 		CollectionInterface $collection,
 		array|MutationStateInterface $input,
-		?string $id = null,
+		PrimaryKeyValue|string|null $id = null,
 		array $path = []
 	): ?MutationTaskInterface {
 		$state = $input instanceof MutationStateInterface ? $input : new MutationState($collection, $input);
@@ -74,9 +75,14 @@ final class RestMutationPlanner
 		return $this->compileNode($node);
 	}
 
-	public function delete(CollectionInterface $collection, string $id, array $path = []): ?MutationDeleteTaskInterface
+	public function delete(
+		CollectionInterface $collection,
+		PrimaryKeyValue|string $id,
+		array $path = []
+	): ?MutationDeleteTaskInterface
 	{
-		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => $id]);
+		$identity = $this->normalizeIdentity($collection, $id);
+		$state = new MutationState($collection, $identity->values());
 		$handler = $this->handlers->root($collection);
 		$node = [
 			'handler' => $handler,
@@ -121,22 +127,24 @@ final class RestMutationPlanner
 		string $mode,
 		MutationHandlerInterface $handler,
 		MutationStateInterface $state,
-		?string $id,
+		PrimaryKeyValue|string|null $id,
 		array $path,
 		?MutationTaskInterface &$prevented = null
 	): ?array {
 		$collection = $state->getCollection();
 		if ($id === null && $mode !== 'create') {
-			$id = $this->inputPrimaryKeyValue($collection, $state->getData());
+			$id = $this->getInputPrimaryKeyValue($collection, $state->getData());
 		}
-		$id = $id === null ? null : (string) $id;
+		$id = $id === null ? null : $this->normalizeIdentity($collection, $id);
 		$operation = $this->resolveOperation($mode, $collection, $id);
 
 		if ($operation === 'update' && $id === null) {
 			return null;
 		}
 		if ($operation === 'update') {
-			$state->setValue($this->getPrimaryKeyName($collection), $id);
+			foreach ($id->values() as $fieldName => $value) {
+				$state->setValue($fieldName, $value);
+			}
 		}
 
 		$node = [
@@ -245,7 +253,7 @@ final class RestMutationPlanner
 				'upsert',
 				$childHandler,
 				new MutationState($collection, $item),
-				($id = $this->inputPrimaryKeyValue($collection, $item)) === null ? null : (string) $id,
+				$this->getInputPrimaryKeyValue($collection, $item),
 				$childPath
 			),
 			'delete' => $this->planDeleteChild($collection, $item, $childPath, $childHandler),
@@ -259,12 +267,13 @@ final class RestMutationPlanner
 		array $path,
 		MutationHandlerInterface $handler
 	): ?array {
-		$id = is_array($item) ? $this->inputPrimaryKeyValue($collection, $item) : $item;
+		$id = is_array($item) ? $this->getInputPrimaryKeyValue($collection, $item) : $item;
 		if ($id === null) {
 			return null;
 		}
 
-		$state = new MutationState($collection, [$this->getPrimaryKeyName($collection) => (string) $id]);
+		$identity = $this->normalizeIdentity($collection, $id);
+		$state = new MutationState($collection, $identity->values());
 		$node = [
 			'handler' => $handler,
 			'operation' => 'delete',
@@ -327,13 +336,13 @@ final class RestMutationPlanner
 		return $states;
 	}
 
-	private function resolveOperation(string $mode, CollectionInterface $collection, ?string $id): string
+	private function resolveOperation(string $mode, CollectionInterface $collection, ?PrimaryKeyValue $id): string
 	{
 		if ($mode !== 'upsert') {
 			return $mode;
 		}
 
-		return $id !== null && $this->findRowById($collection, $id) !== null ? 'update' : 'create';
+		return $id !== null && $this->findRowByIdentity($collection, $id) !== null ? 'update' : 'create';
 	}
 
 	private function assertCreateIdAvailable(string $operation, CollectionInterface $collection, MutationStateInterface $state): void
@@ -342,17 +351,17 @@ final class RestMutationPlanner
 			return;
 		}
 
-		$createId = $this->inputPrimaryKeyValue($collection, $state->getData());
+		$createId = $this->getInputPrimaryKeyValue($collection, $state->getData());
 		if (
 			$createId !== null
-			&& !$createId instanceof ValueRef
-			&& $this->findRowById($collection, (string) $createId) !== null
+			&& !array_filter($createId->values(), static fn(mixed $value): bool => $value instanceof ValueRef)
+			&& $this->findRowByIdentity($collection, $createId) !== null
 		) {
-			$primaryKey = $this->getPrimaryKeyName($collection);
+			$primaryKey = implode(', ', $collection->getPrimaryKey()->getFieldNames());
 			throw new RestApiError(
 				"A record with this {$primaryKey} already exists.",
 				'DUPLICATE',
-				$primaryKey,
+				$collection->getPrimaryKey()->getFieldNames()[0] ?? null,
 				409
 			);
 		}
@@ -367,7 +376,7 @@ final class RestMutationPlanner
 			$node['path'],
 			$after,
 			id: $node['operation'] !== 'create'
-				? (string) $node['state']->getValue($this->getPrimaryKeyName($node['collection']))
+				? $this->getPrimaryKeyValueFromState($node['state'])?->toUrlId()
 				: null
 		);
 	}
@@ -503,11 +512,9 @@ final class RestMutationPlanner
 		return $this->afterDeleteEvents[array_key_last($this->afterDeleteEvents)][2];
 	}
 
-	private function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed
+	private function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
 	{
-		$primaryKey = $this->getPrimaryKeyName($collection);
-
-		return array_key_exists($primaryKey, $input) ? $input[$primaryKey] : null;
+		return $collection->getPrimaryKey()->extractFromInput($input);
 	}
 
 	private function isAssociativeArray(array $value): bool
@@ -519,19 +526,9 @@ final class RestMutationPlanner
 		return array_keys($value) !== range(0, count($value) - 1);
 	}
 
-	private function getPrimaryKeyName(CollectionInterface $collection): string
+	private function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
 	{
-		$pk = $collection->getPrimaryKey();
-
-		if ($pk instanceof FieldInterface) {
-			return $pk->getName();
-		}
-
-		if (is_array($pk) && isset($pk[0]) && $pk[0] instanceof FieldInterface) {
-			return $pk[0]->getName();
-		}
-
-		return 'id';
+		return PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
 	private function dispatchEvent(object $event): void
@@ -539,7 +536,7 @@ final class RestMutationPlanner
 		$this->eventDispatcher?->dispatch($event);
 	}
 
-	private function findRowById(CollectionInterface $collection, string $id): ?array
+	private function findRowByIdentity(CollectionInterface $collection, PrimaryKeyValue $identity): ?array
 	{
 		$fieldNames = [];
 		foreach ($collection->fields as $fieldName => $field) {
@@ -548,15 +545,32 @@ final class RestMutationPlanner
 			}
 		}
 
-		$primaryKey = $this->getPrimaryKeyName($collection);
-		if (!in_array($primaryKey, $fieldNames, true)) {
-			$fieldNames[] = $primaryKey;
+		foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
+			if (!in_array($fieldName, $fieldNames, true)) {
+				$fieldNames[] = $fieldName;
+			}
 		}
 
 		$query = $this->dataSource->select($collection, $fieldNames);
-		$query->where($this->dataSource->getPrimaryKeyColumn($collection), $id)->limit(1);
+		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		$query->limit(1);
 
 		return $this->dataSource->fetchOne($query);
+	}
+
+	private function getPrimaryKeyValueFromState(MutationStateInterface $state): ?PrimaryKeyValue
+	{
+		$values = [];
+		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
+			$value = $state->getValue($fieldName);
+			if ($value instanceof ValueRef && !$value->isReady()) {
+				return null;
+			}
+
+			$values[$fieldName] = $state->resolveValue($value);
+		}
+
+		return new PrimaryKeyValue($state->getCollection(), $values);
 	}
 
 	private function assertAuthorized(object $event): void

@@ -15,9 +15,15 @@ class HasManyHandler extends HasOneHandler
 	{
 		$node = new ArrayNode(
 			$this->getSelectColumns(),
-			[$this->getPrimaryKeyColumn($this->getTargetCollection())],
-			[$this->relation->getOuterField()->getColumn()],
-			[$this->relation->getInnerField()->getColumn()]
+			$this->getPrimaryKeyColumns($this->getTargetCollection()),
+			array_map(
+				fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
+				$this->relation->outerKeys()
+			),
+			array_map(
+				fn(string $fieldName): string => $this->getCollection()->fields->get($fieldName)->getColumn(),
+				$this->relation->innerKeys()
+			)
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -31,29 +37,26 @@ class HasManyHandler extends HasOneHandler
 		MutationStateInterface $source,
 		SqlDataSource $dataSource
 	): array {
-		$payload = $this->emptyMutationPayload();
+		$payload = $this->getEmptyMutationPayload();
 		$targetCollection = $this->getTargetCollection();
-		$relationKey = $this->relation->getOuterField()->getName();
-		$parentId = $source->getValue($this->relation->getInnerField()->getName());
-
 		if (!is_array($input)) {
 			return $payload;
 		}
 
 		if ($this->isDetailedPayload($input)) {
-			return $this->normalizeDetailedHasRelationPayload($input, $parentId, $relationKey);
+			return $this->normalizeDetailedHasRelationPayload($input, $source);
 		}
 
-		$currentRows = $operation === 'create' ? [] : $this->currentRelationRows($dataSource, $source);
+		$currentRows = $operation === 'create' ? [] : $this->getCurrentRelationRows($dataSource, $source);
 		$currentById = [];
 		foreach ($currentRows as $row) {
 			if (!is_array($row)) {
 				continue;
 			}
 
-			$id = $this->inputPrimaryKeyValue($targetCollection, $row);
+			$id = $this->getInputPrimaryKeyValue($targetCollection, $row);
 			if ($id !== null) {
-				$currentById[(string) $id] = $row;
+				$currentById[$id->toUrlId()] = $row;
 			}
 		}
 
@@ -65,16 +68,17 @@ class HasManyHandler extends HasOneHandler
 				continue;
 			}
 
-			$id = $this->inputPrimaryKeyValue($targetCollection, $item);
+			$id = $this->getInputPrimaryKeyValue($targetCollection, $item);
 			if ($id === null) {
-				$item[$relationKey] = $parentId;
+				$this->applySourceValuesToTargetInput($item, $source);
 				$payload['create'][] = $item;
 				continue;
 			}
 
-			$seen[(string) $id] = true;
-			$item[$relationKey] = $parentId;
-			if (isset($currentById[(string) $id])) {
+			$key = $id->toUrlId();
+			$seen[$key] = true;
+			$this->applySourceValuesToTargetInput($item, $source);
+			if (isset($currentById[$key])) {
 				$payload['update'][] = $item;
 				continue;
 			}

@@ -42,15 +42,19 @@ interface RelationInterface
 
 	public function getLoadStrategy(): string;
 
-	public function innerKey(string $fieldName): self;
+	public function innerKey(string|array $fieldName): self;
 
-	public function getInnerKey(): string;
+	public function getInnerKey(): string|array;
+
+	public function innerKeys(): array;
 
 	public function getInnerField(): FieldInterface;
 
-	public function outerKey(string $fieldName): self;
+	public function outerKey(string|array $fieldName): self;
 
-	public function getOuterKey(): string;
+	public function getOuterKey(): string|array;
+
+	public function outerKeys(): array;
 
 	public function getOuterField(): FieldInterface;
 

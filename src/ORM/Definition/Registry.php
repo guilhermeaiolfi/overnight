@@ -51,8 +51,12 @@ class Registry
 		return $collection;
 	}
 
-	public function getCollection(string $name): ?CollectionInterface
+	public function getCollection(string|CollectionInterface $name): ?CollectionInterface
 	{
+		if ($name instanceof CollectionInterface) {
+			return $name;
+		}
+
 		return $this->collections[$name] ?? null;
 	}
 

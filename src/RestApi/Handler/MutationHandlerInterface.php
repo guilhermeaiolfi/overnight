@@ -15,7 +15,7 @@ interface MutationHandlerInterface
 {
 	public function mutationCollection(string $operation, mixed $item): CollectionInterface;
 
-	public function inputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed;
+	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): mixed;
 
 	public function normalizePayload(
 		string $operation,

@@ -179,27 +179,32 @@ class SqlFilterApplier
 		if ($relation->isJunction() && $relation instanceof M2MRelation) {
 			$through = $relation->through;
 			$junctionAlias = $aliases->alias($targetAlias . '__junction');
-			$subQuery
-				->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
-				->innerJoin($targetCollection->getTable(), $targetAlias)
-				->on(
-					$junctionAlias . '.' . $through->getOuterField()->getColumn(),
+			$subQuery->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
+				->innerJoin($targetCollection->getTable(), $targetAlias);
+			foreach ($through->throughOuterKeys() as $index => $throughOuterKey) {
+				$method = $index === 0 ? 'on' : 'andOn';
+				$subQuery->{$method}(
+					$junctionAlias . '.' . $through->getCollection()->fields->get($throughOuterKey)->getColumn(),
 					'=',
-					$targetAlias . '.' . $this->getPrimaryKeyColumn($targetCollection)
-				)
-				->where(
-					new Expression($junctionAlias . '.' . $through->getInnerField()->getColumn()),
-					'=',
-					new Expression($tableAlias . '.' . $relation->getInnerField()->getColumn())
+					$targetAlias . '.' . $targetCollection->fields->get($relation->outerKeys()[$index])->getColumn()
 				);
+			}
+			foreach ($through->throughInnerKeys() as $index => $throughInnerKey) {
+				$subQuery->where(
+					new Expression($junctionAlias . '.' . $through->getCollection()->fields->get($throughInnerKey)->getColumn()),
+					'=',
+					new Expression($tableAlias . '.' . $collection->fields->get($relation->innerKeys()[$index])->getColumn())
+				);
+			}
 		} else {
-			$subQuery
-				->from($targetCollection->getTable() . ' AS ' . $targetAlias)
-				->where(
-					new Expression($targetAlias . '.' . $relation->getOuterField()->getColumn()),
+			$subQuery->from($targetCollection->getTable() . ' AS ' . $targetAlias);
+			foreach ($relation->outerKeys() as $index => $outerKey) {
+				$subQuery->where(
+					new Expression($targetAlias . '.' . $targetCollection->fields->get($outerKey)->getColumn()),
 					'=',
-					new Expression($tableAlias . '.' . $relation->getInnerField()->getColumn())
+					new Expression($tableAlias . '.' . $collection->fields->get($relation->innerKeys()[$index])->getColumn())
 				);
+			}
 		}
 
 		$this->applyNode($subQuery, $targetCollection, $filter->filter, $targetAlias, $aliases);
@@ -234,7 +239,7 @@ class SqlFilterApplier
 
 	protected function getPrimaryKeyColumn(CollectionInterface $collection): string
 	{
-		$primary = $collection->getPrimaryKey();
+		$primary = $collection->getPrimaryKeyFields();
 		if (is_array($primary)) {
 			$primary = reset($primary);
 		}

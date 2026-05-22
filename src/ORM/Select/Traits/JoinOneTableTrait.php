@@ -28,10 +28,10 @@ trait JoinOneTableTrait
 	{
 		$localPrefix = $this->getAlias() . '.';
 		$parentPrefix = $this->parent->getAlias() . '.';
-		$parentKeys = (array)$this->relation->getInnerKey();
+		$parentKeys = $this->relation->innerKeys();
 
 		$on = [];
-		foreach ((array)$this->relation->getOuterKey() as $i => $key) {
+		foreach ($this->relation->outerKeys() as $i => $key) {
 			$field = $localPrefix . $this->fieldAlias($key);
 			$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 		}
@@ -47,7 +47,7 @@ trait JoinOneTableTrait
 		$localPrefix = $this->getAlias() . '.';
 
 		$fields = [];
-		foreach ((array)$this->relation->getOuterKey() as $key) {
+		foreach ($this->relation->outerKeys() as $key) {
 			$fields[] = $localPrefix . $this->fieldAlias($key);
 		}
 
