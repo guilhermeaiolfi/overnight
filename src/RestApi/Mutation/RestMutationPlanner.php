@@ -21,7 +21,7 @@ use ON\RestApi\Event\RelationDisconnected;
 use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\MutationHandlerInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class RestMutationPlanner
@@ -36,7 +36,7 @@ final class RestMutationPlanner
 	private array $afterDeleteEvents = [];
 
 	public function __construct(
-		private DataSourceInterface $dataSource,
+		private SqlDataSource $dataSource,
 		private HandlerFactory $handlers,
 		private ?EventDispatcherInterface $eventDispatcher,
 		private bool $dispatchEvents,
@@ -333,7 +333,7 @@ final class RestMutationPlanner
 			return $mode;
 		}
 
-		return $id !== null && $this->dataSource->get($collection, $id) !== null ? 'update' : 'create';
+		return $id !== null && $this->findRowById($collection, $id) !== null ? 'update' : 'create';
 	}
 
 	private function assertCreateIdAvailable(string $operation, CollectionInterface $collection, MutationStateInterface $state): void
@@ -346,7 +346,7 @@ final class RestMutationPlanner
 		if (
 			$createId !== null
 			&& !$createId instanceof ValueRef
-			&& $this->dataSource->get($collection, (string) $createId) !== null
+			&& $this->findRowById($collection, (string) $createId) !== null
 		) {
 			$primaryKey = $this->getPrimaryKeyName($collection);
 			throw new RestApiError(
@@ -537,6 +537,26 @@ final class RestMutationPlanner
 	private function dispatchEvent(object $event): void
 	{
 		$this->eventDispatcher?->dispatch($event);
+	}
+
+	private function findRowById(CollectionInterface $collection, string $id): ?array
+	{
+		$fieldNames = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if (!$field->isHidden()) {
+				$fieldNames[] = (string) $fieldName;
+			}
+		}
+
+		$primaryKey = $this->getPrimaryKeyName($collection);
+		if (!in_array($primaryKey, $fieldNames, true)) {
+			$fieldNames[] = $primaryKey;
+		}
+
+		$query = $this->dataSource->select($collection, $fieldNames);
+		$query->where($this->dataSource->getPrimaryKeyColumn($collection), $id)->limit(1);
+
+		return $this->dataSource->fetchOne($query);
 	}
 
 	private function assertAuthorized(object $event): void

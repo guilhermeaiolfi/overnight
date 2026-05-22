@@ -8,14 +8,13 @@ use ON\DB\DatabaseManager;
 use ON\DB\Cycle\CycleDatabase;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
 
 class DataSourceFactory
 {
-	public function __invoke(ContainerInterface $container): DataSourceInterface
+	public function __invoke(ContainerInterface $container): SqlDataSource
 	{
 		$config = $container->get(RestApiConfig::class);
 		$registry = $container->get(Registry::class);

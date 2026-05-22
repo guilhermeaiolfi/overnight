@@ -17,6 +17,7 @@ use ON\RestApi\Container\RestApiServiceFactory;
 use ON\RestApi\Container\DataSourceFactory;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 
@@ -42,6 +43,7 @@ class RestApiExtension extends AbstractExtension
 		$containerConfig->addFactories([
 			RestApiService::class => RestApiServiceFactory::class,
 			DataSourceInterface::class => DataSourceFactory::class,
+			SqlDataSource::class => DataSourceFactory::class,
 		]);
 	}
 

@@ -18,10 +18,9 @@ use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\LogicalFilter;
 use ON\RestApi\Query\Node\LogicalOperator;
-use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Node\SelectionSet;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class ManyToManyHandler extends AbstractRelationHandler
 {
@@ -32,9 +31,11 @@ class ManyToManyHandler extends AbstractRelationHandler
 		CollectionInterface $collection,
 		private M2MRelation $manyToMany,
 		?RelationSelection $selection = null,
-		?QueryContext $context = null
+		?SqlDataSource $dataSource = null,
+		?SqlQuerySpecCompiler $querySpecCompiler = null,
+		?AliasRegistry $aliases = null
 	) {
-		parent::__construct($collection, $manyToMany, $selection, $context);
+		parent::__construct($collection, $manyToMany, $selection, $dataSource, $querySpecCompiler, $aliases);
 	}
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
@@ -67,28 +68,31 @@ class ManyToManyHandler extends AbstractRelationHandler
 		$targetPkColumn = $this->getPrimaryKeyColumn($this->getTargetCollection());
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
-		$query = $this->context->database->select($selectColumns)
+		$query = $this->dataSource->getDatabase()->select($selectColumns)
 			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias)
 			->on($junctionAlias . '.' . $throughOuterKey, '=', $targetAlias . '.' . $targetPkColumn)
 			->where($junctionAlias . '.' . $throughInnerKey, 'IN', $parentIds);
 
-		if ($this->filters() !== null) {
-			$this->context->filterApplier->applyNode(
+		if ($this->selection !== null) {
+			$this->querySpecCompiler->applyFilters(
 				$query,
 				$this->getTargetCollection(),
-				$this->filters(),
+				$this->selection->query->filter,
 				$targetAlias,
-				$this->context->aliases
+				$this->aliases
 			);
-		}
-
-		foreach ($this->orderBy() as $order) {
-			if (!is_array($order) || !isset($order['expression'])) {
-				continue;
-			}
-
-			$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
+			$this->querySpecCompiler->applySearch(
+				$query,
+				$this->getTargetCollection(),
+				$this->selection->query->search
+			);
+			$this->querySpecCompiler->applyOrderBy(
+				$query,
+				$this->getTargetCollection(),
+				$this->selection->query->sort,
+				$targetAlias
+			);
 		}
 
 		if ($this->limit() !== null || $this->offset() !== null) {
@@ -109,7 +113,7 @@ class ManyToManyHandler extends AbstractRelationHandler
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array {
 		$payload = parent::normalizePayload($operation, $input, $source, $dataSource);
 		$throughCollection = $this->manyToMany->through->getCollection();
@@ -303,12 +307,17 @@ class ManyToManyHandler extends AbstractRelationHandler
 
 	private function junctionAlias(): string
 	{
-		return $this->junctionAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_junction');
+		return $this->junctionAlias ??= $this->aliases->alias('__on_' . $this->getResponseName() . '_junction');
 	}
 
 	private function targetAlias(): string
 	{
-		return $this->targetAlias ??= $this->context->aliases->alias('__on_' . $this->getResponseName() . '_target');
+		return $this->targetAlias ??= $this->aliases->alias('__on_' . $this->getResponseName() . '_target');
+	}
+
+	protected function orderByTableAlias(): ?string
+	{
+		return $this->targetAlias();
 	}
 
 	private function normalizeDetailedManyToManyPayload(array $input, MutationStateInterface $source): array
@@ -353,24 +362,17 @@ class ManyToManyHandler extends AbstractRelationHandler
 		return false;
 	}
 
-	private function currentPivotRows(DataSourceInterface $dataSource, MutationStateInterface $source): array
+	private function currentPivotRows(SqlDataSource $dataSource, MutationStateInterface $source): array
 	{
 		$parentId = $source->resolveValue($source->getValue($this->relation->getInnerField()->getName()));
 		$through = $this->manyToMany->through;
-		$result = $dataSource->list(
-			$through->getCollection(),
-			new QuerySpec(
-				$through->getCollection()->getName(),
-				new SelectionSet(),
-				new ComparisonFilter(
-					new FieldExpression($through->getInnerField()->getName()),
-					ComparisonOperator::Eq,
-					new LiteralValue($parentId)
-				)
-			)
-		);
 
-		return $result['items'] ?? [];
+		return $this->fetchRowsByField(
+			$dataSource,
+			$through->getCollection(),
+			$through->getInnerField()->getName(),
+			$parentId
+		);
 	}
 
 	private function connect(MutationQueue $queue, mixed $parentId, mixed $targetId): void

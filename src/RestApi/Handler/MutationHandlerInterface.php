@@ -9,7 +9,7 @@ use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\MutationTaskInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 interface MutationHandlerInterface
 {
@@ -21,7 +21,7 @@ interface MutationHandlerInterface
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array;
 
 	public function compileActions(

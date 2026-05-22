@@ -20,16 +20,13 @@ use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\PaginationSpec;
-use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SelectionSet;
-use ON\RestApi\Query\Node\SortDirection;
-use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 abstract class AbstractRelationHandler extends AbstractHandler implements MutationHandlerInterface
 {
@@ -42,7 +39,9 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
 		protected ?RelationSelection $selection = null,
-		protected ?QueryContext $context = null
+		protected ?SqlDataSource $dataSource = null,
+		protected ?SqlQuerySpecCompiler $querySpecCompiler = null,
+		protected ?AliasRegistry $aliases = null
 	) {
 		parent::__construct($collection, $selection?->responseName ?? $relation->getName(), $relation->getName());
 		$this->targetCollection = $this->relation->getCollection();
@@ -90,37 +89,17 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $relations;
 	}
 
-	public function filters(): ?FilterNode
-	{
-		return $this->selection?->query->filter;
-	}
-
 	public function orderBy(): array
 	{
-		if ($this->selection === null || $this->selection->query->sort === []) {
+		if ($this->selection === null) {
 			return [];
 		}
 
-		$orders = [];
-		foreach ($this->selection->query->sort as $sortSpec) {
-			if (!$sortSpec instanceof SortSpec) {
-				continue;
-			}
-
-			$expression = $this->context?->expressions->value(
-				$this->targetCollection,
-				$sortSpec->expression,
-				$this->targetCollection->getTable()
-			);
-			if ($expression !== null) {
-				$orders[] = [
-					'expression' => $expression,
-					'direction' => $sortSpec->direction === SortDirection::Desc ? 'DESC' : 'ASC',
-				];
-			}
-		}
-
-		return $orders;
+		return $this->querySpecCompiler->compileOrderBy(
+			$this->targetCollection,
+			$this->selection->query->sort,
+			$this->orderByTableAlias()
+		);
 	}
 
 	public function limit(): ?int
@@ -135,33 +114,33 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 
 	protected function baseQuery(array $columns): SelectQuery
 	{
-		return $this->context->database->select($columns)
+		return $this->dataSource->getDatabase()->select($columns)
 			->from($this->targetCollection->getTable());
 	}
 
 	protected function applyRelationQueryOptions(SelectQuery $query): void
 	{
-		if ($this->filters() !== null) {
-			$this->context->filterApplier->applyNode(
-				$query,
-				$this->targetCollection,
-				$this->filters(),
-				null,
-				$this->context->aliases
-			);
+		if ($this->selection === null) {
+			return;
 		}
 
-		foreach ($this->orderBy() as $order) {
-			if (
-				!is_array($order)
-				|| !isset($order['expression'])
-				|| !$order['expression'] instanceof FragmentInterface
-			) {
-				continue;
-			}
-
-			$query->orderBy($order['expression'], $order['direction'] ?? 'ASC');
-		}
+		$this->querySpecCompiler->applyFilters(
+			$query,
+			$this->targetCollection,
+			$this->selection->query->filter,
+			null,
+			$this->aliases
+		);
+		$this->querySpecCompiler->applySearch(
+			$query,
+			$this->targetCollection,
+			$this->selection->query->search
+		);
+		$this->querySpecCompiler->applyOrderBy(
+			$query,
+			$this->targetCollection,
+			$this->selection->query->sort
+		);
 	}
 
 	protected function queryRows(SelectQuery $query, AbstractNode $node): void
@@ -212,7 +191,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		$inner->columns($innerColumns);
 
 		$alias = '__on_limited_relation';
-		$outer = $this->context->database->select($outerColumns)
+		$outer = $this->dataSource->getDatabase()->select($outerColumns)
 			->from(new SubQuery($inner, $alias));
 
 		$offset = $this->offset() ?? 0;
@@ -246,6 +225,11 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $parts === [] ? '' : ' ORDER BY ' . implode(', ', $parts);
 	}
 
+	protected function orderByTableAlias(): ?string
+	{
+		return null;
+	}
+
 	protected function parseLoadedRows(AbstractNode $node, SelectQuery $query): void
 	{
 		$this->queryRows($query, $node);
@@ -257,6 +241,18 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		foreach ($collection->fields as $field) {
 			if (!$field->isHidden()) {
 				$visible[] = $field->getColumn();
+			}
+		}
+
+		return $visible;
+	}
+
+	protected function visibleFieldNames(CollectionInterface $collection): array
+	{
+		$visible = [];
+		foreach ($collection->fields as $fieldName => $field) {
+			if (!$field->isHidden()) {
+				$visible[] = (string) $fieldName;
 			}
 		}
 
@@ -275,16 +271,30 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 
 	protected function compile(FragmentInterface $expression): string
 	{
-		return $this->context->database->getDriver()->getQueryCompiler()->compile(
+		return $this->dataSource->getDatabase()->getDriver()->getQueryCompiler()->compile(
 			new QueryParameters(),
-			$this->context->database->getPrefix(),
+			$this->dataSource->getDatabase()->getPrefix(),
 			$expression
 		);
 	}
 
 	protected function identifier(string $identifier): string
 	{
-		return $this->context->database->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
+		return $this->dataSource->getDatabase()->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
+	}
+
+	protected function mapRowToFieldNames(CollectionInterface $collection, array $row): array
+	{
+		$item = [];
+		foreach ($row as $column => $value) {
+			$name = $collection->fields->hasColumn((string) $column)
+				? $collection->fields->getKeyByColumnName((string) $column)
+				: (string) $column;
+
+			$item[$name] = $value;
+		}
+
+		return $item;
 	}
 
 	public function mutationCollection(string $operation, mixed $item): CollectionInterface
@@ -296,7 +306,7 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array {
 		return $this->emptyMutationPayload();
 	}
@@ -405,30 +415,22 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $payload;
 	}
 
-	protected function currentRelationRows(DataSourceInterface $dataSource, MutationStateInterface $source): array
+	protected function currentRelationRows(SqlDataSource $dataSource, MutationStateInterface $source): array
 	{
 		$parentId = $source->getValue($this->relation->getInnerField()->getName());
 		if ($parentId instanceof \ON\RestApi\Mutation\ValueRef && !$parentId->isReady()) {
 			return [];
 		}
 
-		$result = $dataSource->list(
+		return $this->fetchRowsByField(
+			$dataSource,
 			$this->getTargetCollection(),
-			new QuerySpec(
-				$this->getTargetCollection()->getName(),
-				new SelectionSet(),
-				new ComparisonFilter(
-					new FieldExpression($this->relation->getOuterField()->getName()),
-					ComparisonOperator::Eq,
-					new LiteralValue($source->resolveValue($parentId))
-				)
-			)
+			$this->relation->getOuterField()->getName(),
+			$source->resolveValue($parentId)
 		);
-
-		return $result['items'] ?? [];
 	}
 
-	protected function currentParentRow(DataSourceInterface $dataSource, MutationStateInterface $source): ?array
+	protected function currentParentRow(SqlDataSource $dataSource, MutationStateInterface $source): ?array
 	{
 		$primaryKey = $this->getPrimaryKeyName($source->getCollection());
 		$id = $source->getValue($primaryKey);
@@ -441,7 +443,43 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 			return null;
 		}
 
-		return $dataSource->get($source->getCollection(), (string) $id);
+		return $this->fetchRowById($dataSource, $source->getCollection(), (string) $id);
+	}
+
+	protected function fetchRowsByField(
+		SqlDataSource $dataSource,
+		CollectionInterface $collection,
+		string $fieldName,
+		mixed $value,
+		?array $fieldNames = null
+	): array {
+		$fieldNames ??= $this->visibleFieldNames($collection);
+		if (!in_array($fieldName, $fieldNames, true)) {
+			$fieldNames[] = $fieldName;
+		}
+
+		$query = $dataSource->select($collection, $fieldNames);
+		$query->where($collection->fields->get($fieldName)->getColumn(), $value);
+
+		return array_map(
+			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
+			$dataSource->fetchAll($query)
+		);
+	}
+
+	protected function fetchRowById(SqlDataSource $dataSource, CollectionInterface $collection, string $id): ?array
+	{
+		$fieldNames = $this->visibleFieldNames($collection);
+		$primaryKey = $this->getPrimaryKeyName($collection);
+		if (!in_array($primaryKey, $fieldNames, true)) {
+			$fieldNames[] = $primaryKey;
+		}
+
+		$query = $dataSource->select($collection, $fieldNames);
+		$query->where($this->getPrimaryKeyColumn($collection), $id)->limit(1);
+		$row = $dataSource->fetchOne($query);
+
+		return $row === null ? null : $this->mapRowToFieldNames($collection, $row);
 	}
 
 	/**

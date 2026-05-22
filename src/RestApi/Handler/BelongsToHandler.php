@@ -6,7 +6,7 @@ namespace ON\RestApi\Handler;
 
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 class BelongsToHandler extends HasOneHandler
 {
@@ -14,7 +14,7 @@ class BelongsToHandler extends HasOneHandler
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array {
 		$payload = $this->emptyMutationPayload();
 		$currentParent = $operation === 'create' ? null : $this->currentParentRow($dataSource, $source);

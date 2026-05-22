@@ -12,7 +12,7 @@ use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\LiteralValue;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 class HasOneHandler extends AbstractRelationHandler
 {
@@ -60,7 +60,7 @@ class HasOneHandler extends AbstractRelationHandler
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array {
 		$payload = parent::normalizePayload($operation, $input, $source, $dataSource);
 

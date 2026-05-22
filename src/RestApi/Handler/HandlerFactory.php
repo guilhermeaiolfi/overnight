@@ -6,6 +6,8 @@ namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class HandlerFactory
 {
@@ -43,7 +45,9 @@ class HandlerFactory
 	public function relation(
 		CollectionInterface $source,
 		RelationSelection $selection,
-		QueryContext $context
+		SqlDataSource $dataSource,
+		SqlQuerySpecCompiler $querySpecCompiler,
+		AliasRegistry $aliases
 	): ?HandlerInterface {
 		$relationName = $selection->relationName;
 		if (!$source->relations->has($relationName)) {
@@ -53,7 +57,7 @@ class HandlerFactory
 		$relation = $source->relations->get($relationName);
 		$class = $this->registry->resolve($source, $selection->responseName, $relation);
 
-		return new $class($source, $relation, $selection, $context);
+		return new $class($source, $relation, $selection, $dataSource, $querySpecCompiler, $aliases);
 	}
 
 	public function mutation(CollectionInterface $source, string $relationName): ?MutationHandlerInterface

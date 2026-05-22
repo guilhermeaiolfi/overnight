@@ -124,7 +124,7 @@ class RootHandler extends AbstractHandler
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		\ON\RestApi\Resolver\DataSourceInterface $dataSource
+		\ON\RestApi\Resolver\Sql\SqlDataSource $dataSource
 	): array {
 		$payload = [
 			'create' => [],

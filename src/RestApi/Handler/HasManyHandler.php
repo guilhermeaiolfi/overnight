@@ -7,7 +7,7 @@ namespace ON\RestApi\Handler;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 class HasManyHandler extends HasOneHandler
 {
@@ -29,7 +29,7 @@ class HasManyHandler extends HasOneHandler
 		string $operation,
 		mixed $input,
 		MutationStateInterface $source,
-		DataSourceInterface $dataSource
+		SqlDataSource $dataSource
 	): array {
 		$payload = $this->emptyMutationPayload();
 		$targetCollection = $this->getTargetCollection();
