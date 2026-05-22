@@ -40,6 +40,8 @@ interface RelationLoaderInterface extends LoaderInterface
 
 	public function getNestedRelations(): array;
 
+	public function mutationCollection(string $operation, mixed $item): CollectionInterface;
+
 	public function normalizePayload(
 		string $operation,
 		mixed $input,

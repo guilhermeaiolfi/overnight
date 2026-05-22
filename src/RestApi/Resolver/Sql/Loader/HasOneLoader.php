@@ -74,30 +74,20 @@ class HasOneLoader extends AbstractRelationLoader
 		$relationKey = $this->relation->getOuterField()->getName();
 		$parentId = $source->getValue($this->relation->getInnerField()->getName());
 
-		if (is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
-			foreach (['create', 'update'] as $mutation) {
-				foreach ($this->normalizeRelationItems($input[$mutation] ?? []) as $item) {
-					if (!is_array($item)) {
-						continue;
-					}
-
-					if ($mutation === 'create') {
-						$item[$relationKey] = $parentId;
-					}
-
-					$payload[$mutation][] = $item;
-				}
-			}
-
-			$payload['delete'] = $this->normalizeRelationItems($input['delete'] ?? []);
-			$payload['connect'] = $this->normalizeRelationItems($input['connect'] ?? []);
-			$payload['disconnect'] = $this->normalizeRelationItems($input['disconnect'] ?? []);
-
-			return $payload;
+		if ($this->isDetailedPayload($input)) {
+			return $this->normalizeDetailedHasRelationPayload($input, $parentId, $relationKey);
 		}
 
 		if (!is_array($input)) {
-			$payload['connect'][] = $input;
+			$current = $operation === 'create' ? null : ($this->currentRelationRows($dataSource, $source)[0] ?? null);
+			$currentId = is_array($current) ? $this->inputPrimaryKeyValue($targetCollection, $current) : null;
+			if ($currentId !== null && $currentId !== $input) {
+				$this->normalizeOmittedChildren($payload, [$current]);
+			}
+			if ($currentId === null || $currentId !== $input) {
+				$payload['connect'][] = $input;
+			}
+
 			return $payload;
 		}
 
@@ -183,5 +173,28 @@ class HasOneLoader extends AbstractRelationLoader
 
 			$payload['disconnect'][] = $id;
 		}
+	}
+
+	protected function normalizeDetailedHasRelationPayload(array $input, mixed $parentId, string $relationKey): array
+	{
+		$payload = $this->normalizeDetailedPayload($input);
+		foreach (['create', 'update'] as $mutation) {
+			foreach ($payload[$mutation] as $index => $item) {
+				if (!is_array($item)) {
+					unset($payload[$mutation][$index]);
+					continue;
+				}
+
+				if ($mutation === 'create') {
+					$item[$relationKey] = $parentId;
+				}
+
+				$payload[$mutation][$index] = $item;
+			}
+
+			$payload[$mutation] = array_values($payload[$mutation]);
+		}
+
+		return $payload;
 	}
 }

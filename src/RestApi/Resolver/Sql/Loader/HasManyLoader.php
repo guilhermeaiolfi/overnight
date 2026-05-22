@@ -64,26 +64,8 @@ class HasManyLoader extends HasOneLoader
 			return $payload;
 		}
 
-		if ($this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
-			foreach (['create', 'update'] as $mutation) {
-				foreach ($this->normalizeRelationItems($input[$mutation] ?? []) as $item) {
-					if (!is_array($item)) {
-						continue;
-					}
-
-					if ($mutation === 'create') {
-						$item[$relationKey] = $parentId;
-					}
-
-					$payload[$mutation][] = $item;
-				}
-			}
-
-			$payload['delete'] = $this->normalizeRelationItems($input['delete'] ?? []);
-			$payload['connect'] = $this->normalizeRelationItems($input['connect'] ?? []);
-			$payload['disconnect'] = $this->normalizeRelationItems($input['disconnect'] ?? []);
-
-			return $payload;
+		if ($this->isDetailedPayload($input)) {
+			return $this->normalizeDetailedHasRelationPayload($input, $parentId, $relationKey);
 		}
 
 		$currentRows = $operation === 'create' ? [] : $this->currentRelationRows($dataSource, $source);

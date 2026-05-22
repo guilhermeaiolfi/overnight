@@ -197,14 +197,8 @@ final class ManyToManyLoader extends AbstractRelationLoader
 			return $payload;
 		}
 
-		if ($this->isAssociativeArray($input)) {
-			foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-				foreach ($this->normalizeRelationItems($input[$key] ?? []) as $item) {
-					$payload[$key][] = $this->normalizeDetailedItem($key, $item, $source);
-				}
-			}
-
-			return $payload;
+		if ($this->isDetailedPayload($input)) {
+			return $this->normalizeDetailedManyToManyPayload($input, $source);
 		}
 
 		$seenPivot = [];
@@ -222,7 +216,7 @@ final class ManyToManyLoader extends AbstractRelationLoader
 
 				if ($pivotId !== null && isset($currentByPivotId[(string) $pivotId])) {
 					$seenPivot[(string) $pivotId] = true;
-					$payload['update'][] = $this->throughMutationState($source, $item);
+					$payload['update'][] = $this->normalizeThroughPayload($source, $item);
 					continue;
 				}
 
@@ -234,14 +228,14 @@ final class ManyToManyLoader extends AbstractRelationLoader
 						$item[$throughPrimaryKey] = $existingPivotId;
 					}
 					$seenTarget[(string) $targetId] = true;
-					$payload['update'][] = $this->throughMutationState($source, $item);
+					$payload['update'][] = $this->normalizeThroughPayload($source, $item);
 					continue;
 				}
 
 				if ($targetId !== null) {
 					$seenTarget[(string) $targetId] = true;
 				}
-				$payload['create'][] = $this->throughMutationState($source, $item);
+				$payload['create'][] = $this->normalizeThroughPayload($source, $item);
 				continue;
 			}
 
@@ -286,6 +280,13 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		return $payload;
 	}
 
+	public function mutationCollection(string $operation, mixed $item): \ON\ORM\Definition\Collection\CollectionInterface
+	{
+		return is_array($item) && $this->isThroughPayload($item)
+			? $this->manyToMany->through->getCollection()
+			: $this->getTargetCollection();
+	}
+
 	protected function mutate(
 		array $payload,
 		MutationStateInterface $source,
@@ -312,33 +313,28 @@ final class ManyToManyLoader extends AbstractRelationLoader
 		}
 	}
 
-	private function normalizeDetailedItem(string $operation, mixed $item, MutationStateInterface $source): mixed
+	private function normalizeDetailedManyToManyPayload(array $input, MutationStateInterface $source): array
 	{
-		if (!is_array($item)) {
-			return $item;
+		$payload = $this->normalizeDetailedPayload($input);
+		foreach (['create', 'update', 'delete'] as $operation) {
+			foreach ($payload[$operation] as $index => $item) {
+				if (!is_array($item) || !$this->isThroughPayload($item)) {
+					continue;
+				}
+
+				$payload[$operation][$index] = $this->normalizeThroughPayload($source, $item);
+			}
 		}
 
-		if (in_array($operation, ['connect', 'disconnect'], true)) {
-			return $item;
-		}
-
-		if (!$this->isThroughPayload($item)) {
-			return $item;
-		}
-
-		if ($operation === 'delete') {
-			return $item;
-		}
-
-		return $this->throughMutationState($source, $item);
+		return $payload;
 	}
 
-	private function throughMutationState(MutationStateInterface $source, array $item): \ON\RestApi\Mutation\NestedMutationInput
+	private function normalizeThroughPayload(MutationStateInterface $source, array $item): array
 	{
 		$through = $this->manyToMany->through;
 		$item[$through->getInnerField()->getName()] = $source->getValue($this->relation->getInnerField()->getName());
 
-		return $this->nestedMutation($through->getCollection(), $item);
+		return $item;
 	}
 
 	private function isThroughPayload(array $item): bool

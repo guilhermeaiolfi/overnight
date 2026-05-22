@@ -62,83 +62,32 @@ final class RootLoader
 		);
 	}
 
-	/**
-	 * @return array{task: ?MutationTaskInterface, deleteTask: ?MutationDeleteTaskInterface, deleteEvents: list<array{0: CollectionInterface, 1: MutationStateInterface, 2: MutationDeleteTaskInterface, 3: array}>}
-	 */
-	public static function persistMutation(array $node, MutationQueue $queue): array
+	public static function compileRootAction(array $node, MutationQueue $queue): MutationTaskInterface|MutationDeleteTaskInterface|null
 	{
-		$task = null;
-		$deleteTask = null;
-		$deleteEvents = [];
 		$operation = $node['operation'];
 		$collection = $node['collection'];
 		$state = $node['state'];
 
 		if ($operation === 'create') {
-			$task = $queue->queueInsert($state);
-		} elseif ($operation === 'update') {
-			$task = $queue->queueUpdate(
+			return $queue->queueInsert($state);
+		}
+
+		if ($operation === 'update') {
+			return $queue->queueUpdate(
 				$collection,
 				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection))),
 				$state
 			);
-		} elseif ($operation === 'delete') {
-			$deleteTask = $queue->queueDelete(
+		}
+
+		if ($operation === 'delete') {
+			return $queue->queueDelete(
 				$collection,
 				self::primaryKeyCriteria($collection, $state->getValue(self::getPrimaryKeyName($collection)))
 			);
-			$deleteEvents[] = [$collection, $state, $deleteTask, $node['path']];
 		}
 
-		foreach ($node['relations'] ?? [] as $relation) {
-			$relation['handler']->{$operation}(
-				$relation['payload'],
-				$state,
-				self::childStates($relation['children']),
-				$queue
-			);
-
-			foreach ($relation['children'] as $group) {
-				foreach ($group as $child) {
-					$result = self::persistChildRelations($child, $queue);
-					$deleteEvents = [...$deleteEvents, ...$result['deleteEvents']];
-				}
-			}
-		}
-
-		return [
-			'task' => $task,
-			'deleteTask' => $deleteTask,
-			'deleteEvents' => $deleteEvents,
-		];
-	}
-
-	/**
-	 * @return array{deleteEvents: list<array{0: CollectionInterface, 1: MutationStateInterface, 2: MutationDeleteTaskInterface, 3: array}>}
-	 */
-	private static function persistChildRelations(array $node, MutationQueue $queue): array
-	{
-		$deleteEvents = [];
-		$operation = $node['operation'];
-		$state = $node['state'];
-
-		foreach ($node['relations'] ?? [] as $relation) {
-			$relation['handler']->{$operation}(
-				$relation['payload'],
-				$state,
-				self::childStates($relation['children']),
-				$queue
-			);
-
-			foreach ($relation['children'] as $group) {
-				foreach ($group as $child) {
-					$result = self::persistChildRelations($child, $queue);
-					$deleteEvents = [...$deleteEvents, ...$result['deleteEvents']];
-				}
-			}
-		}
-
-		return ['deleteEvents' => $deleteEvents];
+		return null;
 	}
 
 	private function configureRelations(AbstractNode $parent, CollectionInterface $collection, array $relations): array
@@ -294,23 +243,6 @@ final class RootLoader
 		}
 
 		return $mapped;
-	}
-
-	private static function childStates(array $children): array
-	{
-		$states = [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-		];
-
-		foreach ($children as $operation => $group) {
-			foreach ($group as $child) {
-				$states[$operation][] = $child['state'];
-			}
-		}
-
-		return $states;
 	}
 
 	private static function primaryKeyCriteria(CollectionInterface $collection, mixed $id): ComparisonFilter

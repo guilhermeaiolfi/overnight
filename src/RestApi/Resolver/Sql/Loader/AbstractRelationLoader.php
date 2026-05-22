@@ -14,7 +14,6 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
-use ON\RestApi\Mutation\NestedMutationInput;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Query\Node\ComparisonFilter;
@@ -518,6 +517,11 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return $this->emptyMutationPayload();
 	}
 
+	public function mutationCollection(string $operation, mixed $item): CollectionInterface
+	{
+		return $this->getTargetCollection();
+	}
+
 	protected function mutate(
 		array $payload,
 		MutationStateInterface $source,
@@ -619,6 +623,21 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		return false;
 	}
 
+	protected function isDetailedPayload(mixed $input): bool
+	{
+		return is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input);
+	}
+
+	protected function normalizeDetailedPayload(array $input): array
+	{
+		$payload = $this->emptyMutationPayload();
+		foreach (array_keys($payload) as $key) {
+			$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
+		}
+
+		return $payload;
+	}
+
 	protected function currentRelationRows(DataSourceInterface $dataSource, MutationStateInterface $source): array
 	{
 		$parentId = $source->getValue($this->relation->getInnerField()->getName());
@@ -656,11 +675,6 @@ abstract class AbstractRelationLoader implements RelationLoaderInterface
 		}
 
 		return $dataSource->get($source->getCollection(), (string) $id);
-	}
-
-	protected function nestedMutation(CollectionInterface $collection, array $data): NestedMutationInput
-	{
-		return new NestedMutationInput($collection, $data);
 	}
 
 }

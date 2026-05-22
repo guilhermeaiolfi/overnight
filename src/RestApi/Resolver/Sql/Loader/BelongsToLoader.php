@@ -20,12 +20,8 @@ class BelongsToLoader extends HasOneLoader
 		$currentParent = $operation === 'create' ? null : $this->currentParentRow($dataSource, $source);
 		$currentId = is_array($currentParent) ? ($currentParent[$this->relation->getInnerField()->getName()] ?? null) : null;
 
-		if (is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input)) {
-			foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-				$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
-			}
-
-			return $payload;
+		if ($this->isDetailedPayload($input)) {
+			return $this->normalizeDetailedPayload($input);
 		}
 
 		if (is_array($input) && $this->isAssociativeArray($input)) {
