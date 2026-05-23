@@ -20,7 +20,7 @@ final class DeleteCommand extends AbstractMutationCommand
 
 	public function getTask(): MutationDeleteTaskInterface
 	{
-		return new MutationDeleteTask(fn(): bool => $this->result);
+		return new MutationDeleteTask(fn (): bool => $this->result);
 	}
 
 	public function isReady(): bool

@@ -6,11 +6,8 @@ namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\RootNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationStateInterface;
 
 class RootHandler extends AbstractHandler
-	implements MutationHandlerInterface
 {
 	/**
 	 * @param array<int, array<string, mixed>> $rows
@@ -106,40 +103,6 @@ class RootHandler extends AbstractHandler
 		}
 
 		return $this->cleanRows($this->getCollection(), $this->rootNode()->getResult(), $this);
-	}
-
-	public function mutationCollection(string $operation, mixed $item): CollectionInterface
-	{
-		return $this->getCollection();
-	}
-
-	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
-
-	public function normalizePayload(
-		string $operation,
-		mixed $input,
-		MutationStateInterface $source,
-		\ON\RestApi\Resolver\Sql\SqlDataSource $dataSource
-	): array {
-		$payload = [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-			'connect' => [],
-			'disconnect' => [],
-		];
-
-		match ($operation) {
-			'create' => $payload['create'][] = $input,
-			'update' => $payload['update'][] = $input,
-			'delete' => $payload['delete'][] = $source->getData(),
-			default => null,
-		};
-
-		return $payload;
 	}
 
 	private function cleanRows(CollectionInterface $collection, array $rows, HandlerInterface $handler): array

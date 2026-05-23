@@ -8,19 +8,22 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\AuthState;
-use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Mutation\RestMutationPlanner;
-use ON\RestApi\Query\QueryPlanner;
-use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Query\QueryPlanner;
+use ON\RestApi\Query\QueryPlannerInterface;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Resolver\DataSourceInterface;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\AuthorizationGuard;
+use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -28,15 +31,35 @@ class RestApiService
 {
 	public function __construct(
 		protected Registry $registry,
-		protected SqlDataSource $dataSource,
-		protected SqlQuerySpecCompiler $querySpecCompiler,
+		protected DataSourceInterface $dataSource,
+		protected QueryPlannerInterface $queryPlanner,
 		protected ?EventDispatcherInterface $eventDispatcher = null,
 		protected ?HandlerFactory $relationHandlers = null
 	) {
-		$this->relationHandlers ??= HandlerFactory::defaults();
 	}
 
-	public function getDataSource(): SqlDataSource
+	protected function handlerFactory(): HandlerFactory
+	{
+		if ($this->relationHandlers !== null) {
+			return $this->relationHandlers;
+		}
+
+		if ($this->queryPlanner instanceof QueryPlanner) {
+			return $this->queryPlanner->handlers();
+		}
+
+		if (!$this->dataSource instanceof SqlDataSource) {
+			throw RestApiError::serviceUnavailable();
+		}
+
+		return new HandlerFactory(
+			HandlerRegistry::defaults(),
+			$this->dataSource,
+			new SqlQuerySpecCompiler($this->dataSource->getDatabase(), 100, 1000)
+		);
+	}
+
+	public function getDataSource(): DataSourceInterface
 	{
 		return $this->dataSource;
 	}
@@ -65,7 +88,7 @@ class RestApiService
 		if ($this->shouldDispatchEvents($params)) {
 			$event = new ItemList($collection, $params);
 			$this->dispatchEvent($event);
-			$this->assertAuthorized($event);
+			AuthorizationGuard::assert($event);
 			$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 			if ($event->isDefaultPrevented()) {
@@ -101,7 +124,7 @@ class RestApiService
 
 		$event = new ItemGet($collection, $identity->toUrlId(), $params);
 		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
+		AuthorizationGuard::assert($event);
 		$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 		if ($event->isDefaultPrevented()) {
@@ -220,19 +243,19 @@ class RestApiService
 		$params = $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->queryPlanner()->aggregate($collection, $querySpec);
+			return $this->queryPlanner->aggregate($collection, $querySpec);
 		}
 
 		$event = new ItemList($collection, $params);
 		$this->dispatchEvent($event);
-		$this->assertAuthorized($event);
+		AuthorizationGuard::assert($event);
 		$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
 		}
 
-		$result = $this->queryPlanner()->aggregate($collection, $querySpec);
+		$result = $this->queryPlanner->aggregate($collection, $querySpec);
 		$event->setResult($result);
 
 		return $event->getResult() ?? [];
@@ -268,9 +291,13 @@ class RestApiService
 		bool $dispatchEvents
 	): RestMutationPlanner
 	{
+		if (!$this->dataSource instanceof SqlDataSource) {
+			throw RestApiError::serviceUnavailable();
+		}
+
 		return new RestMutationPlanner(
 			$this->dataSource,
-			$this->relationHandlers,
+			$this->handlerFactory(),
 			$this->eventDispatcher,
 			$dispatchEvents,
 			$queue,
@@ -279,75 +306,19 @@ class RestApiService
 		);
 	}
 
-	protected function queryPlanner(): QueryPlanner
-	{
-		return new QueryPlanner($this->dataSource, $this->relationHandlers, $this->querySpecCompiler);
-	}
-
 	protected function queryList(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
-		return $this->queryPlanner()->list($collection, $querySpec);
+		return $this->queryPlanner->list($collection, $querySpec);
 	}
 
 	protected function queryGet(CollectionInterface $collection, PrimaryKeyValue $identity, ?QuerySpec $querySpec = null): ?array
 	{
-		return $this->queryPlanner()->get($collection, $identity, $querySpec);
-	}
-
-	/**
-	 * @return array{0: array, 1: array}
-	 */
-	protected function splitNodeInput(CollectionInterface $collection, array $input): array
-	{
-		$scalar = [];
-		$relations = [];
-
-		foreach ($input as $key => $value) {
-			if ($collection->relations->has((string) $key)) {
-				$relations[(string) $key] = $value;
-				continue;
-			}
-
-			$scalar[$key] = $value;
-		}
-
-		return [$scalar, $relations];
-	}
-
-	protected function normalizeRelationItems(mixed $input): array
-	{
-		if (!is_array($input)) {
-			return [];
-		}
-
-		return $this->isAssociativeArray($input) ? [$input] : $input;
-	}
-
-	protected function isAssociativeArray(array $value): bool
-	{
-		if ($value === []) {
-			return false;
-		}
-
-		return array_keys($value) !== range(0, count($value) - 1);
+		return $this->queryPlanner->get($collection, $identity, $querySpec);
 	}
 
 	public function dispatchEvent(object $event): void
 	{
 		$this->eventDispatcher?->dispatch($event);
-	}
-
-	protected function assertAuthorized(object $event): void
-	{
-		if (! $event instanceof AuthorizationAwareEventInterface) {
-			return;
-		}
-
-		match ($event->getAuthState()) {
-			AuthState::Allowed => null,
-			AuthState::Unauthenticated => throw RestApiError::unauthenticated(),
-			AuthState::Forbidden, AuthState::Pending => throw RestApiError::forbidden(),
-		};
 	}
 
 	protected function checkIfMatch(CollectionInterface $collection, PrimaryKeyValue $identity, ?string $ifMatch): void
@@ -407,7 +378,7 @@ class RestApiService
 		}
 
 		$input = $this->handleFileUploads($collection, $input, $files);
-		[, $relations] = $this->splitNodeInput($collection, $input);
+		[, $relations] = MutationInput::splitNodeInput($collection, $input);
 
 		foreach ($relations as $relationName => $relationInput) {
 			$relation = $collection->relations->get($relationName);
@@ -415,11 +386,11 @@ class RestApiService
 			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
 
 			if ($relation->isJunction()) {
-				if (!is_array($relationInput) || !$this->isAssociativeArray($relationInput)) {
+				if (!is_array($relationInput) || !MutationInput::isAssociativeArray($relationInput)) {
 					continue;
 				}
 
-				foreach ($this->normalizeRelationItems($relationInput['create'] ?? []) as $index => $item) {
+				foreach (MutationInput::normalizeRelationItems($relationInput['create'] ?? []) as $index => $item) {
 					if (!is_array($item)) {
 						continue;
 					}
@@ -434,12 +405,12 @@ class RestApiService
 				continue;
 			}
 
-			if (is_array($relationInput) && $this->isAssociativeArray($relationInput)) {
+			if (is_array($relationInput) && MutationInput::isAssociativeArray($relationInput)) {
 				$input[$relationName] = $this->handleFileUploadsRecursive($targetCollection, $relationInput, $relationFiles);
 				continue;
 			}
 
-			foreach ($this->normalizeRelationItems($relationInput) as $index => $item) {
+			foreach (MutationInput::normalizeRelationItems($relationInput) as $index => $item) {
 				if (!is_array($item)) {
 					continue;
 				}

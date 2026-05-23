@@ -7,11 +7,6 @@ namespace ON\RestApi\Handler;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Mutation\MutationTaskInterface;
-use ON\RestApi\Support\PrimaryKeyCriteria;
 
 abstract class AbstractHandler implements HandlerInterface
 {
@@ -93,43 +88,4 @@ abstract class AbstractHandler implements HandlerInterface
 		$this->node = $node;
 	}
 
-	public function compileActions(
-		MutationQueue $queue,
-		MutationStateInterface $state,
-		array $actions,
-		array $children = []
-	): MutationTaskInterface|MutationDeleteTaskInterface|null {
-		$collection = $state->getCollection();
-
-		if (($actions['create'] ?? []) !== []) {
-			return $queue->queueInsert($state);
-		}
-
-		if (($actions['update'] ?? []) !== []) {
-			return $queue->queueUpdate(
-				$collection,
-				PrimaryKeyCriteria::build($collection, $this->statePrimaryKeyValue($state)),
-				$state
-			);
-		}
-
-		if (($actions['delete'] ?? []) !== []) {
-			return $queue->queueDelete(
-				$collection,
-				PrimaryKeyCriteria::build($collection, $this->statePrimaryKeyValue($state))
-			);
-		}
-
-		return null;
-	}
-
-	protected function statePrimaryKeyValue(MutationStateInterface $state): PrimaryKeyValue
-	{
-		$values = [];
-		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
-			$values[$fieldName] = $state->getValue($fieldName);
-		}
-
-		return new PrimaryKeyValue($state->getCollection(), $values);
-	}
 }

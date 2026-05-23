@@ -13,24 +13,16 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Relation\RelationInterface;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-use ON\RestApi\Support\PrimaryKeyCriteria;
 
-abstract class AbstractRelationHandler extends AbstractHandler implements MutationHandlerInterface
+abstract class AbstractRelationHandler extends AbstractHandler
 {
 	/** @var array{select: array, requested: array, internal: array} */
 	private array $columns;
@@ -40,9 +32,9 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 	public function __construct(
 		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
+		protected SqlDataSource $dataSource,
+		protected SqlQuerySpecCompiler $querySpecCompiler,
 		protected ?RelationSelection $selection = null,
-		protected ?SqlDataSource $dataSource = null,
-		protected ?SqlQuerySpecCompiler $querySpecCompiler = null,
 		protected ?AliasRegistry $aliases = null
 	) {
 		parent::__construct($collection, $selection?->responseName ?? $relation->getName(), $relation->getName());
@@ -302,261 +294,9 @@ abstract class AbstractRelationHandler extends AbstractHandler implements Mutati
 		return $item;
 	}
 
-	public function mutationCollection(string $operation, mixed $item): CollectionInterface
-	{
-		return $this->getTargetCollection();
-	}
-
-	public function normalizePayload(
-		string $operation,
-		mixed $input,
-		MutationStateInterface $source,
-		SqlDataSource $dataSource
-	): array {
-		return $this->getEmptyMutationPayload();
-	}
-
-	protected function queueChildMutations(array $children, MutationQueue $queue): void
-	{
-		foreach ($children['create'] ?? [] as $state) {
-			if ($state instanceof MutationStateInterface) {
-				$queue->queueInsert($state);
-			}
-		}
-
-		foreach ($children['update'] ?? [] as $state) {
-			if ($state instanceof MutationStateInterface) {
-				$queue->queueUpdate($state->getCollection(), $this->primaryKeyCriteria($state), $state);
-			}
-		}
-
-		foreach ($children['delete'] ?? [] as $state) {
-			if ($state instanceof MutationStateInterface) {
-				$queue->queueDelete($state->getCollection(), $this->primaryKeyCriteria($state));
-			}
-		}
-	}
-
-	protected function primaryKeyCriteria(MutationStateInterface $state): FilterNode
-	{
-		return PrimaryKeyCriteria::build($state->getCollection(), $this->getPrimaryKeyValueFromState($state));
-	}
-
-	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
-
 	protected function getPrimaryKeyColumns(CollectionInterface $collection): array
 	{
 		return $collection->getPrimaryKey()->getColumns();
-	}
-
-	protected function isAssociativeArray(array $value): bool
-	{
-		if ($value === []) {
-			return false;
-		}
-
-		return array_keys($value) !== range(0, count($value) - 1);
-	}
-
-	protected function normalizeRelationItems(mixed $value): array
-	{
-		if (!is_array($value)) {
-			return [];
-		}
-
-		return $this->isAssociativeArray($value) ? [$value] : $value;
-	}
-
-	protected function getEmptyMutationPayload(): array
-	{
-		return [
-			'create' => [],
-			'update' => [],
-			'delete' => [],
-			'connect' => [],
-			'disconnect' => [],
-		];
-	}
-
-	protected function hasOperationPayload(array $input): bool
-	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-			if (array_key_exists($key, $input)) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	protected function isDetailedPayload(mixed $input): bool
-	{
-		return is_array($input) && $this->isAssociativeArray($input) && $this->hasOperationPayload($input);
-	}
-
-	protected function normalizeDetailedPayload(array $input): array
-	{
-		$payload = $this->getEmptyMutationPayload();
-		foreach (array_keys($payload) as $key) {
-			$payload[$key] = $this->normalizeRelationItems($input[$key] ?? []);
-		}
-
-		return $payload;
-	}
-
-	protected function getCurrentRelationRows(SqlDataSource $dataSource, MutationStateInterface $source): array
-	{
-		$fieldValueMap = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$value = $source->getValue($innerKey);
-			if ($value instanceof \ON\RestApi\Mutation\ValueRef && !$value->isReady()) {
-				return [];
-			}
-
-			$fieldValueMap[$this->relation->outerKeys()[$index]] = $source->resolveValue($value);
-		}
-
-		return $this->fetchRowsByFields($dataSource, $this->getTargetCollection(), $fieldValueMap);
-	}
-
-	protected function getCurrentParentRow(SqlDataSource $dataSource, MutationStateInterface $source): ?array
-	{
-		$identity = $this->getPrimaryKeyValueFromState($source, false);
-		if ($identity === null) {
-			return null;
-		}
-
-		return $this->fetchRowByIdentity($dataSource, $source->getCollection(), $identity);
-	}
-
-	protected function fetchRowsByField(
-		SqlDataSource $dataSource,
-		CollectionInterface $collection,
-		string $fieldName,
-		mixed $value,
-		?array $fieldNames = null
-	): array {
-		$fieldNames ??= $this->visibleFieldNames($collection);
-		if (!in_array($fieldName, $fieldNames, true)) {
-			$fieldNames[] = $fieldName;
-		}
-
-		$query = $dataSource->select($collection, $fieldNames);
-		$query->where($collection->fields->get($fieldName)->getColumn(), $value);
-
-		return array_map(
-			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
-			$dataSource->fetchAll($query)
-		);
-	}
-
-	protected function fetchRowsByFields(
-		SqlDataSource $dataSource,
-		CollectionInterface $collection,
-		array $fieldValueMap,
-		?array $fieldNames = null
-	): array {
-		$fieldNames ??= $this->visibleFieldNames($collection);
-		foreach (array_keys($fieldValueMap) as $fieldName) {
-			if (!in_array((string) $fieldName, $fieldNames, true)) {
-				$fieldNames[] = (string) $fieldName;
-			}
-		}
-
-		$query = $dataSource->select($collection, $fieldNames);
-		foreach ($fieldValueMap as $fieldName => $value) {
-			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
-		}
-
-		return array_map(
-			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
-			$dataSource->fetchAll($query)
-		);
-	}
-
-	protected function fetchRowByIdentity(
-		SqlDataSource $dataSource,
-		CollectionInterface $collection,
-		PrimaryKeyValue|string $identity
-	): ?array
-	{
-		$fieldNames = $this->visibleFieldNames($collection);
-		foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
-			if (!in_array($fieldName, $fieldNames, true)) {
-				$fieldNames[] = $fieldName;
-			}
-		}
-
-		$query = $dataSource->select($collection, $fieldNames);
-		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
-		$query->limit(1);
-		$row = $dataSource->fetchOne($query);
-
-		return $row === null ? null : $this->mapRowToFieldNames($collection, $row);
-	}
-
-	protected function getPrimaryKeyValueFromState(
-		MutationStateInterface $state,
-		bool $requireReady = true
-	): ?PrimaryKeyValue {
-		$values = [];
-
-		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
-			$value = $state->getValue($fieldName);
-			if ($value instanceof \ON\RestApi\Mutation\ValueRef) {
-				if (!$value->isReady() && $requireReady) {
-					return null;
-				}
-
-				$values[$fieldName] = $value;
-				continue;
-			}
-
-			if ($requireReady) {
-				$value = $state->resolveValue($value);
-			}
-
-			if ($value === null && !$state->isValueReady($fieldName)) {
-				return null;
-			}
-
-			$values[$fieldName] = $value;
-		}
-
-		return new PrimaryKeyValue($state->getCollection(), $values);
-	}
-
-	protected function applySourceValuesToTargetInput(array &$input, MutationStateInterface $source): void
-	{
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$input[$this->relation->outerKeys()[$index]] = $source->getValue($innerKey);
-		}
-	}
-
-	protected function getTargetIdentityFromSourceRow(array $row): ?PrimaryKeyValue
-	{
-		$values = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			if (!array_key_exists($innerKey, $row)) {
-				return null;
-			}
-
-			$values[$this->relation->outerKeys()[$index]] = $row[$innerKey];
-		}
-
-		return new PrimaryKeyValue($this->getTargetCollection(), $values);
-	}
-
-	protected function setSourceRelationValuesFromTargetState(
-		MutationStateInterface $source,
-		MutationStateInterface $target
-	): void {
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$source->setValue($innerKey, $target->getValue($this->relation->outerKeys()[$index]));
-		}
 	}
 
 	/**

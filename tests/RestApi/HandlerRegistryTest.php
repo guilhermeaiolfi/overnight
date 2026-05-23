@@ -15,7 +15,7 @@ use ON\RestApi\Handler\ManyToManyHandler;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
-final class LoaderRegistryTest extends TestCase
+final class HandlerRegistryTest extends TestCase
 {
 	use RestApiTestFixtures;
 

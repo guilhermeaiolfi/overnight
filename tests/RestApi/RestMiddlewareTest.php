@@ -12,7 +12,7 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\RestApiService;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -20,6 +20,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 #[RequiresPhpExtension('pdo_sqlite')]
@@ -33,7 +34,7 @@ final class RestMiddlewareTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createResolver($registry, $db);
-		$service = new RestApiService($registry, $resolver);
+		$service = $this->createRestApiService($registry, $resolver);
 		$middleware = new RestMiddleware($service, ['endpointUri' => '/items']);
 
 		$response = $middleware->process(
@@ -70,64 +71,39 @@ final class RestMiddlewareTest extends TestCase
 			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
 			->end();
 
-		$resolver = new class implements \ON\RestApi\Resolver\DataSourceInterface {
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+				],
+				'rows' => [],
+			],
+			'attachment' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'asset_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+					'file_id' => 'INTEGER',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new class($registry, $db->database()) extends SqlDataSource {
 			public array $createCalls = [];
-			private array $stored = [];
-
-			public function list(\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $query): array
-			{
-				return ['items' => [], 'meta' => []];
-			}
-
-			public function get(\ON\ORM\Definition\Collection\CollectionInterface $collection, string $id, ?\ON\RestApi\Query\Node\QuerySpec $query = null): ?array
-			{
-				return $this->stored[$collection->getName()][$id] ?? ['id' => $id];
-			}
 
 			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): array
 			{
-				$record = $input + ['id' => count($this->createCalls) + 1];
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),
 					'input' => $input,
 				];
-				$this->stored[$collection->getName()][(string) $record['id']] = $record;
 
-				return $record;
-			}
-
-			public function update(\ON\ORM\Definition\Collection\CollectionInterface $collection, FilterNode $criteria, array $input): ?array
-			{
-				$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '1';
-				$record = ['id' => $id] + $input;
-				$this->stored[$collection->getName()][$id] = $record;
-
-				return $record;
-			}
-
-			public function delete(\ON\ORM\Definition\Collection\CollectionInterface $collection, FilterNode $criteria): bool
-			{
-				$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '';
-				unset($this->stored[$collection->getName()][$id]);
-
-				return true;
-			}
-
-			public function aggregate(\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $query): array
-			{
-				return [];
-			}
-
-			public function transaction(callable $callback): mixed
-			{
-				return $callback();
-			}
-
-			public function clearCache(): void
-			{
+				return parent::create($collection, $input);
 			}
 		};
-		$service = new RestApiService(
+
+		$service = $this->createRestApiService(
 			$registry,
 			$resolver,
 			new class implements \Psr\EventDispatcher\EventDispatcherInterface {

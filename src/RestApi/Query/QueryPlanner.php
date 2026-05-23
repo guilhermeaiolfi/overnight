@@ -21,13 +21,18 @@ use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
-final class QueryPlanner
+final class QueryPlanner implements QueryPlannerInterface
 {
 	public function __construct(
 		private SqlDataSource $dataSource,
 		private HandlerFactory $handlers,
 		private SqlQuerySpecCompiler $querySpecCompiler
 	) {
+	}
+
+	public function handlers(): HandlerFactory
+	{
+		return $this->handlers;
 	}
 
 	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
@@ -149,7 +154,7 @@ final class QueryPlanner
 				continue;
 			}
 
-			$handler = $this->handlers->relation($collection, $selection, $this->dataSource, $this->querySpecCompiler, $aliases);
+			$handler = $this->handlers->relation($collection, $selection, $aliases);
 			if ($handler === null) {
 				continue;
 			}

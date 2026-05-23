@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -12,13 +13,10 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 class HandlerFactory
 {
 	public function __construct(
-		private HandlerRegistry $registry
+		private HandlerRegistry $registry,
+		private SqlDataSource $dataSource,
+		private SqlQuerySpecCompiler $querySpecCompiler,
 	) {
-	}
-
-	public static function defaults(): self
-	{
-		return new self(HandlerRegistry::defaults());
 	}
 
 	public function registry(): HandlerRegistry
@@ -45,8 +43,6 @@ class HandlerFactory
 	public function relation(
 		CollectionInterface $source,
 		RelationSelection $selection,
-		SqlDataSource $dataSource,
-		SqlQuerySpecCompiler $querySpecCompiler,
 		AliasRegistry $aliases
 	): ?HandlerInterface {
 		$relationName = $selection->relationName;
@@ -55,9 +51,14 @@ class HandlerFactory
 		}
 
 		$relation = $source->relations->get($relationName);
-		$class = $this->registry->resolve($source, $selection->responseName, $relation);
 
-		return new $class($source, $relation, $selection, $dataSource, $querySpecCompiler, $aliases);
+		return $this->createRelationHandler(
+			$source,
+			$relation,
+			$this->registry->resolve($source, $selection->responseName, $relation),
+			$selection,
+			$aliases
+		);
 	}
 
 	public function mutation(CollectionInterface $source, string $relationName): ?MutationHandlerInterface
@@ -67,8 +68,33 @@ class HandlerFactory
 		}
 
 		$relation = $source->relations->get($relationName);
-		$class = $this->registry->resolve($source, $relationName, $relation);
 
-		return new $class($source, $relation);
+		$handler = $this->createRelationHandler(
+			$source,
+			$relation,
+			$this->registry->resolve($source, $relationName, $relation)
+		);
+
+		return $handler instanceof MutationHandlerInterface ? $handler : null;
+	}
+
+	/**
+	 * @param class-string<HandlerInterface> $class
+	 */
+	private function createRelationHandler(
+		CollectionInterface $source,
+		RelationInterface $relation,
+		string $class,
+		?RelationSelection $selection = null,
+		?AliasRegistry $aliases = null
+	): HandlerInterface {
+		return new $class(
+			$source,
+			$relation,
+			$this->dataSource,
+			$this->querySpecCompiler,
+			$selection,
+			$aliases
+		);
 	}
 }

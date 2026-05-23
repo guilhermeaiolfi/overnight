@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use LogicException;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\DataSourceInterface;
@@ -46,7 +47,7 @@ final class MutationQueue implements MutationQueueInterface
 			$executed = false;
 
 			foreach ($this->commands as $index => $command) {
-				if (!$command->isReady()) {
+				if (! $command->isReady()) {
 					continue;
 				}
 
@@ -55,8 +56,8 @@ final class MutationQueue implements MutationQueueInterface
 				$executed = true;
 			}
 
-			if (!$executed) {
-				throw new \LogicException('Unable to resolve mutation queue dependencies.');
+			if (! $executed) {
+				throw new LogicException('Unable to resolve mutation queue dependencies.');
 			}
 		}
 	}

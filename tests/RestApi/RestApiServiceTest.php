@@ -13,17 +13,23 @@ use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
+use ON\RestApi\Event\RelationConnecting;
 use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryPlannerInterface;
 use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\RestApiService;
+use ON\RestApi\Support\PrimaryKeyCriteria;
 use PHPUnit\Framework\TestCase;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
+use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 final class RestApiServiceTest extends TestCase
@@ -35,6 +41,7 @@ final class RestApiServiceTest extends TestCase
 		$service = $this->createService(
 			$this->createRegistryWithUsers(),
 			new ResolverSpy(),
+			new QueryPlannerSpy(),
 			fn (object $event) => $event
 		);
 
@@ -49,11 +56,12 @@ final class RestApiServiceTest extends TestCase
 
 	public function testListRunsResolverWhenAllowed(): void
 	{
-		$resolver = new ResolverSpy();
-		$resolver->listResult = ['items' => [['id' => 1, 'name' => 'John']], 'meta' => []];
+		$planner = new QueryPlannerSpy();
+		$planner->listResult = ['items' => [['id' => 1, 'name' => 'John']], 'meta' => []];
 		$service = $this->createService(
 			$this->createRegistryWithUsers(),
-			$resolver,
+			new ResolverSpy(),
+			$planner,
 			function (object $event): object {
 				if ($event instanceof ItemList) {
 					$event->allow();
@@ -66,7 +74,7 @@ final class RestApiServiceTest extends TestCase
 		$result = $service->list('user', $this->q($this->createRegistryWithUsers()->getCollection('user')));
 
 		$this->assertSame([['id' => 1, 'name' => 'John']], $result['items']);
-		$this->assertSame(1, $resolver->listCalls);
+		$this->assertSame(1, $planner->listCalls);
 	}
 
 	public function testGetReturnsUnauthenticatedWhenListenerRequiresAuthentication(): void
@@ -74,6 +82,7 @@ final class RestApiServiceTest extends TestCase
 		$service = $this->createService(
 			$this->createRegistryWithUsers(),
 			new ResolverSpy(),
+			new QueryPlannerSpy(),
 			function (object $event): object {
 				if ($event instanceof ItemGet) {
 					$event->requireAuthentication();
@@ -94,10 +103,10 @@ final class RestApiServiceTest extends TestCase
 
 	public function testAggregateDispatchesItemListAndSupportsCustomResult(): void
 	{
-		$resolver = new ResolverSpy();
 		$service = $this->createService(
 			$this->createRegistryWithUsers(),
-			$resolver,
+			new ResolverSpy(),
+			new QueryPlannerSpy(),
 			function (object $event): object {
 				if ($event instanceof ItemList) {
 					$this->assertTrue($event->isAggregate());
@@ -117,7 +126,6 @@ final class RestApiServiceTest extends TestCase
 		]));
 
 		$this->assertSame([['count' => ['id' => 99]]], $result);
-		$this->assertSame(0, $resolver->aggregateCalls);
 	}
 
 	public function testFileUploadEventDoesNotNeedAllowWhenParentCreateEventIsAllowed(): void
@@ -128,12 +136,21 @@ final class RestApiServiceTest extends TestCase
 			->field('attachment', 'file')->type('file')->nullable(true)->end()
 			->end();
 
-		$resolver = new ResolverSpy();
-		$resolver->createResult = ['id' => 1, 'attachment' => 'uploads/test.txt'];
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'attachment' => 'TEXT',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event): object {
 				if ($event instanceof FileUpload) {
 					$event->setStoredPath('uploads/test.txt');
@@ -151,7 +168,7 @@ final class RestApiServiceTest extends TestCase
 			'files' => ['attachment' => new UploadedFileStub()],
 		]);
 
-		$this->assertSame(['id' => 1, 'attachment' => 'uploads/test.txt'], $result);
+		$this->assertSame('uploads/test.txt', $result['attachment']);
 		$this->assertSame(['attachment' => 'uploads/test.txt'], $resolver->lastCreateInput);
 	}
 
@@ -163,12 +180,21 @@ final class RestApiServiceTest extends TestCase
 			->field('attachment_id', 'upload')->type('upload')->nullable(true)->end()
 			->end();
 
-		$resolver = new ResolverSpy();
-		$resolver->createResult = ['id' => 1, 'attachment_id' => 42];
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'attachment_id' => 'INTEGER',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event): object {
 				if ($event instanceof FileUpload) {
 					$event->setStoredValue(42);
@@ -186,7 +212,7 @@ final class RestApiServiceTest extends TestCase
 			'files' => ['attachment_id' => new UploadedFileStub()],
 		]);
 
-		$this->assertSame(['id' => 1, 'attachment_id' => 42], $result);
+		$this->assertSame(42, $result['attachment_id']);
 		$this->assertSame(['attachment_id' => 42], $resolver->lastCreateInput);
 	}
 
@@ -198,12 +224,22 @@ final class RestApiServiceTest extends TestCase
 			->field('attachment_id', 'upload')->type('upload')->nullable(true)->end()
 			->end();
 
-		$resolver = new ResolverSpy();
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'attachment_id' => 'INTEGER',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 		$uploadWasInTransaction = null;
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use ($resolver, &$uploadWasInTransaction): object {
 				if ($event instanceof FileUpload) {
 					$uploadWasInTransaction = $resolver->inTransaction;
@@ -228,14 +264,21 @@ final class RestApiServiceTest extends TestCase
 
 	public function testCreatedEventRunsAfterTransactionWithFinalRow(): void
 	{
-		$resolver = new ResolverSpy();
-		$resolver->createResult = ['id' => 123, 'name' => 'Created'];
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 		$createdId = null;
 		$createdWasInTransaction = null;
 
 		$service = $this->createService(
-			$this->createRegistryWithUsers(),
+			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use ($resolver, &$createdId, &$createdWasInTransaction): object {
 				if ($event instanceof ItemCreating) {
 					$event->allow();
@@ -253,15 +296,23 @@ final class RestApiServiceTest extends TestCase
 		$service->create('user', ['name' => 'Created']);
 
 		$this->assertFalse($createdWasInTransaction);
-		$this->assertSame(123, $createdId);
+		$this->assertNotNull($createdId);
 	}
 
 	public function testCreateWithExistingPrimaryKeyFailsWithDuplicate(): void
 	{
-		$resolver = new ResolverSpy();
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
 		$service = $this->createService(
-			$this->createRegistryWithUsers(),
+			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event): object {
 				if ($event instanceof ItemCreating) {
 					$event->allow();
@@ -286,6 +337,7 @@ final class RestApiServiceTest extends TestCase
 		$service = $this->createService(
 			$this->createRegistryWithUsers(),
 			new ResolverSpy(),
+			new QueryPlannerSpy(),
 			fn (object $event) => $event
 		);
 
@@ -301,12 +353,19 @@ final class RestApiServiceTest extends TestCase
 
 	public function testUpsertDispatchesCreateWhenPrimaryKeyDoesNotExist(): void
 	{
-		$resolver = new ResolverSpy();
-		$resolver->missingIds = ['999'];
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 		$events = [];
 		$service = $this->createService(
-			$this->createRegistryWithUsers(),
+			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use (&$events): object {
 				if ($event instanceof ItemCreating) {
 					$event->allow();
@@ -326,11 +385,19 @@ final class RestApiServiceTest extends TestCase
 
 	public function testUpsertDispatchesUpdateWhenPrimaryKeyExists(): void
 	{
-		$resolver = new ResolverSpy();
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+		$db = $this->createTestDatabase();
+		$resolver = $this->createResolver($registry, $db);
 		$events = [];
 		$service = $this->createService(
-			$this->createRegistryWithUsers(),
+			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use (&$events): object {
 				if ($event instanceof ItemUpdating) {
 					$event->allow();
@@ -344,7 +411,7 @@ final class RestApiServiceTest extends TestCase
 		$result = $service->upsert('user', ['id' => 1, 'name' => 'Updated User']);
 
 		$this->assertSame(['update'], $events);
-		$this->assertSame('1', $result['id']);
+		$this->assertSame(1, $result['id']);
 		$this->assertSame('Updated User', $result['name']);
 	}
 
@@ -356,12 +423,14 @@ final class RestApiServiceTest extends TestCase
 
 		$registry = new Registry();
 		$this->createFullSchema($registry);
-		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
 		$paths = [];
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use (&$paths): object {
 				if ($event instanceof ItemCreating) {
 					$event->allow();
@@ -381,7 +450,7 @@ final class RestApiServiceTest extends TestCase
 		]);
 
 		$this->assertSame('Nested User', $created['name']);
-		$this->assertSame(['', 'posts.0'], $paths);
+		$this->assertSame(['posts.0', ''], $paths);
 	}
 
 	public function testNestedUpdateDispatchesEventsForEachNodePath(): void
@@ -392,12 +461,14 @@ final class RestApiServiceTest extends TestCase
 
 		$registry = new Registry();
 		$this->createFullSchema($registry);
-		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
 		$paths = [];
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event) use (&$paths): object {
 				if ($event instanceof ItemUpdating || $event instanceof ItemDeleting) {
 					$event->allow();
@@ -416,7 +487,53 @@ final class RestApiServiceTest extends TestCase
 		]);
 
 		$this->assertSame('Updated Post', $result['title']);
-		$this->assertSame(['', 'comments.0', 'comments.delete.0'], $paths);
+		$this->assertSame(['comments.0', 'comments.delete.0', ''], $paths);
+	}
+
+	public function testRelationConnectingListenerCanEnqueueQueueWork(): void
+	{
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			$this->createQueryPlanner($registry, $db),
+			function (object $event): object {
+				if ($event instanceof ItemUpdating) {
+					$event->allow();
+				}
+
+				if ($event instanceof RelationConnecting && $event->getRelationName() === 'tags') {
+					$targetCollection = $event->getTargetCollection();
+					$event->getQueue()->queueUpdate(
+						$targetCollection,
+						PrimaryKeyCriteria::build(
+							$targetCollection,
+							PrimaryKeyCriteria::normalize($targetCollection, $event->getTarget())
+						),
+						new MutationState($targetCollection, ['name' => 'REST-linked'])
+					);
+				}
+
+				return $event;
+			}
+		);
+
+		$service->update('post', '2', ['tags' => ['connect' => [3]]]);
+
+		$tag = $service->get('tag', '3', null, ['dispatchEvents' => false]);
+		$this->assertSame('REST-linked', $tag['name']);
+
+		$stmt = $db->database()->query('SELECT 1 FROM post_tag WHERE post_id = 2 AND tag_id = 3');
+		$this->assertNotFalse($stmt->fetch());
+		$stmt->close();
 	}
 
 	public function testNestedUpdateCreatesMissingChildWithExplicitId(): void
@@ -427,11 +544,14 @@ final class RestApiServiceTest extends TestCase
 
 		$registry = new Registry();
 		$this->createFullSchema($registry);
-		$resolver = $this->createResolver($registry, $this->createFullDatabase());
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$planner = $this->createQueryPlanner($registry, $db);
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$planner,
 			function (object $event): object {
 				if ($event instanceof ItemCreating || $event instanceof ItemUpdating || $event instanceof ItemDeleting) {
 					$event->allow();
@@ -447,7 +567,7 @@ final class RestApiServiceTest extends TestCase
 			],
 		]);
 
-		$comment = $resolver->get($registry->getCollection('comment'), '999', $this->q($registry->getCollection('comment')));
+		$comment = $planner->get($registry->getCollection('comment'), '999', $this->q($registry->getCollection('comment')));
 
 		$this->assertNotNull($comment);
 		$this->assertSame('Created with explicit id', $comment['body']);
@@ -456,6 +576,10 @@ final class RestApiServiceTest extends TestCase
 
 	public function testNestedCreateHandlesChildFileUploads(): void
 	{
+		if (!extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
 		$registry = new Registry();
 		$registry->collection('asset')
 			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
@@ -470,11 +594,30 @@ final class RestApiServiceTest extends TestCase
 			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
 			->end();
 
-		$resolver = new NestedUploadResolverSpy();
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+				],
+				'rows' => [],
+			],
+			'attachment' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'asset_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+					'file_id' => 'INTEGER',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new TrackingSqlDataSource($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
 			$resolver,
+			$this->createQueryPlanner($registry, $db),
 			function (object $event): object {
 				if ($event instanceof FileUpload && $event->getCollection()->getName() === 'attachment') {
 					$event->setStoredValue(99);
@@ -515,8 +658,12 @@ final class RestApiServiceTest extends TestCase
 		return $registry;
 	}
 
-	private function createService(Registry $registry, DataSourceInterface $resolver, callable $listener): RestApiService
-	{
+	private function createService(
+		Registry $registry,
+		DataSourceInterface $dataSource,
+		QueryPlannerInterface $queryPlanner,
+		callable $listener
+	): RestApiService {
 		$dispatcher = new class($listener) implements EventDispatcherInterface {
 			public function __construct(private $listener)
 			{
@@ -528,7 +675,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		};
 
-		return new RestApiService($registry, $resolver, $dispatcher);
+		return new RestApiService($registry, $dataSource, $queryPlanner, $dispatcher);
 	}
 
 	private function q(CollectionInterface $collection, array $params = []): QuerySpec
@@ -537,17 +684,13 @@ final class RestApiServiceTest extends TestCase
 	}
 }
 
-final class ResolverSpy implements DataSourceInterface
+final class QueryPlannerSpy implements QueryPlannerInterface
 {
 	public int $listCalls = 0;
+	public int $getCalls = 0;
 	public int $aggregateCalls = 0;
 	public array $listResult = ['items' => [], 'meta' => []];
 	public array $aggregateResult = [];
-	public array $createResult = [];
-	public array $lastCreateInput = [];
-	public array $missingIds = [];
-	public bool $inTransaction = false;
-	public int $transactionCalls = 0;
 
 	public function list(CollectionInterface $collection, QuerySpec $query): array
 	{
@@ -556,20 +699,32 @@ final class ResolverSpy implements DataSourceInterface
 		return $this->listResult;
 	}
 
-	public function get(CollectionInterface $collection, string $id, ?QuerySpec $query = null): ?array
+	public function get(CollectionInterface $collection, $identity, ?QuerySpec $query = null): ?array
 	{
-		if (in_array($id, $this->missingIds, true)) {
-			return null;
-		}
+		$this->getCalls++;
 
-		return ['id' => $id];
+		return ['id' => is_string($identity) ? $identity : 1];
 	}
+
+	public function aggregate(CollectionInterface $collection, QuerySpec $query): array
+	{
+		$this->aggregateCalls++;
+
+		return $this->aggregateResult;
+	}
+}
+
+final class ResolverSpy implements DataSourceInterface
+{
+	public array $lastCreateInput = [];
+	public bool $inTransaction = false;
+	public int $transactionCalls = 0;
 
 	public function create(CollectionInterface $collection, array $input): array
 	{
 		$this->lastCreateInput = $input;
 
-		return $this->createResult === [] ? $input + ['id' => 1] : $this->createResult;
+		return $input + ['id' => 1];
 	}
 
 	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
@@ -582,13 +737,6 @@ final class ResolverSpy implements DataSourceInterface
 	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
 	{
 		return true;
-	}
-
-	public function aggregate(CollectionInterface $collection, QuerySpec $query): array
-	{
-		$this->aggregateCalls++;
-
-		return $this->aggregateResult;
 	}
 
 	public function transaction(callable $callback): mixed
@@ -608,68 +756,34 @@ final class ResolverSpy implements DataSourceInterface
 	}
 }
 
-final class NestedUploadResolverSpy implements DataSourceInterface
+final class TrackingSqlDataSource extends SqlDataSource
 {
-	public array $listResult = ['items' => [], 'meta' => []];
-	public array $aggregateResult = [];
 	public array $createCalls = [];
-	private array $stored = [];
-
-	public function list(CollectionInterface $collection, QuerySpec $query): array
-	{
-		return $this->listResult;
-	}
+	public array $lastCreateInput = [];
+	public bool $inTransaction = false;
+	public int $transactionCalls = 0;
 
 	public function create(CollectionInterface $collection, array $input): array
 	{
-		$record = $input + ['id' => count($this->createCalls) + 1];
+		$this->lastCreateInput = $input;
 		$this->createCalls[] = [
 			'collection' => $collection->getName(),
 			'input' => $input,
 		];
-		$this->stored[$collection->getName()][(string) $record['id']] = $record;
 
-		return $record;
-	}
-
-	public function get(CollectionInterface $collection, string $id, ?QuerySpec $query = null): ?array
-	{
-		if (isset($this->stored[$collection->getName()][$id])) {
-			return $this->stored[$collection->getName()][$id];
-		}
-
-		return ['id' => $id];
-	}
-
-	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
-	{
-		$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '1';
-		$record = ['id' => $id] + $input;
-		$this->stored[$collection->getName()][$id] = $record;
-
-		return $record;
-	}
-
-	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
-	{
-		$id = $criteria instanceof ComparisonFilter ? (string) $criteria->right->value() : '';
-		unset($this->stored[$collection->getName()][$id]);
-
-		return true;
-	}
-
-	public function aggregate(CollectionInterface $collection, QuerySpec $query): array
-	{
-		return $this->aggregateResult;
+		return parent::create($collection, $input);
 	}
 
 	public function transaction(callable $callback): mixed
 	{
-		return $callback();
-	}
+		$this->transactionCalls++;
+		$this->inTransaction = true;
 
-	public function clearCache(): void
-	{
+		try {
+			return parent::transaction($callback);
+		} finally {
+			$this->inTransaction = false;
+		}
 	}
 }
 

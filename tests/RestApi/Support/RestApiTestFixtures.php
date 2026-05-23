@@ -6,7 +6,13 @@ namespace Tests\ON\RestApi\Support;
 
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
+use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\RestApiService;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
 trait RestApiTestFixtures
 {
@@ -240,6 +246,47 @@ trait RestApiTestFixtures
 		return new SqlDataSource(
 			$registry,
 			$db->database(),
+		);
+	}
+
+	protected function createHandlerFactory(SqlDataSource $dataSource): HandlerFactory
+	{
+		return new HandlerFactory(
+			HandlerRegistry::defaults(),
+			$dataSource,
+			new SqlQuerySpecCompiler($dataSource->getDatabase(), 100, 1000)
+		);
+	}
+
+	protected function createQueryPlanner(Registry $registry, CycleSqliteTestDatabase $db): QueryPlanner
+	{
+		$dataSource = $this->createResolver($registry, $db);
+		$handlers = $this->createHandlerFactory($dataSource);
+
+		return new QueryPlanner(
+			$dataSource,
+			$handlers,
+			new SqlQuerySpecCompiler($db->database(), 100, 1000)
+		);
+	}
+
+	protected function createRestApiService(
+		Registry $registry,
+		SqlDataSource $dataSource,
+		?EventDispatcherInterface $eventDispatcher = null
+	): RestApiService {
+		$handlers = $this->createHandlerFactory($dataSource);
+
+		return new RestApiService(
+			$registry,
+			$dataSource,
+			new QueryPlanner(
+				$dataSource,
+				$handlers,
+				new SqlQuerySpecCompiler($dataSource->getDatabase(), 100, 1000)
+			),
+			$eventDispatcher,
+			$handlers
 		);
 	}
 }

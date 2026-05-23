@@ -2,19 +2,16 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Handler;
+namespace ON\RestApi\Handler\Read;
 
 use Cycle\ORM\Parser\AbstractNode;
-use Cycle\ORM\Parser\ArrayNode;
-use ON\RestApi\Handler\Mutation\HasManyMutation;
+use Cycle\ORM\Parser\SingularNode;
 
-class HasManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
+trait SingularRelationRead
 {
-	use HasManyMutation;
-
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
-		$node = new ArrayNode(
+		$node = new SingularNode(
 			$this->getSelectColumns(),
 			$this->getPrimaryKeyColumns($this->getTargetCollection()),
 			array_map(

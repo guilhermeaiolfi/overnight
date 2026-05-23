@@ -35,6 +35,7 @@ final class InsertCommand extends AbstractMutationCommand
 		} catch (RestApiError $error) {
 			if ($this->ignoreDuplicate && $error->getErrorCode() === 'DUPLICATE') {
 				$this->state->markReady([]);
+
 				return;
 			}
 

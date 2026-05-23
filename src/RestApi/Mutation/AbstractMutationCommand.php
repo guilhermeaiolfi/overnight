@@ -7,7 +7,6 @@ namespace ON\RestApi\Mutation;
 use ON\RestApi\Query\Node\BetweenFilter;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\EmptyFilter;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\LogicalFilter;
 use ON\RestApi\Query\Node\NullFilter;
@@ -30,7 +29,7 @@ abstract class AbstractMutationCommand implements MutationCommandInterface
 
 		if (is_array($value)) {
 			foreach ($value as $item) {
-				if (!$this->valuesReady($item)) {
+				if (! $this->valuesReady($item)) {
 					return false;
 				}
 			}
@@ -119,5 +118,4 @@ abstract class AbstractMutationCommand implements MutationCommandInterface
 
 		return $value;
 	}
-
 }

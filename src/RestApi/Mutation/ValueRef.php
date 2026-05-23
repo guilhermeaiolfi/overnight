@@ -12,6 +12,21 @@ final class ValueRef
 	) {
 	}
 
+	public static function forStateField(MutationStateInterface $state, string $field): self
+	{
+		return new self($state, $field);
+	}
+
+	public function getState(): MutationStateInterface
+	{
+		return $this->state;
+	}
+
+	public function getField(): string
+	{
+		return $this->field;
+	}
+
 	public function resolve(): mixed
 	{
 		return $this->state->resolveValue($this->field);

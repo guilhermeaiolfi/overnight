@@ -66,7 +66,7 @@ final class MutationState implements MutationStateInterface
 		}
 
 		if (is_string($value)) {
-			if (!array_key_exists($value, $this->values) && ($this->row === null || !array_key_exists($value, $this->row))) {
+			if (! array_key_exists($value, $this->values) && ($this->row === null || ! array_key_exists($value, $this->row))) {
 				return $value;
 			}
 
@@ -83,7 +83,7 @@ final class MutationState implements MutationStateInterface
 		if (array_key_exists($field, $this->values)) {
 			$value = $this->values[$field];
 
-			return !$value instanceof ValueRef || $value->isReady();
+			return ! $value instanceof ValueRef || $value->isReady();
 		}
 
 		return ($this->row !== null && array_key_exists($field, $this->row)) || $this->ready;
