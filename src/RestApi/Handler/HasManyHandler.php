@@ -6,11 +6,11 @@ namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
-use ON\RestApi\Handler\Mutation\HasManyMutation;
+use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
 
 class HasManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
-	use HasManyMutation;
+	use ForeignKeyOnTargetApply;
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{

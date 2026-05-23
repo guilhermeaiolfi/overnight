@@ -2,125 +2,20 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Handler\Mutation;
+namespace ON\RestApi\Payload\Expander;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\ChildIntent;
-use ON\RestApi\Mutation\LinkIntent;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Mutation\RelationMutationPayload;
 use ON\RestApi\Mutation\ValueRef;
-use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Support\MutationInput;
+use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
-trait RelationMutationSupport
+trait RelationExpanderSupport
 {
-	public function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
+	protected function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
 	{
 		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
-
-	protected function emptyPayload(): RelationMutationPayload
-	{
-		return RelationMutationPayload::empty();
-	}
-
-	protected function childIntent(array $data, ?CollectionInterface $collection = null): ChildIntent
-	{
-		return new ChildIntent($collection ?? $this->getTargetCollection(), $data);
-	}
-
-	protected function linkIntent(PrimaryKeyValue|int|string $target, ?CollectionInterface $collection = null): LinkIntent
-	{
-		return new LinkIntent($collection ?? $this->getTargetCollection(), $target);
-	}
-
-	protected static function linkTarget(LinkIntent|PrimaryKeyValue|int|string $link): PrimaryKeyValue|int|string
-	{
-		return $link instanceof LinkIntent ? $link->target : $link;
-	}
-
-	protected function primaryKeyCriteria(MutationStateInterface $state): FilterNode
-	{
-		return PrimaryKeyCriteria::build($state->getCollection(), $this->getPrimaryKeyValueFromState($state));
-	}
-
-	protected function hasOperationPayload(array $input): bool
-	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
-			if (array_key_exists($key, $input)) {
-				return true;
-			}
-		}
-
-		return false;
-	}
-
-	protected function isDetailedPayload(mixed $input): bool
-	{
-		return is_array($input) && MutationInput::isAssociativeArray($input) && $this->hasOperationPayload($input);
-	}
-
-	protected function normalizeDetailedPayload(array $input, ?CollectionInterface $collection = null): RelationMutationPayload
-	{
-		$payload = $this->emptyPayload();
-		$collection ??= $this->getTargetCollection();
-
-		foreach (['create', 'update'] as $key) {
-			foreach (MutationInput::normalizeRelationItems($input[$key] ?? []) as $item) {
-				if (!is_array($item)) {
-					continue;
-				}
-
-				$payload->{$key}[] = new ChildIntent($collection, $item);
-			}
-		}
-
-		foreach (MutationInput::normalizeRelationItems($input['delete'] ?? []) as $item) {
-			if (is_array($item)) {
-				$payload->delete[] = new ChildIntent($collection, $item);
-				continue;
-			}
-
-			$payload->delete[] = new ChildIntent(
-				$collection,
-				PrimaryKeyCriteria::normalize($collection, $item)->values()
-			);
-		}
-
-		foreach (MutationInput::normalizeRelationItems($input['connect'] ?? []) as $item) {
-			if ($item instanceof PrimaryKeyValue) {
-				$payload->connect[] = new LinkIntent($collection, $item);
-				continue;
-			}
-
-			if (is_array($item)) {
-				$id = $this->getInputPrimaryKeyValue($collection, $item);
-				$payload->connect[] = $id !== null ? new LinkIntent($collection, $id) : new ChildIntent($collection, $item);
-				continue;
-			}
-
-			$payload->connect[] = new LinkIntent($collection, $item);
-		}
-
-		foreach (MutationInput::normalizeRelationItems($input['disconnect'] ?? []) as $item) {
-			if ($item instanceof PrimaryKeyValue) {
-				$payload->disconnect[] = new LinkIntent($collection, $item);
-				continue;
-			}
-
-			if (is_array($item)) {
-				$id = $this->getInputPrimaryKeyValue($collection, $item);
-				$payload->disconnect[] = $id !== null ? new LinkIntent($collection, $id) : new ChildIntent($collection, $item);
-				continue;
-			}
-
-			$payload->disconnect[] = new LinkIntent($collection, $item);
-		}
-
-		return $payload;
 	}
 
 	protected function getCurrentRelationRows(MutationStateInterface $source): array
@@ -260,15 +155,5 @@ trait RelationMutationSupport
 		}
 
 		return new PrimaryKeyValue($this->getTargetCollection(), $values);
-	}
-
-	protected function setSourceRelationValuesFromTargetState(
-		MutationStateInterface $source,
-		MutationStateInterface $target
-	): void {
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$outerKey = $this->relation->outerKeys()[$index];
-			$source->setValue($innerKey, ValueRef::forStateField($target, $outerKey));
-		}
 	}
 }

@@ -9,14 +9,14 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Handler\Mutation\ManyToManyMutation;
+use ON\RestApi\Handler\Mutation\ManyToManyApply;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class ManyToManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
-	use ManyToManyMutation;
+	use ManyToManyApply;
 
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;

@@ -7,9 +7,9 @@ namespace ON\RestApi\Handler;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Mutation\RelationMutationPayload;
+use ON\RestApi\Payload\Node\RelationPayload;
 
-interface RelationMutationHandlerInterface extends MutationHandlerInterface
+interface RelationMutationHandlerInterface
 {
 	/**
 	 * @param array{create: list<MutationNode>, update: list<MutationNode>, delete: list<MutationNode>} $children
@@ -17,7 +17,11 @@ interface RelationMutationHandlerInterface extends MutationHandlerInterface
 	public function applyRelation(
 		MutationQueue $queue,
 		MutationStateInterface $source,
-		RelationMutationPayload $payload,
+		RelationPayload $relation,
 		array $children
 	): void;
+
+	public function getTargetCollection(): \ON\ORM\Definition\Collection\CollectionInterface;
+
+	public function getRelationName(): ?string;
 }

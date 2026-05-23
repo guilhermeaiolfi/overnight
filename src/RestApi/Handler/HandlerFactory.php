@@ -5,7 +5,13 @@ declare(strict_types=1);
 namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Payload\Expander\BelongsToRelationPayloadExpander;
+use ON\RestApi\Payload\Expander\HasManyRelationPayloadExpander;
+use ON\RestApi\Payload\Expander\HasOneRelationPayloadExpander;
+use ON\RestApi\Payload\Expander\ManyToManyRelationPayloadExpander;
+use ON\RestApi\Payload\Expander\RelationPayloadExpanderInterface;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -61,7 +67,7 @@ class HandlerFactory
 		);
 	}
 
-	public function mutation(CollectionInterface $source, string $relationName): ?MutationHandlerInterface
+	public function mutation(CollectionInterface $source, string $relationName): ?RelationMutationHandlerInterface
 	{
 		if (!$source->relations->has($relationName)) {
 			return null;
@@ -75,7 +81,29 @@ class HandlerFactory
 			$this->registry->resolve($source, $relationName, $relation)
 		);
 
-		return $handler instanceof MutationHandlerInterface ? $handler : null;
+		return $handler instanceof RelationMutationHandlerInterface ? $handler : null;
+	}
+
+	public function payloadExpander(CollectionInterface $source, string $relationName): ?RelationPayloadExpanderInterface
+	{
+		if (!$source->relations->has($relationName)) {
+			return null;
+		}
+
+		$relation = $source->relations->get($relationName);
+		$class = $this->registry->resolve($source, $relationName, $relation);
+
+		return match ($class) {
+			HasManyHandler::class => new HasManyRelationPayloadExpander($source, $relation, $this->dataSource),
+			HasOneHandler::class => new HasOneRelationPayloadExpander($source, $relation, $this->dataSource),
+			BelongsToHandler::class => new BelongsToRelationPayloadExpander($source, $relation, $this->dataSource),
+			ManyToManyHandler::class => new ManyToManyRelationPayloadExpander(
+				$source,
+				$relation instanceof M2MRelation ? $relation : throw new \LogicException('Expected M2M relation.'),
+				$this->dataSource,
+			),
+			default => null,
+		};
 	}
 
 	/**
