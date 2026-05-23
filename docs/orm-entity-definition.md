@@ -133,6 +133,7 @@ $registry->collection("user")
 | `numericPrecision(int)` | Set numeric precision |
 | `comment(string)` | Set column comment |
 | `hidden(bool)` | Hide from output |
+| `sensible(bool)` | Mark sensitive data; `true` also hides the field from output |
 | `typecast(string\|callable)` | Set typecast handler |
 | `validation(string)` | Set validation rules (pipe syntax) |
 
@@ -170,6 +171,8 @@ All relations follow the Cycle ORM key convention:
 
 - **`innerKey`** — the key column on the **source** entity (the one defining the relation)
 - **`outerKey`** — the key column on the **target** entity (the related entity)
+
+Use database column names for relation keys. Overnight may resolve field names for compatibility when a field maps to a different column, but column names are the canonical relation definition.
 
 Think of it from the perspective of the entity you're writing the definition on:
 - "inner" = my table (the source)

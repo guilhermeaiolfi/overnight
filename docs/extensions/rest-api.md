@@ -11,14 +11,16 @@ The REST API extension auto-generates RESTful CRUD endpoints from your ORM entit
 5. [Query Parameters](#query-parameters)
 6. [Filter Operators](#filter-operators)
 7. [Aggregation](#aggregation)
-8. [Nested Relations](#nested-relations)
-9. [Many-to-Many Operations](#many-to-many-operations)
-10. [File Uploads](#file-uploads)
-11. [Events](#events)
-12. [ETag and Conditional Requests](#etag-and-conditional-requests)
-13. [Validation](#validation)
-14. [Error Handling](#error-handling)
-15. [Differences from Directus](#differences-from-directus)
+8. [Query Functions](#query-functions)
+9. [Dynamic Variables](#dynamic-variables)
+10. [Nested Relations](#nested-relations)
+11. [Many-to-Many Operations](#many-to-many-operations)
+12. [File Uploads](#file-uploads)
+13. [Events](#events)
+14. [ETag and Conditional Requests](#etag-and-conditional-requests)
+15. [Validation](#validation)
+16. [Error Handling](#error-handling)
+17. [Differences from Directus](#differences-from-directus)
 
 ---
 
@@ -79,8 +81,8 @@ curl -X DELETE http://localhost/items/post/1
 | `maxLimit` | int | `1000` | Maximum allowed page size |
 | `rateLimit` | int | `100` | Max requests per window (requires `ratelimit` extension) |
 | `rateLimitWindow` | int | `60` | Rate limit window in seconds |
-| `resolver` | string | `auto` | `auto`, `sql`, or a fully-qualified class name |
 | `addons` | array | `[]` | Optional addons to load (see [Addons](#addons)) |
+| `dynamicVariables` | array | `[]` | Values or callables for variables such as `$current_user` in filters |
 | `enabled` | bool | `true` | Enable/disable the extension |
 
 ```php
@@ -90,37 +92,23 @@ RestApiExtension::install($app, [
     'maxLimit' => 500,
     'rateLimit' => 200,
     'rateLimitWindow' => 60,
-    'resolver' => 'auto',
 ]);
 ```
 
-### Resolver Auto-Detection
+### SQL Resolver and mutation pipeline
 
-When `resolver` is `auto`, the extension detects the database type from `DatabaseManager`:
-- `PdoDatabase` → `SqlRestResolver` (raw PDO queries)
-- `CycleDatabase` → `CycleRestResolver` (Cycle ORM entities)
-- Custom FQCN → resolved from the container
+**Reads** go through `QueryPlanner` and relation handlers (`load()` + Cycle parser nodes). List/get/aggregate never touch the mutation queue.
 
-You can also force a specific resolver:
+**Writes** go through `RestApiService` → `RestMutationPlanner`:
 
-```php
-RestApiExtension::install($app, [
-    'resolver' => 'sql',    // Always use SqlRestResolver
-    'resolver' => 'cycle',  // Always use CycleRestResolver
-    'resolver' => MyCustomResolver::class, // Custom implementation
-]);
-```
+1. **Plan** — walk input tree, `normalizePayload()` per relation, build `MutationNode` tree → `MutationPlan`.
+2. **Commit** — dispatch before-events on the full plan, schedule after-events, `fillQueue()`.
+3. **Transaction** — `MutationQueue::execute()`.
+4. **After-events** — `ItemCreated`, `ItemUpdated`, `ItemDeleted`, relation connected/disconnected.
 
-### CycleRestResolver
+Callers still pass one nested JSON tree to `create()` or `update()`. Relation handlers own FK direction, connect/disconnect, and M2M pivot semantics; the planner owns row CRUD ordering.
 
-The Cycle resolver uses `ORMInterface`, `EntityManager`, and `RepositoryInterface` from Cycle ORM. It converts entities to associative arrays for the REST response. Key differences from `SqlRestResolver`:
-
-- **Filtering**: Uses Cycle's `findAll($scope)` for simple equality filters. Complex operators (`_contains`, `_between`, etc.) are not supported — use `SqlRestResolver` or a custom resolver for advanced filtering.
-- **Search**: Applied in PHP after fetching (no SQL LIKE). Fine for small datasets, not ideal for large tables.
-- **Sorting**: Applied in PHP via `usort()`.
-- **Aggregation**: Uses Cycle DBAL directly for aggregate SQL queries.
-- **M2M**: Uses Cycle DBAL for junction table operations.
-- **Transactions**: Managed by Cycle's `EntityManager` (unit of work pattern).
+Internal architecture: [`src/RestApi/README.md`](../../src/RestApi/README.md).
 
 ---
 
@@ -167,11 +155,26 @@ All responses use a consistent envelope:
 
 ### fields
 
-Control which fields are returned. Supports dot notation for relations.
+Control which public fields are returned. Supports dot notation for relations.
 
 ```
 GET /items/post?fields=id,title,author.name
 ```
+
+REST query parameters and JSON payloads use ORM field names, not database column names. SQL resolvers translate field names to columns internally and translate result rows back to field names before returning JSON.
+
+```php
+$registry->collection('post')
+    ->field('authorId', 'int')->column('author_id')->end()
+    ->belongsTo('author', 'user')->innerKey('author_id')->outerKey('id')->end()
+    ->end();
+```
+
+```
+GET /items/post?fields=id,title,authorId
+```
+
+The SQL query selects `author_id`, but the response contains `authorId`. Asking for `fields=author_id` is invalid unless the ORM field itself is named `author_id`.
 
 ### filter
 
@@ -233,6 +236,27 @@ Apply query parameters to nested relations.
 GET /items/user?fields=id,name,posts.title&deep[posts][_sort]=-created_at&deep[posts][_limit]=5&deep[posts][_offset]=0
 ```
 
+Nested relation loads also support `_filter`, which is especially useful with aliases:
+
+```
+GET /items/user?fields=id,name,published_posts.title,draft_posts.title&alias[published_posts]=posts&alias[draft_posts]=posts&deep[published_posts][_filter][status][_eq]=published&deep[draft_posts][_filter][status][_eq]=draft
+```
+
+### alias
+
+Aliases let a response include the same top-level relation more than once with different `deep` filters, sorting, limits, or field selections.
+
+```
+GET /items/user?fields=id,name,latest_posts.title,published_posts.title&alias[latest_posts]=posts&alias[published_posts]=posts&deep[latest_posts][_sort]=-created_at&deep[latest_posts][_limit]=3&deep[published_posts][_filter][status][_eq]=published
+```
+
+Aliases are intentionally scoped to top-level relations:
+
+- `alias[response_name]=existing_relation`
+- alias names must be simple identifiers
+- aliases cannot overwrite real fields or real relation names
+- `fields` and `deep` refer to the alias name
+
 ---
 
 ## Filter Operators
@@ -283,7 +307,7 @@ GET /items/order?aggregate[count]=id&groupBy[]=status
 GET /items/order?aggregate[count]=id&groupBy[]=status&groupBy[]=country
 ```
 
-**Supported functions:** `count`, `sum`, `avg`, `min`, `max`
+**Supported functions:** `count`, `sum`, `avg`, `min`, `max`, `countDistinct`, `sumDistinct`, `avgDistinct`
 
 **Response format:**
 
@@ -309,6 +333,62 @@ Aggregation can be combined with filters:
 
 ```
 GET /items/order?aggregate[sum]=amount&groupBy[]=status&filter[created_at][_gte]=2024-01-01
+```
+
+Distinct aggregate example:
+
+```
+GET /items/order?aggregate[countDistinct]=customer_id
+```
+
+---
+
+## Query Functions
+
+Function fields can be used in filters, sorting, aggregate fields, and `groupBy`:
+
+```
+GET /items/order?filter[year(created_at)][_eq]=2026
+GET /items/order?sort=-month(created_at)
+GET /items/order?aggregate[count]=id&groupBy[]=year(created_at)&groupBy[]=month(created_at)
+```
+
+Supported functions:
+
+| Function | Description |
+|----------|-------------|
+| `year(field)` | Extract year |
+| `month(field)` | Extract month |
+| `day(field)` | Extract day of month |
+| `hour(field)` | Extract hour |
+| `date(field)` | Extract date |
+
+---
+
+## Dynamic Variables
+
+Filter values can reference dynamic variables. Built-ins:
+
+| Variable | Value |
+|----------|-------|
+| `$now` | Current date/time as `Y-m-d H:i:s` |
+| `$today` | Current date as `Y-m-d` |
+
+Applications can define their own variables:
+
+```php
+RestApiExtension::install($app, [
+    'dynamicVariables' => [
+        'current_user' => fn () => $auth->id(),
+        'current_role' => fn () => $auth->role(),
+    ],
+]);
+```
+
+Then use them in filters:
+
+```
+GET /items/post?filter[user_id][_eq]=$current_user
 ```
 
 ---
@@ -430,6 +510,8 @@ curl -X PATCH http://localhost/items/post/1 \
 
 Execution order: `create` → `connect` → `disconnect`. All operations are idempotent — connecting an already-connected ID or disconnecting a non-existent link produces no error.
 
+When creating new tags inline (nested objects without IDs), the handler connects pivot rows using `ValueRef` to the newly inserted tag PKs — pivot inserts wait until tag rows exist in the queue.
+
 ---
 
 ## File Uploads
@@ -499,29 +581,68 @@ The stored path is saved in the database column as a string.
 
 ## Events
 
-The REST API uses a browser-style event model: one event per operation, dispatched before the default action. Listeners can modify input, replace the default action via `preventDefault()`, or react to results.
+The REST API uses a browser-style event model. **Read** operations dispatch a single event per request. **Write** operations dispatch before/after pairs for each planned node and relation link.
 
-### Event Reference
+### Read events
 
-| Event Class | Event Name | Preventable | Can Modify | Default Action |
-|-------------|-----------|-------------|------------|----------------|
-| `ItemCreate` | `restapi.item.create` | Yes | `setInput()` | SQL INSERT |
-| `ItemUpdate` | `restapi.item.update` | Yes | `setInput()` | SQL UPDATE |
-| `ItemDelete` | `restapi.item.delete` | Yes | — | SQL DELETE |
-| `ItemList` | `restapi.item.list` | Yes | — | SQL SELECT |
-| `ItemGet` | `restapi.item.get` | Yes | — | SQL SELECT by ID |
-| `FileUpload` | `restapi.file.upload` | Yes | `setFile()` | None (requires listener) |
-| `RequestComplete` | `restapi.request.complete` | No | — | — |
+| Event Class | Event Name | Preventable | Default Action |
+|-------------|-----------|-------------|----------------|
+| `ItemList` | `restapi.item.list` | Yes | SQL SELECT |
+| `ItemGet` | `restapi.item.get` | Yes | SQL SELECT by ID |
+| `FileUpload` | `restapi.file.upload` | Yes | None (requires listener) |
+| `RequestComplete` | `restapi.request.complete` | No | — |
 
-All event classes are in the `ON\RestApi\Event` namespace.
+### Write events — item lifecycle
 
-### How it works
+Each row in the mutation tree gets a **before** event (during plan, before the transaction) and an **after** event (after successful commit).
+
+| Before (preventable) | After | Event Name (before / after) |
+|---------------------|-------|----------------------------|
+| `ItemCreating` | `ItemCreated` | `restapi.item.creating` / `restapi.item.created` |
+| `ItemUpdating` | `ItemUpdated` | `restapi.item.updating` / `restapi.item.updated` |
+| `ItemDeleting` | `ItemDeleted` | `restapi.item.deleting` / `restapi.item.deleted` |
+
+Before-events expose:
+
+- `getState()` — `MutationStateInterface`; modify pending values with `setValue()`
+- `getQueue()` — `MutationQueue`; enqueue extra commands before execute
+- `getPath()` — nested path segments (empty for root)
+- `preventDefault(?array $result)` — skip default queue execution for this node
+
+Authorization: implement `AuthorizationAwareEventInterface` listeners (`allow()`, `forbid()`, `requireAuthentication()`).
+
+### Write events — relation connect/disconnect
+
+| Before | After | Event Name |
+|--------|-------|------------|
+| `RelationConnecting` | `RelationConnected` | `restapi.relation.connecting` / `restapi.relation.connected` |
+| `RelationDisconnecting` | `RelationDisconnected` | `restapi.relation.disconnecting` / `restapi.relation.disconnected` |
+
+These fire for explicit `connect` / `disconnect` entries in relation payloads (including M2M).
+
+Before-events expose the same hooks as item before-events where applicable:
+
+- `getState()` — parent row `MutationStateInterface`
+- `getTarget()` — connect/disconnect target identity
+- `getQueue()` — `MutationQueue`; enqueue extra commands before execute
+- `getPath()` — e.g. `['tags', 'connect', 0]`
+
+### How writes flow
+
+```
+1. Plan tree → MutationPlan (no events)
+2. Commit: dispatch before-events, schedule after-events, fill queue
+3. Run transaction → queue.execute()
+4. Dispatch after-events
+```
+
+Reads follow the simpler model:
 
 ```
 1. Dispatch event (listeners run)
 2. Check event->isDefaultPrevented()
-   → true:  skip default SQL action, use event->getResult()
-   → false: run default SQL action, set result on event
+   → true:  skip default SQL, use event result
+   → false: run default SQL, set result on event
 3. Return result
 ```
 
@@ -549,86 +670,93 @@ $app->events->eventDispatcher->subscribeTo('restapi.item.list', function (ItemLi
 });
 ```
 
-### Example: Soft delete
-
-Replace hard delete with a soft delete (set `deleted_at` instead of removing the row):
-
-```php
-use ON\RestApi\Event\ItemDelete;
-
-$app->events->eventDispatcher->subscribeTo('restapi.item.delete', function (ItemDelete $event) use ($db) {
-    $collection = $event->getCollection();
-    $table = $collection->getTable();
-    $id = $event->getId();
-
-    $stmt = $db->getConnection()->prepare(
-        "UPDATE `{$table}` SET `deleted_at` = datetime('now') WHERE `id` = ?"
-    );
-    $stmt->execute([$id]);
-
-    $event->setResult(['id' => $id, 'deleted_at' => date('Y-m-d H:i:s')]);
-    $event->preventDefault();
-});
-```
-
 ### Example: Auto-set timestamps on create
 
 ```php
-use ON\RestApi\Event\ItemCreate;
+use ON\RestApi\Event\ItemCreating;
 
-$app->events->eventDispatcher->subscribeTo('restapi.item.create', function (ItemCreate $event) {
-    $input = $event->getInput();
-    $input['created_at'] = date('Y-m-d H:i:s');
-    $input['updated_at'] = date('Y-m-d H:i:s');
-    $event->setInput($input);
+$app->events->eventDispatcher->subscribeTo('restapi.item.creating', function (ItemCreating $event) {
+    if (!$event->isRoot()) {
+        return;
+    }
+
+    $event->getState()->setValue('created_at', date('Y-m-d H:i:s'));
+    $event->getState()->setValue('updated_at', date('Y-m-d H:i:s'));
 });
 ```
 
 ### Example: Audit logging on update
 
 ```php
-use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Event\ItemUpdating;
 
-$app->events->eventDispatcher->subscribeTo('restapi.item.update', function (ItemUpdate $event) use ($logger) {
-    $logger->info('Item updated', [
+$app->events->eventDispatcher->subscribeTo('restapi.item.updating', function (ItemUpdating $event) use ($logger) {
+    $logger->info('Item updating', [
         'collection' => $event->getCollection()->getName(),
         'id' => $event->getId(),
-        'fields' => array_keys($event->getInput()),
+        'path' => $event->getPathString(),
     ]);
 });
 ```
 
-### Using EventSubscriberInterface
+### Example: Soft delete
 
-You can also register events via `EventSubscriberInterface`:
+Replace hard delete by preventing the delete node and updating `deleted_at` via the queue:
+
+```php
+use ON\RestApi\Event\ItemDeleting;
+
+$app->events->eventDispatcher->subscribeTo('restapi.item.deleting', function (ItemDeleting $event) {
+    if (!$event->isRoot()) {
+        return;
+    }
+
+    $event->getQueue()->queueUpdate(
+        $event->getCollection(),
+        /* criteria from state PK */,
+        ['deleted_at' => date('Y-m-d H:i:s')]
+    );
+    $event->preventDefault(false);
+});
+```
+
+For production soft-delete, prefer building criteria with `PrimaryKeyCriteria` from the event state.
+
+### Using EventSubscriberInterface
 
 ```php
 use ON\Event\EventSubscriberInterface;
-use ON\RestApi\Event\ItemCreate;
-use ON\RestApi\Event\ItemUpdate;
+use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemUpdating;
 
 class TimestampSubscriber implements EventSubscriberInterface
 {
     public static function getSubscribedEvents(): array
     {
         return [
-            'restapi.item.create' => [0, 'onItemCreate'],
-            'restapi.item.update' => [0, 'onItemUpdate'],
+            'restapi.item.creating' => [0, 'onItemCreating'],
+            'restapi.item.updating' => [0, 'onItemUpdating'],
         ];
     }
 
-    public function onItemCreate(ItemCreate $event): void
+    public function onItemCreating(ItemCreating $event): void
     {
-        $input = $event->getInput();
-        $input['created_at'] = date('Y-m-d H:i:s');
-        $event->setInput($input);
+        if (!$event->isRoot()) {
+            return;
+        }
+
+        $now = date('Y-m-d H:i:s');
+        $event->getState()->setValue('created_at', $now);
+        $event->getState()->setValue('updated_at', $now);
     }
 
-    public function onItemUpdate(ItemUpdate $event): void
+    public function onItemUpdating(ItemUpdating $event): void
     {
-        $input = $event->getInput();
-        $input['updated_at'] = date('Y-m-d H:i:s');
-        $event->setInput($input);
+        if (!$event->isRoot()) {
+            return;
+        }
+
+        $event->getState()->setValue('updated_at', date('Y-m-d H:i:s'));
     }
 }
 ```
@@ -852,8 +980,8 @@ class MyAddon implements RestApiAddonInterface
         array $options = []
     ): void {
         // Register event listeners, set up state, etc.
-        $eventDispatcher?->subscribeTo('restapi.item.create', function (ItemCreate $event) {
-            // Custom logic
+        $eventDispatcher?->subscribeTo('restapi.item.creating', function (\ON\RestApi\Event\ItemCreating $event) {
+            // Custom logic — e.g. $event->getState()->setValue('field', $value);
         });
     }
 
@@ -875,6 +1003,9 @@ class MyAddon implements RestApiAddonInterface
 | Permissions | Via event listeners or auth middleware | Built-in role-based access control |
 | System collections | None | `directus_*` system tables |
 | Webhooks | Via event listeners | Built-in webhook system |
-| `countDistinct`, `sumDistinct`, `avgDistinct` | Not yet supported | Supported |
+| `countDistinct`, `sumDistinct`, `avgDistinct` | Supported | Supported |
+| Query aliases | Top-level relation aliases | Broader alias support |
+| Query functions | Date/time functions for filters, sort, aggregate, and grouping | Broader function support |
+| Dynamic variables | Built-ins plus app-defined variables | Built-in user/role-aware variables |
 | Revision history | Not built-in | Built-in |
 | Search | LIKE-based (external via events) | Built-in + external search support |
