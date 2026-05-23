@@ -6,6 +6,7 @@ namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
@@ -949,6 +950,175 @@ final class SqlRestResolverTest extends TestCase
 		$stmt->close();
 
 		$this->assertSame([2], array_map('intval', array_column($tagIds, 'tag_id')));
+	}
+
+	public function testNestedM2MConnectAndCreateWithStringPrimaryKeys(): void
+	{
+		$registry = new Registry();
+
+		$registry->collection('tag')
+			->field('id', 'string')->type('string')->primaryKey(true)->nullable(false)->maxLength(255)->end()
+			->field('label', 'string')->type('string')->nullable(false)->maxLength(255)->end()
+			->field('active', 'bool')->type('bool')->nullable(false)->end()
+			->end();
+
+		$registry->collection('report_tags')
+			->field('report_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('tag_id', 'string')->type('string')->primaryKey(true)->nullable(false)->maxLength(255)->end()
+			->end();
+
+		$reportCollection = $registry->collection('report');
+		$reportCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->autoIncrement(true)->end();
+		$reportCollection->field('title', 'string')->type('string')->nullable(false)->end();
+		$reportCollection->relation('tags', M2MRelation::class)
+			->collection('tag')
+			->innerKey('id')
+			->outerKey('id')
+			->through('report_tags')
+				->innerKey('report_id')
+				->outerKey('tag_id')
+				->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'tag' => [
+				'columns' => [
+					'id' => 'TEXT PRIMARY KEY',
+					'label' => 'TEXT NOT NULL',
+					'active' => 'INTEGER NOT NULL',
+				],
+				'rows' => [
+					['id' => 'homepage', 'label' => 'Homepage', 'active' => 1],
+				],
+			],
+			'report' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT NOT NULL',
+				],
+				'rows' => [],
+			],
+			'report_tags' => [
+				'columns' => [
+					'report_id' => 'INTEGER NOT NULL',
+					'tag_id' => 'TEXT NOT NULL',
+				],
+				'rows' => [],
+			],
+		]);
+
+		$resolver = $this->createResolver($registry, $db);
+		$service = $this->createRestApiService($registry, $resolver);
+
+		$created = $service->create(
+			'report',
+			[
+				'title' => 'Tagged Report',
+				'tags' => [
+					'connect' => ['homepage'],
+					'create' => [
+						['id' => 'budget-2026', 'label' => 'Budget 2026', 'active' => true],
+					],
+				],
+			],
+			['dispatchEvents' => false]
+		);
+
+		$stmt = $db->database()->query(
+			'SELECT tag_id FROM report_tags WHERE report_id = ? ORDER BY tag_id',
+			[$created['id']]
+		);
+		$tagIds = array_column($stmt->fetchAll(), 'tag_id');
+		$stmt->close();
+
+		$this->assertSame(['budget-2026', 'homepage'], $tagIds);
+
+		$stmt = $db->database()->query('SELECT id, label FROM tag WHERE id = ?', ['budget-2026']);
+		$row = $stmt->fetch();
+		$stmt->close();
+
+		$this->assertSame('budget-2026', $row['id']);
+		$this->assertSame('Budget 2026', $row['label']);
+	}
+
+	public function testNestedHasManyExplicitDelete(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+
+		$registry->collection('post_attachment')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('post_id', 'int')->type('int')->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->end();
+
+		$registry->getCollection('post')->hasMany('attachments', 'post_attachment')
+			->innerKey('id')
+			->outerKey('post_id')
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'user' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'name' => 'TEXT', 'email' => 'TEXT', 'password' => 'TEXT'],
+				'rows' => [['id' => 1, 'name' => 'John', 'email' => 'john@test.com', 'password' => 'secret1']],
+			],
+			'post' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'user_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+					'content' => 'TEXT',
+					'status' => 'TEXT',
+					'created_at' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'user_id' => 1, 'title' => 'Post', 'content' => 'Body', 'status' => 'published', 'created_at' => '2025-01-10 10:00:00'],
+				],
+			],
+			'post_attachment' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'post_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'post_id' => 1, 'title' => 'Keep'],
+					['id' => 2, 'post_id' => 1, 'title' => 'Remove'],
+				],
+			],
+			'comment' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'post_id' => 'INTEGER NOT NULL', 'body' => 'TEXT', 'author' => 'TEXT'],
+				'rows' => [],
+			],
+			'tag' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'name' => 'TEXT'],
+				'rows' => [],
+			],
+			'post_tag' => [
+				'columns' => ['post_id' => 'INTEGER NOT NULL', 'tag_id' => 'INTEGER NOT NULL'],
+				'rows' => [],
+			],
+		]);
+
+		$resolver = $this->createResolver($registry, $db);
+		$service = $this->createRestApiService($registry, $resolver);
+
+		$service->update('post', '1', [
+			'attachments' => [
+				'delete' => [2],
+				'update' => [
+					['id' => 1, 'title' => 'Keep Updated'],
+				],
+			],
+		], ['dispatchEvents' => false]);
+
+		$stmt = $db->database()->query('SELECT id, title FROM post_attachment WHERE post_id = 1 ORDER BY id');
+		$rows = $stmt->fetchAll();
+		$stmt->close();
+
+		$this->assertCount(1, $rows);
+		$this->assertSame(1, (int) $rows[0]['id']);
+		$this->assertSame('Keep Updated', $rows[0]['title']);
 	}
 
 	// -------------------------------------------------------------------------

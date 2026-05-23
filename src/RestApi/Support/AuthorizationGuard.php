@@ -16,6 +16,10 @@ final class AuthorizationGuard
 			return;
 		}
 
+		if ($event->isNestedAuthorizationInherited() && $event->getAuthState() === AuthState::Pending) {
+			$event->allow();
+		}
+
 		match ($event->getAuthState()) {
 			AuthState::Allowed => null,
 			AuthState::Unauthenticated => throw RestApiError::unauthenticated(),

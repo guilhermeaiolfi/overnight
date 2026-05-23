@@ -450,7 +450,48 @@ final class RestApiServiceTest extends TestCase
 		]);
 
 		$this->assertSame('Nested User', $created['name']);
-		$this->assertSame(['posts.0', ''], $paths);
+		$this->assertSame(['', 'posts.0'], $paths);
+	}
+
+	public function testAllowNestedCascadesAuthorizationToChildBeforeEvents(): void
+	{
+		if (! extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createResolver($registry, $db);
+		$authStates = [];
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			$this->createQueryPlanner($registry, $db),
+			function (object $event) use (&$authStates): object {
+				if ($event instanceof ItemCreating) {
+					if ($event->isRoot()) {
+						$event->allowNested();
+					}
+
+					$authStates[] = $event->getPathString() . ':' . $event->getAuthState()->name;
+				}
+
+				return $event;
+			}
+		);
+
+		$created = $service->create('user', [
+			'name' => 'Nested User',
+			'email' => 'nested-auth@test.com',
+			'posts' => [
+				['title' => 'Nested Post', 'content' => 'Content', 'status' => 'published'],
+			],
+		]);
+
+		$this->assertSame('Nested User', $created['name']);
+		$this->assertSame([':Allowed', 'posts.0:Allowed'], $authStates);
 	}
 
 	public function testNestedUpdateDispatchesEventsForEachNodePath(): void
@@ -487,7 +528,7 @@ final class RestApiServiceTest extends TestCase
 		]);
 
 		$this->assertSame('Updated Post', $result['title']);
-		$this->assertSame(['comments.0', 'comments.delete.0', ''], $paths);
+		$this->assertSame(['', 'comments.0', 'comments.delete.0'], $paths);
 	}
 
 	public function testRelationConnectingListenerCanEnqueueQueueWork(): void

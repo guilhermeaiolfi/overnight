@@ -13,4 +13,12 @@ interface AuthorizationAwareEventInterface
 	public function forbid(): void;
 
 	public function getAuthState(): AuthState;
+
+	public function allowNested(): void;
+
+	public function shouldInheritAuthToNested(): bool;
+
+	public function inheritNestedAuthorization(): void;
+
+	public function isNestedAuthorizationInherited(): bool;
 }

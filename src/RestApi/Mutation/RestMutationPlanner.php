@@ -9,6 +9,8 @@ namespace ON\RestApi\Mutation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemCreated;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -44,6 +46,8 @@ final class RestMutationPlanner
 	/** @var list<array{0: CollectionInterface, 1: MutationStateInterface, 2: MutationDeleteTaskInterface, 3: array}> */
 
 	private array $afterDeleteEvents = [];
+
+	private bool $inheritNestedAuthorization = false;
 
 	public function __construct(
 		private SqlDataSource $dataSource,
@@ -160,6 +164,7 @@ final class RestMutationPlanner
 
 	public function commit(MutationPlan $plan): MutationTaskInterface|MutationDeleteTaskInterface|null
 	{
+		$this->inheritNestedAuthorization = false;
 
 		$prevented = $this->dispatchBeforeEvents($plan->root);
 
@@ -436,6 +441,33 @@ final class RestMutationPlanner
 
 	private function dispatchBeforeEvents(MutationNode $node): MutationTaskInterface|MutationDeleteTaskInterface|null
 	{
+		$beforeEvent = $this->scheduleNodeLifecycle($node);
+
+		if ($beforeEvent instanceof ItemCreating && $beforeEvent->isDefaultPrevented()) {
+
+			return new MutationTask(MutationState::fromRow($node->collection, $beforeEvent->getPreventedResult()));
+
+		}
+
+
+
+		if ($beforeEvent instanceof ItemDeleting && $beforeEvent->isDefaultPrevented()) {
+
+			return new MutationDeleteTask(static fn (): bool => $beforeEvent->getPreventedResult());
+
+		}
+
+
+
+		if (
+			$node->path === []
+			&& $beforeEvent instanceof AuthorizationAwareEventInterface
+			&& $beforeEvent->shouldInheritAuthToNested()
+		) {
+			$this->inheritNestedAuthorization = true;
+		}
+
+
 
 		foreach ($node->relations as $relation) {
 
@@ -458,24 +490,6 @@ final class RestMutationPlanner
 
 
 			$this->dispatchRelationBeforeEvents($relation);
-
-		}
-
-
-
-		$beforeEvent = $this->scheduleNodeLifecycle($node);
-
-		if ($beforeEvent instanceof ItemCreating && $beforeEvent->isDefaultPrevented()) {
-
-			return new MutationTask(MutationState::fromRow($node->collection, $beforeEvent->getPreventedResult()));
-
-		}
-
-
-
-		if ($beforeEvent instanceof ItemDeleting && $beforeEvent->isDefaultPrevented()) {
-
-			return new MutationDeleteTask(static fn (): bool => $beforeEvent->getPreventedResult());
 
 		}
 
@@ -803,6 +817,18 @@ final class RestMutationPlanner
 
 			return $event;
 
+		}
+
+		if (
+			$this->inheritNestedAuthorization
+			&& $path !== []
+			&& $event instanceof AuthorizationAwareEventInterface
+		) {
+			$event->inheritNestedAuthorization();
+
+			if ($event->getAuthState() === AuthState::Pending) {
+				$event->allow();
+			}
 		}
 
 

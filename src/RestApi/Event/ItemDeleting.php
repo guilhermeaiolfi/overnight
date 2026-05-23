@@ -65,6 +65,11 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return implode('.', array_map('strval', $this->path));
 	}
 
+	public function isRoot(): bool
+	{
+		return $this->path === [];
+	}
+
 	public function getRootCollection(): CollectionInterface
 	{
 		return $this->rootCollection;
