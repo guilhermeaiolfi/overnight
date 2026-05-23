@@ -24,11 +24,11 @@ final class TypecastRegistry
 			$typecast = $field->getTypecast();
 
 			if (is_string($typecast)) {
-				return $this->resolveRule($typecast);
+				return $this->resolveRule($typecast, $field);
 			}
 
 			if (is_array($typecast) && isset($typecast[0]) && is_string($typecast[0])) {
-				return $this->resolveRule($typecast[0]);
+				return $this->resolveRule($typecast[0], $field);
 			}
 		}
 
@@ -49,7 +49,7 @@ final class TypecastRegistry
 			return $this->for($rule);
 		}
 
-		return match ($rule) {
+		$builtin = match ($rule) {
 			'datetime', 'timestamp' => $this->for(DateTimeTypecast::class),
 			'date' => $this->for(DateTypecast::class),
 			'bool', 'boolean' => $this->for(BoolTypecast::class),
@@ -59,8 +59,18 @@ final class TypecastRegistry
 			'string', 'text' => $field !== null && $field->isNullable()
 				? $this->for(StringTypecast::class)
 				: $this->passthrough,
-			default => throw new TypecastException("Unknown typecast rule '{$rule}'.", $field?->getName()),
+			default => null,
 		};
+
+		if ($builtin !== null) {
+			return $builtin;
+		}
+
+		if (class_exists($rule)) {
+			return $this->instances['class:' . $rule] ??= new ClassTypecast($rule);
+		}
+
+		throw new TypecastException("Unknown typecast rule '{$rule}'.", $field?->getName());
 	}
 
 	/**

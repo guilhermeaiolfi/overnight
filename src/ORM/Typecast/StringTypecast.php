@@ -8,29 +8,29 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class StringTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($storage === null) {
 			return null;
 		}
 
-		if ($value === '' && $field->isNullable()) {
+		if ($storage === '' && $field->isNullable()) {
 			return null;
 		}
 
-		return is_scalar($value) || $value instanceof \Stringable ? (string) $value : $value;
+		return is_scalar($storage) || $storage instanceof \Stringable ? (string) $storage : $storage;
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($php === null) {
 			return null;
 		}
 
-		if (is_string($value) && trim($value) === '' && $field->isNullable()) {
+		if (is_string($php) && trim($php) === '' && $field->isNullable()) {
 			return null;
 		}
 
-		return is_scalar($value) || $value instanceof \Stringable ? (string) $value : $value;
+		return is_scalar($php) || $php instanceof \Stringable ? (string) $php : $php;
 	}
 }

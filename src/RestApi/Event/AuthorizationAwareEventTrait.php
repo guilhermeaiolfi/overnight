@@ -10,15 +10,13 @@ trait AuthorizationAwareEventTrait
 	protected bool $inheritAuthToNested = false;
 	protected bool $nestedAuthorizationInherited = false;
 
-	public function allow(): void
+	public function allow(bool $nested = false): void
 	{
 		$this->authState = AuthState::Allowed;
-	}
 
-	public function allowNested(): void
-	{
-		$this->allow();
-		$this->inheritAuthToNested = true;
+		if ($nested) {
+			$this->inheritAuthToNested = true;
+		}
 	}
 
 	public function shouldInheritAuthToNested(): bool

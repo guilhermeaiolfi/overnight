@@ -8,25 +8,25 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class BoolTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($storage === null) {
 			return null;
 		}
 
-		return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
+		return filter_var($storage, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $storage;
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($php === null) {
 			return null;
 		}
 
-		if (is_string($value) && trim($value) === '' && $field->isNullable()) {
+		if (is_string($php) && trim($php) === '' && $field->isNullable()) {
 			return null;
 		}
 
-		return filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $value;
+		return filter_var($php, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE) ?? (bool) $php;
 	}
 }

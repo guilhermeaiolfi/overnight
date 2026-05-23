@@ -8,37 +8,37 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class IntTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($storage === null) {
 			return null;
 		}
 
-		if (is_string($value) && trim($value) === '' && $field->isNullable()) {
+		if (is_string($storage) && trim($storage) === '' && $field->isNullable()) {
 			return null;
 		}
 
-		if (! is_numeric($value)) {
+		if (! is_numeric($storage)) {
 			throw new TypecastException('Invalid integer value.', $field->getName());
 		}
 
-		return (int) $value;
+		return (int) $storage;
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($php === null) {
 			return null;
 		}
 
-		if (is_string($value) && trim($value) === '' && $field->isNullable()) {
+		if (is_string($php) && trim($php) === '' && $field->isNullable()) {
 			return null;
 		}
 
-		if (! is_numeric($value)) {
+		if (! is_numeric($php)) {
 			throw new TypecastException('Invalid integer value.', $field->getName());
 		}
 
-		return (int) $value;
+		return (int) $php;
 	}
 }

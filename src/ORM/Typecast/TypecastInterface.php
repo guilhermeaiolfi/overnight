@@ -8,9 +8,9 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 interface TypecastInterface
 {
-	/** Storage raw → API/JSON-safe value. */
-	public function cast(mixed $value, FieldInterface $field): mixed;
+	/** Storage value → PHP value. */
+	public function toPhp(mixed $storage, FieldInterface $field): mixed;
 
-	/** API/JSON value → storage raw. */
-	public function uncast(mixed $value, FieldInterface $field): mixed;
+	/** PHP value → storage value. */
+	public function fromPhp(mixed $php, FieldInterface $field): mixed;
 }

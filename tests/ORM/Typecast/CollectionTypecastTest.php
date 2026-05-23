@@ -18,7 +18,7 @@ final class CollectionTypecastTest extends TestCase
 		$this->typecast = new CollectionTypecast();
 	}
 
-	public function testUncastDatetimeFromIsoString(): void
+	public function testFromPhpDatetimeToStorageFormat(): void
 	{
 		$registry = new Registry();
 		$registry->collection('event')
@@ -27,14 +27,14 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('event');
 
-		$result = $this->typecast->uncast($collection, [
-			'starts_at' => '2024-03-15T10:30:00+00:00',
+		$result = $this->typecast->fromPhp($collection, [
+			'starts_at' => new \DateTimeImmutable('2024-03-15T10:30:00+00:00'),
 		]);
 
 		$this->assertSame('2024-03-15 10:30:00', $result['starts_at']);
 	}
 
-	public function testCastDatetimeToIsoString(): void
+	public function testToPhpDatetimeFromStorageFormat(): void
 	{
 		$registry = new Registry();
 		$registry->collection('event')
@@ -43,17 +43,18 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('event');
 
-		$result = $this->typecast->cast($collection, [
+		$result = $this->typecast->toPhp($collection, [
 			'starts_at' => '2024-03-15 10:30:00',
 		]);
 
+		$this->assertInstanceOf(\DateTimeImmutable::class, $result['starts_at']);
 		$this->assertSame(
-			(new \DateTimeImmutable('2024-03-15 10:30:00'))->format(\DateTimeInterface::ATOM),
-			$result['starts_at']
+			'2024-03-15 10:30:00',
+			$result['starts_at']->format('Y-m-d H:i:s')
 		);
 	}
 
-	public function testUncastDateToStorageFormat(): void
+	public function testFromPhpDateToStorageFormat(): void
 	{
 		$registry = new Registry();
 		$registry->collection('report')
@@ -62,14 +63,14 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('report');
 
-		$result = $this->typecast->uncast($collection, [
-			'reference_date' => '2024-03-15T00:00:00Z',
+		$result = $this->typecast->fromPhp($collection, [
+			'reference_date' => new \DateTimeImmutable('2024-03-15T00:00:00Z'),
 		]);
 
 		$this->assertSame('2024-03-15', $result['reference_date']);
 	}
 
-	public function testUncastNullableStringEmptyToNull(): void
+	public function testFromPhpNullableStringEmptyToNull(): void
 	{
 		$registry = new Registry();
 		$registry->collection('post')
@@ -78,14 +79,14 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('post');
 
-		$result = $this->typecast->uncast($collection, [
+		$result = $this->typecast->fromPhp($collection, [
 			'intro' => '   ',
 		]);
 
 		$this->assertNull($result['intro']);
 	}
 
-	public function testPartialUncastOnlyTouchesProvidedFields(): void
+	public function testPartialFromPhpOnlyTouchesProvidedFields(): void
 	{
 		$registry = new Registry();
 		$registry->collection('post')
@@ -95,14 +96,14 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('post');
 
-		$result = $this->typecast->uncast($collection, [
+		$result = $this->typecast->fromPhp($collection, [
 			'intro' => '',
 		], partial: true);
 
 		$this->assertSame(['intro' => null], $result);
 	}
 
-	public function testUncastBoolFromString(): void
+	public function testFromPhpBoolFromString(): void
 	{
 		$registry = new Registry();
 		$registry->collection('user')
@@ -111,7 +112,7 @@ final class CollectionTypecastTest extends TestCase
 
 		$collection = $registry->getCollection('user');
 
-		$result = $this->typecast->uncast($collection, [
+		$result = $this->typecast->fromPhp($collection, [
 			'active' => 'true',
 		]);
 
@@ -128,7 +129,7 @@ final class CollectionTypecastTest extends TestCase
 		$collection = $registry->getCollection('event');
 
 		$this->expectException(TypecastException::class);
-		$this->typecast->uncast($collection, [
+		$this->typecast->fromPhp($collection, [
 			'starts_at' => 'not-a-date',
 		]);
 	}

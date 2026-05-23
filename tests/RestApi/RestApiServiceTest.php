@@ -472,7 +472,7 @@ final class RestApiServiceTest extends TestCase
 			function (object $event) use (&$authStates): object {
 				if ($event instanceof ItemCreating) {
 					if ($event->isRoot()) {
-						$event->allowNested();
+						$event->allow(nested: true);
 					}
 
 					$authStates[] = $event->getPathString() . ':' . $event->getAuthState()->name;

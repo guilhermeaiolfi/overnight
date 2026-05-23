@@ -14,7 +14,6 @@ use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\RestApiService;
-use ON\RestApi\Support\TypecastOptions;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -107,7 +106,7 @@ class RestMiddleware implements MiddlewareInterface
 			return $this->jsonResponse(['data' => $rows]);
 		}
 
-		$result = $this->restApi->list($collection, $querySpec, $this->getReadOptions($request));
+		$result = $this->restApi->list($collection, $querySpec, ['serialize' => true]);
 
 		$body = [
 			'data' => $result['items'] ?? [],
@@ -133,7 +132,7 @@ class RestMiddleware implements MiddlewareInterface
 			$collection,
 			$this->decodeRouteIdentity($collection, $id),
 			$this->querySpec($collection, $this->getQueryParams($request)),
-			$this->getReadOptions($request)
+			['serialize' => true]
 		);
 		if ($item === null) {
 			throw RestApiError::notFound();
@@ -158,11 +157,10 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		$body = $this->stripHiddenFields($collection, $body);
-		$body = $this->restApi->uncastInput($collection, $body, false);
-
 		$this->validateInput($collection, $body);
+		$body = $this->restApi->unserialize($collection, $body);
 
-		$options = $this->getMutationOptions($request);
+		$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
 		$created = $this->restApi->create($collection, $body, $options);
 
 		return $this->jsonResponse(['data' => $created]);
@@ -176,11 +174,10 @@ class RestMiddleware implements MiddlewareInterface
 	{
 		$body = $this->parseRequestBody($request);
 		$body = $this->stripHiddenFields($collection, $body);
-		$body = $this->restApi->uncastInput($collection, $body, true);
-
 		$this->validateInput($collection, $body, true);
+		$body = $this->restApi->unserialize($collection, $body, partial: true);
 
-		$options = $this->getMutationOptions($request);
+		$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
 		$result = $this->restApi->update($collection, $this->decodeRouteIdentity($collection, $id), $body, $options);
 
 		if (empty($result)) {
@@ -213,9 +210,9 @@ class RestMiddleware implements MiddlewareInterface
 		$results = [];
 		foreach ($items as $item) {
 			$item = $this->stripHiddenFields($collection, $item);
-			$item = $this->restApi->uncastInput($collection, $item, false);
 			$this->validateInput($collection, $item);
-			$options = $this->getMutationOptions($request);
+			$item = $this->restApi->unserialize($collection, $item);
+			$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
 
 			$results[] = $this->restApi->create($collection, $item, $options);
 		}
@@ -251,10 +248,10 @@ class RestMiddleware implements MiddlewareInterface
 				unset($item[$columnName]);
 			}
 			$item = $this->stripHiddenFields($collection, $item);
-			$item = $this->restApi->uncastInput($collection, $item, true);
 			$this->validateInput($collection, $item, true);
+			$item = $this->restApi->unserialize($collection, $item, partial: true);
 
-			$options = $this->getMutationOptions($request);
+			$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
 			$updated = $this->restApi->update($collection, $identity, $item, $options);
 
 			$results[] = $updated ?? [];
@@ -430,12 +427,7 @@ class RestMiddleware implements MiddlewareInterface
 			$options['files'] = $request->getUploadedFiles();
 		}
 
-		return array_merge($options, TypecastOptions::fromQuery($this->getQueryParams($request)));
-	}
-
-	protected function getReadOptions(ServerRequestInterface $request): array
-	{
-		return TypecastOptions::fromQuery($this->getQueryParams($request));
+		return $options;
 	}
 
 	protected function querySpec(CollectionInterface $collection, array $query): QuerySpec

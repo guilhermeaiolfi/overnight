@@ -8,43 +8,43 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class JsonTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($storage === null) {
 			return null;
 		}
 
-		if (is_array($value)) {
-			return $value;
+		if (is_array($storage)) {
+			return $storage;
 		}
 
-		if (! is_string($value)) {
+		if (! is_string($storage)) {
 			throw new TypecastException('Invalid JSON value.', $field->getName());
 		}
 
 		try {
-			return json_decode($value, true, 512, JSON_THROW_ON_ERROR);
+			return json_decode($storage, true, 512, JSON_THROW_ON_ERROR);
 		} catch (\JsonException $e) {
 			throw new TypecastException('Invalid JSON value.', $field->getName(), $e);
 		}
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($php === null) {
 			return null;
 		}
 
-		if (is_string($value)) {
-			return $value;
+		if (is_string($php)) {
+			return $php;
 		}
 
-		if (! is_array($value)) {
+		if (! is_array($php)) {
 			throw new TypecastException('Invalid JSON value.', $field->getName());
 		}
 
 		try {
-			return json_encode($value, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+			return json_encode($php, JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
 		} catch (\JsonException $e) {
 			throw new TypecastException('Invalid JSON value.', $field->getName(), $e);
 		}

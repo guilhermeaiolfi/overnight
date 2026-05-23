@@ -8,22 +8,24 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class DateTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($storage === null) {
 			return null;
 		}
 
-		if ($value instanceof \DateTimeInterface) {
-			return $value->format('Y-m-d');
+		if ($storage instanceof \DateTimeInterface) {
+			return $storage instanceof \DateTimeImmutable
+				? $storage->setTime(0, 0)
+				: \DateTimeImmutable::createFromInterface($storage)->setTime(0, 0);
 		}
 
-		if (! is_string($value) || trim($value) === '') {
-			return $field->isNullable() ? null : $value;
+		if (! is_string($storage) || trim($storage) === '') {
+			return $field->isNullable() ? null : $storage;
 		}
 
 		try {
-			return (new \DateTimeImmutable($value))->format('Y-m-d');
+			return (new \DateTimeImmutable($storage))->setTime(0, 0);
 		} catch (\Throwable $e) {
 			throw new TypecastException(
 				'Invalid date value.',
@@ -33,24 +35,22 @@ final class DateTypecast implements TypecastInterface
 		}
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		if ($value === null) {
+		if ($php === null) {
 			return null;
 		}
 
-		if (is_string($value) && trim($value) === '') {
-			return $field->isNullable() ? null : $value;
+		if (is_string($php) && trim($php) === '') {
+			return $field->isNullable() ? null : $php;
 		}
 
 		try {
-			if ($value instanceof \DateTimeInterface) {
-				$date = $value;
-			} else {
-				$date = new \DateTimeImmutable((string) $value);
+			if ($php instanceof \DateTimeInterface) {
+				return $php->format('Y-m-d');
 			}
 
-			return $date->format('Y-m-d');
+			return (new \DateTimeImmutable((string) $php))->format('Y-m-d');
 		} catch (\Throwable $e) {
 			throw new TypecastException(
 				'Invalid date value.',

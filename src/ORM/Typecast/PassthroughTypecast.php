@@ -8,13 +8,13 @@ use ON\ORM\Definition\Field\FieldInterface;
 
 final class PassthroughTypecast implements TypecastInterface
 {
-	public function cast(mixed $value, FieldInterface $field): mixed
+	public function toPhp(mixed $storage, FieldInterface $field): mixed
 	{
-		return $value;
+		return $storage;
 	}
 
-	public function uncast(mixed $value, FieldInterface $field): mixed
+	public function fromPhp(mixed $php, FieldInterface $field): mixed
 	{
-		return $value;
+		return $php;
 	}
 }

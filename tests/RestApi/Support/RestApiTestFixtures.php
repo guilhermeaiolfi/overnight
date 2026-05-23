@@ -6,12 +6,15 @@ namespace Tests\ON\RestApi\Support;
 
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Typecast\CollectionTypecast;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Resolver\TypecastDataSource;
 use ON\RestApi\RestApiService;
+use ON\RestApi\Serialize\CollectionSerializer;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 trait RestApiTestFixtures
@@ -276,17 +279,20 @@ trait RestApiTestFixtures
 		?EventDispatcherInterface $eventDispatcher = null
 	): RestApiService {
 		$handlers = $this->createHandlerFactory($dataSource);
+		$typecast = new CollectionTypecast();
 
 		return new RestApiService(
 			$registry,
-			$dataSource,
+			new TypecastDataSource($dataSource, $typecast),
 			new QueryPlanner(
 				$dataSource,
 				$handlers,
 				new SqlQuerySpecCompiler($dataSource->getDatabase(), 100, 1000)
 			),
 			$eventDispatcher,
-			$handlers
+			$handlers,
+			$typecast,
+			new CollectionSerializer(),
 		);
 	}
 }
