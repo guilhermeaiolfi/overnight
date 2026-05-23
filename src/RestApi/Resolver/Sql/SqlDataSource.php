@@ -10,6 +10,8 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Typecast\CollectionTypecast;
+use ON\ORM\Typecast\TypecastException;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\AbstractDataSource;
@@ -21,9 +23,34 @@ class SqlDataSource extends AbstractDataSource
 		protected Registry $registry,
 		protected CycleDatabaseInterface $database,
 		int $defaultLimit = 100,
-		int $maxLimit = 1000
+		int $maxLimit = 1000,
+		protected ?CollectionTypecast $typecast = null,
 	) {
 		parent::__construct($defaultLimit, $maxLimit);
+	}
+
+	public function getTypecast(): CollectionTypecast
+	{
+		return $this->typecast ??= new CollectionTypecast();
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	public function castRowToPhp(CollectionInterface $collection, array $row): array
+	{
+		if ($this->typecast === null) {
+			return $row;
+		}
+
+		try {
+			return $this->typecast->toPhp($collection, $row);
+		} catch (TypecastException $e) {
+			throw RestApiError::validationFailed([
+				$e->getField() ?? '_root' => [$e->getMessage()],
+			]);
+		}
 	}
 
 	public function transaction(callable $callback): mixed
@@ -35,7 +62,10 @@ class SqlDataSource extends AbstractDataSource
 	{
 		try {
 			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($input);
-			$input = $this->mapInputToColumns($collection, $input);
+			$input = $this->mapInputToColumns(
+				$collection,
+				$this->castInputFromPhp($collection, $input, partial: false)
+			);
 			$lastId = $this->getDatabase()->insert($collection->getTable())
 				->values($input)
 				->run();
@@ -63,7 +93,10 @@ class SqlDataSource extends AbstractDataSource
 			}
 
 			$query = $this->getDatabase()->update($collection->getTable())
-				->values($this->mapInputToColumns($collection, $input));
+				->values($this->mapInputToColumns(
+					$collection,
+					$this->castInputFromPhp($collection, $input, partial: true)
+				));
 			$this->applyCriteriaFilter($query, $collection, $criteria);
 			$query->run();
 
@@ -126,29 +159,17 @@ class SqlDataSource extends AbstractDataSource
 		return (int) (clone $query)->count();
 	}
 
-	public function getVisibleByIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
-	{
+	public function getVisibleByIdentity(
+		CollectionInterface $collection,
+		PrimaryKeyValue|string $identity,
+		bool $typed = true,
+	): ?array {
 		$query = $this->select($collection, $this->visibleFieldNames($collection));
 		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
 		$query->limit(1);
 		$row = $this->fetchOne($query);
-		if ($row === null) {
-			return null;
-		}
 
-		$item = [];
-		foreach ($collection->fields as $fieldName => $field) {
-			if ($field->isHidden()) {
-				continue;
-			}
-
-			$column = $field->getColumn();
-			if (array_key_exists($column, $row)) {
-				$item[(string) $fieldName] = $row[$column];
-			}
-		}
-
-		return $item;
+		return $row !== null ? $this->mapRowToFields($collection, $row, $typed) : null;
 	}
 
 	protected function buildSelectColumnNames(CollectionInterface $collection, ?array $fieldNames): ?array
@@ -175,6 +196,25 @@ class SqlDataSource extends AbstractDataSource
 	public function getRegistry(): Registry
 	{
 		return $this->registry;
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @return array<string, mixed>
+	 */
+	protected function castInputFromPhp(CollectionInterface $collection, array $input, bool $partial): array
+	{
+		if ($this->typecast === null) {
+			return $input;
+		}
+
+		try {
+			return $this->typecast->fromPhp($collection, $input, partial: $partial);
+		} catch (TypecastException $e) {
+			throw RestApiError::validationFailed([
+				$e->getField() ?? '_root' => [$e->getMessage()],
+			]);
+		}
 	}
 
 	protected function mapInputToColumns(CollectionInterface $collection, array $input): array
@@ -208,7 +248,7 @@ class SqlDataSource extends AbstractDataSource
 		return $row !== null ? $this->mapRowToFields($collection, $row) : null;
 	}
 
-	protected function mapRowToFields(CollectionInterface $collection, array $row): array
+	protected function mapRowToFields(CollectionInterface $collection, array $row, bool $typed = true): array
 	{
 		$item = [];
 		foreach ($collection->fields as $fieldName => $field) {
@@ -222,7 +262,7 @@ class SqlDataSource extends AbstractDataSource
 			}
 		}
 
-		return $item;
+		return $typed ? $this->castRowToPhp($collection, $item) : $item;
 	}
 
 	protected function convertDatabaseError(\Throwable $e, CollectionInterface $collection): RestApiError

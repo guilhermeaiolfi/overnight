@@ -7,6 +7,7 @@ namespace ON\RestApi\Container;
 use ON\DB\DatabaseManager;
 use ON\DB\Cycle\CycleDatabase;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Typecast\CollectionTypecast;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\RestApiConfig;
@@ -37,7 +38,8 @@ class DataSourceFactory
 			$registry,
 			$database,
 			$defaultLimit,
-			$maxLimit
+			$maxLimit,
+			new CollectionTypecast(),
 		);
 	}
 }

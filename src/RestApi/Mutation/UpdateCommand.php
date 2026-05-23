@@ -37,7 +37,11 @@ final class UpdateCommand extends AbstractMutationCommand
 	public function execute(DataSourceInterface $dataSource): void
 	{
 		$input = $this->input instanceof MutationStateInterface ? $this->input->getData() : $this->input;
-		$row = $dataSource->update($this->collection, $this->resolveValue($this->criteria), $this->resolveValue($input));
+		$row = $dataSource->update(
+			$this->collection,
+			$this->resolveValue($this->criteria),
+			$this->resolveValue($input)
+		);
 		$this->state->markReady($row ?? []);
 	}
 }

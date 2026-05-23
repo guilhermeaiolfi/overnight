@@ -10,12 +10,13 @@ use ON\RestApi\Query\Node\QuerySpec;
 
 interface QueryPlannerInterface
 {
-	public function list(CollectionInterface $collection, QuerySpec $querySpec): array;
+	public function list(CollectionInterface $collection, QuerySpec $querySpec, bool $typed = true): array;
 
 	public function get(
 		CollectionInterface $collection,
 		PrimaryKeyValue|string $identity,
-		?QuerySpec $querySpec = null
+		?QuerySpec $querySpec = null,
+		bool $typed = true,
 	): ?array;
 
 	public function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array;

@@ -31,7 +31,10 @@ final class InsertCommand extends AbstractMutationCommand
 	public function execute(DataSourceInterface $dataSource): void
 	{
 		try {
-			$row = $dataSource->create($this->input->getCollection(), $this->resolveValue($this->input->getData()));
+			$row = $dataSource->create(
+				$this->input->getCollection(),
+				$this->resolveValue($this->input->getData())
+			);
 		} catch (RestApiError $error) {
 			if ($this->ignoreDuplicate && $error->getErrorCode() === 'DUPLICATE') {
 				$this->state->markReady([]);

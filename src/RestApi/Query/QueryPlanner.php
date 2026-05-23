@@ -35,7 +35,7 @@ final class QueryPlanner implements QueryPlannerInterface
 		return $this->handlers;
 	}
 
-	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
+	public function list(CollectionInterface $collection, QuerySpec $querySpec, bool $typed = true): array
 	{
 		$selection = $this->selectionPlan($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
@@ -65,26 +65,38 @@ final class QueryPlanner implements QueryPlannerInterface
 		$this->querySpecCompiler->applyPagination($query, $querySpec->pagination);
 
 		$rows = $this->dataSource->fetchAll($query);
+		$items = $this->assembleRootRows(
+			$collection,
+			$rows,
+			$requestedColumnNames === [] && !$querySpec->selection->explicit
+				? $this->dataSource->getVisibleFields($collection)
+				: $requestedColumnNames,
+			$internalRelationKeyColumnNames,
+			$selection['relations'],
+			$aliases
+		);
+
+		if ($typed) {
+			$items = array_map(
+				fn (array $row): array => $this->dataSource->castRowToPhp($collection, $row),
+				$items
+			);
+		}
 
 		return [
-			'items' => $this->assembleRootRows(
-				$collection,
-				$rows,
-				$requestedColumnNames === [] && !$querySpec->selection->explicit
-					? $this->dataSource->getVisibleFields($collection)
-					: $requestedColumnNames,
-				$internalRelationKeyColumnNames,
-				$selection['relations'],
-				$aliases
-			),
+			'items' => $items,
 			'meta' => $meta,
 		];
 	}
 
-	public function get(CollectionInterface $collection, PrimaryKeyValue|string $identity, ?QuerySpec $querySpec = null): ?array
-	{
+	public function get(
+		CollectionInterface $collection,
+		PrimaryKeyValue|string $identity,
+		?QuerySpec $querySpec = null,
+		bool $typed = true,
+	): ?array {
 		if ($querySpec === null) {
-			return $this->dataSource->getVisibleByIdentity($collection, $identity);
+			return $this->dataSource->getVisibleByIdentity($collection, $identity, $typed);
 		}
 
 		$selection = $this->selectionPlan($querySpec->selection);
@@ -113,7 +125,13 @@ final class QueryPlanner implements QueryPlannerInterface
 			$selection['relations']
 		);
 
-		return $items[0] ?? null;
+		$item = $items[0] ?? null;
+
+		if ($item === null) {
+			return null;
+		}
+
+		return $typed ? $this->dataSource->castRowToPhp($collection, $item) : $item;
 	}
 
 	private function assembleRootRows(

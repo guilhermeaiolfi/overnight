@@ -733,14 +733,14 @@ final class QueryPlannerSpy implements QueryPlannerInterface
 	public array $listResult = ['items' => [], 'meta' => []];
 	public array $aggregateResult = [];
 
-	public function list(CollectionInterface $collection, QuerySpec $query): array
+	public function list(CollectionInterface $collection, QuerySpec $query, bool $typed = true): array
 	{
 		$this->listCalls++;
 
 		return $this->listResult;
 	}
 
-	public function get(CollectionInterface $collection, $identity, ?QuerySpec $query = null): ?array
+	public function get(CollectionInterface $collection, $identity, ?QuerySpec $query = null, bool $typed = true): ?array
 	{
 		$this->getCalls++;
 

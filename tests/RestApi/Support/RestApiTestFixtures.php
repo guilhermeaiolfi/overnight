@@ -12,7 +12,6 @@ use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-use ON\RestApi\Resolver\TypecastDataSource;
 use ON\RestApi\RestApiService;
 use ON\RestApi\Serialize\CollectionSerializer;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -249,6 +248,7 @@ trait RestApiTestFixtures
 		return new SqlDataSource(
 			$registry,
 			$db->database(),
+			typecast: new CollectionTypecast(),
 		);
 	}
 
@@ -279,11 +279,10 @@ trait RestApiTestFixtures
 		?EventDispatcherInterface $eventDispatcher = null
 	): RestApiService {
 		$handlers = $this->createHandlerFactory($dataSource);
-		$typecast = new CollectionTypecast();
 
 		return new RestApiService(
 			$registry,
-			new TypecastDataSource($dataSource, $typecast),
+			$dataSource,
 			new QueryPlanner(
 				$dataSource,
 				$handlers,
@@ -291,7 +290,6 @@ trait RestApiTestFixtures
 			),
 			$eventDispatcher,
 			$handlers,
-			$typecast,
 			new CollectionSerializer(),
 		);
 	}
