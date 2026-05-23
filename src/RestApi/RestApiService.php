@@ -7,6 +7,8 @@ namespace ON\RestApi;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
+use ON\ORM\Typecast\CollectionTypecast;
+use ON\ORM\Typecast\TypecastException;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemGet;
@@ -25,6 +27,7 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\AuthorizationGuard;
 use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\TypecastOptions;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 class RestApiService
@@ -34,8 +37,14 @@ class RestApiService
 		protected DataSourceInterface $dataSource,
 		protected QueryPlannerInterface $queryPlanner,
 		protected ?EventDispatcherInterface $eventDispatcher = null,
-		protected ?HandlerFactory $relationHandlers = null
+		protected ?HandlerFactory $relationHandlers = null,
+		protected ?CollectionTypecast $collectionTypecast = null,
 	) {
+	}
+
+	protected function collectionTypecast(): CollectionTypecast
+	{
+		return $this->collectionTypecast ??= new CollectionTypecast();
 	}
 
 	protected function handlerFactory(): HandlerFactory
@@ -93,7 +102,7 @@ class RestApiService
 
 			if ($event->isDefaultPrevented()) {
 				return [
-					'items' => $event->getResult() ?? [],
+					'items' => $this->castRows($collection, $event->getResult() ?? [], $options),
 					'meta' => $event->getTotalCount() === null ? [] : ['filter_count' => $event->getTotalCount()],
 				];
 			}
@@ -102,6 +111,10 @@ class RestApiService
 		$result = $this->queryList($collection, $querySpec);
 		if (isset($event)) {
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
+		}
+
+		if (TypecastOptions::shouldTypecast($options)) {
+			$result['items'] = $this->castRows($collection, $result['items'] ?? [], $options);
 		}
 
 		return $result;
@@ -119,7 +132,7 @@ class RestApiService
 		$params = $querySpec === null ? $options : $this->eventParams($options, $querySpec);
 
 		if (! $this->shouldDispatchEvents($params)) {
-			return $this->queryGet($collection, $identity, $querySpec);
+			return $this->castRow($collection, $this->queryGet($collection, $identity, $querySpec), $options);
 		}
 
 		$event = new ItemGet($collection, $identity->toUrlId(), $params);
@@ -128,17 +141,19 @@ class RestApiService
 		$querySpec = $event->getQuerySpec() ?? $querySpec;
 
 		if ($event->isDefaultPrevented()) {
-			return $event->getResult();
+			return $this->castRow($collection, $event->getResult(), $options);
 		}
 
 		$event->setResult($this->queryGet($collection, $identity, $querySpec));
-		return $event->getResult();
+
+		return $this->castRow($collection, $event->getResult(), $options);
 	}
 
 	public function create(string|CollectionInterface $collection, array $input, array $options = []): array
 	{
 		$collection = $this->getCollection($collection);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->uncastInput($collection, $input, false);
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
@@ -151,7 +166,7 @@ class RestApiService
 		});
 		$planner->dispatchAfterEvents();
 
-		return $result;
+		return $this->castRow($collection, $result, $options) ?? [];
 	}
 
 	public function update(
@@ -165,6 +180,7 @@ class RestApiService
 		$identity = $this->normalizeIdentity($collection, $identity);
 		$this->checkIfMatch($collection, $identity, $options['ifMatch'] ?? null);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->uncastInput($collection, $input, true);
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
@@ -177,7 +193,7 @@ class RestApiService
 		});
 		$planner->dispatchAfterEvents();
 
-		return $result;
+		return $this->castRow($collection, $result, $options);
 	}
 
 	public function upsert(string|CollectionInterface $collection, array $input, array $options = []): array
@@ -197,6 +213,7 @@ class RestApiService
 		}
 
 		$dispatchEvents = $this->shouldDispatchEvents($options);
+		$input = $this->uncastInput($collection, $input, false);
 		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
@@ -209,7 +226,7 @@ class RestApiService
 		});
 		$planner->dispatchAfterEvents();
 
-		return $result;
+		return $this->castRow($collection, $result, $options) ?? [];
 	}
 
 	public function delete(
@@ -275,7 +292,7 @@ class RestApiService
 	{
 		$collection = $this->getCollection($collection);
 		$identity = $this->normalizeIdentity($collection, $identity);
-		$current = $this->get($collection, $identity, null, ['dispatchEvents' => false]);
+		$current = $this->get($collection, $identity, null, ['dispatchEvents' => false, 'typecast' => false]);
 
 		if ($current === null) {
 			throw RestApiError::notFound();
@@ -436,6 +453,42 @@ class RestApiService
 	protected function shouldDispatchEvents(array $options): bool
 	{
 		return $this->eventDispatcher !== null && ($options['dispatchEvents'] ?? true);
+	}
+
+	public function uncastInput(CollectionInterface $collection, array $input, bool $partial = false): array
+	{
+		try {
+			return $this->collectionTypecast()->uncast($collection, $input, $partial);
+		} catch (TypecastException $e) {
+			throw RestApiError::validationFailed([
+				$e->getField() ?? '_root' => [$e->getMessage()],
+			]);
+		}
+	}
+
+	protected function castRow(CollectionInterface $collection, ?array $row, array $options): ?array
+	{
+		if ($row === null || ! TypecastOptions::shouldTypecast($options)) {
+			return $row;
+		}
+
+		return $this->collectionTypecast()->cast($collection, $row);
+	}
+
+	/**
+	 * @param list<array<string, mixed>> $rows
+	 * @return list<array<string, mixed>>
+	 */
+	protected function castRows(CollectionInterface $collection, array $rows, array $options): array
+	{
+		if (! TypecastOptions::shouldTypecast($options)) {
+			return $rows;
+		}
+
+		return array_map(
+			fn (array $row): array => $this->collectionTypecast()->cast($collection, $row),
+			$rows
+		);
 	}
 }
 

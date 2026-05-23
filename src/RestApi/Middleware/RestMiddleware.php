@@ -14,6 +14,7 @@ use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\RestApiService;
+use ON\RestApi\Support\TypecastOptions;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -106,7 +107,7 @@ class RestMiddleware implements MiddlewareInterface
 			return $this->jsonResponse(['data' => $rows]);
 		}
 
-		$result = $this->restApi->list($collection, $querySpec);
+		$result = $this->restApi->list($collection, $querySpec, $this->getReadOptions($request));
 
 		$body = [
 			'data' => $result['items'] ?? [],
@@ -131,7 +132,8 @@ class RestMiddleware implements MiddlewareInterface
 		$item = $this->restApi->get(
 			$collection,
 			$this->decodeRouteIdentity($collection, $id),
-			$this->querySpec($collection, $this->getQueryParams($request))
+			$this->querySpec($collection, $this->getQueryParams($request)),
+			$this->getReadOptions($request)
 		);
 		if ($item === null) {
 			throw RestApiError::notFound();
@@ -156,6 +158,7 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		$body = $this->stripHiddenFields($collection, $body);
+		$body = $this->restApi->uncastInput($collection, $body, false);
 
 		$this->validateInput($collection, $body);
 
@@ -173,6 +176,7 @@ class RestMiddleware implements MiddlewareInterface
 	{
 		$body = $this->parseRequestBody($request);
 		$body = $this->stripHiddenFields($collection, $body);
+		$body = $this->restApi->uncastInput($collection, $body, true);
 
 		$this->validateInput($collection, $body, true);
 
@@ -209,6 +213,7 @@ class RestMiddleware implements MiddlewareInterface
 		$results = [];
 		foreach ($items as $item) {
 			$item = $this->stripHiddenFields($collection, $item);
+			$item = $this->restApi->uncastInput($collection, $item, false);
 			$this->validateInput($collection, $item);
 			$options = $this->getMutationOptions($request);
 
@@ -246,6 +251,7 @@ class RestMiddleware implements MiddlewareInterface
 				unset($item[$columnName]);
 			}
 			$item = $this->stripHiddenFields($collection, $item);
+			$item = $this->restApi->uncastInput($collection, $item, true);
 			$this->validateInput($collection, $item, true);
 
 			$options = $this->getMutationOptions($request);
@@ -424,7 +430,12 @@ class RestMiddleware implements MiddlewareInterface
 			$options['files'] = $request->getUploadedFiles();
 		}
 
-		return $options;
+		return array_merge($options, TypecastOptions::fromQuery($this->getQueryParams($request)));
+	}
+
+	protected function getReadOptions(ServerRequestInterface $request): array
+	{
+		return TypecastOptions::fromQuery($this->getQueryParams($request));
 	}
 
 	protected function querySpec(CollectionInterface $collection, array $query): QuerySpec

@@ -77,6 +77,11 @@ interface FieldInterface
 	public function typecast(array|string|null $typecast): self;
 
 	/**
+	 * @return callable-array|string|null
+	 */
+	public function getTypecast(): array|string|null;
+
+	/**
 	 * Set validation rules (pipe-delimited string, e.g. 'required|email|max:255').
 	 */
 	public function validation(?string $rules): self;
