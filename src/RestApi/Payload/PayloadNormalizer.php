@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload;
 
+use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\CreateAction;
@@ -13,13 +14,12 @@ use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Payload\Parser\DirectusPayloadParser;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
 
 final class PayloadNormalizer
 {
 	public function __construct(
 		private readonly HandlerFactory $handlers,
-		private readonly SqlDataSource $dataSource,
+		private readonly Registry $registry,
 		private readonly DirectusPayloadParser $parser = new DirectusPayloadParser(),
 	) {
 	}
@@ -33,7 +33,7 @@ final class PayloadNormalizer
 
 	public function normalizeNode(MutationNodeSpec $node, MutationContext $context): void
 	{
-		$collection = $this->dataSource->getRegistry()->getCollection($node->collection);
+		$collection = $this->registry->getCollection($node->collection);
 
 		foreach ($node->relations as $relation) {
 			$this->normalizeRelation($relation, $context->withCollection($collection, $context->source));
@@ -66,7 +66,7 @@ final class PayloadNormalizer
 
 	public function buildNode(string $collectionName, array $data, string $operation): MutationNodeSpec
 	{
-		$collection = $this->dataSource->getRegistry()->getCollection($collectionName);
+		$collection = $this->registry->getCollection($collectionName);
 		$node = $this->parser->parseNode($collection, $data);
 		$node->operation = $operation;
 

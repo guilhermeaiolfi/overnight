@@ -14,7 +14,8 @@ use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepository;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\RestApiService;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -36,7 +37,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('user'), $this->q($registry->getCollection('user')));
 
@@ -52,7 +53,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['status' => ['_eq' => 'published']],
@@ -89,7 +90,7 @@ final class SqlRestResolverTest extends TestCase
 				],
 			],
 		]);
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$collection = $registry->getCollection('node');
 
 		$result = $this->createQueryPlanner($registry, $db)->list($collection, $this->q($collection, [
@@ -107,7 +108,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'search' => 'PHP',
@@ -128,7 +129,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'sort' => '-title',
@@ -145,7 +146,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'limit' => 2,
@@ -162,7 +163,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		// page=2 with limit=2 → offset=2
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
@@ -180,16 +181,17 @@ final class SqlRestResolverTest extends TestCase
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
 		// maxLimit = 1000 by default; set a custom one
-		$resolver = new SqlDataSource(
+		$items = new ItemRepository(
 			$registry,
 			$db->database(),
+			new \ON\RestApi\Mapping\CollectionMapper(),
 			defaultLimit: 10,
 			maxLimit: 2
 		);
 		$compiler = new SqlQuerySpecCompiler($db->database(), 10, 2);
 		$planner = new QueryPlanner(
-			$resolver,
-			new HandlerFactory(HandlerRegistry::defaults(), $resolver, $compiler),
+			$items,
+			new HandlerFactory(HandlerRegistry::defaults(), $items, $compiler),
 			$compiler
 		);
 
@@ -206,7 +208,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'fields' => 'id,title',
@@ -226,7 +228,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('user'), $this->q($registry->getCollection('user'), [
 			'fields' => [],
@@ -241,7 +243,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post')));
 
@@ -254,7 +256,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'fields' => 'id,title,comments.id,comments.body',
@@ -280,7 +282,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('user'), $this->q($registry->getCollection('user'), [
 			'fields' => 'id,name,posts.id,posts.title,posts.tags.name',
@@ -313,7 +315,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'fields' => 'id,title,tags.id,tags.name',
@@ -334,7 +336,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'fields' => 'id,title,author.id,author.name',
@@ -352,7 +354,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'fields' => 'id,title,comments.id',
@@ -380,7 +382,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$collection = $registry->getCollection('user');
 		$result = $this->createQueryPlanner($registry, $db)->list($collection, $this->q($collection, [
 			'fields' => 'id,name,published_posts.title,draft_posts.title',
@@ -407,7 +409,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'meta' => ['total_count', 'filter_count'],
@@ -429,7 +431,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$item = $this->createQueryPlanner($registry, $db)->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user')));
 
@@ -443,7 +445,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$item = $this->createQueryPlanner($registry, $db)->get($registry->getCollection('user'), '999', $this->q($registry->getCollection('user')));
 
@@ -459,7 +461,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$created = $resolver->create($registry->getCollection('user'), [
 			'name' => 'Alice',
@@ -481,7 +483,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createProfileCollection($registry);
 		$db = $this->createProfileDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$collection = $registry->getCollection('profile');
 
 		$filtered = $this->createQueryPlanner($registry, $db)->list($collection, $this->q($collection, [
@@ -515,7 +517,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createProfileCollection($registry);
 		$db = $this->createProfileDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('profile'), $this->q($registry->getCollection('profile'), [
 			'fields' => 'id,displayName',
@@ -531,7 +533,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createProfileCollection($registry);
 		$db = $this->createProfileDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$item = $this->createQueryPlanner($registry, $db)->get($registry->getCollection('profile'), '1');
 
@@ -545,7 +547,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createProfileCollection($registry);
 		$db = $this->createProfileDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$this->expectException(\ON\RestApi\Error\RestApiError::class);
 		$this->expectExceptionMessage("Invalid field 'display_name'.");
@@ -564,7 +566,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$updated = $resolver->update($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '1']]), [
 			'name' => 'Johnny',
@@ -585,7 +587,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '1']]));
 		$this->assertTrue($deleted);
@@ -600,7 +602,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '999']]));
 		$this->assertFalse($deleted);
@@ -611,7 +613,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_in' => ['1', '2']]]));
 
@@ -629,7 +631,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('user'), $this->q($registry->getCollection('user')));
 
@@ -650,7 +652,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'search' => 'PHP',
@@ -667,7 +669,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['author.name' => ['_eq' => 'John']],
@@ -682,7 +684,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'filter' => ['tags.name' => ['_eq' => 'GraphQL']],
@@ -701,7 +703,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
@@ -716,7 +718,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
@@ -748,7 +750,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['countDistinct' => 'user_id'],
@@ -762,7 +764,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$result = $this->createQueryPlanner($registry, $db)->aggregate($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
 			'aggregate' => ['count' => 'id'],
@@ -783,7 +785,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 		$query = (new QueryNormalizer(['current_user' => 1]))->normalize($this->q($registry->getCollection('post'), [
 			'filter' => ['user_id' => ['_eq' => '$current_user']],
@@ -803,7 +805,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$created = $service->create(
@@ -842,7 +844,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$created = $service->create(
@@ -874,7 +876,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		// Create a new post and connect it to tags 1 and 2
@@ -905,7 +907,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$created = $service->create(
@@ -938,7 +940,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		// Post 1 is connected to tags 1 and 2. Disconnect tag 1.
@@ -1007,7 +1009,7 @@ final class SqlRestResolverTest extends TestCase
 			],
 		]);
 
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$created = $service->create(
@@ -1100,7 +1102,7 @@ final class SqlRestResolverTest extends TestCase
 			],
 		]);
 
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$service->update('post', '1', [
@@ -1130,7 +1132,7 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
 		$userCountBefore = $this->countRows($db, 'user');

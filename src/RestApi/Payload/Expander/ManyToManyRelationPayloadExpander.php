@@ -9,7 +9,7 @@ use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Payload\Action\BasicRelationAction;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Action\DeleteAction;
@@ -26,9 +26,9 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 	public function __construct(
 		CollectionInterface $collection,
 		private readonly M2MRelation $manyToMany,
-		SqlDataSource $dataSource,
+		ItemRepositoryInterface $items,
 	) {
-		parent::__construct($collection, $manyToMany, $dataSource);
+		parent::__construct($collection, $manyToMany, $items);
 	}
 
 	public function expandBasic(MutationContext $context, BasicRelationAction $basic): array

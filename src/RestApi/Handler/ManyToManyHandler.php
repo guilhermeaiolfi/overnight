@@ -11,7 +11,7 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Handler\Mutation\ManyToManyApply;
 use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class ManyToManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
@@ -24,12 +24,12 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 	public function __construct(
 		CollectionInterface $collection,
 		protected M2MRelation $manyToMany,
-		SqlDataSource $dataSource,
+		ItemRepositoryInterface $items,
 		SqlQuerySpecCompiler $querySpecCompiler,
 		?RelationSelection $selection = null,
 		?AliasRegistry $aliases = null
 	) {
-		parent::__construct($collection, $manyToMany, $dataSource, $querySpecCompiler, $selection, $aliases);
+		parent::__construct($collection, $manyToMany, $items, $querySpecCompiler, $selection, $aliases);
 	}
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
@@ -62,7 +62,7 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		$targetKeyColumns = $this->targetOuterKeyColumns();
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
-		$query = $this->dataSource->getDatabase()->select($selectColumns)
+		$query = $this->items->getDatabase()->select($selectColumns)
 			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias);
 		foreach ($throughOuterKeys as $index => $throughOuterKey) {

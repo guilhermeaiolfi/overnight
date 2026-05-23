@@ -288,6 +288,62 @@ class Collection implements CollectionInterface
 		);
 	}
 
+	public function getVisibleFields(): array
+	{
+		$visible = [];
+		foreach ($this->fields as $fieldName => $field) {
+			if (! $field->isHidden()) {
+				$visible[] = (string) $fieldName;
+			}
+		}
+
+		return $visible;
+	}
+
+	public function getVisibleColumns(): array
+	{
+		$columns = [];
+		foreach ($this->getVisibleFields() as $fieldName) {
+			$columns[] = $this->fields->get($fieldName)->getColumn();
+		}
+
+		return $columns;
+	}
+
+	public function getFieldNameByColumn(string $columnName): string
+	{
+		return $this->fields->hasColumn($columnName)
+			? $this->fields->getKeyByColumnName($columnName)
+			: $columnName;
+	}
+
+	public function mapRowFromColumns(array $row): array
+	{
+		$mapped = [];
+		foreach ($row as $column => $value) {
+			$mapped[$this->getFieldNameByColumn((string) $column)] = $value;
+		}
+
+		return $mapped;
+	}
+
+	public function mapVisibleRowFromColumns(array $row): array
+	{
+		$item = [];
+		foreach ($this->fields as $fieldName => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
+
+			$column = $field->getColumn();
+			if (array_key_exists($column, $row)) {
+				$item[(string) $fieldName] = $row[$column];
+			}
+		}
+
+		return $item;
+	}
+
 	public function end(): Registry
 	{
 		return $this->registry;

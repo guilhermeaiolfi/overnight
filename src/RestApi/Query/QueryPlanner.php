@@ -8,8 +8,6 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Handler\HandlerInterface;
-use ON\RestApi\Handler\RootHandler;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Node\RelationSelection;
@@ -17,14 +15,14 @@ use ON\RestApi\Query\Node\RelationAggregateSelection;
 use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
 final class QueryPlanner implements QueryPlannerInterface
 {
 	public function __construct(
-		private SqlDataSource $dataSource,
+		private ItemRepositoryInterface $items,
 		private HandlerFactory $handlers,
 		private SqlQuerySpecCompiler $querySpecCompiler
 	) {
@@ -46,30 +44,30 @@ final class QueryPlanner implements QueryPlannerInterface
 		)));
 
 		$aliases = new AliasRegistry();
-		$query = $this->dataSource->select($collection, $fieldsForSelect);
+		$query = $this->items->select($collection, $fieldsForSelect);
 		$this->querySpecCompiler->applyFilters($query, $collection, $querySpec->filter, null, $aliases);
 		$this->querySpecCompiler->applySearch($query, $collection, $querySpec->search);
 
 		$meta = [];
 		if (in_array('total_count', $querySpec->meta, true)) {
-			$meta['total_count'] = $this->dataSource->getDatabase()->select()
+			$meta['total_count'] = $this->items->getDatabase()->select()
 				->from($collection->getTable())
 				->count();
 		}
 
 		if (in_array('filter_count', $querySpec->meta, true)) {
-			$meta['filter_count'] = $this->dataSource->count($query);
+			$meta['filter_count'] = $this->items->count($query);
 		}
 
 		$this->querySpecCompiler->applyOrderBy($query, $collection, $querySpec->sort);
 		$this->querySpecCompiler->applyPagination($query, $querySpec->pagination);
 
-		$rows = $this->dataSource->fetchAll($query);
-		$items = $this->assembleRootRows(
+		$rows = $this->items->fetchAll($query);
+		$items = $this->fetchData(
 			$collection,
 			$rows,
 			$requestedColumnNames === [] && !$querySpec->selection->explicit
-				? $this->dataSource->getVisibleFields($collection)
+				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
 				: $requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$selection['relations'],
@@ -78,7 +76,7 @@ final class QueryPlanner implements QueryPlannerInterface
 
 		if ($typed) {
 			$items = array_map(
-				fn (array $row): array => $this->dataSource->castRowToPhp($collection, $row),
+				fn (array $row): array => $this->items->hydrateRow($collection, $row),
 				$items
 			);
 		}
@@ -96,7 +94,7 @@ final class QueryPlanner implements QueryPlannerInterface
 		bool $typed = true,
 	): ?array {
 		if ($querySpec === null) {
-			return $this->dataSource->getVisibleByIdentity($collection, $identity, $typed);
+			return $this->items->findByIdentity($collection, $identity, $typed);
 		}
 
 		$selection = $this->selectionPlan($querySpec->selection);
@@ -107,19 +105,19 @@ final class QueryPlanner implements QueryPlannerInterface
 			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
 		)));
 
-		$query = $this->dataSource->select($collection, $fieldsForSelect);
+		$query = $this->items->select($collection, $fieldsForSelect);
 		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
 		$query->limit(1);
-		$row = $this->dataSource->fetchOne($query);
+		$row = $this->items->fetchOne($query);
 		if ($row === null) {
 			return null;
 		}
 
-		$items = $this->assembleRootRows(
+		$items = $this->fetchData(
 			$collection,
 			[$row],
 			$requestedColumnNames === [] && !$querySpec->selection->explicit
-				? $this->dataSource->getVisibleFields($collection)
+				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
 				: $requestedColumnNames,
 			$internalRelationKeyColumnNames,
 			$selection['relations']
@@ -131,10 +129,10 @@ final class QueryPlanner implements QueryPlannerInterface
 			return null;
 		}
 
-		return $typed ? $this->dataSource->castRowToPhp($collection, $item) : $item;
+		return $typed ? $this->items->hydrateRow($collection, $item) : $item;
 	}
 
-	private function assembleRootRows(
+	private function fetchData(
 		CollectionInterface $collection,
 		array $rows,
 		array $requestedColumnNames,
@@ -146,50 +144,17 @@ final class QueryPlanner implements QueryPlannerInterface
 			return [];
 		}
 
-		$root = $this->handlers->root(
+		$root = $this->handlers->configuredRoot(
 			$collection,
 			$rows,
 			array_keys($rows[0]),
 			$requestedColumnNames,
-			$internalRelationKeyColumnNames
+			$internalRelationKeyColumnNames,
+			$relations,
+			$aliases ?? new AliasRegistry()
 		);
-		$this->configureHandlers($root, $collection, $relations, $aliases ?? new AliasRegistry());
-		$root->parseRows();
-		$this->loadHandlers($root->getChildren());
 
-		return $root->result();
-	}
-
-	private function configureHandlers(
-		HandlerInterface $parent,
-		CollectionInterface $collection,
-		array $relations,
-		AliasRegistry $aliases
-	): void {
-		$parentNode = $parent instanceof RootHandler ? $parent->rootNode() : $parent->getNode();
-		foreach ($relations as $selection) {
-			if (!$selection instanceof RelationSelection) {
-				continue;
-			}
-
-			$handler = $this->handlers->relation($collection, $selection, $aliases);
-			if ($handler === null) {
-				continue;
-			}
-
-			$parent->addChild($handler);
-			$handler->configureParserNode($parentNode);
-			$handler->prepare();
-			$this->configureHandlers($handler, $handler->getTargetCollection(), $handler->getNestedRelations(), $aliases);
-		}
-	}
-
-	private function loadHandlers(array $handlers): void
-	{
-		foreach ($handlers as $handler) {
-			$handler->load();
-			$this->loadHandlers($handler->getChildren());
-		}
+		return $root->fetchData();
 	}
 
 	public function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
@@ -198,7 +163,7 @@ final class QueryPlanner implements QueryPlannerInterface
 			return [];
 		}
 
-		$query = $this->dataSource->getDatabase()->select()->from($collection->getTable());
+		$query = $this->items->getDatabase()->select()->from($collection->getTable());
 		$this->querySpecCompiler->applyFilters($query, $collection, $querySpec->filter, null, new AliasRegistry());
 		$this->querySpecCompiler->applySearch($query, $collection, $querySpec->search);
 		$this->querySpecCompiler->applyGroupBy($query, $collection, $querySpec->groupBy);
@@ -220,7 +185,7 @@ final class QueryPlanner implements QueryPlannerInterface
 		$query->columns($selectExpressions);
 
 		return $this->formatAggregateRows(
-			$this->dataSource->fetchAll($query),
+			$this->items->fetchAll($query),
 			$querySpec->aggregate,
 			$querySpec->groupBy
 		);
@@ -286,9 +251,7 @@ final class QueryPlanner implements QueryPlannerInterface
 	{
 		$fieldNames = [];
 		foreach ($columnNames as $columnName) {
-			$fieldNames[] = $collection->fields->hasColumn($columnName)
-				? $collection->fields->getKeyByColumnName($columnName)
-				: $columnName;
+			$fieldNames[] = $collection->getFieldNameByColumn($columnName);
 		}
 
 		return array_values(array_unique($fieldNames));

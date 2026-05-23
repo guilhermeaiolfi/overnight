@@ -19,7 +19,7 @@ use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SelectionSet;
 use ON\RestApi\Query\Node\WildcardSelection;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 abstract class AbstractRelationHandler extends AbstractHandler
@@ -32,7 +32,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 	public function __construct(
 		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
-		protected SqlDataSource $dataSource,
+		protected ItemRepositoryInterface $items,
 		protected SqlQuerySpecCompiler $querySpecCompiler,
 		protected ?RelationSelection $selection = null,
 		protected ?AliasRegistry $aliases = null
@@ -108,7 +108,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 	protected function baseQuery(array $columns): SelectQuery
 	{
-		return $this->dataSource->getDatabase()->select($columns)
+		return $this->items->getDatabase()->select($columns)
 			->from($this->targetCollection->getTable());
 	}
 
@@ -198,7 +198,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		$inner->columns($innerColumns);
 
 		$alias = '__on_limited_relation';
-		$outer = $this->dataSource->getDatabase()->select($outerColumns)
+		$outer = $this->items->getDatabase()->select($outerColumns)
 			->from(new SubQuery($inner, $alias));
 
 		$offset = $this->offset() ?? 0;
@@ -242,56 +242,18 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		$this->queryRows($query, $node);
 	}
 
-	protected function getVisibleFields(CollectionInterface $collection): array
-	{
-		$visible = [];
-		foreach ($collection->fields as $field) {
-			if (!$field->isHidden()) {
-				$visible[] = $field->getColumn();
-			}
-		}
-
-		return $visible;
-	}
-
-	protected function visibleFieldNames(CollectionInterface $collection): array
-	{
-		$visible = [];
-		foreach ($collection->fields as $fieldName => $field) {
-			if (!$field->isHidden()) {
-				$visible[] = (string) $fieldName;
-			}
-		}
-
-		return $visible;
-	}
-
 	protected function compile(FragmentInterface $expression): string
 	{
-		return $this->dataSource->getDatabase()->getDriver()->getQueryCompiler()->compile(
+		return $this->items->getDatabase()->getDriver()->getQueryCompiler()->compile(
 			new QueryParameters(),
-			$this->dataSource->getDatabase()->getPrefix(),
+			$this->items->getDatabase()->getPrefix(),
 			$expression
 		);
 	}
 
 	protected function identifier(string $identifier): string
 	{
-		return $this->dataSource->getDatabase()->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
-	}
-
-	protected function mapRowToFieldNames(CollectionInterface $collection, array $row): array
-	{
-		$item = [];
-		foreach ($row as $column => $value) {
-			$name = $collection->fields->hasColumn((string) $column)
-				? $collection->fields->getKeyByColumnName((string) $column)
-				: (string) $column;
-
-			$item[$name] = $value;
-		}
-
-		return $item;
+		return $this->items->getDatabase()->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
 	}
 
 	protected function getPrimaryKeyColumns(CollectionInterface $collection): array
@@ -345,7 +307,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 			];
 		}
 
-		$visible = $this->getVisibleFields($this->targetCollection);
+		$visible = $this->targetCollection->getVisibleColumns();
 		$selected = $visible;
 		if (!in_array($requiredKey, $selected, true)) {
 			$selected[] = $requiredKey;

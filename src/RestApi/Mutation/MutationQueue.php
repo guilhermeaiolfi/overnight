@@ -7,7 +7,7 @@ namespace ON\RestApi\Mutation;
 use LogicException;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class MutationQueue implements MutationQueueInterface
 {
@@ -41,7 +41,7 @@ final class MutationQueue implements MutationQueueInterface
 		return $command->getTask();
 	}
 
-	public function execute(DataSourceInterface $dataSource): void
+	public function execute(ItemRepositoryInterface $repository): void
 	{
 		while ($this->commands !== []) {
 			$executed = false;
@@ -51,7 +51,7 @@ final class MutationQueue implements MutationQueueInterface
 					continue;
 				}
 
-				$command->execute($dataSource);
+				$command->execute($repository);
 				unset($this->commands[$index]);
 				$executed = true;
 			}

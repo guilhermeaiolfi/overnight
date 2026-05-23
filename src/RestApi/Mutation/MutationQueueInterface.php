@@ -6,7 +6,7 @@ namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 interface MutationQueueInterface
 {
@@ -26,5 +26,5 @@ interface MutationQueueInterface
 		FilterNode $criteria
 	): MutationDeleteTaskInterface;
 
-	public function execute(DataSourceInterface $dataSource): void;
+	public function execute(ItemRepositoryInterface $repository): void;
 }

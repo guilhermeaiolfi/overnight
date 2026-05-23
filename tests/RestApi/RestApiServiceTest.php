@@ -21,8 +21,10 @@ use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryPlannerInterface;
-use ON\RestApi\Resolver\DataSourceInterface;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepository;
+use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Mapping\CollectionMapper;
+use ON\ORM\Typecast\CollectionTypecast;
 use ON\RestApi\RestApiService;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use PHPUnit\Framework\TestCase;
@@ -145,7 +147,7 @@ final class RestApiServiceTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
@@ -189,7 +191,7 @@ final class RestApiServiceTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
@@ -233,7 +235,7 @@ final class RestApiServiceTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 		$uploadWasInTransaction = null;
 
 		$service = $this->createService(
@@ -271,7 +273,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 		$createdId = null;
 		$createdWasInTransaction = null;
 
@@ -308,7 +310,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createService(
 			$registry,
 			$resolver,
@@ -360,7 +362,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 		$events = [];
 		$service = $this->createService(
 			$registry,
@@ -392,7 +394,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$db = $this->createTestDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$events = [];
 		$service = $this->createService(
 			$registry,
@@ -424,7 +426,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$paths = [];
 
 		$service = $this->createService(
@@ -462,7 +464,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$authStates = [];
 
 		$service = $this->createService(
@@ -503,7 +505,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$paths = [];
 
 		$service = $this->createService(
@@ -540,7 +542,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 
 		$service = $this->createService(
 			$registry,
@@ -586,7 +588,7 @@ final class RestApiServiceTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$planner = $this->createQueryPlanner($registry, $db);
 
 		$service = $this->createService(
@@ -653,7 +655,7 @@ final class RestApiServiceTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new TrackingSqlDataSource($registry, $db->database());
+		$resolver = new TrackingItemRepository($registry, $db->database());
 
 		$service = $this->createService(
 			$registry,
@@ -701,7 +703,7 @@ final class RestApiServiceTest extends TestCase
 
 	private function createService(
 		Registry $registry,
-		DataSourceInterface $dataSource,
+		ItemRepositoryInterface $items,
 		QueryPlannerInterface $queryPlanner,
 		callable $listener
 	): RestApiService {
@@ -716,7 +718,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		};
 
-		return new RestApiService($registry, $dataSource, $queryPlanner, $dispatcher);
+		return new RestApiService($registry, $items, $queryPlanner, $dispatcher);
 	}
 
 	private function q(CollectionInterface $collection, array $params = []): QuerySpec
@@ -755,13 +757,43 @@ final class QueryPlannerSpy implements QueryPlannerInterface
 	}
 }
 
-final class ResolverSpy implements DataSourceInterface
+final class ResolverSpy implements ItemRepositoryInterface
 {
 	public array $lastCreateInput = [];
 	public bool $inTransaction = false;
 	public int $transactionCalls = 0;
 
-	public function create(CollectionInterface $collection, array $input): array
+	public function select(CollectionInterface|string $collection, array $fieldNames = []): \Cycle\Database\Query\SelectQuery
+	{
+		throw new \BadMethodCallException('Not implemented in spy.');
+	}
+
+	public function fetchAll(\Cycle\Database\Query\SelectQuery $query): array
+	{
+		return [];
+	}
+
+	public function fetchOne(\Cycle\Database\Query\SelectQuery $query): ?array
+	{
+		return null;
+	}
+
+	public function count(\Cycle\Database\Query\SelectQuery $query): int
+	{
+		return 0;
+	}
+
+	public function findByIdentity(CollectionInterface $collection, \ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity, bool $typed = true): ?array
+	{
+		return null;
+	}
+
+	public function hydrateRow(CollectionInterface $collection, array $row): array
+	{
+		return $row;
+	}
+
+	public function create(CollectionInterface $collection, array $input): ?array
 	{
 		$this->lastCreateInput = $input;
 
@@ -780,31 +812,43 @@ final class ResolverSpy implements DataSourceInterface
 		return true;
 	}
 
-	public function transaction(callable $callback): mixed
+	public function commit(\ON\RestApi\Mutation\MutationQueue $queue, callable $resolve): mixed
 	{
 		$this->transactionCalls++;
 		$this->inTransaction = true;
 
 		try {
-			return $callback();
+			$queue->execute($this);
+
+			return $resolve();
 		} finally {
 			$this->inTransaction = false;
 		}
 	}
 
-	public function clearCache(): void
+	public function getDatabase(): \Cycle\Database\DatabaseInterface
 	{
+		throw new \BadMethodCallException('Not implemented in spy.');
 	}
 }
 
-final class TrackingSqlDataSource extends SqlDataSource
+final class TrackingItemRepository extends ItemRepository
 {
 	public array $createCalls = [];
 	public array $lastCreateInput = [];
 	public bool $inTransaction = false;
 	public int $transactionCalls = 0;
 
-	public function create(CollectionInterface $collection, array $input): array
+	public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+	{
+		parent::__construct(
+			$registry,
+			$database,
+			new CollectionMapper(new CollectionTypecast()),
+		);
+	}
+
+	public function create(CollectionInterface $collection, array $input): ?array
 	{
 		$this->lastCreateInput = $input;
 		$this->createCalls[] = [
@@ -815,13 +859,13 @@ final class TrackingSqlDataSource extends SqlDataSource
 		return parent::create($collection, $input);
 	}
 
-	public function transaction(callable $callback): mixed
+	public function commit(\ON\RestApi\Mutation\MutationQueue $queue, callable $resolve): mixed
 	{
 		$this->transactionCalls++;
 		$this->inTransaction = true;
 
 		try {
-			return parent::transaction($callback);
+			return parent::commit($queue, $resolve);
 		} finally {
 			$this->inTransaction = false;
 		}

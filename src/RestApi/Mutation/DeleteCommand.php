@@ -6,7 +6,7 @@ namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class DeleteCommand extends AbstractMutationCommand
 {
@@ -28,8 +28,8 @@ final class DeleteCommand extends AbstractMutationCommand
 		return $this->valuesReady($this->criteria);
 	}
 
-	public function execute(DataSourceInterface $dataSource): void
+	public function execute(ItemRepositoryInterface $repository): void
 	{
-		$this->result = $dataSource->delete($this->collection, $this->resolveValue($this->criteria));
+		$this->result = $repository->delete($this->collection, $this->resolveValue($this->criteria));
 	}
 }

@@ -8,7 +8,6 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\ValueRef;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
 trait RelationExpanderSupport
@@ -49,17 +48,17 @@ trait RelationExpanderSupport
 		mixed $value,
 		?array $fieldNames = null
 	): array {
-		$fieldNames ??= $this->visibleFieldNames($collection);
+		$fieldNames ??= $collection->getVisibleFields();
 		if (!in_array($fieldName, $fieldNames, true)) {
 			$fieldNames[] = $fieldName;
 		}
 
-		$query = $this->dataSource->select($collection, $fieldNames);
+		$query = $this->items->select($collection, $fieldNames);
 		$query->where($collection->fields->get($fieldName)->getColumn(), $value);
 
 		return array_map(
-			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
-			$this->dataSource->fetchAll($query)
+			fn(array $row): array => $collection->mapRowFromColumns($row),
+			$this->items->fetchAll($query)
 		);
 	}
 
@@ -68,21 +67,21 @@ trait RelationExpanderSupport
 		array $fieldValueMap,
 		?array $fieldNames = null
 	): array {
-		$fieldNames ??= $this->visibleFieldNames($collection);
+		$fieldNames ??= $collection->getVisibleFields();
 		foreach (array_keys($fieldValueMap) as $fieldName) {
 			if (!in_array((string) $fieldName, $fieldNames, true)) {
 				$fieldNames[] = (string) $fieldName;
 			}
 		}
 
-		$query = $this->dataSource->select($collection, $fieldNames);
+		$query = $this->items->select($collection, $fieldNames);
 		foreach ($fieldValueMap as $fieldName => $value) {
 			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
 		}
 
 		return array_map(
-			fn(array $row): array => $this->mapRowToFieldNames($collection, $row),
-			$this->dataSource->fetchAll($query)
+			fn(array $row): array => $collection->mapRowFromColumns($row),
+			$this->items->fetchAll($query)
 		);
 	}
 
@@ -90,19 +89,19 @@ trait RelationExpanderSupport
 		CollectionInterface $collection,
 		PrimaryKeyValue|string $identity
 	): ?array {
-		$fieldNames = $this->visibleFieldNames($collection);
+		$fieldNames = $collection->getVisibleFields();
 		foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
 			if (!in_array($fieldName, $fieldNames, true)) {
 				$fieldNames[] = $fieldName;
 			}
 		}
 
-		$query = $this->dataSource->select($collection, $fieldNames);
+		$query = $this->items->select($collection, $fieldNames);
 		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
 		$query->limit(1);
-		$row = $this->dataSource->fetchOne($query);
+		$row = $this->items->fetchOne($query);
 
-		return $row === null ? null : $this->mapRowToFieldNames($collection, $row);
+		return $row === null ? null : $collection->mapRowFromColumns($row);
 	}
 
 	protected function getPrimaryKeyValueFromState(

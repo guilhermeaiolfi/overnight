@@ -9,8 +9,10 @@ use ON\ORM\Definition\Registry;
 use ON\ORM\Typecast\CollectionTypecast;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Mapping\CollectionMapper;
 use ON\RestApi\Query\QueryPlanner;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepository;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\RestApiService;
 use ON\RestApi\Serialize\CollectionSerializer;
@@ -243,31 +245,31 @@ trait RestApiTestFixtures
 		]);
 	}
 
-	protected function createResolver(Registry $registry, CycleSqliteTestDatabase $db): SqlDataSource
+	protected function createItems(Registry $registry, CycleSqliteTestDatabase $db): ItemRepository
 	{
-		return new SqlDataSource(
+		return new ItemRepository(
 			$registry,
 			$db->database(),
-			typecast: new CollectionTypecast(),
+			new CollectionMapper(new CollectionTypecast()),
 		);
 	}
 
-	protected function createHandlerFactory(SqlDataSource $dataSource): HandlerFactory
+	protected function createHandlerFactory(ItemRepositoryInterface $items): HandlerFactory
 	{
 		return new HandlerFactory(
 			HandlerRegistry::defaults(),
-			$dataSource,
-			new SqlQuerySpecCompiler($dataSource->getDatabase(), 100, 1000)
+			$items,
+			new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
 		);
 	}
 
 	protected function createQueryPlanner(Registry $registry, CycleSqliteTestDatabase $db): QueryPlanner
 	{
-		$dataSource = $this->createResolver($registry, $db);
-		$handlers = $this->createHandlerFactory($dataSource);
+		$items = $this->createItems($registry, $db);
+		$handlers = $this->createHandlerFactory($items);
 
 		return new QueryPlanner(
-			$dataSource,
+			$items,
 			$handlers,
 			new SqlQuerySpecCompiler($db->database(), 100, 1000)
 		);
@@ -275,18 +277,18 @@ trait RestApiTestFixtures
 
 	protected function createRestApiService(
 		Registry $registry,
-		SqlDataSource $dataSource,
+		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null
 	): RestApiService {
-		$handlers = $this->createHandlerFactory($dataSource);
+		$handlers = $this->createHandlerFactory($items);
 
 		return new RestApiService(
 			$registry,
-			$dataSource,
+			$items,
 			new QueryPlanner(
-				$dataSource,
+				$items,
 				$handlers,
-				new SqlQuerySpecCompiler($dataSource->getDatabase(), 100, 1000)
+				new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
 			),
 			$eventDispatcher,
 			$handlers,

@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class InsertCommand extends AbstractMutationCommand
 {
@@ -28,10 +28,10 @@ final class InsertCommand extends AbstractMutationCommand
 		return $this->valuesReady($this->input->getData());
 	}
 
-	public function execute(DataSourceInterface $dataSource): void
+	public function execute(ItemRepositoryInterface $repository): void
 	{
 		try {
-			$row = $dataSource->create(
+			$row = $repository->create(
 				$this->input->getCollection(),
 				$this->resolveValue($this->input->getData())
 			);

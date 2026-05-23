@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 interface MutationCommandInterface
 {
 	public function isReady(): bool;
 
-	public function execute(DataSourceInterface $dataSource): void;
+	public function execute(ItemRepositoryInterface $repository): void;
 }

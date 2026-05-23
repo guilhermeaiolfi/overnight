@@ -14,14 +14,13 @@ use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Mutation\MutationPlanner;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
-use ON\RestApi\Mutation\RestMutationPlanner;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Query\QueryPlannerInterface;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Resolver\DataSourceInterface;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Serialize\CollectionSerializer;
 use ON\RestApi\Support\AuthorizationGuard;
@@ -33,7 +32,7 @@ class RestApiService
 {
 	public function __construct(
 		protected Registry $registry,
-		protected DataSourceInterface $dataSource,
+		protected ItemRepositoryInterface $items,
 		protected QueryPlannerInterface $queryPlanner,
 		protected ?EventDispatcherInterface $eventDispatcher = null,
 		protected ?HandlerFactory $relationHandlers = null,
@@ -56,31 +55,11 @@ class RestApiService
 			return $this->queryPlanner->handlers();
 		}
 
-		$sqlDataSource = $this->sqlDataSource();
-
-		if ($sqlDataSource === null) {
-			throw RestApiError::serviceUnavailable();
-		}
-
 		return new HandlerFactory(
 			HandlerRegistry::defaults(),
-			$sqlDataSource,
-			new SqlQuerySpecCompiler($sqlDataSource->getDatabase(), 100, 1000)
+			$this->items,
+			new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000)
 		);
-	}
-
-	protected function sqlDataSource(): ?SqlDataSource
-	{
-		if ($this->dataSource instanceof SqlDataSource) {
-			return $this->dataSource;
-		}
-
-		return null;
-	}
-
-	public function getDataSource(): DataSourceInterface
-	{
-		return $this->dataSource;
 	}
 
 	public function getCollection(string|CollectionInterface $collectionName): CollectionInterface
@@ -166,7 +145,7 @@ class RestApiService
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
 		$root = $planner->save('create', $collection, $input);
 
-		$result = $this->executeMutationQueue($queue, fn (): array => $root?->getRow() ?? []);
+		$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 		$planner->dispatchAfterEvents();
 
 		return $this->hydrateRow($collection, $result, $options) ?? [];
@@ -188,7 +167,7 @@ class RestApiService
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
 		$root = $planner->save('update', $collection, $input, $identity);
 
-		$result = $this->executeMutationQueue($queue, fn (): ?array => $root?->getRow());
+		$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
 		$planner->dispatchAfterEvents();
 
 		return $this->hydrateRow($collection, $result, $options);
@@ -216,7 +195,7 @@ class RestApiService
 		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
 		$root = $planner->save('upsert', $collection, $input, $id);
 
-		$result = $this->executeMutationQueue($queue, fn (): array => $root?->getRow() ?? []);
+		$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 		$planner->dispatchAfterEvents();
 
 		return $this->hydrateRow($collection, $result, $options) ?? [];
@@ -237,7 +216,7 @@ class RestApiService
 		$planner = $this->mutationPlanner($queue, $collection, [], $dispatchEvents);
 		$deleted = $planner->delete($collection, $identity);
 
-		$result = $this->executeMutationQueue($queue, fn (): bool => $deleted?->getResult() ?? true);
+		$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
 		$planner->dispatchAfterEvents();
 
 		return $result;
@@ -265,11 +244,6 @@ class RestApiService
 		$event->setResult($result);
 
 		return $event->getResult() ?? [];
-	}
-
-	public function clearCache(): void
-	{
-		$this->dataSource->clearCache();
 	}
 
 	public function computeETag(string $jsonBody): string
@@ -315,30 +289,16 @@ class RestApiService
 		return $this->collectionSerializer()->serialize($collection, $phpRow);
 	}
 
-	protected function executeMutationQueue(MutationQueue $queue, callable $resolve): mixed
-	{
-		return $this->dataSource->transaction(function () use ($queue, $resolve): mixed {
-			$queue->execute($this->dataSource);
-
-			return $resolve();
-		});
-	}
-
 	protected function mutationPlanner(
 		MutationQueue $queue,
 		CollectionInterface $rootCollection,
 		array $rootInput,
 		bool $dispatchEvents
-	): RestMutationPlanner
+	): MutationPlanner
 	{
-		$sqlDataSource = $this->sqlDataSource();
-
-		if ($sqlDataSource === null) {
-			throw RestApiError::serviceUnavailable();
-		}
-
-		return new RestMutationPlanner(
-			$sqlDataSource,
+		return new MutationPlanner(
+			$this->registry,
+			$this->items,
 			$this->handlerFactory(),
 			$this->eventDispatcher,
 			$dispatchEvents,

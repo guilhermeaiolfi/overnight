@@ -8,7 +8,7 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Query\QueryPlanner;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\RestApiService;
@@ -20,19 +20,19 @@ class RestApiServiceFactory
 {
 	public function __invoke(ContainerInterface $container): RestApiService
 	{
-		$sqlDataSource = $container->get(SqlDataSource::class);
+		$items = $container->get(ItemRepositoryInterface::class);
 		$config = $container->get(RestApiConfig::class);
 		$querySpecCompiler = new SqlQuerySpecCompiler(
-			$sqlDataSource->getDatabase(),
+			$items->getDatabase(),
 			$config->get('defaultLimit', 100),
 			$config->get('maxLimit', 1000)
 		);
-		$handlers = new HandlerFactory(HandlerRegistry::defaults(), $sqlDataSource, $querySpecCompiler);
-		$queryPlanner = new QueryPlanner($sqlDataSource, $handlers, $querySpecCompiler);
+		$handlers = new HandlerFactory(HandlerRegistry::defaults(), $items, $querySpecCompiler);
+		$queryPlanner = new QueryPlanner($items, $handlers, $querySpecCompiler);
 
 		return new RestApiService(
 			$container->get(Registry::class),
-			$sqlDataSource,
+			$items,
 			$queryPlanner,
 			$container->get(EventDispatcherInterface::class),
 			$handlers,

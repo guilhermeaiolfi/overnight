@@ -13,11 +13,13 @@ use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
+use ON\RestApi\Container\CollectionMapperFactory;
+use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\RestApiServiceFactory;
-use ON\RestApi\Container\DataSourceFactory;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Resolver\DataSourceInterface;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Mapping\CollectionMapper;
+use ON\RestApi\Repository\ItemRepository;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
 
@@ -42,8 +44,9 @@ class RestApiExtension extends AbstractExtension
 		$containerConfig = $event->config->get(ContainerConfig::class);
 		$containerConfig->addFactories([
 			RestApiService::class => RestApiServiceFactory::class,
-			DataSourceInterface::class => DataSourceFactory::class,
-			SqlDataSource::class => DataSourceFactory::class,
+			CollectionMapper::class => CollectionMapperFactory::class,
+			ItemRepository::class => ItemRepositoryFactory::class,
+			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
 		]);
 	}
 
@@ -59,12 +62,6 @@ class RestApiExtension extends AbstractExtension
 		$dynamicVariables = $config->get('dynamicVariables', []);
 
 		$service = $container->get(RestApiService::class);
-
-
-		// Wire up per-request cleanup via event
-		$this->app->events->registerListener('restapi.request.complete', function () use ($service) {
-			$service->clearCache();
-		});
 
 		$middleware = new RestMiddleware(
 			$service,

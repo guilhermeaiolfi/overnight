@@ -12,7 +12,8 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Mapping\CollectionMapper;
+use ON\RestApi\Repository\ItemRepository;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -33,7 +34,7 @@ final class RestMiddlewareTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
-		$resolver = $this->createResolver($registry, $db);
+		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 		$middleware = new RestMiddleware($service, ['endpointUri' => '/items']);
 
@@ -89,10 +90,19 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends SqlDataSource {
+		$resolver = new class($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): array
+			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			{
+				parent::__construct(
+					$registry,
+					$database,
+					new CollectionMapper(),
+				);
+			}
+
+			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
 			{
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),

@@ -13,14 +13,14 @@ use ON\RestApi\Payload\Expander\HasOneRelationPayloadExpander;
 use ON\RestApi\Payload\Expander\ManyToManyRelationPayloadExpander;
 use ON\RestApi\Payload\Expander\RelationPayloadExpanderInterface;
 use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class HandlerFactory
 {
 	public function __construct(
 		private HandlerRegistry $registry,
-		private SqlDataSource $dataSource,
+		private ItemRepositoryInterface $items,
 		private SqlQuerySpecCompiler $querySpecCompiler,
 	) {
 	}
@@ -44,6 +44,28 @@ class HandlerFactory
 		array $internalColumns = []
 	): RootHandler {
 		return new RootHandler($collection, $rows, $columns, $requestedColumns, $internalColumns);
+	}
+
+	/**
+	 * @param array<int, array<string, mixed>> $rows
+	 * @param array<int, string> $columns
+	 * @param array<int, string> $requestedColumns
+	 * @param array<int, string> $internalColumns
+	 * @param array<int, mixed> $relations
+	 */
+	public function configuredRoot(
+		CollectionInterface $collection,
+		array $rows,
+		array $columns,
+		array $requestedColumns,
+		array $internalColumns,
+		array $relations,
+		AliasRegistry $aliases
+	): RootHandler {
+		$root = $this->root($collection, $rows, $columns, $requestedColumns, $internalColumns);
+		$this->configureRelations($root, $collection, $relations, $aliases);
+
+		return $root;
 	}
 
 	public function relation(
@@ -94,13 +116,13 @@ class HandlerFactory
 		$class = $this->registry->resolve($source, $relationName, $relation);
 
 		return match ($class) {
-			HasManyHandler::class => new HasManyRelationPayloadExpander($source, $relation, $this->dataSource),
-			HasOneHandler::class => new HasOneRelationPayloadExpander($source, $relation, $this->dataSource),
-			BelongsToHandler::class => new BelongsToRelationPayloadExpander($source, $relation, $this->dataSource),
+			HasManyHandler::class => new HasManyRelationPayloadExpander($source, $relation, $this->items),
+			HasOneHandler::class => new HasOneRelationPayloadExpander($source, $relation, $this->items),
+			BelongsToHandler::class => new BelongsToRelationPayloadExpander($source, $relation, $this->items),
 			ManyToManyHandler::class => new ManyToManyRelationPayloadExpander(
 				$source,
 				$relation instanceof M2MRelation ? $relation : throw new \LogicException('Expected M2M relation.'),
-				$this->dataSource,
+				$this->items,
 			),
 			default => null,
 		};
@@ -119,10 +141,37 @@ class HandlerFactory
 		return new $class(
 			$source,
 			$relation,
-			$this->dataSource,
+			$this->items,
 			$this->querySpecCompiler,
 			$selection,
 			$aliases
 		);
+	}
+
+	/**
+	 * @param array<int, mixed> $relations
+	 */
+	private function configureRelations(
+		HandlerInterface $parent,
+		CollectionInterface $collection,
+		array $relations,
+		AliasRegistry $aliases
+	): void {
+		$parentNode = $parent instanceof RootHandler ? $parent->rootNode() : $parent->getNode();
+		foreach ($relations as $selection) {
+			if (!$selection instanceof RelationSelection) {
+				continue;
+			}
+
+			$handler = $this->relation($collection, $selection, $aliases);
+			if ($handler === null) {
+				continue;
+			}
+
+			$parent->addChild($handler);
+			$handler->configureParserNode($parentNode);
+			$handler->prepare();
+			$this->configureRelations($handler, $handler->getTargetCollection(), $handler->getNestedRelations(), $aliases);
+		}
 	}
 }

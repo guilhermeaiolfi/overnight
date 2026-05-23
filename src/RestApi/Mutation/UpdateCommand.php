@@ -6,7 +6,7 @@ namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\DataSourceInterface;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class UpdateCommand extends AbstractMutationCommand
 {
@@ -34,10 +34,10 @@ final class UpdateCommand extends AbstractMutationCommand
 		return $this->valuesReady($this->criteria) && $this->valuesReady($input);
 	}
 
-	public function execute(DataSourceInterface $dataSource): void
+	public function execute(ItemRepositoryInterface $repository): void
 	{
 		$input = $this->input instanceof MutationStateInterface ? $this->input->getData() : $this->input;
-		$row = $dataSource->update(
+		$row = $repository->update(
 			$this->collection,
 			$this->resolveValue($this->criteria),
 			$this->resolveValue($input)

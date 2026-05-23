@@ -9,6 +9,8 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 
 class RootHandler extends AbstractHandler
 {
+	private bool $assembled = false;
+
 	/**
 	 * @param array<int, array<string, mixed>> $rows
 	 * @param array<int, string> $columns
@@ -62,13 +64,7 @@ class RootHandler extends AbstractHandler
 
 	public function load(): array
 	{
-		if ($this->rows === []) {
-			return [];
-		}
-
-		$this->parseRows();
-
-		return $this->result();
+		return $this->fetchData();
 	}
 
 	public function rootNode(): RootNode
@@ -84,7 +80,7 @@ class RootHandler extends AbstractHandler
 		return $node;
 	}
 
-	public function parseRows(): void
+	private function parseRows(): void
 	{
 		if ($this->rows === []) {
 			return;
@@ -96,18 +92,32 @@ class RootHandler extends AbstractHandler
 		}
 	}
 
-	public function result(): array
+	public function fetchData(): array
 	{
 		if ($this->rows === []) {
 			return [];
 		}
 
+		if (!$this->assembled) {
+			$this->parseRows();
+			$this->loadChildren($this);
+			$this->assembled = true;
+		}
+
 		return $this->cleanRows($this->getCollection(), $this->rootNode()->getResult(), $this);
+	}
+
+	private function loadChildren(HandlerInterface $handler): void
+	{
+		foreach ($handler->getChildren() as $child) {
+			$child->load();
+			$this->loadChildren($child);
+		}
 	}
 
 	private function cleanRows(CollectionInterface $collection, array $rows, HandlerInterface $handler): array
 	{
-		$visible = array_flip($this->getVisibleFields($collection));
+		$visible = array_flip($collection->getVisibleColumns());
 		$requested = array_intersect_key(array_flip($handler->getRequestedColumns()), $visible);
 		$relationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
 
@@ -127,7 +137,7 @@ class RootHandler extends AbstractHandler
 					: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 			}
 
-			$row = $this->mapColumnsToFields($collection, $row);
+			$row = $collection->mapRowFromColumns($row);
 		}
 		unset($row);
 
@@ -136,7 +146,7 @@ class RootHandler extends AbstractHandler
 
 	private function cleanRelationRow(HandlerInterface $handler, array $row): array
 	{
-		$visible = array_flip($this->getVisibleFields($handler->getTargetCollection()));
+		$visible = array_flip($handler->getTargetCollection()->getVisibleColumns());
 		$nestedRelationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
 		$syntheticKeys = array_flip(array_filter(array_keys($row), fn(string $key) => str_starts_with($key, '__on_')));
 		$row = array_intersect_key($row, $visible + $nestedRelationKeys + $syntheticKeys);
@@ -159,7 +169,7 @@ class RootHandler extends AbstractHandler
 				: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 		}
 
-		return $this->mapColumnsToFields($handler->getTargetCollection(), $row);
+		return $handler->getTargetCollection()->mapRowFromColumns($row);
 	}
 
 	private function numericRow(array $row, array $columns): array
@@ -183,35 +193,9 @@ class RootHandler extends AbstractHandler
 		return $row;
 	}
 
-	private function getVisibleFields(CollectionInterface $collection): array
-	{
-		$visible = [];
-		foreach ($collection->fields as $field) {
-			if (!$field->isHidden()) {
-				$visible[] = $field->getColumn();
-			}
-		}
-
-		return $visible;
-	}
-
 	private function getPrimaryKeyColumns(CollectionInterface $collection): array
 	{
 		return $collection->getPrimaryKey()->getColumns();
-	}
-
-	private function mapColumnsToFields(CollectionInterface $collection, array $row): array
-	{
-		$mapped = [];
-		foreach ($row as $key => $value) {
-			$name = $collection->fields->hasColumn((string) $key)
-				? $collection->fields->getKeyByColumnName((string) $key)
-				: $key;
-
-			$mapped[$name] = $value;
-		}
-
-		return $mapped;
 	}
 
 	private function getNodeOrNull(): ?\Cycle\ORM\Parser\AbstractNode

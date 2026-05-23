@@ -69,6 +69,30 @@ interface CollectionInterface
 
 	public function getPrimaryKey(): PrimaryKeyDefinition;
 
+	/**
+	 * @return list<string>
+	 */
+	public function getVisibleFields(): array;
+
+	/**
+	 * @return list<string>
+	 */
+	public function getVisibleColumns(): array;
+
+	public function getFieldNameByColumn(string $columnName): string;
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	public function mapRowFromColumns(array $row): array;
+
+	/**
+	 * @param array<string, mixed> $row
+	 * @return array<string, mixed>
+	 */
+	public function mapVisibleRowFromColumns(array $row): array;
+
 	public function note(string $note): self;
 
 	public function getNote(): ?string;

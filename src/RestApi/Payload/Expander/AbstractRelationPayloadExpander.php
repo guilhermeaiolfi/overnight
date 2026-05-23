@@ -6,7 +6,7 @@ namespace ON\RestApi\Payload\Expander;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
-use ON\RestApi\Resolver\Sql\SqlDataSource;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 abstract class AbstractRelationPayloadExpander
 {
@@ -15,7 +15,7 @@ abstract class AbstractRelationPayloadExpander
 	public function __construct(
 		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
-		protected SqlDataSource $dataSource,
+		protected ItemRepositoryInterface $items,
 	) {
 	}
 
@@ -27,31 +27,5 @@ abstract class AbstractRelationPayloadExpander
 	protected function getTargetCollection(): CollectionInterface
 	{
 		return $this->relation->getCollection();
-	}
-
-	protected function visibleFieldNames(CollectionInterface $collection): array
-	{
-		$visible = [];
-		foreach ($collection->fields as $fieldName => $field) {
-			if (!$field->isHidden()) {
-				$visible[] = (string) $fieldName;
-			}
-		}
-
-		return $visible;
-	}
-
-	protected function mapRowToFieldNames(CollectionInterface $collection, array $row): array
-	{
-		$item = [];
-		foreach ($row as $column => $value) {
-			$name = $collection->fields->hasColumn((string) $column)
-				? $collection->fields->getKeyByColumnName((string) $column)
-				: (string) $column;
-
-			$item[$name] = $value;
-		}
-
-		return $item;
 	}
 }
