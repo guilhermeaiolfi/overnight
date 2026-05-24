@@ -15,19 +15,26 @@ use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\RestApiService;
+use ON\Validation\CollectionValidator;
+use ON\Validation\ValidationFailedException;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 class RestMiddleware implements MiddlewareInterface
 {
+	protected CollectionValidator $validator;
+
 	public function __construct(
 		protected RestApiService $restApi,
 		protected DirectusMutationBuilder $mutationBuilder,
 		protected array $options = []
 	) {
+		$this->validator = new CollectionValidator(
+			$options['validationMessages'] ?? [],
+			$options['validationLang'] ?? 'en',
+		);
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
@@ -337,32 +344,10 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function validateInput(CollectionInterface $collection, array $input, bool $isPartial = false): void
 	{
-		$rules = [];
-
-		foreach ($collection->fields as $name => $field) {
-			$fieldRules = $field->getValidation();
-			if ($fieldRules === null) {
-				continue;
-			}
-
-			// For partial updates, only validate fields present in input
-			if ($isPartial && !array_key_exists($name, $input)) {
-				continue;
-			}
-
-			$rules[$name] = $fieldRules;
-		}
-
-		if (empty($rules)) {
-			return;
-		}
-
-		$factory = new ValidationFactory();
-		$validation = $factory->make($input, $rules);
-		$validation->validate();
-
-		if ($validation->fails()) {
-			throw RestApiError::validationFailed($validation->errors()->toArray());
+		try {
+			$this->validator->validate($collection, $input, $isPartial);
+		} catch (ValidationFailedException $e) {
+			throw RestApiError::validationFailed($e->getErrors());
 		}
 	}
 

@@ -19,8 +19,9 @@ use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Field\FieldInterface;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Validation\CollectionValidator;
+use ON\Validation\ValidationFailedException;
 use Psr\EventDispatcher\EventDispatcherInterface;
-use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 class GraphQLRegistryGenerator
 {
@@ -28,12 +29,15 @@ class GraphQLRegistryGenerator
 	protected array $inputTypes = [];
 	protected array $enumTypes = [];
 	protected static ?UploadType $uploadType = null;
+	protected CollectionValidator $validator;
 
 	public function __construct(
 		protected Registry $ormRegistry,
 		protected ?GraphQLResolverInterface $resolver = null,
-		protected ?EventDispatcherInterface $eventDispatcher = null
+		protected ?EventDispatcherInterface $eventDispatcher = null,
+		?CollectionValidator $validator = null,
 	) {
+		$this->validator = $validator ?? new CollectionValidator();
 	}
 
 	public function generate(): Schema
@@ -597,30 +601,10 @@ class GraphQLRegistryGenerator
 	 */
 	protected function validateInput(Collection $collection, array $input): void
 	{
-		$rules = [];
-
-		foreach ($collection->fields as $fieldName => $field) {
-			if ($field->isPrimaryKey()) {
-				continue;
-			}
-
-			$validation = $field->getValidation();
-			if ($validation !== null) {
-				$rules[$fieldName] = $validation;
-			}
-		}
-
-		if (empty($rules)) {
-			return;
-		}
-
-		$factory = new ValidationFactory();
-		$validation = $factory->validate($input, $rules);
-
-		if ($validation->fails()) {
-			$allErrors = $validation->errors()->toArray();
-
-			throw GraphQLUserError::validationFailed($allErrors);
+		try {
+			$this->validator->validate($collection, $input, skipPrimaryKey: true);
+		} catch (ValidationFailedException $e) {
+			throw GraphQLUserError::validationFailed($e->getErrors());
 		}
 	}
 }

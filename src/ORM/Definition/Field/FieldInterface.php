@@ -83,10 +83,18 @@ interface FieldInterface
 
 	/**
 	 * Set validation rules (pipe-delimited string, e.g. 'required|email|max:255').
+	 *
+	 * @param array<string, string> $messages Custom messages keyed by rule shorthand
+	 *                                        (e.g. 'required'), field name, field:rule, or rule.*
 	 */
-	public function validation(?string $rules): self;
+	public function validation(?string $rules, array $messages = []): self;
 
 	public function getValidation(): ?string;
+
+	/**
+	 * @return array<string, string>
+	 */
+	public function getValidationMessages(): array;
 
 	public function description(?string $description): self;
 

@@ -17,4 +17,9 @@ class RestApiConfig extends Config
 	public int $rateLimitWindow = 60;
 	public array $addons = [];
 	public array $dynamicVariables = [];
+
+	/** @var array<string, string> */
+	public array $validationMessages = [];
+
+	public string $validationLang = 'en';
 }

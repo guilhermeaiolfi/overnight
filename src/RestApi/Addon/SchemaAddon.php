@@ -129,6 +129,11 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 				$entry['validation'] = $validation;
 			}
 
+			$validationMessages = $field->getValidationMessages();
+			if ($validationMessages !== []) {
+				$entry['validationMessages'] = $validationMessages;
+			}
+
 			$fields[] = $entry;
 		}
 		return $fields;

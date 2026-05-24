@@ -39,6 +39,9 @@ class Field implements FieldInterface
 
 	protected ?string $validation = null;
 
+	/** @var array<string, string> */
+	protected array $validationMessages = [];
+
 	protected ?string $description = null;
 
 	/**
@@ -207,9 +210,10 @@ class Field implements FieldInterface
 		return $this->typecast;
 	}
 
-	public function validation(?string $rules): self
+	public function validation(?string $rules, array $messages = []): self
 	{
 		$this->validation = $rules;
+		$this->validationMessages = $rules === null ? [] : $messages;
 
 		return $this;
 	}
@@ -217,6 +221,11 @@ class Field implements FieldInterface
 	public function getValidation(): ?string
 	{
 		return $this->validation;
+	}
+
+	public function getValidationMessages(): array
+	{
+		return $this->validationMessages;
 	}
 
 	public function description(?string $description): self

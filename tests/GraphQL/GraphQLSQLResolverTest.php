@@ -357,6 +357,47 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayHasKey('email', $validationErrors);
 	}
 
+	public function testValidationUsesFieldMessages(): void
+	{
+		$this->registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('name', 'string')->type('string')->nullable(true)
+				->validation('required|min:3', [
+					'min' => 'Name must be at least :min characters.',
+				])
+				->end()
+			->end();
+
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+		$generator = new GraphQLRegistryGenerator(
+			$this->registry,
+			$resolver,
+			null,
+			new \ON\Validation\CollectionValidator([
+				'rule.required' => 'The :attribute field is required.',
+			]),
+		);
+		$schema = $generator->generate();
+
+		$query = '
+		mutation {
+			create_user(input: { name: "Jo" }) {
+				id
+				name
+			}
+		}';
+
+		$result = GraphQL::executeQuery($schema, $query);
+		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+
+		$this->assertArrayHasKey('errors', $data);
+		$this->assertSame(
+			['Name must be at least 3 characters.'],
+			$data['errors'][0]['extensions']['validationErrors']['name']
+		);
+	}
+
 	public function testValidationPassesWithValidInput(): void
 	{
 		$this->registry->collection('user')

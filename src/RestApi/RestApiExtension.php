@@ -75,6 +75,8 @@ class RestApiExtension extends AbstractExtension
 				'defaultLimit' => $defaultLimit,
 				'maxLimit' => $maxLimit,
 				'dynamicVariables' => $dynamicVariables,
+				'validationMessages' => $config->get('validationMessages', []),
+				'validationLang' => $config->get('validationLang', 'en'),
 				'debug' => $debug,
 			]
 		);

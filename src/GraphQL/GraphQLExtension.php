@@ -18,6 +18,7 @@ use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
+use ON\Validation\CollectionValidator;
 
 use Psr\Container\ContainerInterface;
 
@@ -59,9 +60,13 @@ class GraphQLExtension extends AbstractExtension
 
 		// Build the schema
 		$registry = $container->get(Registry::class);
+		$validator = new CollectionValidator(
+			$this->options['validationMessages'] ?? [],
+			$this->options['validationLang'] ?? 'en',
+		);
 		$generator = $debug
-			? new GraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher)
-			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher);
+			? new GraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator)
+			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator);
 		$schema = $generator->generate();
 
 		// Wire up per-request cleanup via event
