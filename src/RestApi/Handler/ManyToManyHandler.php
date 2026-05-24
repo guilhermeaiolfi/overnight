@@ -10,6 +10,7 @@ use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Handler\Mutation\ManyToManyApply;
+use ON\RestApi\Handler\Mutation\ManyToManyNormalize;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -17,6 +18,7 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 class ManyToManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
 	use ManyToManyApply;
+	use ManyToManyNormalize;
 
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;

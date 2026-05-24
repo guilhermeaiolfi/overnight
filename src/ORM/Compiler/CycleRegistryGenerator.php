@@ -177,7 +177,7 @@ class CycleRegistryGenerator implements GeneratorInterface
 
 		if ($on_relation instanceof M2MRelation) {
 			$options
-				->set('through', $on_relation->through->getCollection()->getTable())
+				->set('through', $on_relation->through->getCollection()->getName())
 				->set('throughInnerKey', $this->relationColumns($on_relation->through->getCollection(), $on_relation->through->throughInnerKeys()))
 				->set('throughOuterKey', $this->relationColumns($on_relation->through->getCollection(), $on_relation->through->throughOuterKeys()));
 		}

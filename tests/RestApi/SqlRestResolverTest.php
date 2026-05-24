@@ -868,6 +868,107 @@ final class SqlRestResolverTest extends TestCase
 	}
 
 	// -------------------------------------------------------------------------
+	// Bidirectional hasMany / belongsTo (same FK, opposite directions)
+	// -------------------------------------------------------------------------
+
+	public function testBidirectionalRelationConnectViaHasMany(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+		$service = $this->createRestApiService($registry, $resolver);
+
+		// Post 2 belongs to user 1. Reassign it to user 2 via user.posts (hasMany side).
+		$service->update(
+			'user',
+			'2',
+			$this->m($registry, $resolver, 'user', ['posts' => [['id' => 2]]], 'update', '2', partial: true),
+			['dispatchEvents' => false]
+		);
+
+		$post = $this->createQueryPlanner($registry, $db)->get(
+			$registry->getCollection('post'),
+			'2',
+			$this->q($registry->getCollection('post'))
+		);
+
+		$this->assertNotNull($post);
+		$this->assertSame(2, (int) $post['user_id']);
+	}
+
+	public function testBidirectionalRelationConnectViaBelongsTo(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+		$service = $this->createRestApiService($registry, $resolver);
+
+		// Post 2 belongs to user 1. Reassign it to user 3 via post.author (belongsTo side).
+		$service->update(
+			'post',
+			'2',
+			$this->m($registry, $resolver, 'post', ['author' => 3], 'update', '2', partial: true),
+			['dispatchEvents' => false]
+		);
+
+		$post = $this->createQueryPlanner($registry, $db)->get(
+			$registry->getCollection('post'),
+			'2',
+			$this->q($registry->getCollection('post'))
+		);
+
+		$this->assertNotNull($post);
+		$this->assertSame(3, (int) $post['user_id']);
+	}
+
+	public function testBidirectionalRelationNestedCreateFromBothDirections(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+		$service = $this->createRestApiService($registry, $resolver);
+		$queryPlanner = $this->createQueryPlanner($registry, $db);
+
+		$user = $service->create(
+			'user',
+			$this->m($registry, $resolver, 'user', [
+				'name' => 'ParentViaHasMany',
+				'email' => 'parent-hasmany@test.com',
+				'posts' => [
+					['title' => 'Child From HasMany', 'content' => 'via posts', 'status' => 'published'],
+				],
+			]),
+			['dispatchEvents' => false]
+		);
+
+		$postViaHasMany = $queryPlanner->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'filter' => ['title' => ['_eq' => 'Child From HasMany']],
+		]))['items'][0];
+
+		$this->assertSame((int) $user['id'], (int) $postViaHasMany['user_id']);
+
+		$post = $service->create(
+			'post',
+			$this->m($registry, $resolver, 'post', [
+				'title' => 'Child From BelongsTo',
+				'content' => 'via author',
+				'status' => 'published',
+				'author' => ['name' => 'ParentViaBelongsTo', 'email' => 'parent-belongsto@test.com'],
+			]),
+			['dispatchEvents' => false]
+		);
+
+		$this->assertSame('ParentViaBelongsTo', $queryPlanner->get(
+			$registry->getCollection('user'),
+			(string) $post['user_id'],
+			$this->q($registry->getCollection('user'))
+		)['name']);
+	}
+
+	// -------------------------------------------------------------------------
 	// M2M Connect / Disconnect
 	// -------------------------------------------------------------------------
 

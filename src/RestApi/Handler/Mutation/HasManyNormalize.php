@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Payload\Expander;
+namespace ON\RestApi\Handler\Mutation;
 
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\ConnectAction;
@@ -15,11 +15,11 @@ use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Support\MutationInput;
 
-final class HasManyRelationPayloadExpander extends AbstractRelationPayloadExpander implements RelationPayloadExpanderInterface
+trait HasManyNormalize
 {
-	use RelationPayloadExpanderSupport;
+	use RelationPayloadNormalizeEntry;
 
-	public function expandBasic(MutationContext $context, BasicRelationAction $basic): array
+	protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
 	{
 		$input = $basic->items;
 		$actions = [];
@@ -89,7 +89,7 @@ final class HasManyRelationPayloadExpander extends AbstractRelationPayloadExpand
 		return $actions;
 	}
 
-	public function resolveAction(
+	protected function resolvePayloadAction(
 		MutationContext $context,
 		RelationAction $action,
 		PayloadNormalizer $normalizer,

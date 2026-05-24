@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Payload\Expander;
+namespace ON\RestApi\Handler\Mutation;
 
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Payload\Action\BasicRelationAction;
@@ -17,11 +17,11 @@ use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
-final class BelongsToRelationPayloadExpander extends AbstractRelationPayloadExpander implements RelationPayloadExpanderInterface
+trait BelongsToNormalize
 {
-	use RelationPayloadExpanderSupport;
+	use RelationPayloadNormalizeEntry;
 
-	public function expandBasic(MutationContext $context, BasicRelationAction $basic): array
+	protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
 	{
 		$input = $basic->item ?? ($basic->items[0] ?? null);
 		$actions = [];
@@ -74,7 +74,7 @@ final class BelongsToRelationPayloadExpander extends AbstractRelationPayloadExpa
 		return $actions;
 	}
 
-	public function resolveAction(
+	protected function resolvePayloadAction(
 		MutationContext $context,
 		RelationAction $action,
 		PayloadNormalizer $normalizer,
@@ -139,10 +139,6 @@ final class BelongsToRelationPayloadExpander extends AbstractRelationPayloadExpa
 		$id = $this->getInputPrimaryKeyValue($collection, $action->data);
 		if ($id !== null) {
 			$action->target = $id;
-
-			return;
 		}
-
-		$action->data = $action->data;
 	}
 }

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Payload\Expander;
+namespace ON\RestApi\Handler\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
@@ -10,8 +10,10 @@ use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\ValueRef;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
-trait RelationExpanderSupport
+trait RelationNormalizeSupport
 {
+	use RelationStateSupport;
+
 	protected function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
 	{
 		return $collection->getPrimaryKey()->extractFromInput($input);
@@ -102,37 +104,6 @@ trait RelationExpanderSupport
 		$row = $this->items->fetchOne($query);
 
 		return $row === null ? null : $collection->mapRowFromColumns($row);
-	}
-
-	protected function getPrimaryKeyValueFromState(
-		MutationStateInterface $state,
-		bool $requireReady = true
-	): ?PrimaryKeyValue {
-		$values = [];
-
-		foreach ($state->getCollection()->getPrimaryKey()->getFieldNames() as $fieldName) {
-			$value = $state->getValue($fieldName);
-			if ($value instanceof ValueRef) {
-				if (!$value->isReady() && $requireReady) {
-					return null;
-				}
-
-				$values[$fieldName] = $value;
-				continue;
-			}
-
-			if ($requireReady) {
-				$value = $state->resolveValue($value);
-			}
-
-			if ($value === null && !$state->isValueReady($fieldName)) {
-				return null;
-			}
-
-			$values[$fieldName] = $value;
-		}
-
-		return new PrimaryKeyValue($state->getCollection(), $values);
 	}
 
 	protected function applySourceValuesToTargetInput(array &$input, MutationStateInterface $source): void

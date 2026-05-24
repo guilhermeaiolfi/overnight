@@ -43,8 +43,7 @@ file uploads (pre-plan)
 | `RestApiService` | HTTP orchestration; shapes responses via `formatResponseRow()` (hydrate/serialize) |
 | `QueryPlanner` | Builds handler tree, runs list/get/aggregate — returns storage rows only |
 | `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
-| `PayloadNormalizer` | Expands basic relations, fills gaps on detailed actions via handler expanders |
-| `RelationPayloadExpanderInterface` | Per relation kind: `expandBasic()` + `resolveAction()` |
+| `PayloadNormalizer` | Walks the mutation tree; delegates relation payload normalization to handlers |
 | `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
 | `RelationPayload` | One relation occurrence: flat `list<RelationAction>` |
 | `RelationAction` | `CreateAction`, `UpdateAction`, `DeleteAction`, `ConnectAction`, `DisconnectAction` |
@@ -56,7 +55,7 @@ file uploads (pre-plan)
 | `MutationState` | Mutable row values for one entity during a mutation |
 | `ValueRef` | Deferred field value from another state's PK (cross-row FK wiring) |
 | `Handler` / `HandlerRegistry` | Relation-scoped read + write implementation per relation kind |
-| `HandlerFactory` | `relation()` reads, `mutation()` apply, `payloadExpander()` normalize |
+| `HandlerFactory` | `relation()` reads, `mutation()` normalize + apply |
 
 ---
 
@@ -70,10 +69,9 @@ src/RestApi/
 │   └── Parser/                 Directus-style query → QuerySpec
 ├── Payload/
 │   ├── Parser/                 DirectusPayloadParser → MutationSpec
-│   ├── PayloadNormalizer.php   expandBasic + resolveAction
+│   ├── PayloadNormalizer.php   tree walk + handler delegation
 │   ├── Action/                 CreateAction, ConnectAction, BasicRelationAction, …
-│   ├── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
-│   └── Expander/               HasManyRelationPayloadExpander, …
+│   └── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
 ├── Mutation/
 │   ├── RestMutationPlanner.php Plan + commit + events
 │   ├── MutationPlan.php
@@ -85,7 +83,7 @@ src/RestApi/
 │   ├── HandlerFactory.php
 │   ├── HasOneHandler.php …     Read + applyRelation()
 │   ├── Read/
-│   └── Mutation/               Apply-only traits (ForeignKeyOnTargetApply, …)
+│   └── Mutation/               Normalize + apply traits (HasManyNormalize, ForeignKeyOnTargetApply, …)
 └── Event/
 ```
 
@@ -94,7 +92,7 @@ src/RestApi/
 ## Plan phase (`RestMutationPlanner`)
 
 1. **`DirectusPayloadParser::parse()`** — split scalars vs relations; detailed → typed actions; basic → `BasicRelationAction`.
-2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::payloadExpander()` expands basic and resolves gaps (builds nested `MutationNodeSpec` on entity actions).
+2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::mutation()` returns a handler that normalizes the payload in one call (`normalizeRelation()`).
 3. **`planFromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
 4. Return `MutationPlan` — **no events yet**.
 
@@ -126,15 +124,14 @@ Basic vs detailed is a **parser/normalizer** concern only. By plan time, `BasicR
 One **handler class per relation kind**. Each handler implements:
 
 - **Read** (`HandlerInterface`): `configureParserNode()`, `load()`
-- **Write** (`RelationMutationHandlerInterface`): `applyRelation()` only
-- **Normalize** (`RelationPayloadExpanderInterface` via `HandlerFactory::payloadExpander()`): `expandBasic()`, `resolveAction()`
+- **Write** (`RelationMutationHandlerInterface`): `normalizeRelation()`, `applyRelation()`
 
-| Kind | Handler | Expander | Apply trait |
-|------|---------|----------|-------------|
-| hasOne | `HasOneHandler` | `HasOneRelationPayloadExpander` | `ForeignKeyOnTargetApply` |
-| hasMany | `HasManyHandler` | `HasManyRelationPayloadExpander` | `ForeignKeyOnTargetApply` |
-| belongsTo | `BelongsToHandler` | `BelongsToRelationPayloadExpander` | `BelongsToApply` |
-| manyToMany | `ManyToManyHandler` | `ManyToManyRelationPayloadExpander` | `ManyToManyApply` |
+| Kind | Handler | Normalize trait | Apply trait |
+|------|---------|-----------------|-------------|
+| hasOne | `HasOneHandler` | `HasOneNormalize` | `ForeignKeyOnTargetApply` |
+| hasMany | `HasManyHandler` | `HasManyNormalize` | `ForeignKeyOnTargetApply` |
+| belongsTo | `BelongsToHandler` | `BelongsToNormalize` | `BelongsToApply` |
+| manyToMany | `ManyToManyHandler` | `ManyToManyNormalize` | `ManyToManyApply` |
 
 ### Register a custom handler
 
@@ -145,24 +142,21 @@ $registry = HandlerRegistry::defaults()
 $factory = new HandlerFactory($registry, $dataSource, $querySpecCompiler);
 ```
 
-Register a matching expander in `HandlerFactory::payloadExpander()` for new handler classes.
-
 ### Custom handler checklist
 
 1. Extend `AbstractRelationHandler` (or an existing handler if behavior is close).
 2. Implement read: parser node + `load()`.
-3. Add `*RelationPayloadExpander` implementing `expandBasic()` + `resolveAction()`.
-4. Add `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
-5. Wire expander in `HandlerFactory::payloadExpander()`.
-6. Register in `HandlerRegistry`.
-7. Add tests under `tests/RestApi/`.
+3. Add a `*Normalize` trait (use `RelationPayloadNormalizeEntry` or extend an existing normalize trait).
+4. Add a `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
+5. Register in `HandlerRegistry`.
+6. Add tests under `tests/RestApi/`.
 
 ### Polymorphic example (sketch)
 
-Resolve target collection in the expander when expanding basic/detailed create actions:
+Resolve target collection inside `coerceBasicActions()` when normalizing basic/detailed create actions:
 
 ```php
-public function expandBasic(MutationContext $context, BasicRelationAction $basic): array
+protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
 {
     $actions = [];
     foreach ($basic->items as $item) {
@@ -209,4 +203,4 @@ Key suites: `RestApiServiceTest`, `SqlRestResolverTest`, `PayloadParserTest`, `H
 
 ### Polymorphic relations
 
-Not in the default handler set. Register a custom handler + expander pair; resolve target collection in `expandBasic()` / `resolveAction()`.
+Not in the default handler set. Register a custom handler with normalize + apply traits; resolve target collection in `coerceBasicActions()` / `resolvePayloadAction()`.

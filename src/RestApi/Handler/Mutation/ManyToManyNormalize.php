@@ -2,14 +2,12 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Payload\Expander;
+namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Payload\Action\BasicRelationAction;
-use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Action\DeleteAction;
@@ -19,23 +17,16 @@ use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
 
-final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExpander implements RelationPayloadExpanderInterface
+trait ManyToManyNormalize
 {
-	use RelationPayloadExpanderSupport;
+	use RelationPayloadNormalizeEntry;
 
-	public function __construct(
-		CollectionInterface $collection,
-		private readonly M2MRelation $manyToMany,
-		ItemRepositoryInterface $items,
-	) {
-		parent::__construct($collection, $manyToMany, $items);
-	}
-
-	public function expandBasic(MutationContext $context, BasicRelationAction $basic): array
+	protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
 	{
 		$input = $basic->item ?? $basic->items;
 		$actions = [];
-		$throughCollection = $this->manyToMany->through->getCollection();
+		$manyToMany = $this->getManyToManyRelation();
+		$throughCollection = $manyToMany->through->getCollection();
 		$targetCollection = $this->getTargetCollection();
 		$targetName = $targetCollection->getName();
 		$throughName = $throughCollection->getName();
@@ -75,7 +66,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 			if ($this->isThroughPayload($item)) {
 				$actions = array_merge(
 					$actions,
-					$this->expandThroughItem($context, $item, $index, $throughName, $throughPrimaryKey, $currentByPivotId, $currentByTargetId, $seenPivot, $seenTarget)
+					$this->coerceThroughItem($context, $item, $index, $throughName, $throughPrimaryKey, $currentByPivotId, $currentByTargetId, $seenPivot, $seenTarget)
 				);
 				continue;
 			}
@@ -120,17 +111,17 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 		return $actions;
 	}
 
-	public function resolveAction(
+	protected function resolvePayloadAction(
 		MutationContext $context,
 		RelationAction $action,
 		PayloadNormalizer $normalizer,
 	): void {
 		$targetName = $this->getTargetCollection()->getName();
-		$throughName = $this->manyToMany->through->getCollection()->getName();
+		$throughName = $this->getManyToManyRelation()->through->getCollection()->getName();
 
 		match (true) {
-			$action instanceof CreateAction => $this->resolveCreateAction($action, $context, $normalizer, $targetName, $throughName),
-			$action instanceof UpdateAction => $this->resolveUpdateAction($action, $context, $normalizer, $targetName, $throughName),
+			$action instanceof CreateAction => $this->resolveEntityPayloadAction($action, $context, $normalizer, $targetName, $throughName, 'create'),
+			$action instanceof UpdateAction => $this->resolveEntityPayloadAction($action, $context, $normalizer, $targetName, $throughName, 'update'),
 			$action instanceof DeleteAction => $this->resolveDeleteAction($action, $targetName),
 			$action instanceof ConnectAction => $this->resolveConnectAction($action, $context, $targetName),
 			$action instanceof DisconnectAction => $this->resolveDisconnectAction($action, $targetName),
@@ -138,34 +129,22 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 		};
 	}
 
-	private function resolveCreateAction(
-		CreateAction $action,
-		MutationContext $context,
-		PayloadNormalizer $normalizer,
-		string $targetName,
-		string $throughName,
-	): void {
-		if ($action->node !== null) {
-			return;
+	protected function getManyToManyRelation(): M2MRelation
+	{
+		if (!$this->relation instanceof M2MRelation) {
+			throw new \LogicException('Expected M2M relation.');
 		}
 
-		$data = $action->data ?? [];
-		$collectionName = is_array($data) && $this->isThroughPayload($data) ? $throughName : $targetName;
-		if ($collectionName === $throughName) {
-			$data = $this->normalizeThroughPayload($context->source, $data);
-		}
-
-		$action->collection = $collectionName;
-		$action->node = $normalizer->buildNode($collectionName, $data, 'create');
-		$action->data = null;
+		return $this->relation;
 	}
 
-	private function resolveUpdateAction(
-		UpdateAction $action,
+	private function resolveEntityPayloadAction(
+		CreateAction|UpdateAction $action,
 		MutationContext $context,
 		PayloadNormalizer $normalizer,
 		string $targetName,
 		string $throughName,
+		string $operation,
 	): void {
 		if ($action->node !== null) {
 			return;
@@ -178,7 +157,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 		}
 
 		$action->collection = $collectionName;
-		$action->node = $normalizer->buildNode($collectionName, $data, 'update');
+		$action->node = $normalizer->normalizeChildNode($collectionName, $data, $operation);
 		$action->data = null;
 	}
 
@@ -189,7 +168,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 	 * @param array<string, true> $seenTarget
 	 * @return list<RelationAction>
 	 */
-	private function expandThroughItem(
+	private function coerceThroughItem(
 		MutationContext $context,
 		array $item,
 		int $index,
@@ -201,6 +180,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 		array &$seenTarget,
 	): array {
 		$actions = [];
+		$manyToMany = $this->getManyToManyRelation();
 		$pivotId = array_key_exists($throughPrimaryKey, $item) ? $item[$throughPrimaryKey] : null;
 		$targetId = $this->extractThroughTargetIdentity($item);
 		$normalized = $this->normalizeThroughPayload($context->source, $item);
@@ -215,7 +195,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 
 		if ($targetId !== null && isset($currentByTargetId[$targetId->toUrlId()])) {
 			$existing = $currentByTargetId[$targetId->toUrlId()];
-			$existingPivotId = $this->getInputPrimaryKeyValue($this->manyToMany->through->getCollection(), $existing);
+			$existingPivotId = $this->getInputPrimaryKeyValue($manyToMany->through->getCollection(), $existing);
 			if ($existingPivotId !== null) {
 				$seenPivot[$existingPivotId->toUrlId()] = true;
 				foreach ($existingPivotId->values() as $fieldName => $value) {
@@ -238,11 +218,12 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 
 	private function isThroughPayload(array $item): bool
 	{
-		$through = $this->manyToMany->through->getCollection();
+		$manyToMany = $this->getManyToManyRelation();
+		$through = $manyToMany->through->getCollection();
 		$target = $this->getTargetCollection();
 
 		foreach (array_keys($item) as $key) {
-			if (in_array((string) $key, $this->manyToMany->through->throughOuterKeys(), true)) {
+			if (in_array((string) $key, $manyToMany->through->throughOuterKeys(), true)) {
 				return true;
 			}
 
@@ -256,7 +237,8 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 
 	private function normalizeThroughPayload(MutationStateInterface $source, array $item): array
 	{
-		foreach ($this->manyToMany->through->throughInnerKeys() as $index => $throughInnerKey) {
+		$manyToMany = $this->getManyToManyRelation();
+		foreach ($manyToMany->through->throughInnerKeys() as $index => $throughInnerKey) {
 			$item[$throughInnerKey] = $source->getValue($this->relation->innerKeys()[$index]);
 		}
 
@@ -265,7 +247,7 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 
 	private function currentPivotRows(MutationStateInterface $source): array
 	{
-		$through = $this->manyToMany->through;
+		$through = $this->getManyToManyRelation()->through;
 		$fieldValueMap = [];
 		foreach ($this->relation->innerKeys() as $index => $innerKey) {
 			$fieldValueMap[$through->throughInnerKeys()[$index]] = $source->resolveValue($source->getValue($innerKey));
@@ -276,8 +258,9 @@ final class ManyToManyRelationPayloadExpander extends AbstractRelationPayloadExp
 
 	private function extractThroughTargetIdentity(array $row): ?PrimaryKeyValue
 	{
+		$manyToMany = $this->getManyToManyRelation();
 		$values = [];
-		foreach ($this->manyToMany->through->throughOuterKeys() as $index => $throughOuterKey) {
+		foreach ($manyToMany->through->throughOuterKeys() as $index => $throughOuterKey) {
 			if (!array_key_exists($throughOuterKey, $row)) {
 				return null;
 			}

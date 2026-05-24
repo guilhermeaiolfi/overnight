@@ -6,10 +6,7 @@ namespace ON\RestApi\Payload;
 
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Payload\Action\BasicRelationAction;
-use ON\RestApi\Payload\Action\CreateAction;
-use ON\RestApi\Payload\Action\UpdateAction;
-use ON\RestApi\Payload\Expander\RelationPayloadExpanderInterface;
+use ON\RestApi\Handler\RelationMutationHandlerInterface;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
@@ -42,29 +39,15 @@ final class PayloadNormalizer
 
 	public function normalizeRelation(RelationPayload $relation, MutationContext $context): void
 	{
-		$expander = $this->handlers->payloadExpander($context->collection, $relation->relationName);
-		if ($expander === null) {
+		$handler = $this->handlers->mutation($context->collection, $relation->relationName);
+		if (!$handler instanceof RelationMutationHandlerInterface) {
 			return;
 		}
 
-		$resolved = [];
-		foreach ($relation->actions as $action) {
-			if ($action instanceof BasicRelationAction) {
-				array_push($resolved, ...$expander->expandBasic($context, $action));
-				continue;
-			}
-
-			$resolved[] = $action;
-		}
-
-		$relation->actions = $resolved;
-
-		foreach ($relation->actions as $action) {
-			$expander->resolveAction($context, $action, $this);
-		}
+		$handler->normalizeRelation($relation, $context, $this);
 	}
 
-	public function buildNode(string $collectionName, array $data, string $operation): MutationNodeSpec
+	public function normalizeChildNode(string $collectionName, array $data, string $operation): MutationNodeSpec
 	{
 		$collection = $this->registry->getCollection($collectionName);
 		$node = $this->parser->parseNode($collection, $data);

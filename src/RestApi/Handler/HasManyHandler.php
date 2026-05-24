@@ -7,10 +7,12 @@ namespace ON\RestApi\Handler;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
+use ON\RestApi\Handler\Mutation\HasManyNormalize;
 
 class HasManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
 	use ForeignKeyOnTargetApply;
+	use HasManyNormalize;
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{

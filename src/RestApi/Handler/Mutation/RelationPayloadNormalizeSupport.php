@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Payload\Expander;
+namespace ON\RestApi\Handler\Mutation;
 
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Payload\Action\ConnectAction;
@@ -13,9 +13,8 @@ use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
-use ON\RestApi\Support\PrimaryKeyCriteria;
 
-trait RelationPayloadExpanderSupport
+trait RelationPayloadNormalizeSupport
 {
 	protected function resolveEntityAction(
 		CreateAction|UpdateAction $action,
@@ -35,7 +34,7 @@ trait RelationPayloadExpanderSupport
 		}
 
 		$action->collection = $targetCollection;
-		$action->node = $normalizer->buildNode($targetCollection, $data, $operation);
+		$action->node = $normalizer->normalizeChildNode($targetCollection, $data, $operation);
 		$action->data = null;
 	}
 
