@@ -17,9 +17,13 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 	private ?array $result = null;
 	private ?int $totalCount = null;
 
+	/**
+	 * @param array<string, mixed> $options
+	 */
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected array $params
+		protected QuerySpec $querySpec,
+		protected array $options = [],
 	) {
 	}
 
@@ -33,24 +37,30 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 		return $this->collection;
 	}
 
-	public function getParams(): array
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function getOptions(): array
 	{
-		return $this->params;
+		return $this->options;
 	}
 
-	public function setParams(array $params): void
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	public function setOptions(array $options): void
 	{
-		$this->params = $params;
+		$this->options = $options;
 	}
 
-	public function getQuerySpec(): ?QuerySpec
+	public function getQuerySpec(): QuerySpec
 	{
-		return ($this->params['querySpec'] ?? null) instanceof QuerySpec ? $this->params['querySpec'] : null;
+		return $this->querySpec;
 	}
 
 	public function setQuerySpec(QuerySpec $querySpec): void
 	{
-		$this->params['querySpec'] = $querySpec;
+		$this->querySpec = $querySpec;
 	}
 
 	public function isAggregate(): bool
@@ -60,12 +70,12 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 
 	public function getAggregate(): ?array
 	{
-		return $this->getQuerySpec()?->aggregate ?: null;
+		return $this->querySpec->aggregate ?: null;
 	}
 
 	public function getGroupBy(): ?array
 	{
-		return $this->getQuerySpec()?->groupBy ?: null;
+		return $this->querySpec->groupBy ?: null;
 	}
 
 	public function getResult(): ?array

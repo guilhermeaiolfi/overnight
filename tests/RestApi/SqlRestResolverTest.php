@@ -810,14 +810,14 @@ final class SqlRestResolverTest extends TestCase
 
 		$created = $service->create(
 			'user',
-			[
+			$this->m($registry, $resolver, 'user', [
 				'name' => 'Alice',
 				'email' => 'alice@test.com',
 				'posts' => [
 					['title' => 'Alice Post 1', 'content' => 'Content 1', 'status' => 'published'],
 					['title' => 'Alice Post 2', 'content' => 'Content 2', 'status' => 'draft'],
 				],
-			],
+			]),
 			['dispatchEvents' => false]
 		);
 
@@ -849,12 +849,12 @@ final class SqlRestResolverTest extends TestCase
 
 		$created = $service->create(
 			'post',
-			[
+			$this->m($registry, $resolver, 'post', [
 				'title' => 'New Post',
 				'content' => 'Content',
 				'status' => 'published',
 				'author' => ['name' => 'NewAuthor', 'email' => 'new@test.com'],
-			],
+			]),
 			['dispatchEvents' => false]
 		);
 
@@ -882,13 +882,13 @@ final class SqlRestResolverTest extends TestCase
 		// Create a new post and connect it to tags 1 and 2
 		$created = $service->create(
 			'post',
-			[
+			$this->m($registry, $resolver, 'post', [
 				'user_id' => 1,
 				'title' => 'Tagged Post',
 				'content' => 'Content',
 				'status' => 'published',
 				'tags' => ['connect' => [1, 2]],
-			],
+			]),
 			['dispatchEvents' => false]
 		);
 
@@ -912,7 +912,7 @@ final class SqlRestResolverTest extends TestCase
 
 		$created = $service->create(
 			'post',
-			[
+			$this->m($registry, $resolver, 'post', [
 				'user_id' => 1,
 				'title' => 'Post With New Tags',
 				'content' => 'Content',
@@ -921,7 +921,7 @@ final class SqlRestResolverTest extends TestCase
 					['name' => 'InlineA'],
 					['name' => 'InlineB'],
 				],
-			],
+			]),
 			['dispatchEvents' => false]
 		);
 
@@ -944,7 +944,7 @@ final class SqlRestResolverTest extends TestCase
 		$service = $this->createRestApiService($registry, $resolver);
 
 		// Post 1 is connected to tags 1 and 2. Disconnect tag 1.
-		$service->update('post', '1', ['tags' => ['disconnect' => [1]]], ['dispatchEvents' => false]);
+		$service->update('post', '1', $this->m($registry, $resolver, 'post', ['tags' => ['disconnect' => [1]]], 'update', '1', partial: true), ['dispatchEvents' => false]);
 
 		// Verify only tag 2 remains
 		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
@@ -1014,7 +1014,7 @@ final class SqlRestResolverTest extends TestCase
 
 		$created = $service->create(
 			'report',
-			[
+			$this->m($registry, $resolver, 'report', [
 				'title' => 'Tagged Report',
 				'tags' => [
 					'connect' => ['homepage'],
@@ -1022,7 +1022,7 @@ final class SqlRestResolverTest extends TestCase
 						['id' => 'budget-2026', 'label' => 'Budget 2026', 'active' => true],
 					],
 				],
-			],
+			]),
 			['dispatchEvents' => false]
 		);
 
@@ -1105,14 +1105,14 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
-		$service->update('post', '1', [
+		$service->update('post', '1', $this->m($registry, $resolver, 'post', [
 			'attachments' => [
 				'delete' => [2],
 				'update' => [
 					['id' => 1, 'title' => 'Keep Updated'],
 				],
 			],
-		], ['dispatchEvents' => false]);
+		], 'update', '1', partial: true), ['dispatchEvents' => false]);
 
 		$stmt = $db->database()->query('SELECT id, title FROM post_attachment WHERE post_id = 1 ORDER BY id');
 		$rows = $stmt->fetchAll();
@@ -1142,16 +1142,13 @@ final class SqlRestResolverTest extends TestCase
 			// non-existent column which will cause a PDO error
 			$service->create(
 				'user',
-				[
+				$this->m($registry, $resolver, 'user', [
 					'name' => 'FailUser',
 					'email' => 'fail@test.com',
 					'posts' => [
 						['title' => 'Good Post', 'content' => 'OK', 'status' => 'published'],
-						// This will fail: inserting into a column that doesn't exist
-						// We simulate failure by inserting a post with a NOT NULL violation
-						// Actually, let's use a direct approach: create a post with bad data
 					],
-				],
+				]),
 				['dispatchEvents' => false]
 			);
 
@@ -1173,13 +1170,12 @@ final class SqlRestResolverTest extends TestCase
 			// user_id via a nested belongsTo with duplicate email (will fail on unique constraint)
 			$service->create(
 				'post',
-				[
+				$this->m($registry, $resolver, 'post', [
 					'title' => 'Orphan Post',
 					'content' => 'Content',
 					'status' => 'published',
-					// Create an author with a duplicate email — triggers UNIQUE constraint
 					'author' => ['name' => 'Duplicate', 'email' => 'john@test.com'],
-				],
+				]),
 				['dispatchEvents' => false]
 			);
 			// If the duplicate author was created first and succeeded, the post would also succeed

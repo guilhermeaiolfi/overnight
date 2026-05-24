@@ -33,7 +33,7 @@ final class QueryPlanner implements QueryPlannerInterface
 		return $this->handlers;
 	}
 
-	public function list(CollectionInterface $collection, QuerySpec $querySpec, bool $typed = true): array
+	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
 		$selection = $this->selectionPlan($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
@@ -74,13 +74,6 @@ final class QueryPlanner implements QueryPlannerInterface
 			$aliases
 		);
 
-		if ($typed) {
-			$items = array_map(
-				fn (array $row): array => $this->items->hydrateRow($collection, $row),
-				$items
-			);
-		}
-
 		return [
 			'items' => $items,
 			'meta' => $meta,
@@ -91,10 +84,9 @@ final class QueryPlanner implements QueryPlannerInterface
 		CollectionInterface $collection,
 		PrimaryKeyValue|string $identity,
 		?QuerySpec $querySpec = null,
-		bool $typed = true,
 	): ?array {
 		if ($querySpec === null) {
-			return $this->items->findByIdentity($collection, $identity, $typed);
+			return $this->items->findByIdentity($collection, $identity, typed: false);
 		}
 
 		$selection = $this->selectionPlan($querySpec->selection);
@@ -129,7 +121,7 @@ final class QueryPlanner implements QueryPlannerInterface
 			return null;
 		}
 
-		return $typed ? $this->items->hydrateRow($collection, $item) : $item;
+		return $item;
 	}
 
 	private function fetchData(

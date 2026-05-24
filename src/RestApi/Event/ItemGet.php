@@ -7,6 +7,7 @@ namespace ON\RestApi\Event;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Query\Node\QuerySpec;
 
 class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
@@ -16,10 +17,14 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 	private bool $defaultPrevented = false;
 	private ?array $result = null;
 
+	/**
+	 * @param array<string, mixed> $options
+	 */
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected string $id,
-		protected array $params = []
+		protected PrimaryKeyValue $identity,
+		protected ?QuerySpec $querySpec = null,
+		protected array $options = [],
 	) {
 	}
 
@@ -33,29 +38,43 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 		return $this->collection;
 	}
 
+	/**
+	 * @return array<string, mixed>
+	 */
+	public function getOptions(): array
+	{
+		return $this->options;
+	}
+
+	/**
+	 * @param array<string, mixed> $options
+	 */
+	public function setOptions(array $options): void
+	{
+		$this->options = $options;
+	}
+
+	public function getIdentity(): PrimaryKeyValue
+	{
+		return $this->identity;
+	}
+
+	/**
+	 * URL-safe route id (scalar or encoded composite primary key).
+	 */
 	public function getId(): string
 	{
-		return $this->id;
-	}
-
-	public function getParams(): array
-	{
-		return $this->params;
-	}
-
-	public function setParams(array $params): void
-	{
-		$this->params = $params;
+		return $this->identity->toUrlId();
 	}
 
 	public function getQuerySpec(): ?QuerySpec
 	{
-		return ($this->params['querySpec'] ?? null) instanceof QuerySpec ? $this->params['querySpec'] : null;
+		return $this->querySpec;
 	}
 
-	public function setQuerySpec(QuerySpec $querySpec): void
+	public function setQuerySpec(?QuerySpec $querySpec): void
 	{
-		$this->params['querySpec'] = $querySpec;
+		$this->querySpec = $querySpec;
 	}
 
 	public function getResult(): ?array

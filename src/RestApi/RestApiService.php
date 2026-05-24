@@ -9,14 +9,16 @@ use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Typecast\TypecastException;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationPlanner;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Query\QueryPlannerInterface;
 use ON\RestApi\Query\Node\QuerySpec;
@@ -24,7 +26,6 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Serialize\CollectionSerializer;
 use ON\RestApi\Support\AuthorizationGuard;
-use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -37,6 +38,7 @@ class RestApiService
 		protected ?EventDispatcherInterface $eventDispatcher = null,
 		protected ?HandlerFactory $relationHandlers = null,
 		protected ?CollectionSerializer $collectionSerializer = null,
+		protected ?FileUploadEventEmitter $fileUploadEventEmitter = null,
 	) {
 	}
 
@@ -44,6 +46,13 @@ class RestApiService
 	{
 		return $this->collectionSerializer ??= new CollectionSerializer();
 	}
+
+	protected function fileUploadEventEmitter(): FileUploadEventEmitter
+	{
+		return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter($this->registry, $this->eventDispatcher);
+	}
+
+	private ?HandlerFactory $handlerFactory = null;
 
 	protected function handlerFactory(): HandlerFactory
 	{
@@ -55,7 +64,7 @@ class RestApiService
 			return $this->queryPlanner->handlers();
 		}
 
-		return new HandlerFactory(
+		return $this->handlerFactory ??= new HandlerFactory(
 			HandlerRegistry::defaults(),
 			$this->items,
 			new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000)
@@ -81,17 +90,17 @@ class RestApiService
 	public function list(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
 		$collection = $this->getCollection($collection);
-		$params = $this->eventParams($options, $querySpec);
 
-		if ($this->shouldDispatchEvents($params)) {
-			$event = new ItemList($collection, $params);
+		if ($this->shouldDispatchEvents($options)) {
+			$event = new ItemList($collection, $querySpec, $options);
 			$this->dispatchEvent($event);
 			AuthorizationGuard::assert($event);
-			$querySpec = $event->getQuerySpec() ?? $querySpec;
+			$querySpec = $event->getQuerySpec();
+			$responseOptions = $event->getOptions();
 
 			if ($event->isDefaultPrevented()) {
 				return [
-					'items' => $this->hydrateRows($collection, $event->getResult() ?? [], $options),
+					'items' => $this->formatResponseRows($collection, $event->getResult() ?? [], $responseOptions),
 					'meta' => $event->getTotalCount() === null ? [] : ['filter_count' => $event->getTotalCount()],
 				];
 			}
@@ -100,9 +109,14 @@ class RestApiService
 		$result = $this->queryList($collection, $querySpec, $options);
 		if (isset($event)) {
 			$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
+			$responseOptions = $event->getOptions();
 		}
 
-		$result['items'] = $this->hydrateRows($collection, $result['items'] ?? [], $options);
+		$result['items'] = $this->formatResponseRows(
+			$collection,
+			$result['items'] ?? [],
+			$responseOptions ?? $options
+		);
 
 		return $result;
 	}
@@ -116,70 +130,73 @@ class RestApiService
 	{
 		$collection = $this->getCollection($collection);
 		$identity = $this->normalizeIdentity($collection, $identity);
-		$params = $querySpec === null ? $options : $this->eventParams($options, $querySpec);
 
-		if (! $this->shouldDispatchEvents($params)) {
-			return $this->hydrateRow($collection, $this->queryGet($collection, $identity, $querySpec, $options), $options);
+		if (! $this->shouldDispatchEvents($options)) {
+			return $this->formatResponseRow(
+				$collection,
+				$this->queryGet($collection, $identity, $querySpec, $options),
+				$options
+			);
 		}
 
-		$event = new ItemGet($collection, $identity->toUrlId(), $params);
+		$event = new ItemGet($collection, $identity, $querySpec, $options);
 		$this->dispatchEvent($event);
 		AuthorizationGuard::assert($event);
 		$querySpec = $event->getQuerySpec() ?? $querySpec;
+		$responseOptions = $event->getOptions();
 
 		if ($event->isDefaultPrevented()) {
-			return $this->hydrateRow($collection, $event->getResult(), $options);
+			return $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
 		}
 
 		$event->setResult($this->queryGet($collection, $identity, $querySpec, $options));
 
-		return $this->hydrateRow($collection, $event->getResult(), $options);
+		return $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
 	}
 
-	public function create(string|CollectionInterface $collection, array $input, array $options = []): array
+	public function create(string|CollectionInterface $collection, MutationSpec $spec, array $options = []): array
 	{
 		$collection = $this->getCollection($collection);
+		$this->fileUploadEventEmitter()->process($spec);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
-		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
-		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
-		$root = $planner->save('create', $collection, $input);
+		$planner = $this->mutationPlanner($queue, $collection, $spec, $dispatchEvents);
+		$root = $planner->save('create', $collection, $spec);
 
 		$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 		$planner->dispatchAfterEvents();
 
-		return $this->hydrateRow($collection, $result, $options) ?? [];
+		return $this->formatResponseRow($collection, $result, $options) ?? [];
 	}
 
 	public function update(
 		string|CollectionInterface $collection,
 		PrimaryKeyValue|string $identity,
-		array $input,
+		MutationSpec $spec,
 		array $options = []
-	): ?array
-	{
+	): ?array {
 		$collection = $this->getCollection($collection);
 		$identity = $this->normalizeIdentity($collection, $identity);
 		$this->checkIfMatch($collection, $identity, $options['ifMatch'] ?? null);
+		$this->fileUploadEventEmitter()->process($spec);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
-		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
-		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
-		$root = $planner->save('update', $collection, $input, $identity);
+		$planner = $this->mutationPlanner($queue, $collection, $spec, $dispatchEvents);
+		$root = $planner->save('update', $collection, $spec, $identity);
 
 		$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
 		$planner->dispatchAfterEvents();
 
-		return $this->hydrateRow($collection, $result, $options);
+		return $this->formatResponseRow($collection, $result, $options);
 	}
 
-	public function upsert(string|CollectionInterface $collection, array $input, array $options = []): array
+	public function upsert(string|CollectionInterface $collection, MutationSpec $spec, array $options = []): array
 	{
 		$collection = $this->getCollection($collection);
 		$primaryKey = $collection->getPrimaryKey();
-		$id = $primaryKey->extractFromInput($input);
+		$id = $primaryKey->extractFromInput($spec->root->fields);
 		if ($id === null) {
-			$missing = $primaryKey->getMissingFieldNames($input);
+			$missing = $primaryKey->getMissingFieldNames($spec->root->fields);
 			$field = $missing[0] ?? null;
 			throw new RestApiError(
 				"Upsert requires primary key field(s): " . implode(', ', $missing) . '.',
@@ -189,16 +206,16 @@ class RestApiService
 			);
 		}
 
+		$this->fileUploadEventEmitter()->process($spec);
 		$dispatchEvents = $this->shouldDispatchEvents($options);
-		$input = $this->handleFileUploadsRecursive($collection, $input, $options['files'] ?? []);
 		$queue = new MutationQueue();
-		$planner = $this->mutationPlanner($queue, $collection, $input, $dispatchEvents);
-		$root = $planner->save('upsert', $collection, $input, $id);
+		$planner = $this->mutationPlanner($queue, $collection, $spec, $dispatchEvents);
+		$root = $planner->save('upsert', $collection, $spec, $id);
 
 		$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 		$planner->dispatchAfterEvents();
 
-		return $this->hydrateRow($collection, $result, $options) ?? [];
+		return $this->formatResponseRow($collection, $result, $options) ?? [];
 	}
 
 	public function delete(
@@ -213,7 +230,8 @@ class RestApiService
 
 		$dispatchEvents = $this->shouldDispatchEvents($options);
 		$queue = new MutationQueue();
-		$planner = $this->mutationPlanner($queue, $collection, [], $dispatchEvents);
+		$emptySpec = new MutationSpec(new MutationNodeSpec($collection->getName()));
+		$planner = $this->mutationPlanner($queue, $collection, $emptySpec, $dispatchEvents);
 		$deleted = $planner->delete($collection, $identity);
 
 		$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
@@ -225,16 +243,15 @@ class RestApiService
 	public function aggregate(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
 		$collection = $this->getCollection($collection);
-		$params = $this->eventParams($options, $querySpec);
 
-		if (! $this->shouldDispatchEvents($params)) {
+		if (! $this->shouldDispatchEvents($options)) {
 			return $this->queryPlanner->aggregate($collection, $querySpec);
 		}
 
-		$event = new ItemList($collection, $params);
+		$event = new ItemList($collection, $querySpec, $options);
 		$this->dispatchEvent($event);
 		AuthorizationGuard::assert($event);
-		$querySpec = $event->getQuerySpec() ?? $querySpec;
+		$querySpec = $event->getQuerySpec();
 
 		if ($event->isDefaultPrevented()) {
 			return $event->getResult() ?? [];
@@ -292,10 +309,9 @@ class RestApiService
 	protected function mutationPlanner(
 		MutationQueue $queue,
 		CollectionInterface $rootCollection,
-		array $rootInput,
+		MutationSpec $spec,
 		bool $dispatchEvents
-	): MutationPlanner
-	{
+	): MutationPlanner {
 		return new MutationPlanner(
 			$this->registry,
 			$this->items,
@@ -304,15 +320,13 @@ class RestApiService
 			$dispatchEvents,
 			$queue,
 			$rootCollection,
-			new MutationState($rootCollection, $rootInput)
+			new MutationState($rootCollection, $spec->root->fields),
 		);
 	}
 
 	protected function queryList(CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 	{
-		$typed = ! ($options['raw'] ?? false);
-
-		return $this->queryPlanner->list($collection, $querySpec, $typed);
+		return $this->queryPlanner->list($collection, $querySpec);
 	}
 
 	protected function queryGet(
@@ -321,9 +335,7 @@ class RestApiService
 		?QuerySpec $querySpec = null,
 		array $options = [],
 	): ?array {
-		$typed = ! ($options['raw'] ?? false);
-
-		return $this->queryPlanner->get($collection, $identity, $querySpec, $typed);
+		return $this->queryPlanner->get($collection, $identity, $querySpec);
 	}
 
 	public function dispatchEvent(object $event): void
@@ -351,98 +363,6 @@ class RestApiService
 		return PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
-	protected function handleFileUploads(CollectionInterface $collection, array $input, array $files): array
-	{
-		if ($files === []) {
-			return $input;
-		}
-
-		$fileFieldTypes = ['file', 'image', 'upload'];
-
-		foreach ($collection->fields as $name => $field) {
-			if (! in_array($field->getType(), $fileFieldTypes, true)) {
-				continue;
-			}
-
-			if (! isset($files[$name])) {
-				continue;
-			}
-
-			$event = new FileUpload($collection, $name, $files[$name]);
-			$this->dispatchEvent($event);
-
-			if ($event->getStoredValue() !== null) {
-				$input[$name] = $event->getStoredValue();
-			} else {
-				throw RestApiError::fileHandlerMissing($name);
-			}
-		}
-
-		return $input;
-	}
-
-	protected function handleFileUploadsRecursive(CollectionInterface $collection, array $input, array $files): array
-	{
-		if ($files === []) {
-			return $input;
-		}
-
-		$input = $this->handleFileUploads($collection, $input, $files);
-		[, $relations] = MutationInput::splitNodeInput($collection, $input);
-
-		foreach ($relations as $relationName => $relationInput) {
-			$relation = $collection->relations->get($relationName);
-			$targetCollection = $relation->getCollection();
-			$relationFiles = is_array($files[$relationName] ?? null) ? $files[$relationName] : [];
-
-			if ($relation->isJunction()) {
-				if (!is_array($relationInput) || !MutationInput::isAssociativeArray($relationInput)) {
-					continue;
-				}
-
-				foreach (MutationInput::normalizeRelationItems($relationInput['create'] ?? []) as $index => $item) {
-					if (!is_array($item)) {
-						continue;
-					}
-
-					$input[$relationName]['create'][$index] = $this->handleFileUploadsRecursive(
-						$targetCollection,
-						$item,
-						is_array($relationFiles['create'][$index] ?? null) ? $relationFiles['create'][$index] : []
-					);
-				}
-
-				continue;
-			}
-
-			if (is_array($relationInput) && MutationInput::isAssociativeArray($relationInput)) {
-				$input[$relationName] = $this->handleFileUploadsRecursive($targetCollection, $relationInput, $relationFiles);
-				continue;
-			}
-
-			foreach (MutationInput::normalizeRelationItems($relationInput) as $index => $item) {
-				if (!is_array($item)) {
-					continue;
-				}
-
-				$input[$relationName][$index] = $this->handleFileUploadsRecursive(
-					$targetCollection,
-					$item,
-					is_array($relationFiles[$index] ?? null) ? $relationFiles[$index] : []
-				);
-			}
-		}
-
-		return $input;
-	}
-
-	protected function eventParams(array $params, QuerySpec $querySpec): array
-	{
-		$params['querySpec'] = $querySpec;
-
-		return $params;
-	}
-
 	protected function shouldDispatchEvents(array $options): bool
 	{
 		return $this->eventDispatcher !== null && ($options['dispatchEvents'] ?? true);
@@ -453,10 +373,17 @@ class RestApiService
 		return (bool) ($options['serialize'] ?? false);
 	}
 
-	protected function hydrateRow(CollectionInterface $collection, ?array $row, array $options): ?array
+	/**
+	 * Shape a row for the caller: storage → PHP (unless raw) → wire (when serialize).
+	 */
+	protected function formatResponseRow(CollectionInterface $collection, ?array $row, array $options): ?array
 	{
 		if ($row === null) {
 			return null;
+		}
+
+		if ($row !== [] && ! ($options['raw'] ?? false)) {
+			$row = $this->items->hydrateRow($collection, $row);
 		}
 
 		if ($this->shouldSerialize($options)) {
@@ -470,14 +397,14 @@ class RestApiService
 	 * @param list<array<string, mixed>> $rows
 	 * @return list<array<string, mixed>>
 	 */
-	protected function hydrateRows(CollectionInterface $collection, array $rows, array $options): array
+	protected function formatResponseRows(CollectionInterface $collection, array $rows, array $options): array
 	{
-		if (! $this->shouldSerialize($options)) {
+		if ($rows === []) {
 			return $rows;
 		}
 
 		return array_map(
-			fn (array $row): array => $this->hydrateRow($collection, $row, $options),
+			fn (array $row): array => $this->formatResponseRow($collection, $row, $options),
 			$rows
 		);
 	}

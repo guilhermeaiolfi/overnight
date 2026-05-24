@@ -36,7 +36,11 @@ final class RestMiddlewareTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
-		$middleware = new RestMiddleware($service, ['endpointUri' => '/items']);
+		$middleware = new RestMiddleware(
+			$service,
+			$this->createMutationBuilder($registry, $resolver),
+			['endpointUri' => '/items']
+		);
 
 		$response = $middleware->process(
 			new ServerRequest(uri: '/items/user?fields=id,name', method: 'GET'),
@@ -113,25 +117,30 @@ final class RestMiddlewareTest extends TestCase
 			}
 		};
 
+		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof FileUpload) {
+					$event->setStoredValue(501);
+				}
+
+				if ($event instanceof ItemCreating) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		};
 		$service = $this->createRestApiService(
 			$registry,
 			$resolver,
-			new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-				public function dispatch(object $event): object
-				{
-					if ($event instanceof FileUpload) {
-						$event->setStoredValue(501);
-					}
-
-					if ($event instanceof ItemCreating) {
-						$event->allow();
-					}
-
-					return $event;
-				}
-			}
+			$dispatcher
 		);
-		$middleware = new RestMiddleware($service, ['endpointUri' => '/items']);
+		$middleware = new RestMiddleware(
+			$service,
+			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			['endpointUri' => '/items']
+		);
 
 		$request = (new ServerRequest(
 			uri: '/items/asset',

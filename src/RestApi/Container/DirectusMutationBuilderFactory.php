@@ -7,19 +7,17 @@ namespace ON\RestApi\Container;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
-use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Query\QueryPlanner;
+use ON\RestApi\Payload\DirectusMutationBuilder;
+use ON\RestApi\Payload\MutationSpecUnserializer;
+use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\RestApiConfig;
-use ON\RestApi\RestApiService;
-use ON\RestApi\Serialize\CollectionSerializer;
 use Psr\Container\ContainerInterface;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
-class RestApiServiceFactory
+class DirectusMutationBuilderFactory
 {
-	public function __invoke(ContainerInterface $container): RestApiService
+	public function __invoke(ContainerInterface $container): DirectusMutationBuilder
 	{
 		$items = $container->get(ItemRepositoryInterface::class);
 		$config = $container->get(RestApiConfig::class);
@@ -29,18 +27,13 @@ class RestApiServiceFactory
 			$config->get('maxLimit', 1000)
 		);
 		$handlers = new HandlerFactory(HandlerRegistry::defaults(), $items, $querySpecCompiler);
-		$queryPlanner = new QueryPlanner($items, $handlers, $querySpecCompiler);
 		$registry = $container->get(Registry::class);
-		$eventDispatcher = $container->get(EventDispatcherInterface::class);
 
-		return new RestApiService(
+		return new DirectusMutationBuilder(
 			$registry,
 			$items,
-			$queryPlanner,
-			$eventDispatcher,
-			$handlers,
-			new CollectionSerializer(),
-			new FileUploadEventEmitter($registry, $eventDispatcher),
+			new PayloadNormalizer($handlers, $registry),
+			new MutationSpecUnserializer($registry),
 		);
 	}
 }

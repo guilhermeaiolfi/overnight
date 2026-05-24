@@ -14,10 +14,12 @@ use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Addon\RestApiAddonInterface;
 use ON\RestApi\Container\CollectionMapperFactory;
+use ON\RestApi\Container\DirectusMutationBuilderFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\RestApiServiceFactory;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mapping\CollectionMapper;
+use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use Psr\Container\ContainerInterface;
@@ -47,6 +49,7 @@ class RestApiExtension extends AbstractExtension
 			CollectionMapper::class => CollectionMapperFactory::class,
 			ItemRepository::class => ItemRepositoryFactory::class,
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
+			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
 		]);
 	}
 
@@ -62,9 +65,11 @@ class RestApiExtension extends AbstractExtension
 		$dynamicVariables = $config->get('dynamicVariables', []);
 
 		$service = $container->get(RestApiService::class);
+		$mutationBuilder = $container->get(DirectusMutationBuilder::class);
 
 		$middleware = new RestMiddleware(
 			$service,
+			$mutationBuilder,
 			[
 				'endpointUri' => $path,
 				'defaultLimit' => $defaultLimit,

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
@@ -16,6 +17,8 @@ use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\RelationConnecting;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
@@ -37,6 +40,8 @@ use Tests\ON\RestApi\Support\RestApiTestFixtures;
 final class RestApiServiceTest extends TestCase
 {
 	use RestApiTestFixtures;
+
+	private ?EventDispatcherInterface $lastDispatcher = null;
 
 	public function testListThrowsForbiddenWhenEventIsNotExplicitlyAllowed(): void
 	{
@@ -130,6 +135,32 @@ final class RestApiServiceTest extends TestCase
 		$this->assertSame([['count' => ['id' => 99]]], $result);
 	}
 
+	public function testListPreventDefaultUsesEventOptionsForResponseFormat(): void
+	{
+		$registry = new Registry();
+		$this->createPostCollection($registry);
+		$db = $this->createTestDatabase();
+		$service = $this->createService(
+			$registry,
+			$this->createItems($registry, $db),
+			$this->createQueryPlanner($registry, $db),
+			function (object $event): object {
+				if ($event instanceof ItemList) {
+					$event->allow();
+					$event->setOptions(['raw' => true]);
+					$event->setResult([['id' => 1, 'created_at' => '2025-01-10 10:00:00']]);
+					$event->preventDefault();
+				}
+
+				return $event;
+			}
+		);
+
+		$result = $service->list('post', $this->q($registry->getCollection('post')), ['serialize' => true]);
+
+		$this->assertSame('2025-01-10 10:00:00', $result['items'][0]['created_at']);
+	}
+
 	public function testFileUploadEventDoesNotNeedAllowWhenParentCreateEventIsAllowed(): void
 	{
 		$registry = new Registry();
@@ -166,9 +197,13 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->create('asset', [], [
-			'files' => ['attachment' => new UploadedFileStub()],
-		]);
+		$result = $service->create('asset', $this->ms(
+			$registry,
+			$resolver,
+			'asset',
+			[],
+			files: ['attachment' => new UploadedFileStub()],
+		));
 
 		$this->assertSame('uploads/test.txt', $result['attachment']);
 		$this->assertSame(['attachment' => 'uploads/test.txt'], $resolver->lastCreateInput);
@@ -210,9 +245,13 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->create('asset', [], [
-			'files' => ['attachment_id' => new UploadedFileStub()],
-		]);
+		$result = $service->create('asset', $this->ms(
+			$registry,
+			$resolver,
+			'asset',
+			[],
+			files: ['attachment_id' => new UploadedFileStub()],
+		));
 
 		$this->assertSame(42, $result['attachment_id']);
 		$this->assertSame(['attachment_id' => 42], $resolver->lastCreateInput);
@@ -256,9 +295,13 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$service->create('asset', [], [
-			'files' => ['attachment_id' => new UploadedFileStub()],
-		]);
+		$service->create('asset', $this->ms(
+			$registry,
+			$resolver,
+			'asset',
+			[],
+			files: ['attachment_id' => new UploadedFileStub()],
+		));
 
 		$this->assertFalse($uploadWasInTransaction);
 		$this->assertSame(1, $resolver->transactionCalls);
@@ -295,7 +338,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$service->create('user', ['name' => 'Created']);
+		$service->create('user', $this->ms($registry, $resolver, 'user', ['name' => 'Created']));
 
 		$this->assertFalse($createdWasInTransaction);
 		$this->assertNotNull($createdId);
@@ -325,7 +368,7 @@ final class RestApiServiceTest extends TestCase
 		);
 
 		try {
-			$service->create('user', ['id' => 1, 'name' => 'Existing']);
+			$service->create('user', $this->ms($registry, $resolver, 'user', ['id' => 1, 'name' => 'Existing']));
 			$this->fail('Expected duplicate error to be thrown.');
 		} catch (RestApiError $error) {
 			$this->assertSame(409, $error->getHttpStatus());
@@ -344,7 +387,7 @@ final class RestApiServiceTest extends TestCase
 		);
 
 		try {
-			$service->upsert('user', ['name' => 'Missing ID']);
+			$service->upsert('user', new MutationSpec(new MutationNodeSpec('user', ['name' => 'Missing ID'])));
 			$this->fail('Expected missing primary key error to be thrown.');
 		} catch (RestApiError $error) {
 			$this->assertSame(400, $error->getHttpStatus());
@@ -378,7 +421,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->upsert('user', ['id' => 999, 'name' => 'New User']);
+		$result = $service->upsert('user', $this->ms($registry, $resolver, 'user', ['id' => 999, 'name' => 'New User'], 'upsert'));
 
 		$this->assertSame(['create'], $events);
 		$this->assertSame(999, $result['id']);
@@ -410,7 +453,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->upsert('user', ['id' => 1, 'name' => 'Updated User']);
+		$result = $service->upsert('user', $this->ms($registry, $resolver, 'user', ['id' => 1, 'name' => 'Updated User'], 'upsert'));
 
 		$this->assertSame(['update'], $events);
 		$this->assertSame(1, $result['id']);
@@ -443,16 +486,69 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$created = $service->create('user', [
+		$created = $service->create('user', $this->ms($registry, $resolver, 'user', [
 			'name' => 'Nested User',
 			'email' => 'nested@test.com',
 			'posts' => [
 				['title' => 'Nested Post', 'content' => 'Content', 'status' => 'published'],
 			],
-		]);
+		]));
 
 		$this->assertSame('Nested User', $created['name']);
 		$this->assertSame(['', 'posts.0'], $paths);
+	}
+
+	public function testItemDeletingCanChangeOperationToUpdateForSoftDelete(): void
+	{
+		if (! extension_loaded('pdo_sqlite')) {
+			$this->markTestSkipped('pdo_sqlite is required for this test.');
+		}
+
+		$registry = new Registry();
+		$registry->collection('user')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('name', 'string')->type('string')->nullable(true)->end()
+			->field('deleted_at', 'datetime')->type('datetime')->nullable(true)->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'user' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'name' => 'TEXT',
+					'deleted_at' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'name' => 'John', 'deleted_at' => null],
+				],
+			],
+		]);
+		$resolver = new TrackingItemRepository($registry, $db->database());
+
+		$service = $this->createService(
+			$registry,
+			$resolver,
+			$this->createQueryPlanner($registry, $db),
+			function (object $event): object {
+				if ($event instanceof ItemDeleting) {
+					$event->allow();
+					$event->getNode()->setOperation('update');
+					$event->getState()->setValue('deleted_at', '2026-01-15 10:00:00');
+				}
+
+				return $event;
+			}
+		);
+
+		$deleted = $service->delete('user', '1');
+
+		$this->assertTrue($deleted);
+		$this->assertSame([], $resolver->deleteCalls);
+		$this->assertCount(1, $resolver->updateCalls);
+		$this->assertSame('user', $resolver->updateCalls[0]['collection']);
+
+		$row = $db->database()->select('deleted_at')->from('user')->where('id', 1)->run()->fetch();
+		$this->assertSame('2026-01-15 10:00:00', $row['deleted_at'] ?? null);
 	}
 
 	public function testAllowNestedCascadesAuthorizationToChildBeforeEvents(): void
@@ -484,13 +580,13 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$created = $service->create('user', [
+		$created = $service->create('user', $this->ms($registry, $resolver, 'user', [
 			'name' => 'Nested User',
 			'email' => 'nested-auth@test.com',
 			'posts' => [
 				['title' => 'Nested Post', 'content' => 'Content', 'status' => 'published'],
 			],
-		]);
+		]));
 
 		$this->assertSame('Nested User', $created['name']);
 		$this->assertSame([':Allowed', 'posts.0:Allowed'], $authStates);
@@ -522,12 +618,12 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->update('post', '1', [
+		$result = $service->update('post', '1', $this->ms($registry, $resolver, 'post', [
 			'title' => 'Updated Post',
 			'comments' => [
 				['id' => 1, 'body' => 'Updated comment'],
 			],
-		]);
+		], 'update', '1', partial: true));
 
 		$this->assertSame('Updated Post', $result['title']);
 		$this->assertSame(['', 'comments.0', 'comments.delete.0'], $paths);
@@ -569,7 +665,7 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$service->update('post', '2', ['tags' => ['connect' => [3]]]);
+		$service->update('post', '2', $this->ms($registry, $resolver, 'post', ['tags' => ['connect' => [3]]], 'update', '2', partial: true));
 
 		$tag = $service->get('tag', '3', null, ['dispatchEvents' => false]);
 		$this->assertSame('REST-linked', $tag['name']);
@@ -604,11 +700,11 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$service->update('post', '1', [
+		$service->update('post', '1', $this->ms($registry, $resolver, 'post', [
 			'comments' => [
 				['id' => 999, 'body' => 'Created with explicit id', 'author' => 'Alice'],
 			],
-		]);
+		], 'update', '1', partial: true));
 
 		$comment = $planner->get($registry->getCollection('comment'), '999', $this->q($registry->getCollection('comment')));
 
@@ -674,18 +770,22 @@ final class RestApiServiceTest extends TestCase
 			}
 		);
 
-		$result = $service->create('asset', [
-			'title' => 'Asset',
-			'attachments' => [
-				['title' => 'Attachment one'],
+		$result = $service->create('asset', $this->ms(
+			$registry,
+			$resolver,
+			'asset',
+			[
+				'title' => 'Asset',
+				'attachments' => [
+					['title' => 'Attachment one'],
+				],
 			],
-		], [
-			'files' => [
+			files: [
 				'attachments' => [
 					['file_id' => new UploadedFileStub()],
 				],
 			],
-		]);
+		));
 
 		$this->assertSame('Asset', $result['title']);
 		$this->assertCount(2, $resolver->createCalls);
@@ -707,7 +807,14 @@ final class RestApiServiceTest extends TestCase
 		QueryPlannerInterface $queryPlanner,
 		callable $listener
 	): RestApiService {
-		$dispatcher = new class($listener) implements EventDispatcherInterface {
+		$this->lastDispatcher = $this->createDispatcher($listener);
+
+		return new RestApiService($registry, $items, $queryPlanner, $this->lastDispatcher);
+	}
+
+	private function createDispatcher(callable $listener): EventDispatcherInterface
+	{
+		return new class($listener) implements EventDispatcherInterface {
 			public function __construct(private $listener)
 			{
 			}
@@ -717,8 +824,33 @@ final class RestApiServiceTest extends TestCase
 				return ($this->listener)($event);
 			}
 		};
+	}
 
-		return new RestApiService($registry, $items, $queryPlanner, $dispatcher);
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<string, mixed> $files
+	 */
+	private function ms(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		string|CollectionInterface $collection,
+		array $input,
+		string $mode = 'create',
+		PrimaryKeyValue|string|null $id = null,
+		array $files = [],
+		bool $partial = false,
+	): MutationSpec {
+		return $this->buildMutationSpec(
+			$registry,
+			$items,
+			$collection,
+			$input,
+			$mode,
+			$id,
+			$files,
+			$partial,
+			$this->lastDispatcher,
+		);
 	}
 
 	private function q(CollectionInterface $collection, array $params = []): QuerySpec
@@ -735,14 +867,14 @@ final class QueryPlannerSpy implements QueryPlannerInterface
 	public array $listResult = ['items' => [], 'meta' => []];
 	public array $aggregateResult = [];
 
-	public function list(CollectionInterface $collection, QuerySpec $query, bool $typed = true): array
+	public function list(CollectionInterface $collection, QuerySpec $query): array
 	{
 		$this->listCalls++;
 
 		return $this->listResult;
 	}
 
-	public function get(CollectionInterface $collection, $identity, ?QuerySpec $query = null, bool $typed = true): ?array
+	public function get(CollectionInterface $collection, $identity, ?QuerySpec $query = null): ?array
 	{
 		$this->getCalls++;
 
@@ -835,6 +967,8 @@ final class ResolverSpy implements ItemRepositoryInterface
 final class TrackingItemRepository extends ItemRepository
 {
 	public array $createCalls = [];
+	public array $updateCalls = [];
+	public array $deleteCalls = [];
 	public array $lastCreateInput = [];
 	public bool $inTransaction = false;
 	public int $transactionCalls = 0;
@@ -857,6 +991,25 @@ final class TrackingItemRepository extends ItemRepository
 		];
 
 		return parent::create($collection, $input);
+	}
+
+	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
+	{
+		$this->updateCalls[] = [
+			'collection' => $collection->getName(),
+			'input' => $input,
+		];
+
+		return parent::update($collection, $criteria, $input);
+	}
+
+	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
+	{
+		$this->deleteCalls[] = [
+			'collection' => $collection->getName(),
+		];
+
+		return parent::delete($collection, $criteria);
 	}
 
 	public function commit(\ON\RestApi\Mutation\MutationQueue $queue, callable $resolve): mixed

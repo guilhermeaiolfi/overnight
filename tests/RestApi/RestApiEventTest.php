@@ -19,7 +19,9 @@ final class RestApiEventTest extends TestCase
 	{
 		$registry = new Registry();
 		$this->createUserCollection($registry);
-		$event = new ItemList($registry->getCollection('user'), []);
+		$collection = $registry->getCollection('user');
+		$query = (new DirectusQueryParser())->parse($collection, []);
+		$event = new ItemList($collection, $query);
 
 		$this->assertSame(AuthState::Pending, $event->getAuthState());
 
@@ -33,19 +35,19 @@ final class RestApiEventTest extends TestCase
 		$this->assertSame(AuthState::Forbidden, $event->getAuthState());
 	}
 
-	public function testItemListAggregateHelpersNormalizeParams(): void
+	public function testItemListAggregateHelpersReadQuerySpec(): void
 	{
 		$registry = new Registry();
 		$this->createUserCollection($registry);
-		$query = (new DirectusQueryParser())->parse($registry->getCollection('user'), [
+		$collection = $registry->getCollection('user');
+		$aggregateQuery = (new DirectusQueryParser())->parse($collection, [
 			'aggregate' => ['count' => 'id'],
 			'groupBy' => ['status'],
 		]);
+		$plainQuery = (new DirectusQueryParser())->parse($collection, []);
 
-		$aggregateEvent = new ItemList($registry->getCollection('user'), [
-			'querySpec' => $query,
-		]);
-		$plainEvent = new ItemList($registry->getCollection('user'), []);
+		$aggregateEvent = new ItemList($collection, $aggregateQuery);
+		$plainEvent = new ItemList($collection, $plainQuery);
 
 		$this->assertTrue($aggregateEvent->isAggregate());
 		$this->assertSame('count', $aggregateEvent->getAggregate()[0]->responseFunction);

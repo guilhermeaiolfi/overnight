@@ -11,8 +11,11 @@ User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest
 **Reads** and **writes** share the same handler registry but use symmetric spec pipelines:
 
 ```
-Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → QueryPlanner → handlers.load()
-Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → RestMutationPlanner → handlers.applyRelation()
+Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → QueryPlanner → storage rows
+                                                                              ↓
+Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → MutationPlanner → storage rows
+                                                                              ↓
+        RestApiService.formatResponse*  →  PHP (default) | wire (serialize) | storage (raw)
 ```
 
 Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the planner, queue, and handler apply layer stay unchanged.
@@ -37,8 +40,8 @@ file uploads (pre-plan)
 
 | Term | Role |
 |------|------|
-| `RestApiService` | HTTP orchestration: reads via `QueryPlanner`, writes via planner + queue |
-| `QueryPlanner` | Builds handler tree, runs list/get/aggregate queries |
+| `RestApiService` | HTTP orchestration; shapes responses via `formatResponseRow()` (hydrate/serialize) |
+| `QueryPlanner` | Builds handler tree, runs list/get/aggregate — returns storage rows only |
 | `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
 | `PayloadNormalizer` | Expands basic relations, fills gaps on detailed actions via handler expanders |
 | `RelationPayloadExpanderInterface` | Per relation kind: `expandBasic()` + `resolveAction()` |

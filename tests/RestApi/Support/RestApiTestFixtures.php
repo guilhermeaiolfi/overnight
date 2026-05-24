@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi\Support;
 
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Typecast\CollectionTypecast;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Mapping\CollectionMapper;
+use ON\RestApi\Payload\DirectusMutationBuilder;
+use ON\RestApi\Payload\MutationSpecUnserializer;
+use ON\RestApi\Payload\PayloadNormalizer;
+use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Query\QueryPlanner;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
@@ -281,18 +288,82 @@ trait RestApiTestFixtures
 		?EventDispatcherInterface $eventDispatcher = null
 	): RestApiService {
 		$handlers = $this->createHandlerFactory($items);
+		$queryPlanner = new QueryPlanner(
+			$items,
+			$handlers,
+			new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
+		);
 
 		return new RestApiService(
 			$registry,
 			$items,
-			new QueryPlanner(
-				$items,
-				$handlers,
-				new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
-			),
+			$queryPlanner,
 			$eventDispatcher,
 			$handlers,
 			new CollectionSerializer(),
+			new FileUploadEventEmitter($registry, $eventDispatcher),
 		);
+	}
+
+	protected function createMutationBuilder(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		?EventDispatcherInterface $eventDispatcher = null,
+	): DirectusMutationBuilder {
+		$handlers = $this->createHandlerFactory($items);
+
+		return new DirectusMutationBuilder(
+			$registry,
+			$items,
+			new PayloadNormalizer($handlers, $registry),
+			new MutationSpecUnserializer($registry),
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<string, mixed> $files
+	 * @param 'create'|'update'|'upsert' $mode
+	 */
+	protected function buildMutationSpec(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		CollectionInterface|string $collection,
+		array $input,
+		string $mode = 'create',
+		PrimaryKeyValue|string|null $id = null,
+		array $files = [],
+		bool $partial = false,
+		?EventDispatcherInterface $eventDispatcher = null,
+		bool $unserializeWire = true,
+	): MutationSpec {
+		$collection = is_string($collection) ? $registry->getCollection($collection) : $collection;
+
+		return $this->createMutationBuilder($registry, $items)->build(
+			$collection,
+			$input,
+			$mode,
+			$id,
+			$files,
+			$unserializeWire,
+		);
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<string, mixed> $files
+	 * @param 'create'|'update'|'upsert' $mode
+	 */
+	protected function m(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		CollectionInterface|string $collection,
+		array $input,
+		string $mode = 'create',
+		PrimaryKeyValue|string|null $id = null,
+		array $files = [],
+		bool $partial = false,
+	): MutationSpec {
+		return $this->buildMutationSpec($registry, $items, $collection, $input, $mode, $id, $files, $partial);
 	}
 }

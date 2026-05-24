@@ -92,11 +92,11 @@ final class TypecastRestApiTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createRestApiService($registry, $resolver);
 
-		$created = $service->create('post', [
+		$created = $service->create('post', $this->m($registry, $resolver, 'post', [
 			'user_id' => 1,
 			'title' => 'Typed post',
 			'created_at' => new \DateTimeImmutable('2024-06-01T15:00:00+00:00'),
-		], ['dispatchEvents' => false]);
+		]), ['dispatchEvents' => false]);
 
 		$this->assertInstanceOf(\DateTimeImmutable::class, $created['created_at']);
 		$this->assertSame('2024-06-01 15:00:00', $created['created_at']->format('Y-m-d H:i:s'));

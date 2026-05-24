@@ -1,0 +1,98 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\RestApi\Mutation;
+
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Registry;
+use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\FileUpload;
+use ON\RestApi\Payload\Action\CreateAction;
+use ON\RestApi\Payload\Action\RelationAction;
+use ON\RestApi\Payload\Action\UpdateAction;
+use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Payload\Node\RelationPayload;
+use Psr\EventDispatcher\EventDispatcherInterface;
+use Psr\Http\Message\UploadedFileInterface;
+
+final class FileUploadEventEmitter
+{
+	public function __construct(
+		private readonly Registry $registry,
+		private readonly ?EventDispatcherInterface $eventDispatcher = null,
+	) {
+	}
+
+	public function process(MutationSpec $spec): void
+	{
+		$this->processNode($spec->root);
+	}
+
+	private function processNode(MutationNodeSpec $node): void
+	{
+		$collection = $this->registry->getCollection($node->collection);
+		$node->fields = $this->processFields($collection, $node->fields);
+
+		foreach ($node->relations as $relation) {
+			$this->processRelation($relation);
+		}
+	}
+
+	private function processRelation(RelationPayload $relation): void
+	{
+		foreach ($relation->actions as $action) {
+			$this->processAction($action);
+		}
+	}
+
+	private function processAction(RelationAction $action): void
+	{
+		if ($action instanceof CreateAction || $action instanceof UpdateAction) {
+			if ($action->node !== null) {
+				$this->processNode($action->node);
+			}
+		}
+	}
+
+	/**
+	 * @param array<string, mixed> $fields
+	 * @return array<string, mixed>
+	 */
+	private function processFields(CollectionInterface $collection, array $fields): array
+	{
+		foreach ($fields as $name => $value) {
+			if (! $value instanceof UploadedFileInterface) {
+				continue;
+			}
+
+			$fields[$name] = $this->emitFileUpload($collection, (string) $name, $value);
+		}
+
+		return $fields;
+	}
+
+	private function emitFileUpload(
+		CollectionInterface $collection,
+		string $fieldName,
+		UploadedFileInterface $file
+	): mixed {
+		if ($this->eventDispatcher === null) {
+			throw RestApiError::fileHandlerMissing($fieldName);
+		}
+
+		$event = new FileUpload($collection, $fieldName, $file);
+		$this->eventDispatcher->dispatch($event);
+
+		if ($event->getStoredValue() !== null) {
+			return $event->getStoredValue();
+		}
+
+		if ($event->getStoredPath() !== null) {
+			return $event->getStoredPath();
+		}
+
+		throw RestApiError::fileHandlerMissing($fieldName);
+	}
+}

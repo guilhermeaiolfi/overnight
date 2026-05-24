@@ -13,6 +13,7 @@ use ON\RestApi\Payload\Action\DeleteAction;
 use ON\RestApi\Payload\Action\DisconnectAction;
 use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
+use ON\RestApi\Payload\MutationInputMerger;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
@@ -22,12 +23,22 @@ final class DirectusPayloadParser implements PayloadParserInterface
 {
 	private const OPERATIONS = ['create', 'update', 'delete', 'connect', 'disconnect'];
 
+	public function __construct(
+		private readonly MutationInputMerger $inputMerger = new MutationInputMerger(),
+	) {
+	}
+
 	public function parse(
 		CollectionInterface $collection,
 		array $input,
 		string $mode = 'upsert',
 		PrimaryKeyValue|string|null $id = null,
+		array $files = [],
 	): MutationSpec {
+		if ($files !== []) {
+			$input = $this->inputMerger->mergeFiles($collection, $input, $files);
+		}
+
 		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $input);
 
 		return new MutationSpec(new MutationNodeSpec(

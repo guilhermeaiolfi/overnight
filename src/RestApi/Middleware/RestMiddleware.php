@@ -10,6 +10,7 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RequestComplete;
+use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
@@ -24,6 +25,7 @@ class RestMiddleware implements MiddlewareInterface
 {
 	public function __construct(
 		protected RestApiService $restApi,
+		protected DirectusMutationBuilder $mutationBuilder,
 		protected array $options = []
 	) {
 	}
@@ -158,10 +160,14 @@ class RestMiddleware implements MiddlewareInterface
 
 		$body = $this->stripHiddenFields($collection, $body);
 		$this->validateInput($collection, $body);
-		$body = $this->restApi->unserialize($collection, $body);
-
 		$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
-		$created = $this->restApi->create($collection, $body, $options);
+		$spec = $this->mutationSpec(
+			$collection,
+			$body,
+			'create',
+			files: $options['files'] ?? [],
+		);
+		$created = $this->restApi->create($collection, $spec, $options);
 
 		return $this->jsonResponse(['data' => $created]);
 	}
@@ -175,10 +181,16 @@ class RestMiddleware implements MiddlewareInterface
 		$body = $this->parseRequestBody($request);
 		$body = $this->stripHiddenFields($collection, $body);
 		$this->validateInput($collection, $body, true);
-		$body = $this->restApi->unserialize($collection, $body, partial: true);
-
 		$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
-		$result = $this->restApi->update($collection, $this->decodeRouteIdentity($collection, $id), $body, $options);
+		$identity = $this->decodeRouteIdentity($collection, $id);
+		$spec = $this->mutationSpec(
+			$collection,
+			$body,
+			'update',
+			$identity,
+			$options['files'] ?? [],
+		);
+		$result = $this->restApi->update($collection, $identity, $spec, $options);
 
 		if (empty($result)) {
 			throw RestApiError::notFound();
@@ -211,10 +223,15 @@ class RestMiddleware implements MiddlewareInterface
 		foreach ($items as $item) {
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item);
-			$item = $this->restApi->unserialize($collection, $item);
 			$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
+			$spec = $this->mutationSpec(
+				$collection,
+				$item,
+				'create',
+				files: $options['files'] ?? [],
+			);
 
-			$results[] = $this->restApi->create($collection, $item, $options);
+			$results[] = $this->restApi->create($collection, $spec, $options);
 		}
 
 		return $this->jsonResponse(['data' => $results]);
@@ -249,10 +266,15 @@ class RestMiddleware implements MiddlewareInterface
 			}
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validateInput($collection, $item, true);
-			$item = $this->restApi->unserialize($collection, $item, partial: true);
-
 			$options = array_merge($this->getMutationOptions($request), ['serialize' => true]);
-			$updated = $this->restApi->update($collection, $identity, $item, $options);
+			$spec = $this->mutationSpec(
+				$collection,
+				$item,
+				'update',
+				$identity,
+				$options['files'] ?? [],
+			);
+			$updated = $this->restApi->update($collection, $identity, $spec, $options);
 
 			$results[] = $updated ?? [];
 		}
@@ -439,6 +461,21 @@ class RestMiddleware implements MiddlewareInterface
 		$normalizer = new QueryNormalizer($this->options['dynamicVariables'] ?? []);
 
 		return $normalizer->normalize($parser->parse($collection, $query));
+	}
+
+	/**
+	 * @param array<string, mixed> $input
+	 * @param array<string, mixed> $files
+	 * @param 'create'|'update'|'upsert' $mode
+	 */
+	protected function mutationSpec(
+		CollectionInterface $collection,
+		array $input,
+		string $mode = 'upsert',
+		PrimaryKeyValue|string|null $id = null,
+		array $files = [],
+	): \ON\RestApi\Payload\Node\MutationSpec {
+		return $this->mutationBuilder->build($collection, $input, $mode, $id, $files);
 	}
 
 	protected function getQueryParams(ServerRequestInterface $request): array

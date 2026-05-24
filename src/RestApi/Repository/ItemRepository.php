@@ -85,9 +85,8 @@ class ItemRepository implements ItemRepositoryInterface
 	public function create(CollectionInterface $collection, array $input): ?array
 	{
 		try {
-			$storageInput = $this->mapper->dehydrate($collection, $input, partial: false);
+			$storageInput = $this->mapInputToColumns($collection, $input, partial: false);
 			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($storageInput);
-			$storageInput = $this->mapInputToColumns($collection, $storageInput);
 			$lastId = $this->database->insert($collection->getTable())
 				->values($storageInput)
 				->run();
@@ -105,7 +104,7 @@ class ItemRepository implements ItemRepositoryInterface
 
 			$row = $this->loadByIdentity($collection, $id);
 
-			return $row === null ? [] : $this->hydrateRow($collection, $row);
+			return $row === null ? [] : $row;
 		} catch (RestApiError $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -116,22 +115,22 @@ class ItemRepository implements ItemRepositoryInterface
 	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
 	{
 		try {
-			$storageInput = $this->mapper->dehydrate($collection, $input, partial: true);
+			$storageInput = $input;
 
 			if ($storageInput === []) {
 				$row = $this->firstByCriteria($collection, $criteria);
 
-				return $row === null ? null : $this->hydrateRow($collection, $row);
+				return $row === null ? null : $row;
 			}
 
 			$query = $this->database->update($collection->getTable())
-				->values($this->mapInputToColumns($collection, $storageInput));
+				->values($this->mapInputToColumns($collection, $storageInput, partial: true));
 			$this->applyCriteriaFilter($query, $collection, $criteria);
 			$query->run();
 
 			$row = $this->firstByCriteria($collection, $criteria);
 
-			return $row === null ? null : $this->hydrateRow($collection, $row);
+			return $row === null ? null : $row;
 		} catch (RestApiError $e) {
 			throw $e;
 		} catch (\Throwable $e) {
@@ -181,10 +180,11 @@ class ItemRepository implements ItemRepositoryInterface
 		return $columnNames === [] ? null : $columnNames;
 	}
 
-	protected function mapInputToColumns(CollectionInterface $collection, array $input): array
+	protected function mapInputToColumns(CollectionInterface $collection, array $input, bool $partial = false): array
 	{
+		$dehydrated = $this->mapper->dehydrate($collection, $input, $partial);
 		$mapped = [];
-		foreach ($input as $fieldName => $value) {
+		foreach ($dehydrated as $fieldName => $value) {
 			$fieldName = (string) $fieldName;
 			if (! $collection->fields->has($fieldName)) {
 				throw RestApiError::invalidField($fieldName);
