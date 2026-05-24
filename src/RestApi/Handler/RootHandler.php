@@ -120,10 +120,11 @@ class RootHandler extends AbstractHandler
 		$visible = array_flip($collection->getVisibleColumns());
 		$requested = array_intersect_key(array_flip($handler->getRequestedColumns()), $visible);
 		$relationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
+		$internalColumns = $this->internalColumnsExceptRelationKeys($handler->getInternalColumns(), $relationKeys);
 
 		foreach ($rows as &$row) {
 			$row = array_intersect_key($row, $requested + $relationKeys);
-			$row = $this->stripInternalColumns($row, $handler->getInternalColumns(), $handler->getRequestedColumns());
+			$row = $this->stripInternalColumns($row, $internalColumns, $handler->getRequestedColumns());
 
 			foreach ($handler->getChildren() as $child) {
 				$name = $child->getResponseName();
@@ -137,7 +138,16 @@ class RootHandler extends AbstractHandler
 					: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 			}
 
-			$row = $collection->mapRowFromColumns($row);
+			$relationData = array_intersect_key($row, $relationKeys);
+			$scalarRow = array_diff_key($row, $relationKeys);
+			$scalarRow = $this->restoreCollidingForeignKeyScalars(
+				$collection,
+				$handler,
+				$scalarRow,
+				$relationData,
+				$requested,
+			);
+			$row = $collection->mapRowFromColumns($scalarRow) + $relationData;
 		}
 		unset($row);
 
@@ -150,7 +160,11 @@ class RootHandler extends AbstractHandler
 		$nestedRelationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
 		$syntheticKeys = array_flip(array_filter(array_keys($row), fn(string $key) => str_starts_with($key, '__on_')));
 		$row = array_intersect_key($row, $visible + $nestedRelationKeys + $syntheticKeys);
-		$row = $this->stripInternalColumns($row, $handler->getInternalColumns(), $handler->getRequestedColumns());
+		$row = $this->stripInternalColumns(
+			$row,
+			$this->internalColumnsExceptRelationKeys($handler->getInternalColumns(), $nestedRelationKeys),
+			$handler->getRequestedColumns(),
+		);
 
 		foreach (array_keys($row) as $key) {
 			if (str_starts_with((string) $key, '__on_')) {
@@ -169,7 +183,10 @@ class RootHandler extends AbstractHandler
 				: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
 		}
 
-		return $handler->getTargetCollection()->mapRowFromColumns($row);
+		$relationData = array_intersect_key($row, $nestedRelationKeys);
+		$scalarRow = array_diff_key($row, $nestedRelationKeys);
+
+		return $handler->getTargetCollection()->mapRowFromColumns($scalarRow) + $relationData;
 	}
 
 	private function numericRow(array $row, array $columns): array
@@ -191,6 +208,74 @@ class RootHandler extends AbstractHandler
 		}
 
 		return $row;
+	}
+
+	/**
+	 * @param array<int, string> $internalColumns
+	 * @param array<string, int> $relationKeys
+	 * @return array<int, string>
+	 */
+	private function internalColumnsExceptRelationKeys(array $internalColumns, array $relationKeys): array
+	{
+		return array_values(array_filter(
+			$internalColumns,
+			static fn(string $column): bool => !isset($relationKeys[$column]),
+		));
+	}
+
+	/**
+	 * When a belongsTo response name matches its FK column, the loaded relation replaces
+	 * the scalar value under the same key. Rehydrate explicitly requested FK scalars.
+	 *
+	 * @param array<string, int> $requested
+	 * @param array<string, mixed> $scalarRow
+	 * @param array<string, mixed> $relationData
+	 * @return array<string, mixed>
+	 */
+	private function restoreCollidingForeignKeyScalars(
+		CollectionInterface $collection,
+		HandlerInterface $handler,
+		array $scalarRow,
+		array $relationData,
+		array $requested,
+	): array {
+		foreach ($handler->getChildren() as $child) {
+			if (!$child->isSingle()) {
+				continue;
+			}
+
+			$relationName = $child->getRelationName();
+			if ($relationName === null || !$collection->relations->has($relationName)) {
+				continue;
+			}
+
+			$relation = $collection->relations->get($relationName);
+			$responseName = $child->getResponseName();
+
+			foreach ($relation->innerKeys() as $fieldName) {
+				if (!$collection->fields->has($fieldName)) {
+					continue;
+				}
+
+				$column = $collection->fields->get($fieldName)->getColumn();
+				if ($column !== $responseName || !isset($requested[$column])) {
+					continue;
+				}
+
+				$relationValue = $relationData[$responseName] ?? null;
+				if (!is_array($relationValue)) {
+					$scalarRow[$column] = null;
+					continue;
+				}
+
+				$outerKey = $relation->outerKeys()[0] ?? null;
+				$scalarRow[$column] = $outerKey !== null
+					? ($relationValue[$outerKey] ?? null)
+					: null;
+			}
+		}
+
+		return $scalarRow;
 	}
 
 	private function getPrimaryKeyColumns(CollectionInterface $collection): array

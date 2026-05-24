@@ -835,6 +835,60 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertContains('Alice Post 2', $titles);
 	}
 
+	public function testBelongsToRelationSurvivesWhenRelationNameCollidesWithForeignKeyColumn(): void
+	{
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+
+		$registry->collection('article')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(false)->end()
+			->field('writtenby', 'int')->type('int')->nullable(true)->end()
+			->field('createdby_id', 'int')->type('int')->column('createdby')->nullable(false)->end()
+			->end();
+
+		$registry->getCollection('article')->belongsTo('author', 'user')->innerKey('writtenby')->outerKey('id')->end();
+		$registry->getCollection('article')->belongsTo('createdby', 'user')->innerKey('createdby_id')->outerKey('id')->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'user' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'name' => 'TEXT',
+					'email' => 'TEXT',
+					'password' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'name' => 'Creator', 'email' => 'creator@test.com', 'password' => 'secret'],
+				],
+			],
+			'article' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT NOT NULL',
+					'writtenby' => 'INTEGER',
+					'createdby' => 'INTEGER NOT NULL',
+				],
+				'rows' => [
+					['id' => 1, 'title' => 'Sample article', 'writtenby' => null, 'createdby' => 1],
+				],
+			],
+		]);
+
+		$result = $this->createQueryPlanner($registry, $db)->list($registry->getCollection('article'), $this->q($registry->getCollection('article'), [
+			'fields' => 'id,title,createdby_id,createdby.id,author.id',
+		]));
+
+		$this->assertCount(1, $result['items']);
+		$item = $result['items'][0];
+
+		$this->assertSame(1, (int) $item['id']);
+		$this->assertSame('Sample article', $item['title']);
+		$this->assertSame(1, (int) $item['createdby_id']);
+		$this->assertSame(['id' => 1], $item['createdby']);
+		$this->assertNull($item['author']);
+	}
+
 	// -------------------------------------------------------------------------
 	// Nested Create — belongsTo
 	// -------------------------------------------------------------------------
