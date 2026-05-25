@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Addon;
 
-use ON\RestApi\RestApiService;
-
 /**
  * Interface for optional REST API addons.
  *
@@ -20,5 +18,5 @@ interface RestApiAddonInterface
 	/**
 	 * Called during extension setup with addon-specific options.
 	 */
-	public function register(RestApiService $restApi, array $options = []): void;
+	public function register(array $options = []): void;
 }

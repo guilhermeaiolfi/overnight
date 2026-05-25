@@ -4,10 +4,388 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\ORM\Definition\Registry;
+use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\ItemCreated;
+use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleting;
+use ON\RestApi\Event\ItemUpdated;
+use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Event\RelationConnected;
+use ON\RestApi\Event\RelationConnecting;
+use ON\RestApi\Event\RelationDisconnected;
+use ON\RestApi\Event\RelationDisconnecting;
+use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Payload\Action\ConnectAction;
+use ON\RestApi\Payload\Action\CreateAction as PayloadCreateAction;
+use ON\RestApi\Payload\Action\DeleteAction as PayloadDeleteAction;
+use ON\RestApi\Payload\Action\DisconnectAction;
+use ON\RestApi\Payload\Action\UpdateAction as PayloadUpdateAction;
+use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Payload\Node\RelationPayload;
+use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Support\PrimaryKeyCriteria;
+
 final readonly class MutationPlan
 {
+	private const CHILD_ACTIONS = ['create', 'update', 'delete'];
+
 	public function __construct(
 		public MutationNode $root,
 	) {
+	}
+
+	public static function fromSpec(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		HandlerFactory $handlers,
+		string $mode,
+		CollectionInterface $collection,
+		MutationSpec $spec,
+		MutationStateInterface $rootState,
+		PrimaryKeyValue|string|null $id = null,
+		array $path = [],
+	): ?self {
+		$state = $path === [] ? $rootState : new MutationState($collection, $spec->root->fields);
+
+		if ($path === []) {
+			$state->setData($spec->root->fields);
+		}
+
+		$resolvedId = $id;
+		if ($resolvedId === null && $mode !== 'create') {
+			$resolvedId = self::getInputPrimaryKeyValue($collection, $spec->root->fields);
+		}
+		$resolvedId = $resolvedId === null ? null : self::normalizeIdentity($collection, $resolvedId);
+		$parentOperation = self::resolveOperation($items, $mode, $collection, $resolvedId);
+		if ($parentOperation === 'update' && $resolvedId !== null) {
+			foreach ($resolvedId->values() as $fieldName => $value) {
+				$state->setValue($fieldName, $value);
+			}
+		}
+		self::assertCreateIdAvailable($items, $parentOperation, $collection, $state);
+		$state->setData($spec->root->fields);
+		$root = self::nodeFromSpec($registry, $items, $handlers, $spec->root, $mode, $state, $id, $path);
+
+		return $root === null ? null : new self($root);
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	public function getBeforeMutationEvents(
+		MutationQueue $queue,
+		MutationStateInterface $rootState,
+	): array {
+		return $this->beforeMutationEvents($this->root, $queue, $rootState);
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	public function getAfterMutationEvents(MutationStateInterface $rootState): array
+	{
+		return $this->afterMutationEvents($this->root, $rootState);
+	}
+
+	private static function nodeFromSpec(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		HandlerFactory $handlers,
+		MutationNodeSpec $spec,
+		string $mode,
+		MutationStateInterface $state,
+		PrimaryKeyValue|string|null $id,
+		array $path,
+		?MutationStateInterface $parentState = null,
+	): ?MutationNode {
+		$collection = $state->getCollection();
+		$fields = $parentState === null
+			? $spec->fields
+			: $parentState->rebindValueRefs($spec->fields);
+		$state->setData($fields);
+		if ($id === null && $mode !== 'create') {
+			$id = self::getInputPrimaryKeyValue($collection, $spec->fields);
+		}
+		$id = $id === null ? null : self::normalizeIdentity($collection, $id);
+		$operation = self::resolveOperation($items, $mode, $collection, $id);
+		if ($operation === 'update' && $id === null) {
+			return null;
+		}
+		if ($operation === 'update') {
+			foreach ($id->values() as $fieldName => $value) {
+				$state->setValue($fieldName, $value);
+			}
+		}
+		self::assertCreateIdAvailable($items, $operation, $collection, $state);
+		$relations = [];
+		foreach ($spec->relations as $relationPayload) {
+			$relationNode = self::relationFromPayload($registry, $items, $handlers, $relationPayload, $state, $path);
+			if ($relationNode !== null) {
+				$relations[$relationPayload->relationName] = $relationNode;
+			}
+		}
+
+		return new MutationNode($operation, $collection, $state, $path, $relations);
+	}
+
+	private static function relationFromPayload(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		HandlerFactory $handlers,
+		RelationPayload $relationPayload,
+		MutationStateInterface $state,
+		array $path
+	): ?RelationNode {
+		$collection = $state->getCollection();
+		$handler = $handlers->mutation($collection, $relationPayload->relationName);
+		if ($handler === null) {
+			return null;
+		}
+		$relationPath = [...$path, $relationPayload->relationName];
+		$children = ['create' => [], 'update' => [], 'delete' => []];
+		foreach ($relationPayload->actions as $action) {
+			$child = match (true) {
+				$action instanceof PayloadCreateAction => self::entityActionNode($registry, $items, $handlers, $action, 'create', $state, $relationPath),
+				$action instanceof PayloadUpdateAction => self::entityActionNode($registry, $items, $handlers, $action, 'update', $state, $relationPath),
+				$action instanceof PayloadDeleteAction => self::deleteActionNode($action, $registry, $relationPath),
+				default => null,
+			};
+			if ($child !== null) {
+				$children[$child->operation][] = $child;
+			}
+		}
+
+		return new RelationNode($handler, $relationPayload, $state, $relationPath, $children);
+	}
+
+	private static function entityActionNode(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		HandlerFactory $handlers,
+		PayloadCreateAction|PayloadUpdateAction $action,
+		string $operation,
+		MutationStateInterface $state,
+		array $path
+	): ?MutationNode {
+		if ($action->node === null) {
+			return null;
+		}
+		$collection = $registry->getCollection($action->collection ?? $action->node->collection);
+		$childState = new MutationState($collection, []);
+
+		return match ($operation) {
+			'create' => self::nodeFromSpec($registry, $items, $handlers, $action->node, 'create', $childState, null, $path, $state),
+			'update' => self::nodeFromSpec(
+				$registry,
+				$items,
+				$handlers,
+				$action->node,
+				'upsert',
+				$childState,
+				self::getInputPrimaryKeyValue($collection, $action->node->fields),
+				$path,
+				$state,
+			),
+			default => null,
+		};
+	}
+
+	private static function deleteActionNode(PayloadDeleteAction $action, Registry $registry, array $path): ?MutationNode
+	{
+		if ($action->collection === null) {
+			return null;
+		}
+		$collection = $registry->getCollection($action->collection);
+		$item = $action->data ?? PrimaryKeyCriteria::normalize($collection, $action->target)->values();
+
+		return self::deleteChildNode($collection, $item, $path);
+	}
+
+	private static function deleteChildNode(CollectionInterface $collection, array $item, array $path): ?MutationNode
+	{
+		$id = self::getInputPrimaryKeyValue($collection, $item);
+		if ($id === null) {
+			return null;
+		}
+
+		return new MutationNode('delete', $collection, new MutationState($collection, self::normalizeIdentity($collection, $id)->values()), $path);
+	}
+
+	private static function resolveOperation(ItemRepositoryInterface $items, string $mode, CollectionInterface $collection, ?PrimaryKeyValue $id): string
+	{
+		if ($mode !== 'upsert') {
+			return $mode;
+		}
+
+		return $id !== null && $items->findByIdentity($collection, $id, typed: false) !== null ? 'update' : 'create';
+	}
+
+	private static function assertCreateIdAvailable(ItemRepositoryInterface $items, string $operation, CollectionInterface $collection, MutationStateInterface $state): void
+	{
+		if ($operation !== 'create') {
+			return;
+		}
+
+		$createId = self::getInputPrimaryKeyValue($collection, $state->getData());
+		if (
+			$createId !== null
+			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
+			&& $items->findByIdentity($collection, $createId, typed: false) !== null
+		) {
+			throw new RestApiError(
+				"A record with this " . implode(', ', $collection->getPrimaryKey()->getFieldNames()) . " already exists.",
+				'DUPLICATE',
+				$collection->getPrimaryKey()->getFieldNames()[0] ?? null,
+				409
+			);
+		}
+	}
+
+	private static function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
+	{
+		return $collection->getPrimaryKey()->extractFromInput($input);
+	}
+
+	private static function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
+	{
+		return PrimaryKeyCriteria::normalize($collection, $identity);
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	private function beforeMutationEvents(
+		MutationNode $node,
+		MutationQueue $queue,
+		MutationStateInterface $rootState,
+	): array {
+		$events = [];
+		$id = $node->operation !== 'create'
+			? $node->state->getPrimaryKeyValue()
+			: null;
+		$event = match ($node->operation) {
+			'create' => new ItemCreating($node, $queue, $node->path, $rootState),
+			'update' => $id === null ? null : new ItemUpdating($node, $id, $queue, $node->path, $rootState),
+			'delete' => $id === null ? null : new ItemDeleting($node, $id, $queue, $node->path, $rootState),
+			default => null,
+		};
+		if ($event !== null) {
+			$events[] = $event;
+		}
+
+		foreach ($node->relations as $relation) {
+			foreach (self::CHILD_ACTIONS as $action) {
+				foreach ($relation->children[$action] as $child) {
+					array_push($events, ...$this->beforeMutationEvents($child, $queue, $rootState));
+				}
+			}
+
+			array_push($events, ...$this->beforeRelationEvents($relation, $queue, $rootState));
+		}
+
+		return $events;
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	private function afterMutationEvents(
+		MutationNode $node,
+		MutationStateInterface $rootState,
+	): array {
+		$events = [];
+		foreach ($node->relations as $relation) {
+			foreach (self::CHILD_ACTIONS as $action) {
+				foreach ($relation->children[$action] as $child) {
+					array_push($events, ...$this->afterMutationEvents($child, $rootState));
+				}
+			}
+
+			array_push($events, ...$this->afterRelationEvents($relation, $rootState));
+		}
+
+		$event = match ($node->operation) {
+			'create' => new ItemCreated($node->collection, $node->state, $node->path, $rootState),
+			'update' => new ItemUpdated($node->collection, $node->state, $node->path, $rootState),
+			default => null,
+		};
+		if ($event !== null) {
+			$events[] = $event;
+		}
+
+		return $events;
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	private function beforeRelationEvents(
+		RelationNode $relation,
+		MutationQueue $queue,
+		MutationStateInterface $rootState,
+	): array {
+		$events = [];
+		foreach ($relation->payload->actions as $action) {
+			$event = match (true) {
+				$action instanceof ConnectAction && $action->target !== null => new RelationConnecting(
+					$relation,
+					$action->target,
+					$relation->path,
+					$rootState,
+					$queue
+				),
+				$action instanceof DisconnectAction && $action->target !== null => new RelationDisconnecting(
+					$relation,
+					$action->target,
+					$relation->path,
+					$rootState,
+					$queue
+				),
+				default => null,
+			};
+
+			if ($event !== null) {
+				$events[] = $event;
+			}
+		}
+
+		return $events;
+	}
+
+	/**
+	 * @return list<object>
+	 */
+	private function afterRelationEvents(
+		RelationNode $relation,
+		MutationStateInterface $rootState,
+	): array {
+		$events = [];
+		foreach ($relation->payload->actions as $action) {
+			$event = match (true) {
+				$action instanceof ConnectAction && $action->target !== null => new RelationConnected(
+					$relation,
+					$action->target,
+					$relation->path,
+					$rootState
+				),
+				$action instanceof DisconnectAction && $action->target !== null => new RelationDisconnected(
+					$relation,
+					$action->target,
+					$relation->path,
+					$rootState
+				),
+				default => null,
+			};
+
+			if ($event !== null) {
+				$events[] = $event;
+			}
+		}
+
+		return $events;
 	}
 }

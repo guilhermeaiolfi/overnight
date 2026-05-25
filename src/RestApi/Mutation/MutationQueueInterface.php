@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Event\RestEventManager;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
@@ -25,6 +26,15 @@ interface MutationQueueInterface
 		CollectionInterface $collection,
 		FilterNode $criteria
 	): MutationDeleteTaskInterface;
+
+	public function queueNode(MutationNode $node): MutationTaskInterface|MutationDeleteTaskInterface|null;
+
+	public function fill(
+		MutationNode $node,
+		RestEventManager $events,
+		MutationStateInterface $rootState,
+		bool $dispatchEvents
+	): MutationTaskInterface|MutationDeleteTaskInterface|null;
 
 	public function execute(ItemRepositoryInterface $repository): void;
 }

@@ -6,6 +6,7 @@ namespace ON\RestApi\Event;
 
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationStateInterface;
 
 class ItemDeleted implements HasEventNameInterface
@@ -15,10 +16,8 @@ class ItemDeleted implements HasEventNameInterface
 		protected MutationStateInterface $state,
 		protected bool $result,
 		protected array $path = [],
-		protected ?CollectionInterface $rootCollection = null,
 		protected ?MutationStateInterface $rootState = null
 	) {
-		$this->rootCollection ??= $collection;
 		$this->rootState ??= $state;
 	}
 
@@ -32,9 +31,14 @@ class ItemDeleted implements HasEventNameInterface
 		return $this->collection;
 	}
 
-	public function getId(): string
+	public function getPrimaryKeyValue(): ?PrimaryKeyValue
 	{
-		return (string) $this->state->resolveValue('id');
+		return $this->state->getPrimaryKeyValue();
+	}
+
+	public function getId(): ?PrimaryKeyValue
+	{
+		return $this->getPrimaryKeyValue();
 	}
 
 	public function getState(): MutationStateInterface
@@ -64,7 +68,7 @@ class ItemDeleted implements HasEventNameInterface
 
 	public function getRootCollection(): CollectionInterface
 	{
-		return $this->rootCollection;
+		return $this->rootState->getCollection();
 	}
 
 	public function getRootState(): MutationStateInterface

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 
 interface MutationStateInterface
 {
@@ -27,4 +28,8 @@ interface MutationStateInterface
 	public function getRow(): ?array;
 
 	public function markReady(array $row): void;
+
+	public function getPrimaryKeyValue(bool $requireReady = true): ?PrimaryKeyValue;
+
+	public function rebindValueRefs(array $values): array;
 }

@@ -6,6 +6,7 @@ namespace ON\RestApi\Event;
 
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
@@ -16,14 +17,12 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 
 	public function __construct(
 		protected MutationNode $node,
-		protected string $id,
+		protected PrimaryKeyValue $identity,
 		protected MutationQueue $queue,
 		protected array $path = [],
-		protected ?CollectionInterface $rootCollection = null,
 		protected ?MutationStateInterface $rootState = null
 	) {
 		$this->path = $path === [] ? $node->path : $path;
-		$this->rootCollection ??= $node->collection;
 		$this->rootState ??= $node->state;
 	}
 
@@ -42,9 +41,14 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return $this->node->collection;
 	}
 
-	public function getId(): string
+	public function getPrimaryKeyValue(): PrimaryKeyValue
 	{
-		return $this->id;
+		return $this->identity;
+	}
+
+	public function getId(): PrimaryKeyValue
+	{
+		return $this->getPrimaryKeyValue();
 	}
 
 	public function getState(): MutationStateInterface
@@ -74,7 +78,7 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 
 	public function getRootCollection(): CollectionInterface
 	{
-		return $this->rootCollection;
+		return $this->rootState->getCollection();
 	}
 
 	public function getRootState(): MutationStateInterface

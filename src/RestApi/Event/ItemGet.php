@@ -54,17 +54,19 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 		$this->options = $options;
 	}
 
-	public function getIdentity(): PrimaryKeyValue
+	public function getPrimaryKeyValue(): PrimaryKeyValue
 	{
 		return $this->identity;
 	}
 
-	/**
-	 * URL-safe route id (scalar or encoded composite primary key).
-	 */
-	public function getId(): string
+	public function getIdentity(): PrimaryKeyValue
 	{
-		return $this->identity->toUrlId();
+		return $this->getPrimaryKeyValue();
+	}
+
+	public function getId(): PrimaryKeyValue
+	{
+		return $this->getPrimaryKeyValue();
 	}
 
 	public function getQuerySpec(): ?QuerySpec

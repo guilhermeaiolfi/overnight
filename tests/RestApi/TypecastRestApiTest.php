@@ -20,7 +20,7 @@ final class TypecastRestApiTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$service = $this->createRestApiService($registry, $this->createItems($registry, $db));
+		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1');
 
@@ -33,7 +33,7 @@ final class TypecastRestApiTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$service = $this->createRestApiService($registry, $this->createItems($registry, $db));
+		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1', null, ['raw' => true]);
 
@@ -45,7 +45,7 @@ final class TypecastRestApiTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$service = $this->createRestApiService($registry, $this->createItems($registry, $db));
+		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1', null, ['serialize' => true]);
 
@@ -60,7 +60,7 @@ final class TypecastRestApiTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$service = $this->createRestApiService($registry, $this->createItems($registry, $db));
+		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1');
 		$wire = $service->serialize($registry->getCollection('post'), $item);
@@ -90,7 +90,7 @@ final class TypecastRestApiTest extends TestCase
 			],
 		]);
 		$resolver = $this->createItems($registry, $db);
-		$service = $this->createRestApiService($registry, $resolver);
+		$service = $this->createDirectusOperations($registry, $resolver);
 
 		$created = $service->create('post', $this->m($registry, $resolver, 'post', [
 			'user_id' => 1,
@@ -110,7 +110,7 @@ final class TypecastRestApiTest extends TestCase
 		$registry = new Registry();
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
-		$service = $this->createRestApiService($registry, $this->createItems($registry, $db));
+		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$row = $service->unserialize($registry->getCollection('post'), [
 			'created_at' => '2024-06-01T15:00:00+00:00',

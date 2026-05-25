@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 
 final class MutationState implements MutationStateInterface
 {
@@ -107,5 +108,45 @@ final class MutationState implements MutationStateInterface
 		}
 
 		$this->ready = true;
+	}
+
+	public function getPrimaryKeyValue(bool $requireReady = true): ?PrimaryKeyValue
+	{
+		$values = [];
+
+		foreach ($this->collection->getPrimaryKey()->getFieldNames() as $fieldName) {
+			$value = $this->getValue($fieldName);
+			if ($value instanceof ValueRef) {
+				if (!$value->isReady() && $requireReady) {
+					return null;
+				}
+
+				$values[$fieldName] = $requireReady ? $value->resolve() : $value;
+				continue;
+			}
+
+			if ($requireReady) {
+				$value = $this->resolveValue($value);
+			}
+
+			if ($value === null && !$this->isValueReady($fieldName)) {
+				return null;
+			}
+
+			$values[$fieldName] = $value;
+		}
+
+		return new PrimaryKeyValue($this->collection, $values);
+	}
+
+	public function rebindValueRefs(array $values): array
+	{
+		foreach ($values as $name => $value) {
+			if ($value instanceof ValueRef) {
+				$values[$name] = $this->getValue($value->getField());
+			}
+		}
+
+		return $values;
 	}
 }

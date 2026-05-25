@@ -7,43 +7,45 @@ namespace ON\RestApi\Event;
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\RelationNode;
 use ON\RestApi\Mutation\MutationStateInterface;
 
 abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 {
 	public function __construct(
-		protected CollectionInterface $collection,
-		protected string $relationName,
-		protected CollectionInterface $targetCollection,
-		protected MutationStateInterface $state,
+		protected RelationNode $relation,
 		protected mixed $target,
 		protected array $path = [],
-		protected ?CollectionInterface $rootCollection = null,
 		protected ?MutationStateInterface $rootState = null,
 		protected ?MutationQueue $queue = null,
 	) {
-		$this->rootCollection ??= $collection;
-		$this->rootState ??= $state;
+		$this->path = $path === [] ? $relation->path : $path;
+		$this->rootState ??= $relation->state;
+	}
+
+	public function getRelation(): RelationNode
+	{
+		return $this->relation;
 	}
 
 	public function getCollection(): CollectionInterface
 	{
-		return $this->collection;
+		return $this->relation->state->getCollection();
 	}
 
 	public function getRelationName(): string
 	{
-		return $this->relationName;
+		return $this->relation->handler->getRelationName();
 	}
 
 	public function getTargetCollection(): CollectionInterface
 	{
-		return $this->targetCollection;
+		return $this->relation->handler->getTargetCollection();
 	}
 
 	public function getState(): MutationStateInterface
 	{
-		return $this->state;
+		return $this->relation->state;
 	}
 
 	public function getTarget(): mixed
@@ -63,7 +65,7 @@ abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 
 	public function getRootCollection(): CollectionInterface
 	{
-		return $this->rootCollection;
+		return $this->rootState->getCollection();
 	}
 
 	public function getRootState(): MutationStateInterface

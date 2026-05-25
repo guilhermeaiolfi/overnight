@@ -9,7 +9,6 @@ use Laminas\Diactoros\ServerRequest;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Mapping\CollectionMapper;
@@ -35,9 +34,9 @@ final class RestMiddlewareTest extends TestCase
 		$this->createFullSchema($registry);
 		$db = $this->createFullDatabase();
 		$resolver = $this->createItems($registry, $db);
-		$service = $this->createRestApiService($registry, $resolver);
-		$middleware = new RestMiddleware(
-			$service,
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
 			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items']
 		);
@@ -60,7 +59,7 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertArrayNotHasKey('password', $body['data'][0]);
 	}
 
-	public function testMultipartNestedUploadedFilesArePassedToRestApiService(): void
+	public function testMultipartNestedUploadedFilesArePassedToDirectusAction(): void
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
@@ -131,15 +130,12 @@ final class RestMiddlewareTest extends TestCase
 				return $event;
 			}
 		};
-		$service = $this->createRestApiService(
+		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$dispatcher
-		);
-		$middleware = new RestMiddleware(
-			$service,
 			$this->createMutationBuilder($registry, $resolver, $dispatcher),
-			['endpointUri' => '/items']
+			['endpointUri' => '/items'],
+			$dispatcher
 		);
 
 		$request = (new ServerRequest(

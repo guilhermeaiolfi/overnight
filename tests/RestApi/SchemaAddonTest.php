@@ -30,11 +30,8 @@ final class SchemaAddonTest extends TestCase
 				->end()
 			->end();
 
-		$db = $this->createTestDatabase();
-		$resolver = $this->createItems($registry, $db);
-		$service = $this->createRestApiService($registry, $resolver);
-		$addon = new SchemaAddon($service);
-		$addon->register($service, ['basePath' => '/items']);
+		$addon = new SchemaAddon($registry);
+		$addon->register(['basePath' => '/items']);
 
 		$response = $addon->process(
 			new ServerRequest(uri: '/items/_schema/user', method: 'GET'),

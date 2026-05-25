@@ -8,7 +8,6 @@ use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Middleware\RestMiddleware;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -38,9 +37,9 @@ final class RestMiddlewareValidationTest extends TestCase
 
 		$db = $this->createTestDatabase();
 		$resolver = $this->createItems($registry, $db);
-		$service = $this->createRestApiService($registry, $resolver);
-		$middleware = new RestMiddleware(
-			$service,
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
 			$this->createMutationBuilder($registry, $resolver),
 			[
 				'endpointUri' => '/items',
@@ -86,9 +85,9 @@ final class RestMiddlewareValidationTest extends TestCase
 
 		$db = $this->createTestDatabase();
 		$resolver = $this->createItems($registry, $db);
-		$service = $this->createRestApiService($registry, $resolver);
-		$middleware = new RestMiddleware(
-			$service,
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
 			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items']
 		);

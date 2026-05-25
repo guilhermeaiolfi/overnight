@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
@@ -13,13 +13,12 @@ class ItemUpdating extends ItemCreating
 {
 	public function __construct(
 		MutationNode $node,
-		protected string $id,
+		protected PrimaryKeyValue $identity,
 		MutationQueue $queue,
 		array $path = [],
-		?CollectionInterface $rootCollection = null,
 		?MutationStateInterface $rootState = null
 	) {
-		parent::__construct($node, $queue, $path, $rootCollection, $rootState);
+		parent::__construct($node, $queue, $path, $rootState);
 	}
 
 	public function eventName(): string
@@ -27,8 +26,13 @@ class ItemUpdating extends ItemCreating
 		return 'restapi.item.updating';
 	}
 
-	public function getId(): string
+	public function getPrimaryKeyValue(): PrimaryKeyValue
 	{
-		return $this->id;
+		return $this->identity;
+	}
+
+	public function getId(): PrimaryKeyValue
+	{
+		return $this->getPrimaryKeyValue();
 	}
 }

@@ -14,10 +14,8 @@ class ItemCreated implements HasEventNameInterface
 		protected CollectionInterface $collection,
 		protected MutationStateInterface $state,
 		protected array $path = [],
-		protected ?CollectionInterface $rootCollection = null,
 		protected ?MutationStateInterface $rootState = null
 	) {
-		$this->rootCollection ??= $collection;
 		$this->rootState ??= $state;
 	}
 
@@ -58,7 +56,7 @@ class ItemCreated implements HasEventNameInterface
 
 	public function getRootCollection(): CollectionInterface
 	{
-		return $this->rootCollection;
+		return $this->rootState->getCollection();
 	}
 
 	public function getRootState(): MutationStateInterface

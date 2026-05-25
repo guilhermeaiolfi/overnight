@@ -9,7 +9,7 @@ use ON\Event\EventsExtension;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdating;
-use ON\RestApi\RestApiService;
+use ON\RestApi\Repository\ItemRepositoryInterface;
 
 /**
  * Tracks create/update/delete operations in a revisions table.
@@ -37,13 +37,12 @@ class RevisionAddon implements RestApiAddonInterface
 	public function __construct(
 		protected EventsExtension $events,
 		protected DatabaseManager $databaseManager,
-		protected RestApiService $restApi
+		protected ItemRepositoryInterface $items
 	) {
 	}
 
-	public function register(RestApiService $restApi, array $options = []): void
+	public function register(array $options = []): void
 	{
-		$this->restApi = $restApi;
 		$this->table = $options['table'] ?? 'revisions';
 		$this->collections = $options['collections'] ?? null;
 
@@ -71,14 +70,13 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->restApi->get(
+		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
-			$event->getId(),
-			null,
-			['dispatchEvents' => false]
+			$event->getPrimaryKeyValue(),
+			true
 		);
 
-		$this->writeRevision($collectionName, $event->getId(), 'update', $currentItem, $event->getState()->getData());
+		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'update', $currentItem, $event->getState()->getData());
 	}
 
 	public function onItemDelete(ItemDeleting $event): void
@@ -89,14 +87,13 @@ class RevisionAddon implements RestApiAddonInterface
 			return;
 		}
 
-		$currentItem = $this->restApi->get(
+		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
-			$event->getId(),
-			null,
-			['dispatchEvents' => false]
+			$event->getPrimaryKeyValue(),
+			true
 		);
 
-		$this->writeRevision($collectionName, $event->getId(), 'delete', $currentItem, null);
+		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'delete', $currentItem, null);
 	}
 
 	protected function shouldTrack(string $collectionName): bool

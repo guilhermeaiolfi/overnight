@@ -17,12 +17,33 @@ use ON\RestApi\Payload\MutationSpecUnserializer;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Query\QueryPlanner;
+use ON\RestApi\Action\RestActionRouter;
+use ON\RestApi\Directus\Action\BatchDeleteAction;
+use ON\RestApi\Directus\Action\BatchUpdateAction;
+use ON\RestApi\Directus\Action\CreateAction;
+use ON\RestApi\Directus\Action\DeleteAction;
+use ON\RestApi\Directus\Action\GetAction;
+use ON\RestApi\Directus\Action\ListAction;
+use ON\RestApi\Directus\Action\UpdateAction;
+use ON\RestApi\Action\Concern\FormatOutputTrait;
+use ON\RestApi\Action\Concern\RegistrySupportTrait;
+use ON\RestApi\Event\ItemGet;
+use ON\RestApi\Event\ItemList;
+use ON\RestApi\Middleware\RestMiddleware;
+use ON\RestApi\Mutation\MutationPlanner;
+use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-use ON\RestApi\RestApiService;
 use ON\RestApi\Serialize\CollectionSerializer;
+use ON\RestApi\Support\AuthorizationGuard;
+use ON\RestApi\Support\PrimaryKeyCriteria;
+use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 trait RestApiTestFixtures
@@ -270,38 +291,15 @@ trait RestApiTestFixtures
 		);
 	}
 
-	protected function createQueryPlanner(Registry $registry, CycleSqliteTestDatabase $db): QueryPlanner
+	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db): DirectusReadActionHarness
 	{
 		$items = $this->createItems($registry, $db);
 		$handlers = $this->createHandlerFactory($items);
 
-		return new QueryPlanner(
+		return new DirectusReadActionHarness(
 			$items,
 			$handlers,
 			new SqlQuerySpecCompiler($db->database(), 100, 1000)
-		);
-	}
-
-	protected function createRestApiService(
-		Registry $registry,
-		ItemRepositoryInterface $items,
-		?EventDispatcherInterface $eventDispatcher = null
-	): RestApiService {
-		$handlers = $this->createHandlerFactory($items);
-		$queryPlanner = new QueryPlanner(
-			$items,
-			$handlers,
-			new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
-		);
-
-		return new RestApiService(
-			$registry,
-			$items,
-			$queryPlanner,
-			$eventDispatcher,
-			$handlers,
-			new CollectionSerializer(),
-			new FileUploadEventEmitter($registry, $eventDispatcher),
 		);
 	}
 
@@ -317,6 +315,309 @@ trait RestApiTestFixtures
 			$items,
 			new PayloadNormalizer($handlers, $registry),
 			new MutationSpecUnserializer($registry),
+		);
+	}
+
+	protected function createDirectusOperations(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		?EventDispatcherInterface $eventDispatcher = null,
+	): object {
+		return new class(
+			$registry,
+			$items,
+			$this->createHandlerFactory($items),
+			$this->createMutationBuilder($registry, $items, $eventDispatcher),
+			new \ON\RestApi\RestApiConfig(),
+			$eventDispatcher
+		) {
+			use FormatOutputTrait;
+			use RegistrySupportTrait {
+				getCollection as protected registryGetCollection;
+			}
+
+			private ?FileUploadEventEmitter $fileUploadEventEmitter = null;
+
+			public function __construct(
+				private Registry $registry,
+				private ItemRepositoryInterface $items,
+				private HandlerFactory $relationHandlers,
+				private DirectusMutationBuilder $mutationBuilder,
+				private \ON\RestApi\RestApiConfig $config,
+				private ?EventDispatcherInterface $eventDispatcher = null,
+			) {}
+
+			public function getCollection(string|\ON\ORM\Definition\Collection\CollectionInterface $collectionName): \ON\ORM\Definition\Collection\CollectionInterface
+			{
+				return $this->registryGetCollection($collectionName);
+			}
+
+			public function getCollections(): array
+			{
+				return $this->registry->getCollections();
+			}
+
+			public function list(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $querySpec, array $options = []): array
+			{
+				$collection = $this->getCollection($collection);
+				$options += ['dispatchEvents' => true];
+				if ($options['dispatchEvents']) {
+					$event = new ItemList($collection, $querySpec, $options);
+					$this->eventDispatcher?->dispatch($event);
+					if ($this->eventDispatcher !== null) {
+						AuthorizationGuard::assert($event);
+					}
+					$querySpec = $event->getQuerySpec();
+					$responseOptions = $event->getOptions();
+
+					if ($event->isDefaultPrevented()) {
+						return [
+							'items' => $this->formatResponseRows($collection, $event->getResult() ?? [], $responseOptions),
+							'meta' => $event->getTotalCount() === null ? [] : ['filter_count' => $event->getTotalCount()],
+						];
+					}
+				}
+
+				$result = $this->directusReads()->list($collection, $querySpec);
+				if (isset($event)) {
+					$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
+					$responseOptions = $event->getOptions();
+				}
+
+				$result['items'] = $this->formatResponseRows($collection, $result['items'] ?? [], $responseOptions ?? $options);
+
+				return $result;
+			}
+
+			public function get(
+				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
+				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
+				?\ON\RestApi\Query\Node\QuerySpec $querySpec = null,
+				array $options = []
+			): ?array {
+				$collection = $this->getCollection($collection);
+				$identity = $this->normalizeIdentity($collection, $identity);
+				$options += ['dispatchEvents' => true];
+
+				if (!$options['dispatchEvents']) {
+					return $this->formatResponseRow($collection, $this->directusReads()->get($collection, $identity, $querySpec), $options);
+				}
+
+				$event = new ItemGet($collection, $identity, $querySpec, $options);
+				$this->eventDispatcher?->dispatch($event);
+				if ($this->eventDispatcher !== null) {
+					AuthorizationGuard::assert($event);
+				}
+				$querySpec = $event->getQuerySpec() ?? $querySpec;
+				$responseOptions = $event->getOptions();
+
+				if ($event->isDefaultPrevented()) {
+					return $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
+				}
+
+				$event->setResult($this->directusReads()->get($collection, $identity, $querySpec));
+
+				return $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
+			}
+
+			public function aggregate(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $querySpec, array $options = []): array
+			{
+				$collection = $this->getCollection($collection);
+				$options += ['dispatchEvents' => true];
+				if (!$options['dispatchEvents']) {
+					return $this->directusReads()->aggregate($collection, $querySpec);
+				}
+
+				$event = new ItemList($collection, $querySpec, $options);
+				$this->eventDispatcher?->dispatch($event);
+				if ($this->eventDispatcher !== null) {
+					AuthorizationGuard::assert($event);
+				}
+				$querySpec = $event->getQuerySpec();
+
+				if ($event->isDefaultPrevented()) {
+					return $event->getResult() ?? [];
+				}
+
+				$result = $this->directusReads()->aggregate($collection, $querySpec);
+				$event->setResult($result);
+
+				return $event->getResult() ?? [];
+			}
+
+			public function create(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Payload\Node\MutationSpec $spec, array $options = []): array
+			{
+				$collection = $this->getCollection($collection);
+				$options += ['dispatchEvents' => true];
+				$this->fileUploadEventEmitter()->process($spec);
+				$queue = new MutationQueue();
+				$planner = $this->mutationPlanner($queue, $collection, $spec, $options['dispatchEvents']);
+				$root = $planner->save('create', $collection, $spec);
+
+				$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
+				$planner->dispatchAfterEvents();
+
+				return $this->formatResponseRow($collection, $result, $options) ?? [];
+			}
+
+			public function update(
+				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
+				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
+				\ON\RestApi\Payload\Node\MutationSpec $spec,
+				array $options = []
+			): ?array {
+				$collection = $this->getCollection($collection);
+				$identity = $this->normalizeIdentity($collection, $identity);
+				$options += ['dispatchEvents' => true];
+				$this->fileUploadEventEmitter()->process($spec);
+				$queue = new MutationQueue();
+				$planner = $this->mutationPlanner($queue, $collection, $spec, $options['dispatchEvents']);
+				$root = $planner->save('update', $collection, $spec, $identity);
+
+				$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
+				$planner->dispatchAfterEvents();
+
+				return $this->formatResponseRow($collection, $result, $options);
+			}
+
+			public function delete(
+				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
+				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
+				array $options = []
+			): bool {
+				$collection = $this->getCollection($collection);
+				$identity = $this->normalizeIdentity($collection, $identity);
+				$options += ['dispatchEvents' => true];
+				$queue = new MutationQueue();
+				$emptySpec = new \ON\RestApi\Payload\Node\MutationSpec(new MutationNodeSpec($collection->getName()));
+				$planner = $this->mutationPlanner($queue, $collection, $emptySpec, $options['dispatchEvents']);
+				$deleted = $planner->delete($collection, $identity);
+
+				$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+				$planner->dispatchAfterEvents();
+
+				return $result;
+			}
+
+			public function serialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $phpRow): array
+			{
+				return $this->collectionSerializer()->serialize($collection, $phpRow);
+			}
+
+			public function unserialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, string|array $payload, bool $partial = false): array
+			{
+				return $this->collectionSerializer()->unserialize($collection, $payload, $partial);
+			}
+
+			private function directusReads(): DirectusReadActionHarness
+			{
+				return new DirectusReadActionHarness(
+					$this->items,
+					$this->relationHandlers,
+					new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000)
+				);
+			}
+
+			private function mutationPlanner(
+				MutationQueue $queue,
+				CollectionInterface $rootCollection,
+				\ON\RestApi\Payload\Node\MutationSpec $spec,
+				bool $dispatchEvents
+			): MutationPlanner {
+				return new MutationPlanner(
+					$this->registry,
+					$this->items,
+					$this->relationHandlers,
+					$this->eventDispatcher,
+					$dispatchEvents,
+					$queue,
+					$rootCollection,
+					new MutationState($rootCollection, $spec->root->fields),
+				);
+			}
+
+			private function fileUploadEventEmitter(): FileUploadEventEmitter
+			{
+				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter($this->registry, $this->eventDispatcher);
+			}
+
+			private function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
+			{
+				return $identity instanceof PrimaryKeyValue ? $identity : PrimaryKeyCriteria::normalize($collection, $identity);
+			}
+		};
+	}
+
+	protected function createRestMiddleware(
+		Registry $registry,
+		ItemRepositoryInterface $items,
+		DirectusMutationBuilder $mutationBuilder,
+		array $options = ['endpointUri' => '/items'],
+		?EventDispatcherInterface $eventDispatcher = null,
+	): RestMiddleware {
+		$config = new \ON\RestApi\RestApiConfig($options);
+		$config
+			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
+			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
+			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
+			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
+			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
+			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
+			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
+
+		$container = new class($registry, $items, $mutationBuilder, $config, $eventDispatcher) implements ContainerInterface {
+			private HandlerFactory $handlers;
+			private DirectusQueryParser $queryParser;
+			private QueryNormalizer $queryNormalizer;
+
+			public function __construct(
+				private Registry $registry,
+				private ItemRepositoryInterface $items,
+				private DirectusMutationBuilder $mutationBuilder,
+				private \ON\RestApi\RestApiConfig $config,
+				private ?EventDispatcherInterface $eventDispatcher = null,
+			) {
+				$compiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
+				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items, $compiler);
+				$this->queryParser = new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000);
+				$this->queryNormalizer = new QueryNormalizer($this->config->get('dynamicVariables', []));
+			}
+
+			public function get(string $id): mixed
+			{
+				return match ($id) {
+					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, $this->queryParser, $this->queryNormalizer, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->eventDispatcher),
+					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->queryParser, $this->queryNormalizer, $this->config, $this->eventDispatcher),
+					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, $this->mutationBuilder, $this->config, $this->eventDispatcher),
+					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, $this->mutationBuilder, $this->config, $this->eventDispatcher),
+					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, $this->mutationBuilder, $this->config, $this->eventDispatcher),
+					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
+					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
+					default => throw new \RuntimeException("Unknown service {$id}."),
+				};
+			}
+
+			public function has(string $id): bool
+			{
+				return in_array($id, [
+					ListAction::class,
+					GetAction::class,
+					CreateAction::class,
+					UpdateAction::class,
+					BatchUpdateAction::class,
+					DeleteAction::class,
+					BatchDeleteAction::class,
+				], true);
+			}
+		};
+
+		return new RestMiddleware(
+			new RestActionRouter($config->get('actions', [])),
+			static function (string $action, array $params = [], mixed $payload = null) use ($container): mixed {
+				return $container->get($action)($params, $payload);
+			},
+			$options,
+			$eventDispatcher,
 		);
 	}
 

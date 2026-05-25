@@ -18,11 +18,9 @@ class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInte
 		protected MutationNode $node,
 		protected MutationQueue $queue,
 		protected array $path = [],
-		protected ?CollectionInterface $rootCollection = null,
 		protected ?MutationStateInterface $rootState = null
 	) {
 		$this->path = $path === [] ? $node->path : $path;
-		$this->rootCollection ??= $node->collection;
 		$this->rootState ??= $node->state;
 	}
 
@@ -68,7 +66,7 @@ class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInte
 
 	public function getRootCollection(): CollectionInterface
 	{
-		return $this->rootCollection;
+		return $this->rootState->getCollection();
 	}
 
 	public function getRootState(): MutationStateInterface
