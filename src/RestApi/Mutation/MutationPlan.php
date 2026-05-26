@@ -39,16 +39,16 @@ final readonly class MutationPlan
 	}
 
 	public static function fromSpec(
+		MutationSpec $spec,
+		string $mode,
 		Registry $registry,
 		ItemRepositoryInterface $items,
 		HandlerFactory $handlers,
-		string $mode,
-		CollectionInterface $collection,
-		MutationSpec $spec,
-		MutationStateInterface $rootState,
 		PrimaryKeyValue|string|null $id = null,
 		array $path = [],
 	): ?self {
+		$collection = $registry->getCollection($spec->root->collection);
+		$rootState = new MutationState($collection, $spec->root->fields);
 		$state = $path === [] ? $rootState : new MutationState($collection, $spec->root->fields);
 
 		if ($path === []) {
@@ -57,9 +57,9 @@ final readonly class MutationPlan
 
 		$resolvedId = $id;
 		if ($resolvedId === null && $mode !== 'create') {
-			$resolvedId = self::getInputPrimaryKeyValue($collection, $spec->root->fields);
+			$resolvedId = $collection->getPrimaryKey()->extractFromInput($spec->root->fields);
 		}
-		$resolvedId = $resolvedId === null ? null : self::normalizeIdentity($collection, $resolvedId);
+		$resolvedId = $resolvedId === null ? null : $collection->getPrimaryKey()->getValue($resolvedId);
 		$parentOperation = self::resolveOperation($items, $mode, $collection, $resolvedId);
 		if ($parentOperation === 'update' && $resolvedId !== null) {
 			foreach ($resolvedId->values() as $fieldName => $value) {
@@ -78,17 +78,16 @@ final readonly class MutationPlan
 	 */
 	public function getBeforeMutationEvents(
 		MutationQueue $queue,
-		MutationStateInterface $rootState,
 	): array {
-		return $this->beforeMutationEvents($this->root, $queue, $rootState);
+		return $this->beforeMutationEvents($this->root, $queue, $this->root->state);
 	}
 
 	/**
 	 * @return list<object>
 	 */
-	public function getAfterMutationEvents(MutationStateInterface $rootState): array
+	public function getAfterMutationEvents(): array
 	{
-		return $this->afterMutationEvents($this->root, $rootState);
+		return $this->afterMutationEvents($this->root, $this->root->state);
 	}
 
 	private static function nodeFromSpec(
@@ -108,9 +107,9 @@ final readonly class MutationPlan
 			: $parentState->rebindValueRefs($spec->fields);
 		$state->setData($fields);
 		if ($id === null && $mode !== 'create') {
-			$id = self::getInputPrimaryKeyValue($collection, $spec->fields);
+			$id = $collection->getPrimaryKey()->extractFromInput($spec->fields);
 		}
-		$id = $id === null ? null : self::normalizeIdentity($collection, $id);
+		$id = $id === null ? null : $collection->getPrimaryKey()->getValue($id);
 		$operation = self::resolveOperation($items, $mode, $collection, $id);
 		if ($operation === 'update' && $id === null) {
 			return null;
@@ -186,7 +185,7 @@ final readonly class MutationPlan
 				$action->node,
 				'upsert',
 				$childState,
-				self::getInputPrimaryKeyValue($collection, $action->node->fields),
+				$collection->getPrimaryKey()->extractFromInput($action->node->fields),
 				$path,
 				$state,
 			),
@@ -207,12 +206,12 @@ final readonly class MutationPlan
 
 	private static function deleteChildNode(CollectionInterface $collection, array $item, array $path): ?MutationNode
 	{
-		$id = self::getInputPrimaryKeyValue($collection, $item);
+		$id = $collection->getPrimaryKey()->extractFromInput($item);
 		if ($id === null) {
 			return null;
 		}
 
-		return new MutationNode('delete', $collection, new MutationState($collection, self::normalizeIdentity($collection, $id)->values()), $path);
+		return new MutationNode('delete', $collection, new MutationState($collection, $collection->getPrimaryKey()->getValue($id)->values()), $path);
 	}
 
 	private static function resolveOperation(ItemRepositoryInterface $items, string $mode, CollectionInterface $collection, ?PrimaryKeyValue $id): string
@@ -230,7 +229,7 @@ final readonly class MutationPlan
 			return;
 		}
 
-		$createId = self::getInputPrimaryKeyValue($collection, $state->getData());
+		$createId = $collection->getPrimaryKey()->extractFromInput($state->getData());
 		if (
 			$createId !== null
 			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
@@ -243,16 +242,6 @@ final readonly class MutationPlan
 				409
 			);
 		}
-	}
-
-	private static function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
-
-	private static function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
-	{
-		return PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
 	/**

@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Directus\Action;
+namespace ON\RestApi\Action\Directus;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Action\Concern\FormatOutputTrait;
-use ON\RestApi\Action\Concern\RegistrySupportTrait;
-use ON\RestApi\Action\Concern\ValidationTrait;
+use ON\RestApi\Support\FormatOutputTrait;
+use ON\RestApi\Support\RegistrySupportTrait;
+use ON\RestApi\Support\ValidationTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Event\RestEventManager;
@@ -16,7 +16,6 @@ use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationPlan;
 use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
@@ -42,7 +41,7 @@ final class CreateAction implements RestActionInterface
 	{
 		$payload = is_array($payload) ? $payload : [];
 		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
-		$collection = $this->getCollection((string) ($params['collection'] ?? ''));
+		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
 
 		if (isset($body[0]) && is_array($body[0])) {
@@ -65,16 +64,15 @@ final class CreateAction implements RestActionInterface
 
 		$this->fileUploadEventEmitter->process($spec);
 		$queue = new MutationQueue();
-		$rootState = new MutationState($collection, $spec->root->fields);
 		$events = new RestEventManager($this->eventDispatcher);
-		$plan = MutationPlan::fromSpec($this->registry, $this->items, $this->relationHandlers, 'create', $collection, $spec, $rootState);
+		$plan = MutationPlan::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
 		$root = null;
 		if ($plan !== null) {
 			if ($options['dispatchEvents']) {
-				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue, $rootState));
-				$events->scheduleAfterEvent($plan->getAfterMutationEvents($rootState));
+				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
+				$events->scheduleAfterEvent($plan->getAfterMutationEvents());
 			}
-			$task = $queue->fill($plan->root, $events, $rootState, $options['dispatchEvents']);
+			$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
 			$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
 		}
 

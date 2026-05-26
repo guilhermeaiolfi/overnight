@@ -2,32 +2,113 @@
 
 declare(strict_types=1);
 
-namespace Tests\ON\RestApi\Support;
+namespace ON\RestApi\Action\Directus;
 
+use ON\RestApi\Support\FormatOutputTrait;
+use ON\RestApi\Support\RegistrySupportTrait;
+use ON\RestApi\Support\DirectusSupportTrait;
+use ON\RestApi\Action\RestActionInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Action\Concern\RegistrySupportTrait;
-use ON\RestApi\Action\Directus\Support\DirectusSupportTrait;
+use ON\ORM\Definition\Registry;
+use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\RestApiConfig;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\AuthorizationGuard;
+use Psr\EventDispatcher\EventDispatcherInterface;
 
-final class DirectusReadActionHarness
+final class ListAction implements RestActionInterface
 {
-	use DirectusSupportTrait;
+	use FormatOutputTrait;
 	use RegistrySupportTrait;
+	use DirectusSupportTrait;
 
 	public function __construct(
+		private Registry $registry,
 		private ItemRepositoryInterface $items,
-		private HandlerFactory $handlers,
-		private SqlQuerySpecCompiler $querySpecCompiler
-	) {
+		private HandlerFactory $relationHandlers,
+		private DirectusQueryParser $queryParser,
+		private QueryNormalizer $queryNormalizer,
+		private SqlQuerySpecCompiler $querySpecCompiler,
+		private RestApiConfig $config,
+		private ?EventDispatcherInterface $eventDispatcher = null,
+	) {}
+
+	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
+	{
+		$payload = is_array($payload) ? $payload : [];
+		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
+		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
+		$query = $payload['query'] ?? [];
+		$querySpec = $query instanceof QuerySpec
+			? $this->queryNormalizer->normalize($query)
+			: $this->queryNormalizer->normalize($this->queryParser->parse($collection, is_array($query) ? $query : []));
+
+		if ($querySpec->aggregate !== []) {
+			if (!$options['dispatchEvents']) {
+				return ['data' => $this->aggregate($collection, $querySpec)];
+			}
+
+			$event = new ItemList($collection, $querySpec, $options);
+			$this->eventDispatcher?->dispatch($event);
+			if ($this->eventDispatcher !== null) {
+				AuthorizationGuard::assert($event);
+			}
+			$querySpec = $event->getQuerySpec();
+
+			if ($event->isDefaultPrevented()) {
+				return ['data' => $event->getResult() ?? []];
+			}
+
+			$result = $this->aggregate($collection, $querySpec);
+			$event->setResult($result);
+
+			return ['data' => $event->getResult() ?? []];
+		}
+
+		if ($options['dispatchEvents']) {
+			$event = new ItemList($collection, $querySpec, $options);
+			$this->eventDispatcher?->dispatch($event);
+			if ($this->eventDispatcher !== null) {
+				AuthorizationGuard::assert($event);
+			}
+			$querySpec = $event->getQuerySpec();
+			$responseOptions = $event->getOptions();
+
+			if ($event->isDefaultPrevented()) {
+				$result = [
+					'items' => $this->formatResponseRows($collection, $event->getResult() ?? [], $responseOptions),
+					'meta' => $event->getTotalCount() === null ? [] : ['filter_count' => $event->getTotalCount()],
+				];
+			}
+		}
+
+		if (!isset($result)) {
+			$result = $this->list($collection, $querySpec);
+			if (isset($event)) {
+				$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
+				$responseOptions = $event->getOptions();
+			}
+
+			$result['items'] = $this->formatResponseRows($collection, $result['items'] ?? [], $responseOptions ?? $options);
+		}
+
+		$body = ['data' => $result['items'] ?? []];
+		$meta = $result['meta'] ?? [];
+		if ($meta !== []) {
+			$body['meta'] = $meta;
+		}
+
+		return $body;
 	}
 
-	public function list(CollectionInterface $collection, QuerySpec $querySpec): array
+	private function list(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
 		$selection = $this->buildSelectionPlan($querySpec->selection);
 		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
@@ -74,45 +155,7 @@ final class DirectusReadActionHarness
 		];
 	}
 
-	public function get(
-		CollectionInterface $collection,
-		PrimaryKeyValue|string $identity,
-		?QuerySpec $querySpec = null,
-	): ?array {
-		if ($querySpec === null) {
-			return $this->items->findByIdentity($collection, $identity, typed: false);
-		}
-
-		$selection = $this->buildSelectionPlan($querySpec->selection);
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
-		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $selection['relations']);
-		$fieldsForSelect = array_values(array_unique(array_merge(
-			$selection['fields'],
-			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
-		)));
-
-		$query = $this->items->select($collection, $fieldsForSelect);
-		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
-		$query->limit(1);
-		$row = $this->items->fetchOne($query);
-		if ($row === null) {
-			return null;
-		}
-
-		$items = $this->fetchData(
-			$collection,
-			[$row],
-			$requestedColumnNames === [] && !$querySpec->selection->explicit
-				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
-				: $requestedColumnNames,
-			$internalRelationKeyColumnNames,
-			$selection['relations']
-		);
-
-		return $items[0] ?? null;
-	}
-
-	public function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
+	private function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
 		if ($querySpec->aggregate === []) {
 			return [];
@@ -158,7 +201,7 @@ final class DirectusReadActionHarness
 			return [];
 		}
 
-		$root = $this->handlers->configuredRoot(
+		$root = $this->relationHandlers->configuredRoot(
 			$collection,
 			$rows,
 			array_keys($rows[0]),
@@ -170,4 +213,5 @@ final class DirectusReadActionHarness
 
 		return $root->fetchData();
 	}
+
 }

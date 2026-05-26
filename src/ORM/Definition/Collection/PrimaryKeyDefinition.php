@@ -113,6 +113,11 @@ final class PrimaryKeyDefinition
 		return $value;
 	}
 
+	public function getValue(PrimaryKeyValue|array|string|int|float $value): PrimaryKeyValue
+	{
+		return $this->normalizeValue($value);
+	}
+
 	/**
 	 * @param array<string, mixed> $input
 	 */

@@ -11,6 +11,7 @@ use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
+use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Repository\ItemRepository;
@@ -19,7 +20,6 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
-use Tests\ON\RestApi\Support\DirectusReadActionHarness;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 #[RequiresPhpExtension('pdo_sqlite')]
@@ -188,18 +188,24 @@ final class SqlRestResolverTest extends TestCase
 			maxLimit: 2
 		);
 		$compiler = new SqlQuerySpecCompiler($db->database(), 10, 2);
-		$directusReads = new DirectusReadActionHarness(
+		$action = new ListAction(
+			$registry,
 			$items,
 			new HandlerFactory(HandlerRegistry::defaults(), $items, $compiler),
-			$compiler
+			new DirectusQueryParser(defaultLimit: 10, maxLimit: 2),
+			new QueryNormalizer(),
+			$compiler,
+			new \ON\RestApi\RestApiConfig(),
 		);
 
-		$result = $directusReads->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
-			'limit' => 9999,
-		]));
+		$result = $action(
+			['collection' => 'post'],
+			['query' => ['limit' => 9999]],
+			['serialize' => false, 'dispatchEvents' => false]
+		);
 
 		// maxLimit=2, so only 2 items returned even though 3 exist
-		$this->assertCount(2, $result['items']);
+		$this->assertCount(2, $result['data']);
 	}
 
 	public function testListWithFieldSelection(): void

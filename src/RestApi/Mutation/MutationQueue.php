@@ -67,13 +67,21 @@ final class MutationQueue implements MutationQueueInterface
 	public function fill(
 		MutationNode $node,
 		RestEventManager $events,
+		bool $dispatchEvents
+	): MutationTaskInterface|MutationDeleteTaskInterface|null {
+		return $this->fillNode($node, $events, $node->state, $dispatchEvents);
+	}
+
+	private function fillNode(
+		MutationNode $node,
+		RestEventManager $events,
 		MutationStateInterface $rootState,
 		bool $dispatchEvents
 	): MutationTaskInterface|MutationDeleteTaskInterface|null {
 		foreach ($node->relations as $relation) {
 			foreach (self::CHILD_ACTIONS as $action) {
 				foreach ($relation->children[$action] as $child) {
-					$this->fill($child, $events, $rootState, $dispatchEvents);
+					$this->fillNode($child, $events, $rootState, $dispatchEvents);
 				}
 			}
 

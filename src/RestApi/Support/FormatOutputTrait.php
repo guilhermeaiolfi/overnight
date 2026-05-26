@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Action\Concern;
+namespace ON\RestApi\Support;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Typecast\TypecastException;
@@ -44,7 +44,7 @@ trait FormatOutputTrait
 			$row = $this->items->hydrateRow($collection, $row);
 		}
 
-		if ($this->shouldSerialize($options)) {
+		if ($options['serialize']) {
 			return $this->serialize($collection, $row);
 		}
 
@@ -60,8 +60,4 @@ trait FormatOutputTrait
 		return array_map(fn (array $row): array => $this->formatResponseRow($collection, $row, $options), $rows);
 	}
 
-	protected function shouldSerialize(array $options): bool
-	{
-		return (bool) ($options['serialize'] ?? false);
-	}
 }

@@ -31,7 +31,7 @@ trait BelongsToNormalize
 		$currentId = is_array($currentParent) ? $this->getTargetIdentityFromSourceRow($currentParent) : null;
 
 		if (is_array($input) && MutationInput::isAssociativeArray($input)) {
-			$id = $this->getInputPrimaryKeyValue($targetCollection, $input);
+			$id = $targetCollection->getPrimaryKey()->extractFromInput($input);
 			if ($id === null && $currentId !== null) {
 				$input += $currentId->values();
 				$id = $currentId;
@@ -136,7 +136,7 @@ trait BelongsToNormalize
 		}
 
 		$collection = $context->source->getCollection()->getRegistry()->getCollection($targetCollection);
-		$id = $this->getInputPrimaryKeyValue($collection, $action->data);
+		$id = $collection->getPrimaryKey()->extractFromInput($action->data);
 		if ($id !== null) {
 			$action->target = $id;
 		}

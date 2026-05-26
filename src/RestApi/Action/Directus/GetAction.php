@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Directus\Action;
+namespace ON\RestApi\Action\Directus;
 
-use ON\RestApi\Action\Concern\FormatOutputTrait;
-use ON\RestApi\Action\Concern\RegistrySupportTrait;
-use ON\RestApi\Action\Directus\Support\DirectusSupportTrait;
+use ON\RestApi\Support\FormatOutputTrait;
+use ON\RestApi\Support\RegistrySupportTrait;
+use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
@@ -43,13 +43,12 @@ final class GetAction implements RestActionInterface
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
 		$payload = is_array($payload) ? $payload : [];
-		$collection = $this->getCollection((string) ($params['collection'] ?? ''));
-		$identity = $this->normalizeIdentity(
-			$collection,
-			$this->decodeRouteIdentity($collection, (string) ($params['id'] ?? ''))
-		);
-		$query = is_array($payload['query'] ?? null) ? $payload['query'] : [];
-		$querySpec = $this->queryNormalizer->normalize($this->queryParser->parse($collection, $query));
+		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
+		$identity = $collection->getPrimaryKey()->getValue((string) ($params['id'] ?? ''));
+		$query = $payload['query'] ?? [];
+		$querySpec = $query instanceof QuerySpec
+			? $this->queryNormalizer->normalize($query)
+			: $this->queryNormalizer->normalize($this->queryParser->parse($collection, is_array($query) ? $query : []));
 		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
 
 		if (!$options['dispatchEvents']) {
@@ -76,11 +75,6 @@ final class GetAction implements RestActionInterface
 		}
 
 		return ['data' => $item];
-	}
-
-	private function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
-	{
-		return $identity instanceof PrimaryKeyValue ? $identity : PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
 	private function get(

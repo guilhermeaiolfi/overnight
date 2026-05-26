@@ -32,7 +32,6 @@ interface MutationQueueInterface
 	public function fill(
 		MutationNode $node,
 		RestEventManager $events,
-		MutationStateInterface $rootState,
 		bool $dispatchEvents
 	): MutationTaskInterface|MutationDeleteTaskInterface|null;
 

@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Directus\Action;
+namespace ON\RestApi\Action\Directus;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Action\Concern\ETagTrait;
-use ON\RestApi\Action\Concern\FormatOutputTrait;
-use ON\RestApi\Action\Concern\RegistrySupportTrait;
+use ON\RestApi\Support\ETagTrait;
+use ON\RestApi\Support\FormatOutputTrait;
+use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RestEventManager;
@@ -41,7 +41,7 @@ final class BatchDeleteAction implements RestActionInterface
 	{
 		$payload = is_array($payload) ? $payload : [];
 		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
-		$collection = $this->getCollection((string) ($params['collection'] ?? ''));
+		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
 
 		if (!is_array($body)) {
@@ -51,7 +51,7 @@ final class BatchDeleteAction implements RestActionInterface
 		foreach ($body as $id) {
 			$identity = is_array($id)
 				? $collection->getPrimaryKey()->extractFromInput($id)
-				: $this->decodeRouteIdentity($collection, (string) $id);
+				: $collection->getPrimaryKey()->getValue((string) $id);
 			if ($identity === null) {
 				$missing = is_array($id) ? $collection->getPrimaryKey()->getMissingFieldNames($id) : $collection->getPrimaryKey()->getFieldNames();
 				throw new RestApiError(
@@ -62,7 +62,7 @@ final class BatchDeleteAction implements RestActionInterface
 				);
 			}
 
-			$identity = $this->normalizeIdentity($collection, $identity);
+			$identity = $collection->getPrimaryKey()->getValue($identity);
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
@@ -72,13 +72,13 @@ final class BatchDeleteAction implements RestActionInterface
 			$plan = new MutationPlan(new MutationNode(
 				operation: 'delete',
 				collection: $collection,
-				state: new MutationState($collection, $identity->values()),
+				state: $rootState,
 			));
 			if ($options['dispatchEvents']) {
-				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue, $rootState));
-				$events->scheduleAfterEvent($plan->getAfterMutationEvents($rootState));
+				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
+				$events->scheduleAfterEvent($plan->getAfterMutationEvents());
 			}
-			$task = $queue->fill($plan->root, $events, $rootState, $options['dispatchEvents']);
+			$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
 			$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
 			$this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
@@ -92,8 +92,8 @@ final class BatchDeleteAction implements RestActionInterface
 	{
 		return $this->formatResponseRow(
 			$collection,
-			$this->items->findByIdentity($collection, $this->normalizeIdentity($collection, $identity), typed: false),
-			[]
+			$this->items->findByIdentity($collection, $collection->getPrimaryKey()->getValue($identity), typed: false),
+			['serialize' => false]
 		);
 	}
 }

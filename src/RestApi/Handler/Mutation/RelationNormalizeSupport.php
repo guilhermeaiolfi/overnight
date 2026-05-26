@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\ValueRef;
 use ON\RestApi\Support\PrimaryKeyCriteria;
@@ -13,11 +13,6 @@ use ON\RestApi\Support\PrimaryKeyCriteria;
 trait RelationNormalizeSupport
 {
 	use RelationStateSupport;
-
-	protected function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
 
 	protected function getCurrentRelationRows(MutationStateInterface $source): array
 	{

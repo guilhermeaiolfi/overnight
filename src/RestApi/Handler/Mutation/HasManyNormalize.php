@@ -37,7 +37,7 @@ trait HasManyNormalize
 				continue;
 			}
 
-			$id = $this->getInputPrimaryKeyValue($targetCollection, $row);
+			$id = $targetCollection->getPrimaryKey()->extractFromInput($row);
 			if ($id !== null) {
 				$currentById[$id->toUrlId()] = $row;
 			}
@@ -51,7 +51,7 @@ trait HasManyNormalize
 				continue;
 			}
 
-			$id = $this->getInputPrimaryKeyValue($targetCollection, $item);
+			$id = $targetCollection->getPrimaryKey()->extractFromInput($item);
 			if ($id === null) {
 				$itemCopy = $item;
 				$this->applySourceValuesToTargetInput($itemCopy, $context->source);

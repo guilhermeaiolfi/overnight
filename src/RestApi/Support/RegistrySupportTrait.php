@@ -2,42 +2,24 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Action\Concern;
+namespace ON\RestApi\Support;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Support\PrimaryKeyCriteria;
 
 trait RegistrySupportTrait
 {
-	protected function getCollection(string|CollectionInterface $collectionName): CollectionInterface
+	protected function getCollectionOrThrow(Registry $registry, string|CollectionInterface $collectionName): CollectionInterface
 	{
-		$collection = $this->registry->getCollection($collectionName);
+		$collection = $registry->getCollection($collectionName);
 
 		if ($collection === null || $collection->isHidden()) {
 			throw RestApiError::collectionNotFound(is_string($collectionName) ? $collectionName : $collectionName->getName());
 		}
 
 		return $collection;
-	}
-
-	protected function decodeRouteIdentity(CollectionInterface $collection, string $id): PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->isComposite()
-			? $collection->getPrimaryKey()->getValueFromUrlId($id)
-			: new PrimaryKeyValue($collection, [$collection->getPrimaryKey()->getFieldNames()[0] => $id]);
-	}
-
-	protected function getInputPrimaryKeyValue(CollectionInterface $collection, array $input): ?PrimaryKeyValue
-	{
-		return $collection->getPrimaryKey()->extractFromInput($input);
-	}
-
-	protected function normalizeIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): PrimaryKeyValue
-	{
-		return PrimaryKeyCriteria::normalize($collection, $identity);
 	}
 
 	protected function stripHiddenFields(CollectionInterface $collection, array $input): array

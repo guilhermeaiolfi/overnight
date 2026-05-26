@@ -11,11 +11,11 @@ User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest
 **Reads** and **writes** share the same handler registry but use symmetric spec pipelines:
 
 ```
-Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → QueryPlanner → storage rows
+Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → action read logic → storage rows
                                                                               ↓
-Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → MutationPlanner → storage rows
+Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → Directus mutation actions → storage rows
                                                                               ↓
-        RestApiService.formatResponse*  →  PHP (default) | wire (serialize) | storage (raw)
+        Directus actions format response rows → PHP (default) | wire (serialize) | storage (raw)
 ```
 
 Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the planner, queue, and handler apply layer stay unchanged.
@@ -29,7 +29,7 @@ Mutations follow a strict four-phase pipeline:
 ```
 file uploads (pre-plan)
   → plan()           parse + normalize payload → build MutationNode tree → MutationPlan
-  → commit()         before-events on full plan → schedule after-events → fillQueue()
+  → commit()         before-events on full plan → schedule after-events → queue fill()
   → transaction { queue.execute() }
   → dispatchAfterEvents()
 ```
@@ -40,14 +40,14 @@ file uploads (pre-plan)
 
 | Term | Role |
 |------|------|
-| `RestApiService` | HTTP orchestration; shapes responses via `formatResponseRow()` (hydrate/serialize) |
-| `QueryPlanner` | Builds handler tree, runs list/get/aggregate — returns storage rows only |
+| `Directus\Action\*` | HTTP/action orchestration; shapes responses via hydrate/serialize helpers |
+| Directus read actions | Build handler trees, run list/get/aggregate, and return storage rows |
 | `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
 | `PayloadNormalizer` | Walks the mutation tree; delegates relation payload normalization to handlers |
 | `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
 | `RelationPayload` | One relation occurrence: flat `list<RelationAction>` |
 | `RelationAction` | `CreateAction`, `UpdateAction`, `DeleteAction`, `ConnectAction`, `DisconnectAction` |
-| `RestMutationPlanner` | Plans mutation tree (`planSave`/`planDelete`), commits via `commit()`, dispatches events |
+| Directus mutation actions | Plan mutation trees, commit through the queue, and dispatch lifecycle events |
 | `MutationPlan` | Readonly result of planning: root `MutationNode` tree, ready for `commit()` |
 | `MutationNode` | One entity in the plan tree: operation, state, nested relations |
 | `RelationNode` | One relation on a node: handler, `RelationPayload`, planned child nodes |
@@ -63,9 +63,9 @@ file uploads (pre-plan)
 
 ```
 src/RestApi/
-├── RestApiService.php
+├── Action/                     Generic action router and action interface
+├── Directus/Action/            Directus-compatible list/get/create/update/delete actions
 ├── Query/
-│   ├── QueryPlanner.php
 │   └── Parser/                 Directus-style query → QuerySpec
 ├── Payload/
 │   ├── Parser/                 DirectusPayloadParser → MutationSpec
@@ -73,7 +73,6 @@ src/RestApi/
 │   ├── Action/                 CreateAction, ConnectAction, BasicRelationAction, …
 │   └── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
 ├── Mutation/
-│   ├── RestMutationPlanner.php Plan + commit + events
 │   ├── MutationPlan.php
 │   ├── MutationQueue.php
 │   ├── MutationNode.php
@@ -89,18 +88,18 @@ src/RestApi/
 
 ---
 
-## Plan phase (`RestMutationPlanner`)
+## Plan Phase
 
 1. **`DirectusPayloadParser::parse()`** — split scalars vs relations; detailed → typed actions; basic → `BasicRelationAction`.
 2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::mutation()` returns a handler that normalizes the payload in one call (`normalizeRelation()`).
-3. **`planFromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
+3. **`MutationPlan::fromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
 4. Return `MutationPlan` — **no events yet**.
 
 ## Commit phase (`commit`)
 
 1. **Before-events** — depth-first: item → child nodes → relation connect/disconnect (from `RelationPayload.actions`).
 2. **After-events scheduled** — child nodes → relation events → item.
-3. **`fillQueue()`** — depth-first: child nodes → `applyRelation()` → `queueRow()`.
+3. **`MutationQueue::fill()`** — depth-first: child nodes → `applyRelation()` → `queueNode()`.
 
 Row CRUD never lives in relation handlers. Handlers only interpret relation semantics at apply time.
 
@@ -191,7 +190,7 @@ Dispatched from `ConnectAction` / `DisconnectAction` on `RelationPayload.actions
 php vendor/bin/phpunit tests/RestApi/
 ```
 
-Key suites: `RestApiServiceTest`, `SqlRestResolverTest`, `PayloadParserTest`, `HandlerRegistryTest`.
+Key suites: `RestActionRouterTest`, `SqlRestResolverTest`, `PayloadParserTest`, `HandlerRegistryTest`.
 
 ---
 
@@ -199,7 +198,7 @@ Key suites: `RestApiServiceTest`, `SqlRestResolverTest`, `PayloadParserTest`, `H
 
 ### Plan-phase duplicate check (race window)
 
-`RestMutationPlanner::assertCreateIdAvailable()` runs during **plan**, before the transaction. Concurrent creates with the same explicit PK can both pass until the DB unique constraint rejects one at execute time.
+Directus mutation actions check explicit create IDs during **plan**, before the transaction. Concurrent creates with the same explicit PK can both pass until the DB unique constraint rejects one at execute time.
 
 ### Polymorphic relations
 

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\RestApi\Action\Directus\Support;
+namespace ON\RestApi\Support;
 
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\FieldSelection;

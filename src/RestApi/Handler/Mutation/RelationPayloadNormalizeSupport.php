@@ -47,7 +47,7 @@ trait RelationPayloadNormalizeSupport
 		}
 
 		$collection = $context->source->getCollection()->getRegistry()->getCollection($targetCollection);
-		$id = $this->getInputPrimaryKeyValue($collection, $action->data);
+		$id = $collection->getPrimaryKey()->extractFromInput($action->data);
 		if ($id !== null) {
 			$action->target = $id;
 		}
@@ -69,7 +69,7 @@ trait RelationPayloadNormalizeSupport
 	protected function omittedChildActions(array $row, string $targetCollection): array
 	{
 		$actions = [];
-		$id = $this->getInputPrimaryKeyValue($this->getTargetCollection(), $row);
+		$id = $this->getTargetCollection()->getPrimaryKey()->extractFromInput($row);
 		if ($id === null) {
 			return $actions;
 		}
