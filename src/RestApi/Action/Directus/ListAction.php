@@ -4,37 +4,38 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
-use ON\RestApi\Support\FormatOutputTrait;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\AuthorizationGuard;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
+use function ON\Mapper\map;
+
 final class ListAction implements RestActionInterface
 {
-	use FormatOutputTrait;
 	use RegistrySupportTrait;
 	use DirectusSupportTrait;
+
+	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
 
 	public function __construct(
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
-		private DirectusQueryParser $queryParser,
-		private QueryNormalizer $queryNormalizer,
 		private SqlQuerySpecCompiler $querySpecCompiler,
 		private RestApiConfig $config,
 		private ?EventDispatcherInterface $eventDispatcher = null,
@@ -43,13 +44,17 @@ final class ListAction implements RestActionInterface
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
 		$payload = is_array($payload) ? $payload : [];
-		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
+		$options = ($options ?? []) + [
+			'dispatchEvents' => true,
+			'output' => PhpRepresentation::class,
+		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$query = $payload['query'] ?? [];
-		$querySpec = $query instanceof QuerySpec
-			? $this->queryNormalizer->normalize($query)
-			: $this->queryNormalizer->normalize($this->queryParser->parse($collection, is_array($query) ? $query : []));
+		$querySpec = map($payload['query'] ?? [])
+			->using(DirectusQueryBuilder::class, $collection)
+			->to(QuerySpec::class);
 
+
+		// Aggregate query
 		if ($querySpec->aggregate !== []) {
 			if (!$options['dispatchEvents']) {
 				return ['data' => $this->aggregate($collection, $querySpec)];
@@ -67,11 +72,25 @@ final class ListAction implements RestActionInterface
 			}
 
 			$result = $this->aggregate($collection, $querySpec);
-			$event->setResult($result);
 
-			return ['data' => $event->getResult() ?? []];
+			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
+
+			$event->setResult($result ?? []);
+
+			return [
+				'data' => map($result ?? [])
+					->using(CollectionRowMapper::class, $collection)
+					->from(StorageRepresentation::class)
+					->as($responseOptions["output"])
+					->collection()
+					->toArray(),
+			];
 		}
 
+
+		// list without aggregates
+		$event = null;
+		$responseOptions = null;
 		if ($options['dispatchEvents']) {
 			$event = new ItemList($collection, $querySpec, $options);
 			$this->eventDispatcher?->dispatch($event);
@@ -79,33 +98,37 @@ final class ListAction implements RestActionInterface
 				AuthorizationGuard::assert($event);
 			}
 			$querySpec = $event->getQuerySpec();
-			$responseOptions = $event->getOptions();
+			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
 
 			if ($event->isDefaultPrevented()) {
-				$result = [
-					'items' => $this->formatResponseRows($collection, $event->getResult() ?? [], $responseOptions),
-					'meta' => $event->getTotalCount() === null ? [] : ['filter_count' => $event->getTotalCount()],
-				];
+				$response = ['data' => $event->getResult() ?? []];
+				if ($event->getTotalCount() !== null) {
+					$response['meta'] = ['filter_count' => $event->getTotalCount()];
+				}
+
+				return $response;
 			}
 		}
 
-		if (!isset($result)) {
-			$result = $this->list($collection, $querySpec);
-			if (isset($event)) {
-				$event->setResult($result['items'] ?? [], $result['meta']['filter_count'] ?? null);
-				$responseOptions = $event->getOptions();
-			}
 
-			$result['items'] = $this->formatResponseRows($collection, $result['items'] ?? [], $responseOptions ?? $options);
+		$result = $this->list($collection, $querySpec);
+		if (isset($event)) {
+			$event->setResult($result['data'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
 
-		$body = ['data' => $result['items'] ?? []];
-		$meta = $result['meta'] ?? [];
-		if ($meta !== []) {
-			$body['meta'] = $meta;
+		$result['data'] = map($result['data'] ?? [])
+			->using(CollectionRowMapper::class, $collection)
+			->from(StorageRepresentation::class)
+			->as(($responseOptions ?? $options)['output'])
+			->collection()
+			->toArray();
+
+		if (($result['meta'] ?? []) === []) {
+			unset($result['meta']);
 		}
 
-		return $body;
+		return $result;
+
 	}
 
 	private function list(CollectionInterface $collection, QuerySpec $querySpec): array
@@ -150,11 +173,12 @@ final class ListAction implements RestActionInterface
 		);
 
 		return [
-			'items' => $items,
+			'data' => $items,
 			'meta' => $meta,
 		];
 	}
 
+	// it returns storage representation results for the aggregate query
 	private function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
 	{
 		if ($querySpec->aggregate === []) {

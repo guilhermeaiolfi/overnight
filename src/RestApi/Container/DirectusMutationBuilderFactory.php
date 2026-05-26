@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Container;
 
+use ON\Mapper\ConversionGateway;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\MutationSpecUnserializer;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use Psr\Container\ContainerInterface;
@@ -24,7 +24,7 @@ class DirectusMutationBuilderFactory
 			$registry,
 			$items,
 			new PayloadNormalizer($handlers, $registry),
-			new MutationSpecUnserializer($registry),
+			$container->get(ConversionGateway::class),
 		);
 	}
 }

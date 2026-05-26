@@ -8,6 +8,7 @@ use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
+use ON\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Event\RequestComplete;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -50,7 +51,12 @@ class RestMiddleware implements MiddlewareInterface
 			$result = ($this->executeAction)(
 				$route->getMiddleware(),
 				$routeResult->getMatchedParams(),
-				$this->payload($request)
+				$this->payload($request),
+				[
+					'input' => WireRepresentation::class,
+					'output' => WireRepresentation::class,
+					'dispatchEvents' => true,
+				],
 			);
 			$response = $this->toResponse($result);
 		} catch (RestApiError $e) {

@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Support\ETagTrait;
-use ON\RestApi\Support\FormatOutputTrait;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
 use ON\RestApi\Action\RestActionInterface;
@@ -20,22 +22,25 @@ use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationPlan;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Payload\DirectusMutationBuilder;
+use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
+use function ON\Mapper\map;
+
 final class BatchUpdateAction implements RestActionInterface
 {
 	use ETagTrait;
-	use FormatOutputTrait;
 	use RegistrySupportTrait;
 	use ValidationTrait;
+
+	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
 
 	public function __construct(
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
-		private DirectusMutationBuilder $mutationBuilder,
 		private FileUploadEventEmitter $fileUploadEventEmitter,
 		private RestApiConfig $config,
 		private ?EventDispatcherInterface $eventDispatcher = null,
@@ -44,7 +49,11 @@ final class BatchUpdateAction implements RestActionInterface
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
 		$payload = is_array($payload) ? $payload : [];
-		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
+		$options = ($options ?? []) + [
+			'dispatchEvents' => true,
+			'input' => PhpRepresentation::class,
+			'output' => PhpRepresentation::class,
+		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
 
@@ -74,7 +83,11 @@ final class BatchUpdateAction implements RestActionInterface
 
 			$item = $this->stripHiddenFields($collection, $item);
 			$this->validate($collection, $item, true);
-			$spec = $this->mutationBuilder->build($collection, $item, 'update', $identity, $payload['files'] ?? []);
+			$spec = map($item)
+				->using(DirectusMutationBuilder::class, $collection, 'update', $identity, $payload['files'] ?? [])
+				->from($options['input'])
+				->as(self::INTERMEDIATE_REPRESENTATION)
+				->to(MutationSpec::class);
 			$identity = $collection->getPrimaryKey()->getValue($identity);
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
@@ -94,17 +107,24 @@ final class BatchUpdateAction implements RestActionInterface
 
 			$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
 			$events->dispatchAfterEvents();
-			$results[] = $this->formatResponseRow($collection, $result, $options) ?? [];
+			$results[] = $result !== null
+				? map($result)
+					->using(CollectionRowMapper::class, $collection)
+					->from(StorageRepresentation::class)
+					->as($options['output'])
+					->toArray()
+				: [];
 		}
 
 		return ['data' => $results];
 	}
+
 	protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
 	{
-		return $this->formatResponseRow(
+		return $this->items->findByIdentity(
 			$collection,
-			$this->items->findByIdentity($collection, $collection->getPrimaryKey()->getValue($identity), typed: false),
-			['serialize' => false]
+			$collection->getPrimaryKey()->getValue($identity),
+			PhpRepresentation::class,
 		);
 	}
 }

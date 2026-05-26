@@ -6,6 +6,8 @@ namespace ON\RestApi\Repository;
 
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Query\SelectQuery;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\RepresentationInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationQueue;
@@ -28,19 +30,14 @@ interface ItemRepositoryInterface
 	public function count(SelectQuery $query): int;
 
 	/**
+	 * @param class-string<RepresentationInterface> $output
 	 * @return array<string, mixed>|null
 	 */
 	public function findByIdentity(
 		CollectionInterface $collection,
 		PrimaryKeyValue|string $identity,
-		bool $typed = true,
+		string $output = PhpRepresentation::class,
 	): ?array;
-
-	/**
-	 * @param array<string, mixed> $row
-	 * @return array<string, mixed>
-	 */
-	public function hydrateRow(CollectionInterface $collection, array $row): array;
 
 	public function create(CollectionInterface $collection, array $input): ?array;
 

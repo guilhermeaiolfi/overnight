@@ -8,7 +8,6 @@ use ON\DB\DatabaseManager;
 use ON\DB\Cycle\CycleDatabase;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Mapping\CollectionMapper;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
@@ -35,7 +34,6 @@ class ItemRepositoryFactory
 		return new ItemRepository(
 			$registry,
 			$database,
-			$container->get(CollectionMapper::class),
 			$config->get('defaultLimit', 100),
 			$config->get('maxLimit', 1000),
 		);

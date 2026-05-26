@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
-use ON\RestApi\Support\FormatOutputTrait;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Action\RestActionInterface;
@@ -15,27 +17,27 @@ use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\AuthorizationGuard;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
+use function ON\Mapper\map;
+
 final class GetAction implements RestActionInterface
 {
-	use FormatOutputTrait;
 	use RegistrySupportTrait;
 	use DirectusSupportTrait;
+
+	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
 
 	public function __construct(
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
-		private DirectusQueryParser $queryParser,
-		private QueryNormalizer $queryNormalizer,
 		private RestApiConfig $config,
 		private ?EventDispatcherInterface $eventDispatcher = null,
 	) {}
@@ -43,16 +45,23 @@ final class GetAction implements RestActionInterface
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
 		$payload = is_array($payload) ? $payload : [];
+		$options = ($options ?? []) + [
+			'dispatchEvents' => true,
+			'output' => PhpRepresentation::class,
+		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$identity = $collection->getPrimaryKey()->getValue((string) ($params['id'] ?? ''));
-		$query = $payload['query'] ?? [];
-		$querySpec = $query instanceof QuerySpec
-			? $this->queryNormalizer->normalize($query)
-			: $this->queryNormalizer->normalize($this->queryParser->parse($collection, is_array($query) ? $query : []));
-		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
+		$querySpec = map($payload['query'] ?? [])
+			->using(DirectusQueryBuilder::class, $collection)
+			->to(QuerySpec::class);
 
 		if (!$options['dispatchEvents']) {
-			$item = $this->formatResponseRow($collection, $this->get($collection, $identity, $querySpec), $options);
+			$item = $this->mapRowOutput(
+				$collection,
+				$this->get($collection, $identity, $querySpec),
+				self::INTERMEDIATE_REPRESENTATION,
+				$options['output'],
+			);
 		} else {
 			$event = new ItemGet($collection, $identity, $querySpec, $options);
 			$this->eventDispatcher?->dispatch($event);
@@ -60,13 +69,23 @@ final class GetAction implements RestActionInterface
 				AuthorizationGuard::assert($event);
 			}
 			$querySpec = $event->getQuerySpec() ?? $querySpec;
-			$responseOptions = $event->getOptions();
+			$responseOptions = $event->getOptions() + ['output' => PhpRepresentation::class];
 
 			if ($event->isDefaultPrevented()) {
-				$item = $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
+				$item = $this->mapRowOutput(
+					$collection,
+					$event->getResult(),
+					self::INTERMEDIATE_REPRESENTATION,
+					$responseOptions['output'],
+				);
 			} else {
 				$event->setResult($this->get($collection, $identity, $querySpec));
-				$item = $this->formatResponseRow($collection, $event->getResult(), $responseOptions);
+				$item = $this->mapRowOutput(
+					$collection,
+					$event->getResult(),
+					self::INTERMEDIATE_REPRESENTATION,
+					$responseOptions['output'],
+				);
 			}
 		}
 
@@ -83,7 +102,7 @@ final class GetAction implements RestActionInterface
 		?QuerySpec $querySpec = null,
 	): ?array {
 		if ($querySpec === null) {
-			return $this->items->findByIdentity($collection, $identity, typed: false);
+			return $this->items->findByIdentity($collection, $identity);
 		}
 
 		$selection = $this->buildSelectionPlan($querySpec->selection);
@@ -112,7 +131,36 @@ final class GetAction implements RestActionInterface
 			$selection['relations']
 		);
 
-		return $items[0] ?? null;
+		$item = $items[0] ?? null;
+
+		return $item !== null
+			? map($item)
+				->using(CollectionRowMapper::class, $collection)
+				->from(StorageRepresentation::class)
+				->as(self::INTERMEDIATE_REPRESENTATION)
+				->toArray()
+			: null;
+	}
+
+	/**
+	 * @param class-string<\ON\Mapper\Representation\RepresentationInterface> $from
+	 * @param class-string<\ON\Mapper\Representation\RepresentationInterface> $to
+	 */
+	private function mapRowOutput(
+		CollectionInterface $collection,
+		?array $row,
+		string $from,
+		string $to,
+	): ?array {
+		if ($row === null) {
+			return null;
+		}
+
+		return map($row)
+			->using(CollectionRowMapper::class, $collection)
+			->from($from)
+			->as($to)
+			->toArray();
 	}
 
 	private function fetchData(

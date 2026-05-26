@@ -11,7 +11,6 @@ use ON\RestApi\Event\ItemCreating;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Mapping\CollectionMapper;
 use ON\RestApi\Repository\ItemRepository;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -101,7 +100,6 @@ final class RestMiddlewareTest extends TestCase
 				parent::__construct(
 					$registry,
 					$database,
-					new CollectionMapper(),
 				);
 			}
 

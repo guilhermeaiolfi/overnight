@@ -16,12 +16,10 @@ use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
-use ON\RestApi\Container\CollectionMapperFactory;
 use ON\RestApi\Container\DirectusMutationBuilderFactory;
-use ON\RestApi\Container\DirectusQueryParserFactory;
+use ON\RestApi\Container\DirectusQueryBuilderFactory;
 use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
-use ON\RestApi\Container\QueryNormalizerFactory;
 use ON\RestApi\Container\SqlQuerySpecCompilerFactory;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
@@ -32,12 +30,11 @@ use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Mapping\CollectionMapper;
+use ON\Mapper\ConversionGateway;
 use ON\RestApi\Payload\DirectusMutationBuilder;
+use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -64,14 +61,12 @@ class RestApiExtension extends AbstractExtension
 	{
 		$containerConfig = $event->config->get(ContainerConfig::class);
 		$containerConfig->addFactories([
-			CollectionMapper::class => CollectionMapperFactory::class,
 			ItemRepository::class => ItemRepositoryFactory::class,
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
 			SqlQuerySpecCompiler::class => SqlQuerySpecCompilerFactory::class,
 			HandlerFactory::class => HandlerFactoryFactory::class,
 			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
-			DirectusQueryParser::class => DirectusQueryParserFactory::class,
-			QueryNormalizer::class => QueryNormalizerFactory::class,
+			DirectusQueryBuilder::class => DirectusQueryBuilderFactory::class,
 		]);
 	}
 
@@ -81,6 +76,8 @@ class RestApiExtension extends AbstractExtension
 		$this->container = $container;
 		$config = $container->get(RestApiConfig::class);
 		$this->registerDefaultActions($config);
+		$this->registerDirectusMutationBuilder($container);
+		$this->registerDirectusQueryBuilder($container);
 
 		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
@@ -154,6 +151,28 @@ class RestApiExtension extends AbstractExtension
 			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
 			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
 			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
+	}
+
+	protected function registerDirectusMutationBuilder(ContainerInterface $container): void
+	{
+		if (! $container->has(ConversionGateway::class)) {
+			return;
+		}
+
+		$container->get(ConversionGateway::class)
+			->structuralMappers()
+			->replace($container->get(DirectusMutationBuilder::class));
+	}
+
+	protected function registerDirectusQueryBuilder(ContainerInterface $container): void
+	{
+		if (! $container->has(ConversionGateway::class)) {
+			return;
+		}
+
+		$container->get(ConversionGateway::class)
+			->structuralMappers()
+			->replace($container->get(DirectusQueryBuilder::class));
 	}
 
 	protected function loadAddons(

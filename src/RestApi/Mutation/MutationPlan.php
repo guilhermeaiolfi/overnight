@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\Mapper\Representation\StorageRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
@@ -220,7 +221,7 @@ final readonly class MutationPlan
 			return $mode;
 		}
 
-		return $id !== null && $items->findByIdentity($collection, $id, typed: false) !== null ? 'update' : 'create';
+		return $id !== null && $items->findByIdentity($collection, $id, StorageRepresentation::class) !== null ? 'update' : 'create';
 	}
 
 	private static function assertCreateIdAvailable(ItemRepositoryInterface $items, string $operation, CollectionInterface $collection, MutationStateInterface $state): void
@@ -233,7 +234,7 @@ final readonly class MutationPlan
 		if (
 			$createId !== null
 			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
-			&& $items->findByIdentity($collection, $createId, typed: false) !== null
+			&& $items->findByIdentity($collection, $createId, StorageRepresentation::class) !== null
 		) {
 			throw new RestApiError(
 				"A record with this " . implode(', ', $collection->getPrimaryKey()->getFieldNames()) . " already exists.",

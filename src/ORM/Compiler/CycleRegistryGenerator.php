@@ -11,7 +11,9 @@ use Cycle\Schema\Definition\Relation as CycleRelation;
 use Cycle\Schema\GeneratorInterface;
 use Cycle\Schema\Registry as CycleRegistry;
 use Cycle\Schema\Table\Column;
+use ON\Mapper\Field\FieldTypeInterface;
 use ON\ORM\Definition\Collection\Collection;
+use ON\ORM\Definition\Exception\FieldException;
 use ON\ORM\Definition\Field\Field;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
@@ -24,6 +26,38 @@ use ReflectionClass;
  */
 class CycleRegistryGenerator implements GeneratorInterface
 {
+	/** @var list<string> */
+	private const KNOWN_CYCLE_FIELD_TYPES = [
+		'primary',
+		'bigprimary',
+		'serial',
+		'bigserial',
+		'smallserial',
+		'bool',
+		'boolean',
+		'int',
+		'integer',
+		'tinyinteger',
+		'smallinteger',
+		'biginteger',
+		'string',
+		'text',
+		'tinytext',
+		'mediumtext',
+		'longtext',
+		'double',
+		'float',
+		'decimal',
+		'datetime',
+		'date',
+		'time',
+		'timestamp',
+		'binary',
+		'tinybinary',
+		'longbinary',
+		'json',
+	];
+
 	public function __construct(
 		protected Registry $on_registry,
 	) {
@@ -66,7 +100,7 @@ class CycleRegistryGenerator implements GeneratorInterface
 	{
 		$field = new CycleField();
 
-		$field->setType($onField->getType());
+		$field->setType($this->resolveCycleFieldType($onField));
 
 		$columnName = $columnPrefix . $onField->getColumn();
 
@@ -227,5 +261,45 @@ class CycleRegistryGenerator implements GeneratorInterface
 			'serial', 'bigserial', 'smallserial' => true,
 			default => $field->isPrimary(),
 		};
+	}
+
+	private function resolveCycleFieldType(Field $onField): string
+	{
+		$type = $onField->getType();
+
+		if (class_exists($type) && is_subclass_of($type, FieldTypeInterface::class)) {
+			$type = $type::storageType();
+		}
+
+		if (str_contains($type, '(')) {
+			$this->assertKnownCycleFieldType($this->baseCycleFieldType($type), $onField);
+
+			return $type;
+		}
+
+		$this->assertKnownCycleFieldType($type, $onField);
+
+		if (strtolower($type) === 'string') {
+			return sprintf('string(%d)', $onField->getMaxLength());
+		}
+
+		return $type;
+	}
+
+	private function baseCycleFieldType(string $type): string
+	{
+		return explode('(', $type, 2)[0];
+	}
+
+	private function assertKnownCycleFieldType(string $type, Field $onField): void
+	{
+		if (! in_array(strtolower($type), self::KNOWN_CYCLE_FIELD_TYPES, true)) {
+			throw new FieldException(sprintf(
+				'Field(%s) type "%s" is not a known Cycle column type in collection: %s',
+				$onField->getName(),
+				$onField->getType(),
+				$onField->end()->getName(),
+			));
+		}
 	}
 }

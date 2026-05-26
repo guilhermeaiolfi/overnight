@@ -7,22 +7,26 @@ namespace ON\RestApi\Repository;
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
+use ON\Mapper\Exception\ConversionException;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Mapping\CollectionMapperInterface;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+
+use function ON\Mapper\map;
 
 class ItemRepository implements ItemRepositoryInterface
 {
 	public function __construct(
 		private Registry $registry,
 		private DatabaseInterface $database,
-		private CollectionMapperInterface $mapper,
 		private int $defaultLimit = 100,
 		private int $maxLimit = 1000,
 	) {
@@ -66,26 +70,31 @@ class ItemRepository implements ItemRepositoryInterface
 	public function findByIdentity(
 		CollectionInterface $collection,
 		PrimaryKeyValue|string $identity,
-		bool $typed = true,
+		string $output = PhpRepresentation::class,
 	): ?array {
 		$row = $this->loadByIdentity($collection, $identity);
 
-		if ($row === null || ! $typed) {
-			return $row;
+		if ($row === null) {
+			return null;
 		}
 
-		return $this->hydrateRow($collection, $row);
-	}
-
-	public function hydrateRow(CollectionInterface $collection, array $row): array
-	{
-		return $this->mapper->hydrate($collection, $row);
+		try {
+			return map($row)
+				->using(CollectionRowMapper::class, $collection)
+				->from(StorageRepresentation::class)
+				->as($output)
+				->toArray();
+		} catch (ConversionException $e) {
+			throw RestApiError::validationFailed([
+				$e->getField() ?? '_root' => [$e->getMessage()],
+			]);
+		}
 	}
 
 	public function create(CollectionInterface $collection, array $input): ?array
 	{
 		try {
-			$storageInput = $this->mapInputToColumns($collection, $input, partial: false);
+			$storageInput = $this->mapInputToColumns($collection, $input);
 			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($storageInput);
 			$lastId = $this->database->insert($collection->getTable())
 				->values($storageInput)
@@ -124,7 +133,7 @@ class ItemRepository implements ItemRepositoryInterface
 			}
 
 			$query = $this->database->update($collection->getTable())
-				->values($this->mapInputToColumns($collection, $storageInput, partial: true));
+				->values($this->mapInputToColumns($collection, $storageInput));
 			$this->applyCriteriaFilter($query, $collection, $criteria);
 			$query->run();
 
@@ -180,9 +189,20 @@ class ItemRepository implements ItemRepositoryInterface
 		return $columnNames === [] ? null : $columnNames;
 	}
 
-	protected function mapInputToColumns(CollectionInterface $collection, array $input, bool $partial = false): array
+	protected function mapInputToColumns(CollectionInterface $collection, array $input): array
 	{
-		$dehydrated = $this->mapper->dehydrate($collection, $input, $partial);
+		try {
+			$dehydrated = map($input)
+				->using(CollectionRowMapper::class, $collection)
+				->from(PhpRepresentation::class)
+				->as(StorageRepresentation::class)
+				->toArray();
+		} catch (ConversionException $e) {
+			throw RestApiError::validationFailed([
+				$e->getField() ?? '_root' => [$e->getMessage()],
+			]);
+		}
+
 		$mapped = [];
 		foreach ($dehydrated as $fieldName => $value) {
 			$fieldName = (string) $fieldName;

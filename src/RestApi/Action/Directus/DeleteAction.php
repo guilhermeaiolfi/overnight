@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Mapper\Representation\PhpRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Support\ETagTrait;
-use ON\RestApi\Support\FormatOutputTrait;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
@@ -26,7 +26,6 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 final class DeleteAction implements RestActionInterface
 {
 	use ETagTrait;
-	use FormatOutputTrait;
 	use RegistrySupportTrait;
 
 	public function __construct(
@@ -40,7 +39,7 @@ final class DeleteAction implements RestActionInterface
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
 		$payload = is_array($payload) ? $payload : [];
-		$options = ($options ?? []) + ['serialize' => true, 'dispatchEvents' => true];
+		$options = ($options ?? []) + ['dispatchEvents' => true];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$identity = $collection->getPrimaryKey()->getValue((string) ($params['id'] ?? ''));
 		$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
@@ -73,10 +72,10 @@ final class DeleteAction implements RestActionInterface
 
 	protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
 	{
-		return $this->formatResponseRow(
+		return $this->items->findByIdentity(
 			$collection,
-			$this->items->findByIdentity($collection, $collection->getPrimaryKey()->getValue($identity), typed: false),
-			['serialize' => false]
+			$collection->getPrimaryKey()->getValue($identity),
+			PhpRepresentation::class,
 		);
 	}
 }

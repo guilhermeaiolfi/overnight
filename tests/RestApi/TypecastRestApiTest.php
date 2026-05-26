@@ -35,7 +35,9 @@ final class TypecastRestApiTest extends TestCase
 		$db = $this->createTestDatabase();
 		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
-		$item = $service->get('post', '1', null, ['raw' => true]);
+		$item = $service->get('post', '1', null, [
+			'output' => \ON\Mapper\Representation\StorageRepresentation::class,
+		]);
 
 		$this->assertSame('2025-01-10 10:00:00', $item['created_at']);
 	}
@@ -47,7 +49,9 @@ final class TypecastRestApiTest extends TestCase
 		$db = $this->createTestDatabase();
 		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
-		$item = $service->get('post', '1', null, ['serialize' => true]);
+		$item = $service->get('post', '1', null, [
+			'output' => \ON\Mapper\Representation\WireRepresentation::class,
+		]);
 
 		$this->assertSame(
 			(new \DateTimeImmutable('2025-01-10 10:00:00'))->format(\DateTimeInterface::ATOM),

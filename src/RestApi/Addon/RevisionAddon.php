@@ -73,7 +73,6 @@ class RevisionAddon implements RestApiAddonInterface
 		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
 			$event->getPrimaryKeyValue(),
-			true
 		);
 
 		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'update', $currentItem, $event->getState()->getData());
@@ -90,7 +89,6 @@ class RevisionAddon implements RestApiAddonInterface
 		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
 			$event->getPrimaryKeyValue(),
-			true
 		);
 
 		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'delete', $currentItem, null);

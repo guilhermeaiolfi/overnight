@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\WireRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
+
+use function ON\Mapper\map;
 
 trait ETagTrait
 {
@@ -35,7 +40,11 @@ trait ETagTrait
 		}
 
 		return $this->computeETag(json_encode(
-			$this->serialize($collection, $current),
+			map($current)
+				->using(CollectionRowMapper::class, $collection)
+				->from(PhpRepresentation::class)
+				->as(WireRepresentation::class)
+				->toArray(),
 			JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
 		));
 	}

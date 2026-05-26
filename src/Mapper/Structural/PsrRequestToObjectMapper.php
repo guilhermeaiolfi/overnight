@@ -1,0 +1,54 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\Mapper\Structural;
+
+use ON\Mapper\ConversionGateway;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\WireRepresentation;
+use Psr\Http\Message\ServerRequestInterface;
+
+final class PsrRequestToObjectMapper implements MapperInterface
+{
+	public function __construct(
+		private readonly ConversionGateway $gateway,
+	) {
+	}
+
+	public function defaultRepresentations(): array
+	{
+		return [
+			'from' => WireRepresentation::class,
+			'property' => PhpRepresentation::class,
+		];
+	}
+
+	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	{
+		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
+			return false;
+		}
+
+		return $from instanceof ServerRequestInterface && is_string($to) && class_exists($to);
+	}
+
+	public function map(mixed $from, mixed $to, MappingContext $context): mixed
+	{
+		/** @var ServerRequestInterface $from */
+		$payload = array_merge(
+			$from->getQueryParams(),
+			is_array($from->getParsedBody()) ? $from->getParsedBody() : [],
+		);
+
+		$sourceRepresentation = $context->sourceRepresentation
+			?? $this->defaultRepresentations()['from']
+			?? WireRepresentation::class;
+
+		return $this->gateway->structuralMappers()->map(
+			$payload,
+			$to,
+			$context->withSourceRepresentation($sourceRepresentation),
+		);
+	}
+}
