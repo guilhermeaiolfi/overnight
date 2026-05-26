@@ -127,7 +127,7 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		if (is_string($action)) {
-			$action = $this->container->get($action);
+			$action = $this->container->get($this->resolveActionClass($action));
 		}
 
 		return $this->container->get(ExecutorInterface::class)->execute($action, [
@@ -135,6 +135,22 @@ class RestApiExtension extends AbstractExtension
 			'payload' => $payload,
 			'options' => $options,
 		]);
+	}
+
+	private function resolveActionClass(string $action): string
+	{
+		if (class_exists($action)) {
+			return $action;
+		}
+
+		$config = $this->container->get(RestApiConfig::class);
+		foreach ($config->get('actions', []) as $registeredAction) {
+			if (($registeredAction['name'] ?? null) === $action) {
+				return $registeredAction['action'];
+			}
+		}
+
+		return $action;
 	}
 
 	protected function registerDefaultActions(RestApiConfig $config): void

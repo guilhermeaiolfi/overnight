@@ -8,6 +8,7 @@ use ON\Mapper\Attribute\MapFrom;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Support\ArrayHelper;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -55,6 +56,7 @@ final class ArrayToObjectMapper implements MapperInterface
 	 */
 	private function mapObject(array $data, string $class, MappingContext $context): object
 	{
+		$data = ArrayHelper::undot($data);
 		$reflection = new ReflectionClass($class);
 		$instance = $reflection->newInstanceWithoutConstructor();
 
@@ -67,6 +69,8 @@ final class ArrayToObjectMapper implements MapperInterface
 			$value = $this->convertInboundValue($data[$key], $property, $context);
 			$property->setValue($instance, $value);
 		}
+
+		ParentRelationBinder::bind($instance, $class);
 
 		return $instance;
 	}
@@ -87,12 +91,17 @@ final class ArrayToObjectMapper implements MapperInterface
 			return null;
 		}
 
-		$sourceRepresentation = $context->sourceRepresentation;
 		$propertyRepresentation = $context->propertyRepresentation
 			?? $context->outputRepresentation
 			?? $this->defaultRepresentations()['property']
 			?? PhpRepresentation::class;
 
+		$structural = $this->mapStructuralValue($value, $property, $context, $propertyRepresentation);
+		if ($structural['handled']) {
+			return $structural['value'];
+		}
+
+		$sourceRepresentation = $context->sourceRepresentation;
 		if ($sourceRepresentation === null) {
 			return $value;
 		}
@@ -102,22 +111,109 @@ final class ArrayToObjectMapper implements MapperInterface
 			return $value;
 		}
 
-		/** @var class-string|non-empty-string $typeName */
-		$typeName = $type->getName();
-
-		if (! $type->isBuiltin() && is_array($value)) {
-			return $this->gateway->structuralMappers()->map(
-				$value,
-				$typeName,
-				$context->withPropertyRepresentation($propertyRepresentation),
-			);
-		}
-
 		return $this->gateway->to(
 			$sourceRepresentation,
 			$value,
 			$propertyRepresentation,
-			FieldContext::named($property->getName(), $typeName, $type->allowsNull()),
+			FieldContext::named($property->getName(), $type->getName(), $type->allowsNull()),
 		);
+	}
+
+	/**
+	 * @param class-string $propertyRepresentation
+	 * @return array{handled: bool, value: mixed}
+	 */
+	private function mapStructuralValue(
+		mixed $value,
+		ReflectionProperty $property,
+		MappingContext $context,
+		string $propertyRepresentation,
+	): array {
+		$nestedContext = $context->withPropertyRepresentation($propertyRepresentation);
+
+		$classType = PropertyTypeResolver::namedType($property);
+		if ($classType !== null && PropertyTypeResolver::isStructuralClass($classType)) {
+			if (is_array($value)) {
+				return [
+					'handled' => true,
+					'value' => $this->gateway->structuralMappers()->map($value, $classType, $nestedContext),
+				];
+			}
+
+			if (is_object($value) && is_a($value, $classType)) {
+				return ['handled' => true, 'value' => $value];
+			}
+		}
+
+		if (! PropertyTypeResolver::isArrayProperty($property) || ! is_array($value)) {
+			return ['handled' => false, 'value' => $value];
+		}
+
+		$iterableClass = PropertyTypeResolver::iterableClassType($property);
+		if ($iterableClass === null) {
+			return ['handled' => false, 'value' => $value];
+		}
+
+		if (enum_exists($iterableClass)) {
+			return [
+				'handled' => true,
+				'value' => $this->mapEnumList($value, $iterableClass, $property, $context, $propertyRepresentation),
+			];
+		}
+
+		if (! PropertyTypeResolver::isStructuralClass($iterableClass)) {
+			return ['handled' => false, 'value' => $value];
+		}
+
+		$result = [];
+		foreach ($value as $key => $item) {
+			if (is_object($item) && is_a($item, $iterableClass)) {
+				$result[$key] = $item;
+
+				continue;
+			}
+
+			if (! is_array($item)) {
+				throw new \InvalidArgumentException(sprintf(
+					'Expected array items for property "%s" mapped to %s.',
+					$property->getName(),
+					$iterableClass,
+				));
+			}
+
+			$result[$key] = $this->gateway->structuralMappers()->map($item, $iterableClass, $nestedContext);
+		}
+
+		return ['handled' => true, 'value' => $result];
+	}
+
+	/**
+	 * @param class-string<\BackedEnum> $enumClass
+	 * @param class-string $propertyRepresentation
+	 * @return list<\BackedEnum>
+	 */
+	private function mapEnumList(
+		array $value,
+		string $enumClass,
+		ReflectionProperty $property,
+		MappingContext $context,
+		string $propertyRepresentation,
+	): array {
+		$sourceRepresentation = $context->sourceRepresentation;
+		if ($sourceRepresentation === null) {
+			return $value;
+		}
+
+		$result = [];
+		foreach ($value as $key => $item) {
+			$result[$key] = $this->gateway->to(
+				$sourceRepresentation,
+				$item,
+				$propertyRepresentation,
+				FieldContext::named($property->getName(), $enumClass, $property->getType()?->allowsNull() ?? false),
+			);
+		}
+
+		return $result;
 	}
 }

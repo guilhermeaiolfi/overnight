@@ -24,7 +24,9 @@ final class MapperRegistry
 		return new self(
 			new CollectionRowMapper($gateway),
 			new PsrRequestToObjectMapper($gateway),
+			new ArrayToStdClassMapper($gateway),
 			new ArrayToObjectMapper($gateway),
+			new StdClassToArrayMapper($gateway),
 			new ObjectToArrayMapper($gateway),
 		);
 	}
