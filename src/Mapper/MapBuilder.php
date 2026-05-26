@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper;
 
+use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Representation\RepresentationResolver;
 use ON\Mapper\Structural\MapperInterface;
 use ON\Mapper\Structural\MappingContext;
@@ -23,6 +24,7 @@ final class MapBuilder
 		private readonly ?string $mapperClass = null,
 		private readonly array $mapperArgs = [],
 		private readonly bool $asCollection = false,
+		private readonly ?MappingBlueprint $blueprint = null,
 	) {
 	}
 
@@ -40,6 +42,7 @@ final class MapBuilder
 			$this->mapperClass,
 			$this->mapperArgs,
 			$this->asCollection,
+			$this->blueprint,
 		);
 	}
 
@@ -61,6 +64,25 @@ final class MapBuilder
 			$this->mapperClass,
 			$this->mapperArgs,
 			$this->asCollection,
+			$this->blueprint,
+		);
+	}
+
+	/**
+	 * Declares field types (and optional structural mappers) for untyped targets such as stdClass.
+	 */
+	public function blueprint(MappingBlueprint $blueprint): self
+	{
+		return new self(
+			$this->source,
+			$this->gateway,
+			$this->sourceRepresentation,
+			$this->propertyRepresentation,
+			$this->outputRepresentation,
+			$this->mapperClass,
+			$this->mapperArgs,
+			$this->asCollection,
+			$blueprint,
 		);
 	}
 
@@ -102,6 +124,7 @@ final class MapBuilder
 			$mapperClass,
 			$args,
 			$this->asCollection,
+			$this->blueprint,
 		);
 	}
 
@@ -116,6 +139,7 @@ final class MapBuilder
 			$this->mapperClass,
 			$this->mapperArgs,
 			true,
+			$this->blueprint,
 		);
 	}
 
@@ -148,6 +172,7 @@ final class MapBuilder
 			$this->outputRepresentation,
 			$this->mapperClass,
 			$this->mapperArgs,
+			blueprint: $this->blueprint,
 		);
 
 		return $this->applyMapperDefaults($context);
@@ -175,6 +200,7 @@ final class MapBuilder
 				$context->mapperClass,
 				$context->mapperArgs,
 				$context->collection,
+				$context->blueprint,
 			);
 		}
 

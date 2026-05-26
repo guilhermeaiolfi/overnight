@@ -34,20 +34,24 @@ final class ArrayToStdClassMapper implements MapperInterface
 		if ($context->collection) {
 			return array_map(
 				fn (mixed $item): \stdClass => is_array($item)
-					? $this->mapObject($item)
+					? $this->mapObject($item, $context)
 					: throw new \InvalidArgumentException('Collection mapping expects a list of arrays.'),
 				$from
 			);
 		}
 
-		return $this->mapObject($from);
+		return $this->mapObject($from, $context);
 	}
 
 	/**
 	 * @param array<string, mixed> $data
 	 */
-	private function mapObject(array $data): \stdClass
+	private function mapObject(array $data, MappingContext $context): \stdClass
 	{
-		return StdClassValueConverter::arrayToStdClass(ArrayHelper::undot($data));
+		return StdClassValueConverter::arrayToStdClass(
+			ArrayHelper::undot($data),
+			$this->gateway,
+			$context,
+		);
 	}
 }

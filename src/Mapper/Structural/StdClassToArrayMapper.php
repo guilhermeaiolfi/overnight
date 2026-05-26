@@ -31,6 +31,6 @@ final class StdClassToArrayMapper implements MapperInterface
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
 		/** @var \stdClass $from */
-		return StdClassValueConverter::stdClassToArray($from);
+		return StdClassValueConverter::stdClassToArray($from, $this->gateway, $context);
 	}
 }
