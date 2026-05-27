@@ -7,14 +7,10 @@ namespace ON\RestApi\Handler;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
-use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
-use ON\RestApi\Handler\Mutation\HasOneNormalize;
 
-class HasOneHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
+class FirstOfManyHandler extends AbstractRelationHandler
 {
 	use LimitedSubquerySupport;
-	use ForeignKeyOnTargetApply;
-	use HasOneNormalize;
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
@@ -69,31 +65,49 @@ class HasOneHandler extends AbstractRelationHandler implements RelationMutationH
 				$this->getTargetCollection(),
 				$this->selection->query->search
 			);
-			$this->querySpecCompiler->applyOrderBy(
-				$query,
-				$this->getTargetCollection(),
-				$this->selection->query->sort
-			);
 		}
 
-		$limit = $this->selectionPagination()?->limit;
-		$offset = $this->selectionPagination()?->offset;
-		if ($limit !== null || $offset !== null) {
-			$query = $this->limitedSubquery(
-				$query,
-				$columns,
-				array_map(
-					fn(string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
-					$outerKeyColumns
-				),
-				$this->selectionWindowOrderBy(),
-				$limit,
-				$offset
-			);
-		}
+		$query = $this->limitedSubquery(
+			$query,
+			$columns,
+			array_map(
+				fn(string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
+				$outerKeyColumns
+			),
+			$this->orderBy(),
+			$this->limit(),
+			$this->selectionPagination()?->offset
+		);
 
 		$this->parseRows($node, $query->fetchAll(CycleStatementInterface::FETCH_NUM));
 
 		return null;
+	}
+
+	public function isSingle(): bool
+	{
+		return true;
+	}
+
+	public function limit(): ?int
+	{
+		return 1;
+	}
+
+	public function orderBy(): array
+	{
+		$table = $this->getTargetCollection()->getTable();
+		$orders = [];
+		foreach ($this->relation->getOrderBy() as $fieldName => $direction) {
+			if (!$this->getTargetCollection()->fields->has((string) $fieldName)) {
+				continue;
+			}
+
+			$column = $this->getTargetCollection()->fields->get((string) $fieldName)->getColumn();
+			$direction = strtoupper((string) $direction) === 'DESC' ? 'DESC' : 'ASC';
+			$orders[] = $table . '.' . $column . ' ' . $direction;
+		}
+
+		return $orders;
 	}
 }

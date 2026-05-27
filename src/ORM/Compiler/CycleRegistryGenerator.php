@@ -232,6 +232,10 @@ class CycleRegistryGenerator implements GeneratorInterface
 	 */
 	protected function resolveRelationType(RelationInterface $relation): string
 	{
+		if ($relation instanceof \ON\ORM\Definition\Relation\FirstOfManyRelation) {
+			return 'hasMany';
+		}
+
 		if ($relation instanceof M2MRelation) {
 			return 'manyToMany';
 		}

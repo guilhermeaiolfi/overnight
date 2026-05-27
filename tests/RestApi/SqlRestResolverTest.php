@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Relation\FirstOfManyRelation;
 use ON\ORM\Definition\Registry;
 use ON\ORM\Definition\Relation\M2MRelation;
+use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\DirectusQueryBuilder;
@@ -336,6 +338,150 @@ final class SqlRestResolverTest extends TestCase
 
 		$this->assertSame(['PHP', 'GraphQL'], array_column($postsByTitle['PHP Tips']['tags'], 'name'));
 		$this->assertSame(['GraphQL', 'REST'], array_column($postsByTitle['GraphQL Guide']['tags'], 'name'));
+	}
+
+	public function testListWithFirstOfManyRelationUsesRelationOrdering(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$registry->getCollection('user')
+			->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')
+			->innerKey('id')
+			->outerKey('user_id')
+			->orderBy(['created_at' => 'desc'])
+			->end();
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($registry->getCollection('user'), $this->q($registry->getCollection('user'), [
+			'fields' => 'id,name,latest_post.id,latest_post.title',
+			'sort' => 'id',
+			'deep' => [
+				'latest_post' => [
+					'_sort' => '-title',
+				],
+			],
+		]));
+
+		$this->assertSame('Draft Post', $result['data'][0]['latest_post']['title']);
+		$this->assertSame('GraphQL Guide', $result['data'][1]['latest_post']['title']);
+	}
+
+	public function testReadOnlyRelationInputIsIgnoredByDefault(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$registry->getCollection('user')
+			->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')
+			->innerKey('id')
+			->outerKey('user_id')
+			->orderBy(['created_at' => 'desc'])
+			->end();
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+
+		$spec = $this->m($registry, $resolver, 'user', [
+			'name' => 'Ignored Relation',
+			'latest_post' => ['title' => 'Should not be normalized'],
+		]);
+
+		$this->assertSame([], $spec->root->relations[0]->actions);
+	}
+
+	public function testReadOnlyRelationInputCanOptIntoErrors(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$registry->getCollection('user')
+			->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')
+			->innerKey('id')
+			->outerKey('user_id')
+			->orderBy(['created_at' => 'desc'])
+			->metadata('restapi::readOnlyInput', 'error')
+			->end();
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+
+		$this->expectException(RestApiError::class);
+		$this->expectExceptionMessage("Relation 'latest_post' is read-only.");
+
+		$this->m($registry, $resolver, 'user', [
+			'name' => 'Errored Relation',
+			'latest_post' => ['title' => 'Should fail'],
+		]);
+	}
+
+	public function testCompositeKeyHasManyLimitPartitionsByEveryRelationKey(): void
+	{
+		$registry = new Registry();
+		$product = $registry->collection('product');
+		$product->field('region_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$product->field('sku', 'string')->type('string')->primaryKey(true)->nullable(false)->end();
+		$product->field('name', 'string')->type('string')->nullable(false)->end();
+		$product->hasMany('prices', 'price')
+			->innerKey(['region_id', 'sku'])
+			->outerKey(['region_id', 'sku'])
+			->end();
+
+		$price = $registry->collection('price');
+		$price->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$price->field('region_id', 'int')->type('int')->nullable(false)->end();
+		$price->field('sku', 'string')->type('string')->nullable(false)->end();
+		$price->field('amount', 'int')->type('int')->nullable(false)->end();
+		$price->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'product' => [
+				'columns' => [
+					'region_id' => 'INTEGER NOT NULL',
+					'sku' => 'TEXT NOT NULL',
+					'name' => 'TEXT NOT NULL',
+				],
+				'rows' => [
+					['region_id' => 1, 'sku' => 'A', 'name' => 'One A'],
+					['region_id' => 1, 'sku' => 'B', 'name' => 'One B'],
+					['region_id' => 2, 'sku' => 'A', 'name' => 'Two A'],
+				],
+			],
+			'price' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'region_id' => 'INTEGER NOT NULL',
+					'sku' => 'TEXT NOT NULL',
+					'amount' => 'INTEGER NOT NULL',
+				],
+				'rows' => [
+					['id' => 1, 'region_id' => 1, 'sku' => 'A', 'amount' => 10],
+					['id' => 2, 'region_id' => 1, 'sku' => 'A', 'amount' => 20],
+					['id' => 3, 'region_id' => 1, 'sku' => 'B', 'amount' => 5],
+					['id' => 4, 'region_id' => 1, 'sku' => 'B', 'amount' => 15],
+					['id' => 5, 'region_id' => 2, 'sku' => 'A', 'amount' => 7],
+				],
+			],
+		]);
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($registry->getCollection('product'), $this->q($registry->getCollection('product'), [
+			'fields' => 'region_id,sku,prices.amount',
+			'sort' => 'region_id,sku',
+			'deep' => [
+				'prices' => [
+					'_limit' => 1,
+					'_sort' => 'amount',
+				],
+			],
+		]));
+
+		$amountsByProduct = [];
+		foreach ($result['data'] as $row) {
+			$amountsByProduct[$row['region_id'] . ':' . $row['sku']] = array_column($row['prices'], 'amount');
+		}
+
+		$this->assertSame([10], $amountsByProduct['1:A']);
+		$this->assertSame([5], $amountsByProduct['1:B']);
+		$this->assertSame([7], $amountsByProduct['2:A']);
 	}
 
 	public function testBelongsToRelationLoadsWithoutReturningUnrequestedForeignKey(): void

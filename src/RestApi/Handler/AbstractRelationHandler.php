@@ -4,28 +4,27 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
-use Cycle\Database\Injection\Expression;
-use Cycle\Database\Injection\Fragment;
-use Cycle\Database\Injection\FragmentInterface;
-use Cycle\Database\Injection\SubQuery;
-use Cycle\Database\Query\QueryParameters;
-use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\PaginationSpec;
 use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Node\SelectionSet;
+use ON\RestApi\Query\Node\SortDirection;
+use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\RegistrySupportTrait;
 
 abstract class AbstractRelationHandler extends AbstractHandler
 {
-	/** @var array{select: array, requested: array, internal: array} */
-	private array $columns;
+	use RegistrySupportTrait;
+
+	/** @var array{select: array, requested: array, internal: array}|null */
+	private ?array $columns = null;
 
 	private CollectionInterface $targetCollection;
 
@@ -39,7 +38,6 @@ abstract class AbstractRelationHandler extends AbstractHandler
 	) {
 		parent::__construct($collection, $selection?->responseName ?? $relation->getName(), $relation->getName());
 		$this->targetCollection = $this->relation->getCollection();
-		$this->columns = $this->buildColumns();
 	}
 
 	public function getTargetCollection(): CollectionInterface
@@ -54,17 +52,17 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 	public function getSelectColumns(): array
 	{
-		return $this->columns['select'];
+		return $this->selectionColumns()['select'];
 	}
 
 	public function getRequestedColumns(): array
 	{
-		return $this->columns['requested'];
+		return $this->selectionColumns()['requested'];
 	}
 
 	public function getInternalColumns(): array
 	{
-		return $this->columns['internal'];
+		return $this->selectionColumns()['internal'];
 	}
 
 	public function getNestedRelations(): array
@@ -83,195 +81,75 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		return $relations;
 	}
 
-	public function orderBy(): array
+	protected function parseRows(AbstractNode $node, iterable $rows): void
 	{
-		if ($this->selection === null) {
-			return [];
-		}
-
-		return $this->querySpecCompiler->compileOrderBy(
-			$this->targetCollection,
-			$this->selection->query->sort,
-			$this->orderByTableAlias()
-		);
-	}
-
-	public function limit(): ?int
-	{
-		return $this->getPagination()?->limit;
-	}
-
-	public function offset(): ?int
-	{
-		return $this->getPagination()?->offset;
-	}
-
-	protected function baseQuery(array $columns): SelectQuery
-	{
-		return $this->items->getDatabase()->select($columns)
-			->from($this->targetCollection->getTable());
-	}
-
-	protected function applyRelationQueryOptions(SelectQuery $query): void
-	{
-		if ($this->selection === null) {
-			return;
-		}
-
-		$this->querySpecCompiler->applyFilters(
-			$query,
-			$this->targetCollection,
-			$this->selection->query->filter,
-			null,
-			$this->aliases
-		);
-		$this->querySpecCompiler->applySearch(
-			$query,
-			$this->targetCollection,
-			$this->selection->query->search
-		);
-		$this->querySpecCompiler->applyOrderBy(
-			$query,
-			$this->targetCollection,
-			$this->selection->query->sort
-		);
-	}
-
-	protected function queryRows(SelectQuery $query, AbstractNode $node): void
-	{
-		foreach ($query->fetchAll(CycleStatementInterface::FETCH_NUM) as $row) {
+		foreach ($rows as $row) {
 			$node->parseRow(0, $row);
 		}
-	}
-
-	protected function referenceValues(AbstractNode $node): array
-	{
-		return $node->getReferenceValues();
-	}
-
-	protected function flattenedReferenceValues(AbstractNode $node): array
-	{
-		$values = [];
-		foreach ($this->referenceValues($node) as $set) {
-			$value = is_array($set) ? reset($set) : $set;
-			if ($value !== null && !in_array($value, $values, true)) {
-				$values[] = $value;
-			}
-		}
-
-		return $values;
 	}
 
 	/**
 	 * @return list<array<int|string, mixed>>
 	 */
-	protected function getReferenceValueSets(AbstractNode $node): array
+	protected function referenceValueSets(AbstractNode $node): array
 	{
 		$sets = [];
-		foreach ($this->referenceValues($node) as $set) {
+		foreach ($node->getReferenceValues() as $set) {
 			$sets[] = is_array($set) ? $set : [$set];
 		}
 
 		return $sets;
 	}
 
-	protected function limitedSubquery(SelectQuery $inner, array $columns, string $partitionColumn): SelectQuery
+	protected function selectionPagination(): ?PaginationSpec
 	{
-		return $this->limitedSubqueryWithColumns($inner, $columns, $columns, $partitionColumn);
+		return $this->selection?->query->pagination;
 	}
 
-	protected function limitedSubqueryWithColumns(
-		SelectQuery $inner,
-		array $innerColumns,
-		array $outerColumns,
-		string $partitionColumn
-	): SelectQuery {
-		$rowNumberAlias = '__on_row_number';
-		$orderSql = $this->windowOrderSql();
-		$rowNumberSql = 'ROW_NUMBER() OVER (PARTITION BY '
-			. $this->compile(new Expression($partitionColumn))
-			. $orderSql
-			. ') AS '
-			. $this->identifier($rowNumberAlias);
-
-		$innerColumns[] = new Fragment($rowNumberSql);
-		$inner->columns($innerColumns);
-
-		$alias = '__on_limited_relation';
-		$outer = $this->items->getDatabase()->select($outerColumns)
-			->from(new SubQuery($inner, $alias));
-
-		$offset = $this->offset() ?? 0;
-		if ($offset > 0) {
-			$outer->where(new Expression($alias . '.' . $rowNumberAlias), '>', $offset);
-		}
-
-		if ($this->limit() !== null) {
-			$outer->where(new Expression($alias . '.' . $rowNumberAlias), '<=', $offset + $this->limit());
-		}
-
-		return $outer;
-	}
-
-	protected function windowOrderSql(): string
+	/**
+	 * @return list<string>
+	 */
+	protected function selectionWindowOrderBy(?string $tableAlias = null): array
 	{
-		$parts = [];
-		foreach ($this->orderBy() as $order) {
+		if ($this->selection === null) {
+			return [];
+		}
+
+		$table = $tableAlias ?? $this->targetCollection->getTable();
+		$orders = [];
+		foreach ($this->selection->query->sort as $sort) {
 			if (
-				!is_array($order)
-				|| !isset($order['expression'])
-				|| !$order['expression'] instanceof FragmentInterface
+				!$sort instanceof SortSpec
+				|| !$sort->expression instanceof FieldExpression
+				|| !$this->targetCollection->fields->has($sort->expression->field)
 			) {
 				continue;
 			}
 
-			$direction = strtoupper((string) ($order['direction'] ?? 'ASC')) === 'DESC' ? 'DESC' : 'ASC';
-			$parts[] = $this->compile($order['expression']) . ' ' . $direction;
+			$column = $this->targetCollection->fields->get($sort->expression->field)->getColumn();
+			$direction = $sort->direction === SortDirection::Desc ? 'DESC' : 'ASC';
+			$orders[] = $table . '.' . $column . ' ' . $direction;
 		}
 
-		return $parts === [] ? '' : ' ORDER BY ' . implode(', ', $parts);
-	}
-
-	protected function orderByTableAlias(): ?string
-	{
-		return null;
-	}
-
-	protected function parseLoadedRows(AbstractNode $node, SelectQuery $query): void
-	{
-		$this->queryRows($query, $node);
-	}
-
-	protected function compile(FragmentInterface $expression): string
-	{
-		return $this->items->getDatabase()->getDriver()->getQueryCompiler()->compile(
-			new QueryParameters(),
-			$this->items->getDatabase()->getPrefix(),
-			$expression
-		);
-	}
-
-	protected function identifier(string $identifier): string
-	{
-		return $this->items->getDatabase()->getDriver()->getQueryCompiler()->quoteIdentifier($identifier);
-	}
-
-	protected function getPrimaryKeyColumns(CollectionInterface $collection): array
-	{
-		return $collection->getPrimaryKey()->getColumns();
+		return $orders;
 	}
 
 	/**
 	 * @return array{select: array, requested: array, internal: array}
 	 */
-	private function buildColumns(): array
+	private function selectionColumns(): array
 	{
-		$fieldNames = $this->getSelectedFieldNames();
-		$requestedFieldNames = $this->getRequestedFieldNames();
-		$requiredKey = array_map(
-			fn(string $fieldName): string => $this->targetCollection->fields->get($fieldName)->getColumn(),
-			$this->relation->outerKeys()
-		)[0];
+		return $this->columns ??= $this->buildSelectionColumns();
+	}
+
+	/**
+	 * @return array{select: array, requested: array, internal: array}
+	 */
+	private function buildSelectionColumns(): array
+	{
+		$fieldNames = $this->selectedFieldNames();
+		$requestedFieldNames = $this->requestedFieldNames();
+		$requiredKeys = $this->fieldNamesToColumnNames($this->targetCollection, $this->relation->outerKeys());
 
 		if ($fieldNames !== []) {
 			$selected = [];
@@ -288,7 +166,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 				}
 			}
 
-			$internal = [$requiredKey];
+			$internal = $requiredKeys;
 			foreach ($this->getRelationKeyColumnNames($this->targetCollection, $this->getNestedRelations()) as $nestedKey) {
 				if (!in_array($nestedKey, $internal, true)) {
 					$internal[] = $nestedKey;
@@ -309,37 +187,20 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 		$visible = $this->targetCollection->getVisibleColumns();
 		$selected = $visible;
-		if (!in_array($requiredKey, $selected, true)) {
-			$selected[] = $requiredKey;
+		foreach ($requiredKeys as $requiredKey) {
+			if (!in_array($requiredKey, $selected, true)) {
+				$selected[] = $requiredKey;
+			}
 		}
 
 		return [
 			'select' => array_values(array_unique($selected)),
 			'requested' => $visible,
-			'internal' => [$requiredKey],
+			'internal' => array_values(array_unique($requiredKeys)),
 		];
 	}
 
-	private function getRelationKeyColumnNames(CollectionInterface $collection, array $relations): array
-	{
-		$columns = [];
-		foreach ($relations as $relation) {
-			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				foreach ($collection->relations->get($relation->relationName)->innerKeys() as $fieldName) {
-					$columns[] = $collection->fields->get($fieldName)->getColumn();
-				}
-			}
-		}
-
-		return array_values(array_unique($columns));
-	}
-
-	private function getPagination(): ?PaginationSpec
-	{
-		return $this->selection?->query->pagination;
-	}
-
-	private function getSelectedFieldNames(): array
+	private function selectedFieldNames(): array
 	{
 		if (
 			$this->selection === null
@@ -359,7 +220,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		return array_values(array_unique($fields));
 	}
 
-	private function getRequestedFieldNames(): array
+	private function requestedFieldNames(): array
 	{
 		if (
 			$this->selection === null

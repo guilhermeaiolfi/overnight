@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
+use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
@@ -11,6 +12,7 @@ use ON\RestApi\Handler\Mutation\HasManyNormalize;
 
 class HasManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
+	use LimitedSubquerySupport;
 	use ForeignKeyOnTargetApply;
 	use HasManyNormalize;
 
@@ -18,15 +20,9 @@ class HasManyHandler extends AbstractRelationHandler implements RelationMutation
 	{
 		$node = new ArrayNode(
 			$this->getSelectColumns(),
-			$this->getPrimaryKeyColumns($this->getTargetCollection()),
-			array_map(
-				fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
-				$this->relation->outerKeys()
-			),
-			array_map(
-				fn(string $fieldName): string => $this->getCollection()->fields->get($fieldName)->getColumn(),
-				$this->relation->innerKeys()
-			)
+			$this->getTargetCollection()->getPrimaryKey()->getColumns(),
+			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys()),
+			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->innerKeys())
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -37,17 +33,16 @@ class HasManyHandler extends AbstractRelationHandler implements RelationMutation
 	public function load(): mixed
 	{
 		$node = $this->getNode();
-		$parentKeySets = $this->getReferenceValueSets($node);
+		$parentKeySets = $this->referenceValueSets($node);
 		if ($parentKeySets === []) {
 			return null;
 		}
 
 		$columns = $this->getSelectColumns();
-		$query = $this->baseQuery($columns);
-		$outerKeyColumns = array_map(
-			fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
-			$this->relation->outerKeys()
-		);
+		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys());
+		$query = $this->items->getDatabase()->select($columns)
+			->from($this->getTargetCollection()->getTable());
+
 		if (count($outerKeyColumns) === 1) {
 			$query->where($outerKeyColumns[0], 'IN', array_map(
 				static fn(array $set): mixed => reset($set),
@@ -60,17 +55,44 @@ class HasManyHandler extends AbstractRelationHandler implements RelationMutation
 				}
 			});
 		}
-		$this->applyRelationQueryOptions($query);
 
-		if ($this->limit() !== null || $this->offset() !== null) {
-			$query = $this->limitedSubquery(
+		if ($this->selection !== null) {
+			$this->querySpecCompiler->applyFilters(
 				$query,
-				$columns,
-				$this->getTargetCollection()->getTable() . '.' . $outerKeyColumns[0]
+				$this->getTargetCollection(),
+				$this->selection->query->filter,
+				null,
+				$this->aliases
+			);
+			$this->querySpecCompiler->applySearch(
+				$query,
+				$this->getTargetCollection(),
+				$this->selection->query->search
+			);
+			$this->querySpecCompiler->applyOrderBy(
+				$query,
+				$this->getTargetCollection(),
+				$this->selection->query->sort
 			);
 		}
 
-		$this->parseLoadedRows($node, $query);
+		$limit = $this->selectionPagination()?->limit;
+		$offset = $this->selectionPagination()?->offset;
+		if ($limit !== null || $offset !== null) {
+			$query = $this->limitedSubquery(
+				$query,
+				$columns,
+				array_map(
+					fn(string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
+					$outerKeyColumns
+				),
+				$this->selectionWindowOrderBy(),
+				$limit,
+				$offset
+			);
+		}
+
+		$this->parseRows($node, $query->fetchAll(CycleStatementInterface::FETCH_NUM));
 
 		return null;
 	}

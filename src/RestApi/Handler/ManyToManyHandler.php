@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Handler;
 
 use Cycle\Database\Injection\Expression;
+use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
@@ -17,6 +18,7 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 
 class ManyToManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
+	use LimitedSubquerySupport;
 	use ManyToManyApply;
 	use ManyToManyNormalize;
 
@@ -36,11 +38,12 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
+		$throughCollection = $this->manyToMany->through->getCollection();
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
 			$this->pivotPrimaryKeyColumns(),
-			$this->throughInnerKeyColumns(),
-			$this->relationInnerKeyColumns()
+			$this->fieldNamesToColumnNames($throughCollection, $this->manyToMany->through->throughInnerKeys()),
+			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->innerKeys())
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -51,21 +54,22 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 	public function load(): mixed
 	{
 		$node = $this->getNode();
-		$parentKeySets = $this->getReferenceValueSets($node);
+		$parentKeySets = $this->referenceValueSets($node);
 		if ($parentKeySets === []) {
 			return null;
 		}
 
 		$through = $this->manyToMany->through;
+		$throughCollection = $through->getCollection();
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
-		$throughInnerKeys = $this->throughInnerKeyColumns();
-		$throughOuterKeys = $this->throughOuterKeyColumns();
-		$targetKeyColumns = $this->targetOuterKeyColumns();
+		$throughInnerKeys = $this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys());
+		$throughOuterKeys = $this->fieldNamesToColumnNames($throughCollection, $through->throughOuterKeys());
+		$targetKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys());
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
 		$query = $this->items->getDatabase()->select($selectColumns)
-			->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
+			->from($throughCollection->getTable() . ' AS ' . $junctionAlias)
 			->innerJoin($this->getTargetCollection()->getTable(), $targetAlias);
 		foreach ($throughOuterKeys as $index => $throughOuterKey) {
 			$method = $index === 0 ? 'on' : 'andOn';
@@ -109,16 +113,23 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 			);
 		}
 
-		if ($this->limit() !== null || $this->offset() !== null) {
-			$query = $this->limitedSubqueryWithColumns(
+		$limit = $this->selectionPagination()?->limit;
+		$offset = $this->selectionPagination()?->offset;
+		if ($limit !== null || $offset !== null) {
+			$query = $this->limitedSubquery(
 				$query,
-				$selectColumns,
 				$this->resultNodeColumns(),
-				$junctionAlias . '.' . $throughInnerKeys[0]
+				array_map(
+					fn(string $column): string => $junctionAlias . '.' . $column,
+					$throughInnerKeys
+				),
+				$this->selectionWindowOrderBy($targetAlias),
+				$limit,
+				$offset
 			);
 		}
 
-		$this->parseLoadedRows($node, $query);
+		$this->parseRows($node, $query->fetchAll(CycleStatementInterface::FETCH_NUM));
 
 		return null;
 	}
@@ -148,7 +159,13 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 
 	private function pivotNodeColumns(): array
 	{
-		return array_values(array_unique([...$this->throughInnerKeyColumns(), ...$this->pivotPrimaryKeyColumns()]));
+		$through = $this->manyToMany->through;
+		$throughCollection = $through->getCollection();
+
+		return array_values(array_unique([
+			...$this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys()),
+			...$this->pivotPrimaryKeyColumns(),
+		]));
 	}
 
 	private function pivotPrimaryKeyColumns(): array
@@ -158,17 +175,15 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 			$columns[] = $field->getColumn();
 		}
 
+		$through = $this->manyToMany->through;
+		$throughCollection = $through->getCollection();
+
 		return $columns !== []
 			? $columns
-			: [...$this->throughInnerKeyColumns(), ...$this->throughOuterKeyColumns()];
-	}
-
-	private function throughInnerKeyColumns(): array
-	{
-		return array_map(
-			fn(string $fieldName): string => $this->manyToMany->through->getCollection()->fields->get($fieldName)->getColumn(),
-			$this->manyToMany->through->throughInnerKeys()
-		);
+			: [
+				...$this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys()),
+				...$this->fieldNamesToColumnNames($throughCollection, $through->throughOuterKeys()),
+			];
 	}
 
 	private function junctionAlias(): string
@@ -179,34 +194,5 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 	private function targetAlias(): string
 	{
 		return $this->targetAlias ??= $this->aliases->alias('__on_' . $this->getResponseName() . '_target');
-	}
-
-	protected function orderByTableAlias(): ?string
-	{
-		return $this->targetAlias();
-	}
-
-	private function relationInnerKeyColumns(): array
-	{
-		return array_map(
-			fn(string $fieldName): string => $this->getCollection()->fields->get($fieldName)->getColumn(),
-			$this->relation->innerKeys()
-		);
-	}
-
-	private function throughOuterKeyColumns(): array
-	{
-		return array_map(
-			fn(string $fieldName): string => $this->manyToMany->through->getCollection()->fields->get($fieldName)->getColumn(),
-			$this->manyToMany->through->throughOuterKeys()
-		);
-	}
-
-	private function targetOuterKeyColumns(): array
-	{
-		return array_map(
-			fn(string $fieldName): string => $this->getTargetCollection()->fields->get($fieldName)->getColumn(),
-			$this->relation->outerKeys()
-		);
 	}
 }

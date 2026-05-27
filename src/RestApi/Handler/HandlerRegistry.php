@@ -6,6 +6,7 @@ namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\BelongsToRelation;
+use ON\ORM\Definition\Relation\FirstOfManyRelation;
 use ON\ORM\Definition\Relation\HasManyRelation;
 use ON\ORM\Definition\Relation\HasOneRelation;
 use ON\ORM\Definition\Relation\M2MRelation;
@@ -24,6 +25,7 @@ class HandlerRegistry
 		return (new self())
 			->default('hasOne', HasOneHandler::class)
 			->default('belongsTo', BelongsToHandler::class)
+			->default('firstOfMany', FirstOfManyHandler::class)
 			->default('hasMany', HasManyHandler::class)
 			->default('manyToMany', ManyToManyHandler::class);
 	}
@@ -98,6 +100,10 @@ class HandlerRegistry
 
 		if ($relation instanceof BelongsToRelation) {
 			return 'belongsTo';
+		}
+
+		if ($relation instanceof FirstOfManyRelation) {
+			return 'firstOfMany';
 		}
 
 		if ($relation instanceof HasManyRelation) {
