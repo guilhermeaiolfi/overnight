@@ -9,29 +9,61 @@ use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Structural\MappingContext;
 
 /**
- * Converts one scalar when the mapper has already resolved FieldContext.
- * Optionally tries map()->resolver() override before the mapper's own resolution.
+ * Coordinates field-context resolution and scalar conversion for structural mappers.
  */
 final class FieldConversionCoordinator
 {
+	/** @var list<FieldResolverInterface> */
+	private array $resolvers = [];
+
 	public function __construct(
 		private readonly ConversionGateway $gateway,
 	) {
 	}
 
-	public function resolveOverride(
+	public function register(FieldResolverInterface ...$resolvers): self
+	{
+		foreach ($resolvers as $resolver) {
+			$this->resolvers[] = $resolver;
+		}
+
+		return $this;
+	}
+
+	public function registerConfiguredResolvers(MappingContext $mapping): self
+	{
+		foreach ($mapping->resolverDefinitions as $definition) {
+			$class = $definition->class;
+			if (! is_subclass_of($class, FieldResolverInterface::class)) {
+				throw new \InvalidArgumentException(sprintf(
+					'Resolver %s must implement %s.',
+					$class,
+					FieldResolverInterface::class,
+				));
+			}
+
+			$this->register(new $class(...$definition->args));
+		}
+
+		return $this;
+	}
+
+	public function resolveField(
 		MappingContext $mapping,
 		string $path,
 		string $fieldName,
 		mixed $value,
 		ConversionDirection $direction,
+		mixed $extra = null,
 	): ?FieldContext {
-		$override = $this->instantiateOverride($mapping);
-		if ($override === null) {
-			return null;
+		foreach ($this->resolvers as $resolver) {
+			$field = $resolver->resolve($mapping, $path, $fieldName, $value, $direction, $extra);
+			if ($field !== null) {
+				return $field;
+			}
 		}
 
-		return $override->resolve($mapping, $path, $fieldName, $value, $direction);
+		return null;
 	}
 
 	public function convertScalar(
@@ -43,25 +75,4 @@ final class FieldConversionCoordinator
 		return $this->gateway->convertScalar($value, $field, $mapping, $direction);
 	}
 
-	private function instantiateOverride(MappingContext $mapping): ?ScalarFieldResolverOverrideInterface
-	{
-		if ($mapping->resolverClass === null) {
-			return null;
-		}
-
-		$class = $mapping->resolverClass;
-		if (! is_subclass_of($class, ScalarFieldResolverOverrideInterface::class)) {
-			throw new \InvalidArgumentException(sprintf(
-				'Resolver %s must implement %s.',
-				$class,
-				ScalarFieldResolverOverrideInterface::class,
-			));
-		}
-
-		if ($mapping->resolverArgs === []) {
-			return new $class();
-		}
-
-		return new $class(...$mapping->resolverArgs);
-	}
 }

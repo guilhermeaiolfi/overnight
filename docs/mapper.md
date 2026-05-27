@@ -100,7 +100,7 @@ $wireRows = map($phpRows)
 | `as(Rep)`                | Target value encoding after field conversion  |
 | `using(Mapper, ...)`     | Force structural mapper; optional mapper args  |
 | `args(...)`              | Mapper args (same bag as `using()` spread)    |
-| `resolver(Class, ...)`   | Optional field-type resolver override         |
+| `resolver(Class, ...)`   | Stack an optional field resolver before defaults |
 | `to(Class)`              | Structural target (DTO, `MutationSpec`, etc.) |
 | `toArray()` / `toJson()` | Terminal array/JSON output                    |
 
@@ -115,7 +115,7 @@ Mapper-specific configuration is passed via `args()` or `using(Mapper::class, ..
 
 ### Custom field resolver
 
-Implement `ON\Mapper\Conversion\ScalarFieldResolverOverrideInterface`. Return `FieldContext` when you handle a field; return `null` to fall back to the active mapper’s default for that field only.
+Implement `ON\Mapper\Conversion\FieldResolverInterface`. Return `FieldContext` when you handle a field; return `null` to fall through to the next resolver. `FieldConversionCoordinator` starts empty and resolvers are added with `register()`. The active mapper registers its default resolver first, then multiple `resolver()` calls stack in call order after it.
 
 ```php
 map($query)
@@ -125,6 +125,21 @@ map($query)
     ->as(PhpRepresentation::class)
     ->to(QuerySpec::class);
 ```
+
+Resolver signature:
+
+```php
+public function resolve(
+    MappingContext $mapping,
+    string $path,
+    string $fieldName,
+    mixed $value,
+    ConversionDirection $direction,
+    mixed $extra = null,
+): ?FieldContext;
+```
+
+The final `$extra` value is owned by the structural mapper. DTO mappers pass the current `ReflectionProperty`; collection rows discover `CollectionInterface` from mapper args; `stdClass` blueprint mapping discovers `MappingBlueprint` from mapper args.
 
 ---
 
@@ -503,4 +518,3 @@ Optional: reference the handler class directly in ORM `->type()` when you want C
 - ORM: `CycleRegistryGenerator` maps `FieldTypeInterface::storageType()` and validates Cycle column types
 - RestApi: `ItemRepository`, `DirectusMutationBuilder`, and Directus actions use `map()` via `ConversionGateway` (requires `MapperExtension`). Action `$options` use `input` / `output` representation class constants; each action defines an intermediate representation (Php for all Directus actions today).
 - Pending: GraphQL/cache representations, optional direct edge converters
-

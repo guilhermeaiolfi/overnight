@@ -9,14 +9,12 @@ use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
 use ON\Mapper\Field\FieldContext;
-use ON\Mapper\Conversion\Resolver\BlueprintFieldContextResolver;
+use ON\Mapper\Conversion\Resolver\BlueprintFieldResolver;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Structural\MappingContext;
 
 final class StdClassValueConverter
 {
-	private static ?BlueprintFieldContextResolver $blueprintResolver = null;
-
 	/**
 	 * @param array<string, mixed> $data
 	 */
@@ -25,7 +23,11 @@ final class StdClassValueConverter
 		ConversionGateway $gateway,
 		MappingContext $context,
 		string $pathPrefix = '',
+		?FieldConversionCoordinator $conversion = null,
 	): \stdClass {
+		$conversion ??= (new FieldConversionCoordinator($gateway))
+			->register(new BlueprintFieldResolver())
+			->registerConfiguredResolvers($context);
 		$object = new \stdClass();
 
 		foreach ($data as $key => $value) {
@@ -34,7 +36,7 @@ final class StdClassValueConverter
 			}
 
 			$path = self::path($pathPrefix, $key);
-			$object->{$key} = self::toStdClassValue($value, $path, $gateway, $context);
+			$object->{$key} = self::toStdClassValue($value, $path, $gateway, $context, $conversion);
 		}
 
 		return $object;
@@ -48,12 +50,16 @@ final class StdClassValueConverter
 		ConversionGateway $gateway,
 		MappingContext $context,
 		string $pathPrefix = '',
+		?FieldConversionCoordinator $conversion = null,
 	): array {
+		$conversion ??= (new FieldConversionCoordinator($gateway))
+			->register(new BlueprintFieldResolver())
+			->registerConfiguredResolvers($context);
 		$result = [];
 
 		foreach (get_object_vars($object) as $key => $value) {
 			$path = self::path($pathPrefix, $key);
-			$result[$key] = self::toArrayValue($value, $path, $gateway, $context);
+			$result[$key] = self::toArrayValue($value, $path, $gateway, $context, $conversion);
 		}
 
 		return $result;
@@ -64,9 +70,10 @@ final class StdClassValueConverter
 		string $path,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): mixed {
 		if (! is_array($value)) {
-			return self::convertInboundScalar($value, $path, $gateway, $context);
+			return self::convertInboundScalar($value, $path, $gateway, $context, $conversion);
 		}
 
 		if ($value === []) {
@@ -77,14 +84,14 @@ final class StdClassValueConverter
 		$entry = $blueprint?->resolve($path);
 
 		if (ArrayHelper::isList($value)) {
-			return self::mapListInbound($value, $path, $entry, $gateway, $context);
+			return self::mapListInbound($value, $path, $entry, $gateway, $context, $conversion);
 		}
 
 		if ($entry !== null && self::isStructuralClassType($entry->type)) {
 			return self::mapStructuralInbound($value, $entry, $gateway, $context, $path);
 		}
 
-		return self::arrayToStdClass($value, $gateway, $context, $path);
+		return self::arrayToStdClass($value, $gateway, $context, $path, $conversion);
 	}
 
 	private static function toArrayValue(
@@ -92,9 +99,10 @@ final class StdClassValueConverter
 		string $path,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): mixed {
 		if ($value instanceof \stdClass) {
-			return self::stdClassToArray($value, $gateway, $context, $path);
+			return self::stdClassToArray($value, $gateway, $context, $path, $conversion);
 		}
 
 		if (is_array($value)) {
@@ -102,7 +110,7 @@ final class StdClassValueConverter
 			$entry = $blueprint?->resolve($path);
 
 			if (ArrayHelper::isList($value)) {
-				return self::mapListOutbound($value, $path, $entry, $gateway, $context);
+				return self::mapListOutbound($value, $path, $entry, $gateway, $context, $conversion);
 			}
 
 			return array_map(
@@ -111,13 +119,14 @@ final class StdClassValueConverter
 					self::path($path, (string) $index),
 					$gateway,
 					$context,
+					$conversion,
 				),
 				$value,
 				array_keys($value),
 			);
 		}
 
-		return self::convertOutboundScalar($value, $path, $gateway, $context);
+		return self::convertOutboundScalar($value, $path, $gateway, $context, $conversion);
 	}
 
 	/**
@@ -130,6 +139,7 @@ final class StdClassValueConverter
 		?FieldBlueprintEntry $entry,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): array {
 		if ($entry !== null && self::isStructuralClassType($entry->type)) {
 			return array_map(
@@ -146,6 +156,7 @@ final class StdClassValueConverter
 				self::path($path, (string) $index),
 				$gateway,
 				$context,
+				$conversion,
 			),
 			$value,
 			array_keys($value),
@@ -162,6 +173,7 @@ final class StdClassValueConverter
 		?FieldBlueprintEntry $entry,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): array {
 		if ($entry !== null && self::isStructuralClassType($entry->type)) {
 			return array_map(
@@ -174,11 +186,12 @@ final class StdClassValueConverter
 
 		return array_map(
 			static fn (mixed $item, int|string $index): mixed => self::toArrayValue(
-				$item,
-				self::path($path, (string) $index),
-				$gateway,
-				$context,
-			),
+					$item,
+					self::path($path, (string) $index),
+					$gateway,
+					$context,
+					$conversion,
+				),
 			$value,
 			array_keys($value),
 		);
@@ -237,17 +250,18 @@ final class StdClassValueConverter
 		string $path,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): mixed {
 		if ($context->sourceRepresentation === null) {
 			return $value;
 		}
 
-		$field = self::resolveField($gateway, $context, $path, $value, ConversionDirection::Inbound);
+		$field = self::resolveField($context, $path, $value, ConversionDirection::Inbound, $conversion);
 		if ($field === null) {
 			return $value;
 		}
 
-		return self::coordinator($gateway)->convertScalar($value, $field, $context, ConversionDirection::Inbound);
+		return $conversion->convertScalar($value, $field, $context, ConversionDirection::Inbound);
 	}
 
 	private static function convertOutboundScalar(
@@ -255,40 +269,29 @@ final class StdClassValueConverter
 		string $path,
 		ConversionGateway $gateway,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): mixed {
 		if ($context->outputRepresentation === null) {
 			return $value;
 		}
 
-		$field = self::resolveField($gateway, $context, $path, $value, ConversionDirection::Outbound);
+		$field = self::resolveField($context, $path, $value, ConversionDirection::Outbound, $conversion);
 		if ($field === null) {
 			return $value;
 		}
 
-		return self::coordinator($gateway)->convertScalar($value, $field, $context, ConversionDirection::Outbound);
+		return $conversion->convertScalar($value, $field, $context, ConversionDirection::Outbound);
 	}
 
 	private static function resolveField(
-		ConversionGateway $gateway,
 		MappingContext $context,
 		string $path,
 		mixed $value,
 		ConversionDirection $direction,
+		FieldConversionCoordinator $conversion,
 	): ?FieldContext {
 		$fieldName = self::fieldName($path);
-		$coordinator = self::coordinator($gateway);
-
-		$field = $coordinator->resolveOverride($context, $path, $fieldName, $value, $direction);
-		if ($field !== null) {
-			return $field;
-		}
-
-		$blueprint = self::resolveBlueprint($context);
-		if ($blueprint === null) {
-			return null;
-		}
-
-		return self::blueprintResolver()->forPath($blueprint, $path, $value);
+		return $conversion->resolveField($context, $path, $fieldName, $value, $direction);
 	}
 
 	private static function fieldName(string $path): string
@@ -296,16 +299,6 @@ final class StdClassValueConverter
 		$parts = explode('.', $path);
 
 		return (string) array_pop($parts);
-	}
-
-	private static function coordinator(ConversionGateway $gateway): FieldConversionCoordinator
-	{
-		return new FieldConversionCoordinator($gateway);
-	}
-
-	private static function blueprintResolver(): BlueprintFieldContextResolver
-	{
-		return self::$blueprintResolver ??= new BlueprintFieldContextResolver();
 	}
 
 	private static function resolveBlueprint(MappingContext $context): ?MappingBlueprint

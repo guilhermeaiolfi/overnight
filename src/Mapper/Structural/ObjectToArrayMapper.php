@@ -8,7 +8,7 @@ use ON\Mapper\Attribute\Hidden;
 use ON\Mapper\Attribute\MapTo;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
-use ON\Mapper\Conversion\Resolver\ReflectionFieldContextResolver;
+use ON\Mapper\Conversion\Resolver\ReflectionPropertyFieldResolver;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
@@ -18,14 +18,9 @@ use ReflectionProperty;
 
 final class ObjectToArrayMapper implements MapperInterface
 {
-	private readonly ReflectionFieldContextResolver $fieldResolver;
-	private readonly FieldConversionCoordinator $conversion;
-
 	public function __construct(
 		private readonly ConversionGateway $gateway,
 	) {
-		$this->fieldResolver = new ReflectionFieldContextResolver();
-		$this->conversion = new FieldConversionCoordinator($gateway);
 	}
 
 	public function defaultRepresentations(): array
@@ -54,10 +49,20 @@ final class ObjectToArrayMapper implements MapperInterface
 
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
-		return $this->mapObject($from, $context);
+		return $this->mapObject(
+			$from,
+			$context,
+			(new FieldConversionCoordinator($this->gateway))
+				->register(new ReflectionPropertyFieldResolver())
+				->registerConfiguredResolvers($context),
+		);
 	}
 
-	private function mapObject(object $object, MappingContext $context): array
+	private function mapObject(
+		object $object,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+	): array
 	{
 		$reflection = new ReflectionClass($object);
 		$result = [];
@@ -73,7 +78,7 @@ final class ObjectToArrayMapper implements MapperInterface
 
 			$key = $this->resolveTargetKey($property);
 			$value = $property->getValue($object);
-			$result[$key] = $this->convertOutboundValue($value, $property, $context);
+			$result[$key] = $this->convertOutboundValue($value, $property, $context, $conversion);
 		}
 
 		return $result;
@@ -89,7 +94,12 @@ final class ObjectToArrayMapper implements MapperInterface
 		return $property->getName();
 	}
 
-	private function convertOutboundValue(mixed $value, ReflectionProperty $property, MappingContext $context): mixed
+	private function convertOutboundValue(
+		mixed $value,
+		ReflectionProperty $property,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+	): mixed
 	{
 		if ($value === null) {
 			return null;
@@ -99,7 +109,7 @@ final class ObjectToArrayMapper implements MapperInterface
 			?? $this->defaultRepresentations()['from']
 			?? PhpRepresentation::class;
 
-		$structural = $this->mapStructuralValue($value, $property, $context, $readRepresentation);
+		$structural = $this->mapStructuralValue($value, $property, $context, $readRepresentation, $conversion);
 		if ($structural['handled']) {
 			return $structural['value'];
 		}
@@ -113,12 +123,12 @@ final class ObjectToArrayMapper implements MapperInterface
 			return $value;
 		}
 
-		$field = $this->resolveFieldForProperty($context, $property, $value, ConversionDirection::Outbound);
+		$field = $this->resolveFieldForProperty($context, $property, $value, ConversionDirection::Outbound, $conversion);
 		if ($field === null) {
 			return $value;
 		}
 
-		return $this->conversion->convertScalar($value, $field, $context, ConversionDirection::Outbound);
+		return $conversion->convertScalar($value, $field, $context, ConversionDirection::Outbound);
 	}
 
 	private function resolveFieldForProperty(
@@ -126,11 +136,11 @@ final class ObjectToArrayMapper implements MapperInterface
 		ReflectionProperty $property,
 		mixed $value,
 		ConversionDirection $direction,
+		FieldConversionCoordinator $conversion,
 	): ?FieldContext {
 		$name = $property->getName();
 
-		return $this->conversion->resolveOverride($context, $name, $name, $value, $direction)
-			?? $this->fieldResolver->forProperty($property);
+		return $conversion->resolveField($context, $name, $name, $value, $direction, $property);
 	}
 
 	/**
@@ -142,6 +152,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		ReflectionProperty $property,
 		MappingContext $context,
 		string $readRepresentation,
+		FieldConversionCoordinator $conversion,
 	): array {
 		$nestedContext = $context->withSourceRepresentation($readRepresentation);
 
@@ -165,7 +176,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		if (enum_exists($iterableClass)) {
 			return [
 				'handled' => true,
-				'value' => $this->mapEnumListOutbound($value, $iterableClass, $property, $context, $readRepresentation),
+				'value' => $this->mapEnumListOutbound($value, $iterableClass, $property, $context, $readRepresentation, $conversion),
 			];
 		}
 
@@ -197,6 +208,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		ReflectionProperty $property,
 		MappingContext $context,
 		string $readRepresentation,
+		FieldConversionCoordinator $conversion,
 	): array {
 		if ($context->outputRepresentation === null) {
 			return $value;
@@ -205,9 +217,9 @@ final class ObjectToArrayMapper implements MapperInterface
 		$mapping = $context->withSourceRepresentation($readRepresentation);
 		$result = [];
 		foreach ($value as $key => $item) {
-			$field = $this->resolveFieldForProperty($mapping, $property, $item, ConversionDirection::Outbound)
+			$field = $this->resolveFieldForProperty($mapping, $property, $item, ConversionDirection::Outbound, $conversion)
 				?? FieldContext::named($property->getName(), $enumClass, $property->getType()?->allowsNull() ?? false);
-			$result[$key] = $this->conversion->convertScalar(
+			$result[$key] = $conversion->convertScalar(
 				$item,
 				$field,
 				$mapping,

@@ -9,7 +9,7 @@ use InvalidArgumentException;
 use ON\Mapper\Attribute\MapFrom;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
-use ON\Mapper\Conversion\Resolver\ReflectionFieldContextResolver;
+use ON\Mapper\Conversion\Resolver\ReflectionPropertyFieldResolver;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Support\ArrayHelper;
@@ -18,14 +18,9 @@ use ReflectionProperty;
 
 final class ArrayToObjectMapper implements MapperInterface
 {
-	private readonly ReflectionFieldContextResolver $fieldResolver;
-	private readonly FieldConversionCoordinator $conversion;
-
 	public function __construct(
 		private readonly ConversionGateway $gateway,
 	) {
-		$this->fieldResolver = new ReflectionFieldContextResolver();
-		$this->conversion = new FieldConversionCoordinator($gateway);
 	}
 
 	public function defaultRepresentations(): array
@@ -44,23 +39,32 @@ final class ArrayToObjectMapper implements MapperInterface
 
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
+		$conversion = (new FieldConversionCoordinator($this->gateway))
+			->register(new ReflectionPropertyFieldResolver())
+			->registerConfiguredResolvers($context);
+
 		if ($context->collection) {
 			return array_map(
 				fn (mixed $item): object => is_array($item)
-					? $this->mapObject($item, $to, $context)
+					? $this->mapObject($item, $to, $context, $conversion)
 					: throw new InvalidArgumentException('Collection mapping expects a list of arrays.'),
 				$from
 			);
 		}
 
-		return $this->mapObject($from, $to, $context);
+		return $this->mapObject($from, $to, $context, $conversion);
 	}
 
 	/**
 	 * @param array<string, mixed> $data
 	 * @param class-string $class
 	 */
-	private function mapObject(array $data, string $class, MappingContext $context): object
+	private function mapObject(
+		array $data,
+		string $class,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+	): object
 	{
 		$data = ArrayHelper::undot($data);
 		$reflection = new ReflectionClass($class);
@@ -72,7 +76,7 @@ final class ArrayToObjectMapper implements MapperInterface
 				continue;
 			}
 
-			$value = $this->convertInboundValue($data[$key], $property, $context);
+			$value = $this->convertInboundValue($data[$key], $property, $context, $conversion);
 			$property->setValue($instance, $value);
 		}
 
@@ -91,13 +95,18 @@ final class ArrayToObjectMapper implements MapperInterface
 		return $property->getName();
 	}
 
-	private function convertInboundValue(mixed $value, ReflectionProperty $property, MappingContext $context): mixed
+	private function convertInboundValue(
+		mixed $value,
+		ReflectionProperty $property,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+	): mixed
 	{
 		if ($value === null) {
 			return null;
 		}
 
-		$structural = $this->mapStructuralValue($value, $property, $context);
+		$structural = $this->mapStructuralValue($value, $property, $context, $conversion);
 		if ($structural['handled']) {
 			return $structural['value'];
 		}
@@ -106,12 +115,12 @@ final class ArrayToObjectMapper implements MapperInterface
 			return $value;
 		}
 
-		$field = $this->resolveFieldForProperty($context, $property, $value, ConversionDirection::Inbound);
+		$field = $this->resolveFieldForProperty($context, $property, $value, ConversionDirection::Inbound, $conversion);
 		if ($field === null) {
 			return $value;
 		}
 
-		return $this->conversion->convertScalar($value, $field, $context, ConversionDirection::Inbound);
+		return $conversion->convertScalar($value, $field, $context, ConversionDirection::Inbound);
 	}
 
 	private function resolveFieldForProperty(
@@ -119,11 +128,11 @@ final class ArrayToObjectMapper implements MapperInterface
 		ReflectionProperty $property,
 		mixed $value,
 		ConversionDirection $direction,
+		FieldConversionCoordinator $conversion,
 	): ?FieldContext {
 		$name = $property->getName();
 
-		return $this->conversion->resolveOverride($context, $name, $name, $value, $direction)
-			?? $this->fieldResolver->forProperty($property);
+		return $conversion->resolveField($context, $name, $name, $value, $direction, $property);
 	}
 
 	/**
@@ -133,6 +142,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		mixed $value,
 		ReflectionProperty $property,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): array {
 		$classType = PropertyTypeResolver::namedType($property);
 		if ($classType !== null && PropertyTypeResolver::isStructuralClass($classType)) {
@@ -160,7 +170,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		if (enum_exists($iterableClass)) {
 			return [
 				'handled' => true,
-				'value' => $this->mapEnumList($value, $iterableClass, $property, $context),
+				'value' => $this->mapEnumList($value, $iterableClass, $property, $context, $conversion),
 			];
 		}
 
@@ -199,6 +209,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		string $enumClass,
 		ReflectionProperty $property,
 		MappingContext $context,
+		FieldConversionCoordinator $conversion,
 	): array {
 		if ($context->sourceRepresentation === null) {
 			return $value;
@@ -206,9 +217,9 @@ final class ArrayToObjectMapper implements MapperInterface
 
 		$result = [];
 		foreach ($value as $key => $item) {
-			$field = $this->resolveFieldForProperty($context, $property, $item, ConversionDirection::Inbound)
+			$field = $this->resolveFieldForProperty($context, $property, $item, ConversionDirection::Inbound, $conversion)
 				?? FieldContext::named($property->getName(), $enumClass, $property->getType()?->allowsNull() ?? false);
-			$result[$key] = $this->conversion->convertScalar(
+			$result[$key] = $conversion->convertScalar(
 				$item,
 				$field,
 				$context,

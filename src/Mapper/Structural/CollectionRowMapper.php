@@ -6,8 +6,8 @@ namespace ON\Mapper\Structural;
 
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
+use ON\Mapper\Conversion\Resolver\CollectionFieldResolver;
 use ON\Mapper\ConversionGateway;
-use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
@@ -55,7 +55,9 @@ final class CollectionRowMapper implements MapperInterface
 			return $from;
 		}
 
-		$conversion = new FieldConversionCoordinator($this->gateway);
+		$conversion = (new FieldConversionCoordinator($this->gateway))
+			->register(new CollectionFieldResolver())
+			->registerConfiguredResolvers($context);
 		$direction = $this->directionForRepresentations($context);
 
 		if ($context->collection) {
@@ -93,7 +95,7 @@ final class CollectionRowMapper implements MapperInterface
 		FieldConversionCoordinator $conversion,
 		ConversionDirection $direction,
 	): array {
-		foreach ($collection->fields as $name => $field) {
+		foreach ($collection->fields as $name => $_field) {
 			if (! array_key_exists($name, $row)) {
 				continue;
 			}
@@ -103,7 +105,6 @@ final class CollectionRowMapper implements MapperInterface
 				$conversion,
 				$name,
 				$row[$name],
-				FieldContext::fromField($field),
 				$direction,
 			);
 		}
@@ -130,11 +131,12 @@ final class CollectionRowMapper implements MapperInterface
 		FieldConversionCoordinator $conversion,
 		string $name,
 		mixed $value,
-		FieldContext $field,
 		ConversionDirection $direction,
 	): mixed {
-		$resolved = $conversion->resolveOverride($context, $name, $name, $value, $direction)
-			?? $field;
+		$resolved = $conversion->resolveField($context, $name, $name, $value, $direction);
+		if ($resolved === null) {
+			return $value;
+		}
 
 		return $conversion->convertScalar($value, $resolved, $context, $direction);
 	}
