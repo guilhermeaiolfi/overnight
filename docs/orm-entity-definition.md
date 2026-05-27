@@ -7,11 +7,12 @@ This document describes how to define entities (collections) in the Overnight fr
 1. [Registry - Entry Point](#registry---entry-point)
 2. [Collection Definition](#collection-definition)
 3. [Field Definition](#field-definition)
-4. [Relation Definition](#relation-definition)
-5. [The ->end() Rule](#the---end---rule)
-6. [Metadata System](#metadata-system)
-7. [Complete Example](#complete-example)
-8. [Converting to Other Schemas](#converting-to-other-schemas)
+4. [Field Type Handlers and Cycle Schema](#field-type-handlers-and-cycle-schema)
+5. [Relation Definition](#relation-definition)
+6. [The ->end() Rule](#the---end---rule)
+7. [Metadata System](#metadata-system)
+8. [Complete Example](#complete-example)
+9. [Converting to Other Schemas](#converting-to-other-schemas)
 
 ---
 
@@ -160,6 +161,79 @@ The `field()` method accepts an optional type as the second argument:
 ->field('name', 'string')
 ->field('name')->type('string')
 ```
+
+---
+
+## Field Type Handlers and Cycle Schema
+
+ORM field `->type()` serves two roles:
+
+1. **Mapper resolution** — which `FieldTypeInterface` handler converts values between Storage, PHP, and Wire representations (see [Mapper](mapper.md)).
+2. **Cycle schema** — which physical column type `CycleRegistryGenerator` emits when compiling the ORM schema.
+
+### Builtin string types
+
+Most fields use Cycle-compatible string types directly:
+
+```php
+->field('id', 'int')->type('int')->primaryKey(true)->end()
+->field('name', 'string')->type('string')->maxLength(128)->end()
+->field('created_at', 'datetime')->type('datetime')->end()
+->field('payload', 'json')->type('json')->end()
+```
+
+`CycleRegistryGenerator` accepts known Cycle column types (`int`, `string`, `datetime`, `text`, `json`, `serial`, `primary`, etc.). Unknown types throw `FieldException` at schema compile time.
+
+For `string` fields without an explicit length (`string(32)`), the generator applies `maxLength()` and emits `string(N)`.
+
+### Field type handler classes
+
+You can set `->type()` to a class implementing `FieldTypeInterface`. The generator reads `storageType()` for the Cycle column type:
+
+```php
+use ON\Mapper\Field\Handler\DateTimeFieldType;
+
+$registry->collection('event')
+    ->field('starts_at', 'datetime')->type(DateTimeFieldType::class)->end()
+    ->end();
+// Cycle column type: datetime
+```
+
+Handler-resolved `string` still respects `maxLength()`:
+
+```php
+use ON\Mapper\Field\Handler\StringFieldType;
+
+->field('code', 'string')->type(StringFieldType::class)->maxLength(64)->end()
+// Cycle column type: string(64)
+```
+
+`storageType()` describes **DB encoding only** (`'string'`, `'int'`, `'datetime'`). It is not the Mapper registry key — register handlers with an explicit key via `MapperConfig::register()`. See [Mapper — Extension registration](mapper.md#extension-registration).
+
+### Enums and custom PHP types
+
+For backed enums and custom PHP classes, keep the ORM `->type()` as a Cycle column type (usually `'string'` or `'int'`) and register a Mapper handler for the PHP class:
+
+```php
+// ORM definition
+->field('status', 'string')->type('string')->maxLength(32)->end()
+
+// Mapper config (ConfigConfigureEvent)
+->register(StatusEnum::class, StatusEnumFieldType::class)
+```
+
+Do not use the enum class name as `->type()` unless it is also a `FieldTypeInterface` handler class — otherwise schema compilation fails.
+
+### Cycle schema conversion
+
+`CycleRegistryGenerator` resolves each field type as follows:
+
+1. If `getType()` is a `FieldTypeInterface` class → use `storageType()`.
+2. If the type contains parameters (`string(32)`, `datetime(6)`) → validate the base type and pass through unchanged.
+3. If the type is a known Cycle column name → use it (`string` becomes `string(maxLength)`).
+4. Otherwise → throw `FieldException`.
+
+See [Converting to Other Schemas](#converting-to-other-schemas) for running the generator.
 
 ---
 

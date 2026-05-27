@@ -27,6 +27,7 @@ Extensions are modular components that extend the framework's functionality.
 | `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
 | `AutoWiringExtension` | Automatic application extension discovery | [auto-wiring.md](extensions/auto-wiring.md) |
 | `RestApiExtension` | REST API endpoints from entity definitions | [rest-api.md](extensions/rest-api.md) |
+| `MapperExtension` | Value conversion and structural mapping | [mapper.md](mapper.md) |
 | `ImageExtension` | Image processing | [image.md](extensions/image.md) |
 | `RateLimitExtension` | Rate limiting | |
 | `PipelineExtension` | PSR-15 middleware pipeline | |
@@ -51,6 +52,7 @@ Detailed documentation for each extension is available in the `docs/extensions/`
 - [GraphQL DataLoader](extensions/graphql-dataloader.md) - N+1 problem solutions
 - [Auto-Wiring](extensions/auto-wiring.md) - Automatic application extension discovery
 - [REST API](extensions/rest-api.md) - Directus-style REST API from entity definitions
+- [Mapper](mapper.md) - Representations, field handlers, and `map()->to()` API
 
 ## Installing Extensions
 

@@ -84,6 +84,7 @@ class HelloPage
 ### Core Concepts
 - [Middleware](middleware.md) - PSR-15 middleware pipeline
 - [Extensions](extensions.md) - Framework extension system
+- [Mapper](mapper.md) - Value conversion and structural mapping (`map()->to()`)
 - [CLI](cli.md) - Console commands
 - [Testing](testing.md) - Writing tests
 
@@ -106,7 +107,8 @@ class HelloPage
 - [Discovery](extensions/discovery.md) - Class discovery via attributes
 
 ### ORM / Entity Reference
-- [ORM Entity Definition](orm-entity-definition.md) - Field types, relations, metadata
+- [ORM Entity Definition](orm-entity-definition.md) - Field types, relations, metadata, Cycle schema mapping
+- [Mapper](mapper.md) - Field handlers, representations, RestApi conversion
 - [Action Middleware Decorator](action-middleware-decorator.md) - Dependency resolution in controllers
 - [CRUD Module Guide](crud-module.md) - Building full-stack CRUD with GraphQL or REST
 
@@ -139,6 +141,7 @@ src/
 ├── Init/                    # Init system and event lifecycle
 ├── Logging/                 # Logging (Monolog)
 ├── Maintenance/             # Maintenance mode
+├── Mapper/                  # Value conversion and structural mapping
 ├── Middleware/              # PSR-15 middleware pipeline
 ├── MiddlewareContainer.php  # Middleware container
 ├── MiddlewareFactory.php    # Middleware factory

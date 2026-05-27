@@ -48,6 +48,7 @@ src/
 ├── GraphQL/                     # GraphQL schema generation & CRUD
 ├── Middleware/                   # PSR-15 pipeline
 ├── ORM/                         # Cycle ORM wrapper with custom definition system
+├── Mapper/                      # Value conversion (representations, field handlers, map()->to())
 ├── Router/                      # FastRoute integration
 ├── View/                        # Template engines (Plates built-in, Latte extension)
 └── ...
@@ -79,6 +80,17 @@ Key rules:
 - `getCardinality()` returns `'single'` or `'many'`; `isJunction()` for M2M
 - `validation('rules')` — pipe-delimited rules using `somnambulist/validation`
 - Object properties (`fields`, `relations`, `through`) are public: `$collection->fields->get('name')`
+- Field `->type()` for Cycle schema: string Cycle types (`int`, `string`, `datetime`, …) or `FieldTypeInterface::class` (uses `storageType()`). Unknown types fail in `CycleRegistryGenerator`.
+
+## Mapper
+
+- Entry point: `map()` in `src/Mapper/functions.php`, hub: `ConversionGateway`
+- Representations: `StorageRepresentation`, `PhpRepresentation`, `WireRepresentation` (class constants, not strings)
+- Field handlers: `FieldTypeInterface` with `storageType()`, `toPhp()`, `fromPhp()`; registry via `MapperConfig::register($type, Handler::class)`
+- Never register handlers with single-arg form — `storageType()` is DB encoding, not registry key
+- ORM rows: `map($row)->using(CollectionRowMapper::class, $collection)->from(...)->to(...)->toArray()`
+- RestApi depends on `MapperExtension`; tests can use `ConversionGateway::configure()` / `reset()`
+- Docs: `docs/mapper.md`
 
 ## Testing Conventions
 

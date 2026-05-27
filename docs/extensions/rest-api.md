@@ -36,7 +36,17 @@ RestApiExtension::install($app, [
 ]);
 ```
 
-The extension requires the `container` and `events` extensions.
+The extension requires the `container`, `events`, and `mapper` extensions. RestApi serializes and deserializes collection rows through the [Mapper](../mapper.md) (`ConversionGateway`, `CollectionRowMapper`). Load `MapperExtension` before or alongside RestApi:
+
+```php
+use ON\Mapper\MapperExtension;
+use ON\RestApi\RestApiExtension;
+
+MapperExtension::install($app);
+RestApiExtension::install($app, ['path' => '/items']);
+```
+
+Register custom field handlers on `MapperConfig` during `ConfigConfigureEvent` when your entities use non-builtin types (enums, files, etc.). See [Mapper — Extension registration](../mapper.md#extension-registration).
 
 ---
 
@@ -97,9 +107,9 @@ RestApiExtension::install($app, [
 
 ### SQL Resolver and mutation pipeline
 
-**Reads** go through `QueryPlanner` and relation handlers (`load()` + Cycle parser nodes). List/get/aggregate never touch the mutation queue.
+**Reads** live in the Directus read actions and use relation handlers (`load()` + Cycle parser nodes). List/get/aggregate never touch the mutation queue.
 
-**Writes** go through `RestApiService` → `RestMutationPlanner`:
+**Writes** go through Directus actions:
 
 1. **Plan** — walk input tree, `normalizePayload()` per relation, build `MutationNode` tree → `MutationPlan`.
 2. **Commit** — dispatch before-events on the full plan, schedule after-events, `fillQueue()`.
@@ -129,7 +139,15 @@ Internal architecture: [`src/RestApi/README.md`](../../src/RestApi/README.md).
 All responses use a consistent envelope:
 
 ```json
-// List response
+// List response (meta omitted unless requested)
+{
+    "data": [
+        {"id": 1, "name": "John"},
+        {"id": 2, "name": "Jane"}
+    ]
+}
+
+// List response with meta requested
 {
     "data": [
         {"id": 1, "name": "John"},
@@ -219,7 +237,7 @@ GET /items/post?search=graphql&filter[status][_eq]=published
 
 ### meta
 
-Request metadata about the result set.
+Request metadata about the result set. The `meta` key is omitted from the response when this parameter is not provided.
 
 ```
 GET /items/post?meta=total_count,filter_count
