@@ -249,8 +249,8 @@ final class DirectusMutationBuilder implements MapperInterface
 
 	private function resolveCollection(MappingContext $context): ?CollectionInterface
 	{
-		if ($context->mapperClass === self::class && isset($context->mapperArgs[0])) {
-			$collection = $context->mapperArgs[0];
+		if ($context->mapperClass === self::class && isset($context->args[0])) {
+			$collection = $context->args[0];
 			if ($collection instanceof CollectionInterface) {
 				return $collection;
 			}
@@ -264,7 +264,7 @@ final class DirectusMutationBuilder implements MapperInterface
 	 */
 	private function resolveBuildArgs(MappingContext $context): array
 	{
-		$mode = $context->mapperArgs[1] ?? 'upsert';
+		$mode = $context->args[1] ?? 'upsert';
 		if (! in_array($mode, ['create', 'update', 'upsert'], true)) {
 			throw new RuntimeException(sprintf(
 				'DirectusMutationBuilder mode must be create, update, or upsert; `%s` given.',
@@ -272,12 +272,12 @@ final class DirectusMutationBuilder implements MapperInterface
 			));
 		}
 
-		$id = $context->mapperArgs[2] ?? null;
+		$id = $context->args[2] ?? null;
 		if ($id !== null && ! is_string($id) && ! $id instanceof PrimaryKeyValue) {
 			throw new RuntimeException('DirectusMutationBuilder identity must be a string, PrimaryKeyValue, or null.');
 		}
 
-		$files = $context->mapperArgs[3] ?? [];
+		$files = $context->args[3] ?? [];
 		if (! is_array($files)) {
 			throw new RuntimeException('DirectusMutationBuilder files argument must be an array.');
 		}

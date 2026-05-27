@@ -84,7 +84,7 @@ final class StdClassMapperTest extends TestCase
 		$object = map([
 			'meta' => ['created_at' => '2024-03-15T10:30:00+00:00'],
 		], WireRepresentation::class)
-			->blueprint($blueprint)
+			->args($blueprint)
 			->to(\stdClass::class);
 
 		$this->assertInstanceOf(\stdClass::class, $object->meta);
@@ -104,7 +104,7 @@ final class StdClassMapperTest extends TestCase
 		$object->meta->created_at = new DateTimeImmutable('2024-03-15T10:30:00+00:00');
 
 		$array = map($object)
-			->blueprint($blueprint)
+			->args($blueprint)
 			->as(WireRepresentation::class)
 			->toArray();
 
@@ -132,7 +132,7 @@ final class StdClassMapperTest extends TestCase
 				['name' => 'Grace'],
 			],
 		])
-			->blueprint($blueprint)
+			->args($blueprint)
 			->to(\stdClass::class);
 
 		$this->assertIsArray($object->children);
@@ -146,7 +146,7 @@ final class StdClassMapperTest extends TestCase
 		$object = map([
 			'meta' => ['created_at' => '2024-03-15T10:30:00+00:00'],
 		], WireRepresentation::class)
-			->blueprint($blueprint)
+			->args($blueprint)
 			->to(\stdClass::class);
 
 		$this->assertInstanceOf(DateTimeImmutable::class, $object->meta->created_at);

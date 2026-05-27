@@ -4,27 +4,33 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use BackedEnum;
+use InvalidArgumentException;
 use ON\Mapper\Attribute\MapFrom;
+use ON\Mapper\Conversion\ConversionDirection;
+use ON\Mapper\Conversion\FieldConversionCoordinator;
+use ON\Mapper\Conversion\Resolver\ReflectionFieldContextResolver;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
-use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Support\ArrayHelper;
 use ReflectionClass;
-use ReflectionNamedType;
 use ReflectionProperty;
 
 final class ArrayToObjectMapper implements MapperInterface
 {
+	private readonly ReflectionFieldContextResolver $fieldResolver;
+	private readonly FieldConversionCoordinator $conversion;
+
 	public function __construct(
 		private readonly ConversionGateway $gateway,
 	) {
+		$this->fieldResolver = new ReflectionFieldContextResolver();
+		$this->conversion = new FieldConversionCoordinator($gateway);
 	}
 
 	public function defaultRepresentations(): array
 	{
-		return [
-			'property' => PhpRepresentation::class,
-		];
+		return [];
 	}
 
 	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
@@ -42,7 +48,7 @@ final class ArrayToObjectMapper implements MapperInterface
 			return array_map(
 				fn (mixed $item): object => is_array($item)
 					? $this->mapObject($item, $to, $context)
-					: throw new \InvalidArgumentException('Collection mapping expects a list of arrays.'),
+					: throw new InvalidArgumentException('Collection mapping expects a list of arrays.'),
 				$from
 			);
 		}
@@ -91,52 +97,49 @@ final class ArrayToObjectMapper implements MapperInterface
 			return null;
 		}
 
-		$propertyRepresentation = $context->propertyRepresentation
-			?? $context->outputRepresentation
-			?? $this->defaultRepresentations()['property']
-			?? PhpRepresentation::class;
-
-		$structural = $this->mapStructuralValue($value, $property, $context, $propertyRepresentation);
+		$structural = $this->mapStructuralValue($value, $property, $context);
 		if ($structural['handled']) {
 			return $structural['value'];
 		}
 
-		$sourceRepresentation = $context->sourceRepresentation;
-		if ($sourceRepresentation === null) {
+		if ($context->sourceRepresentation === null) {
 			return $value;
 		}
 
-		$type = $property->getType();
-		if (! $type instanceof ReflectionNamedType) {
+		$field = $this->resolveFieldForProperty($context, $property, $value, ConversionDirection::Inbound);
+		if ($field === null) {
 			return $value;
 		}
 
-		return $this->gateway->to(
-			$sourceRepresentation,
-			$value,
-			$propertyRepresentation,
-			FieldContext::named($property->getName(), $type->getName(), $type->allowsNull()),
-		);
+		return $this->conversion->convertScalar($value, $field, $context, ConversionDirection::Inbound);
+	}
+
+	private function resolveFieldForProperty(
+		MappingContext $context,
+		ReflectionProperty $property,
+		mixed $value,
+		ConversionDirection $direction,
+	): ?FieldContext {
+		$name = $property->getName();
+
+		return $this->conversion->resolveOverride($context, $name, $name, $value, $direction)
+			?? $this->fieldResolver->forProperty($property);
 	}
 
 	/**
-	 * @param class-string $propertyRepresentation
 	 * @return array{handled: bool, value: mixed}
 	 */
 	private function mapStructuralValue(
 		mixed $value,
 		ReflectionProperty $property,
 		MappingContext $context,
-		string $propertyRepresentation,
 	): array {
-		$nestedContext = $context->withPropertyRepresentation($propertyRepresentation);
-
 		$classType = PropertyTypeResolver::namedType($property);
 		if ($classType !== null && PropertyTypeResolver::isStructuralClass($classType)) {
 			if (is_array($value)) {
 				return [
 					'handled' => true,
-					'value' => $this->gateway->structuralMappers()->map($value, $classType, $nestedContext),
+					'value' => $this->gateway->getMappers()->map($value, $classType, $context),
 				];
 			}
 
@@ -157,7 +160,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		if (enum_exists($iterableClass)) {
 			return [
 				'handled' => true,
-				'value' => $this->mapEnumList($value, $iterableClass, $property, $context, $propertyRepresentation),
+				'value' => $this->mapEnumList($value, $iterableClass, $property, $context),
 			];
 		}
 
@@ -174,43 +177,42 @@ final class ArrayToObjectMapper implements MapperInterface
 			}
 
 			if (! is_array($item)) {
-				throw new \InvalidArgumentException(sprintf(
+				throw new InvalidArgumentException(sprintf(
 					'Expected array items for property "%s" mapped to %s.',
 					$property->getName(),
 					$iterableClass,
 				));
 			}
 
-			$result[$key] = $this->gateway->structuralMappers()->map($item, $iterableClass, $nestedContext);
+			$result[$key] = $this->gateway->getMappers()->map($item, $iterableClass, $context);
 		}
 
 		return ['handled' => true, 'value' => $result];
 	}
 
 	/**
-	 * @param class-string<\BackedEnum> $enumClass
-	 * @param class-string $propertyRepresentation
-	 * @return list<\BackedEnum>
+	 * @param class-string<BackedEnum> $enumClass
+	 * @return list<BackedEnum>
 	 */
 	private function mapEnumList(
 		array $value,
 		string $enumClass,
 		ReflectionProperty $property,
 		MappingContext $context,
-		string $propertyRepresentation,
 	): array {
-		$sourceRepresentation = $context->sourceRepresentation;
-		if ($sourceRepresentation === null) {
+		if ($context->sourceRepresentation === null) {
 			return $value;
 		}
 
 		$result = [];
 		foreach ($value as $key => $item) {
-			$result[$key] = $this->gateway->to(
-				$sourceRepresentation,
+			$field = $this->resolveFieldForProperty($context, $property, $item, ConversionDirection::Inbound)
+				?? FieldContext::named($property->getName(), $enumClass, $property->getType()?->allowsNull() ?? false);
+			$result[$key] = $this->conversion->convertScalar(
 				$item,
-				$propertyRepresentation,
-				FieldContext::named($property->getName(), $enumClass, $property->getType()?->allowsNull() ?? false),
+				$field,
+				$context,
+				ConversionDirection::Inbound,
 			);
 		}
 

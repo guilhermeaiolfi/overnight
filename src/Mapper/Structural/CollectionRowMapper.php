@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use ON\Mapper\Conversion\ConversionDirection;
+use ON\Mapper\Conversion\FieldConversionCoordinator;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
@@ -32,12 +34,12 @@ final class CollectionRowMapper implements MapperInterface
 			return false;
 		}
 
-		return $this->resolveCollection($context) !== null;
+		return self::resolveCollection($context) !== null;
 	}
 
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
-		$collection = $this->resolveCollection($context);
+		$collection = self::resolveCollection($context);
 		if ($collection === null) {
 			throw new RuntimeException('CollectionRowMapper requires a CollectionInterface argument.');
 		}
@@ -53,37 +55,57 @@ final class CollectionRowMapper implements MapperInterface
 			return $from;
 		}
 
+		$conversion = new FieldConversionCoordinator($this->gateway);
+		$direction = $this->directionForRepresentations($context);
+
 		if ($context->collection) {
 			$result = [];
 			foreach ($from as $item) {
 				if (! is_array($item)) {
 					throw new \InvalidArgumentException('Collection mapping expects a list of arrays.');
 				}
-				$result[] = $this->convertRow($fromRepresentation, $toRepresentation, $item, $collection);
+				$result[] = $this->convertRow($item, $collection, $context, $conversion, $direction);
 			}
 
 			return $result;
 		}
 
-		return $this->convertRow($fromRepresentation, $toRepresentation, $from, $collection);
+		return $this->convertRow($from, $collection, $context, $conversion, $direction);
 	}
 
-	private function convertRow(
-		string $from,
-		string $to,
-		array $row,
-		CollectionInterface $collection,
-	): array {
-		if ($from === $to) {
-			return $row;
+	private function directionForRepresentations(MappingContext $context): ConversionDirection
+	{
+		if ($context->sourceRepresentation !== null
+			&& $context->sourceRepresentation !== PhpRepresentation::class) {
+			return ConversionDirection::Inbound;
 		}
 
+		return ConversionDirection::Outbound;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 */
+	private function convertRow(
+		array $row,
+		CollectionInterface $collection,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+		ConversionDirection $direction,
+	): array {
 		foreach ($collection->fields as $name => $field) {
 			if (! array_key_exists($name, $row)) {
 				continue;
 			}
 
-			$row[$name] = $this->gateway->to($from, $row[$name], $to, FieldContext::fromField($field));
+			$row[$name] = $this->convertFieldValue(
+				$context,
+				$conversion,
+				$name,
+				$row[$name],
+				FieldContext::fromField($field),
+				$direction,
+			);
 		}
 
 		foreach ($collection->relations as $relationName => $relation) {
@@ -92,21 +114,37 @@ final class CollectionRowMapper implements MapperInterface
 			}
 
 			$row[$relationName] = $this->convertRelationValue(
-				$from,
-				$to,
 				$relation->getCollection(),
 				$row[$relationName],
+				$context,
+				$conversion,
+				$direction,
 			);
 		}
 
 		return $row;
 	}
 
+	private function convertFieldValue(
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+		string $name,
+		mixed $value,
+		FieldContext $field,
+		ConversionDirection $direction,
+	): mixed {
+		$resolved = $conversion->resolveOverride($context, $name, $name, $value, $direction)
+			?? $field;
+
+		return $conversion->convertScalar($value, $resolved, $context, $direction);
+	}
+
 	private function convertRelationValue(
-		string $from,
-		string $to,
 		CollectionInterface $target,
 		mixed $value,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+		ConversionDirection $direction,
 	): mixed {
 		if (! is_array($value)) {
 			return $value;
@@ -122,7 +160,13 @@ final class CollectionRowMapper implements MapperInterface
 
 				foreach ($result[$action] as $index => $item) {
 					if (is_array($item)) {
-						$result[$action][$index] = $this->convertRow($from, $to, $item, $target);
+						$result[$action][$index] = $this->convertRow(
+							$item,
+							$target,
+							$context,
+							$conversion,
+							$direction,
+						);
 					}
 				}
 			}
@@ -131,28 +175,16 @@ final class CollectionRowMapper implements MapperInterface
 		}
 
 		if ($this->isAssociativeArray($value)) {
-			return $this->convertRow($from, $to, $value, $target);
+			return $this->convertRow($value, $target, $context, $conversion, $direction);
 		}
 
 		foreach ($value as $index => $item) {
 			if (is_array($item)) {
-				$value[$index] = $this->convertRow($from, $to, $item, $target);
+				$value[$index] = $this->convertRow($item, $target, $context, $conversion, $direction);
 			}
 		}
 
 		return $value;
-	}
-
-	private function resolveCollection(MappingContext $context): ?CollectionInterface
-	{
-		if ($context->mapperClass === self::class && isset($context->mapperArgs[0])) {
-			$collection = $context->mapperArgs[0];
-			if ($collection instanceof CollectionInterface) {
-				return $collection;
-			}
-		}
-
-		return null;
 	}
 
 	private function isRelationActionPayload(array $value): bool
@@ -170,5 +202,18 @@ final class CollectionRowMapper implements MapperInterface
 		}
 
 		return array_keys($value) !== range(0, count($value) - 1);
+	}
+
+	private static function resolveCollection(MappingContext $context): ?CollectionInterface
+	{
+		foreach ($context->args as $arg) {
+			if ($arg instanceof CollectionInterface) {
+				return $arg;
+			}
+		}
+
+		$first = $context->args[0] ?? null;
+
+		return $first instanceof CollectionInterface ? $first : null;
 	}
 }

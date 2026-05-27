@@ -6,18 +6,25 @@ namespace ON\Mapper;
 
 use ON\Application;
 use ON\Container\ContainerExtension;
+use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\EdgeConverterInterface;
 use ON\Mapper\Conversion\EdgeConverterRegistry;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
-use ON\Mapper\Field\FieldMapping;
+use ON\Mapper\Representation\RepresentationInterface;
+use ON\Mapper\Structural\MappingContext;
 use ON\Mapper\Field\FieldTypeInterface;
 use ON\Mapper\Field\FieldTypeRegistry;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\RepresentationInterface;
 use ON\Mapper\Structural\MapperRegistry;
 use Psr\Container\ContainerInterface;
 
+/**
+ * Central conversion service: representations, field types, structural mappers.
+ *
+ * - to() / convertScalar() for wire ↔ PHP ↔ storage given a known FieldContext
+ * - getMappers() for map()->to(Dto::class) style walks
+ */
 final class ConversionGateway
 {
 	private static ?self $instance = null;
@@ -27,15 +34,15 @@ final class ConversionGateway
 	/** @var array<class-string<RepresentationInterface>, RepresentationInterface> */
 	private array $representations = [];
 
-	private readonly MapperRegistry $structuralMappers;
+	private readonly MapperRegistry $mappers;
 
 	public function __construct(
 		private readonly FieldTypeRegistry $fieldTypes = new FieldTypeRegistry(),
 		private readonly EdgeConverterRegistry $edges = new EdgeConverterRegistry(),
-		?MapperRegistry $structuralMappers = null,
+		?MapperRegistry $mappers = null,
 		RepresentationInterface ...$representations,
 	) {
-		$this->structuralMappers = $structuralMappers ?? MapperRegistry::createDefault($this);
+		$this->mappers = $mappers ?? MapperRegistry::createDefault($this);
 
 		foreach ($representations as $representation) {
 			$this->register($representation);
@@ -67,7 +74,7 @@ final class ConversionGateway
 			return self::$instance;
 		}
 
-		self::$instance = self::create(self::config());
+		self::$instance = self::create(self::getConfig());
 
 		return self::$instance;
 	}
@@ -120,24 +127,47 @@ final class ConversionGateway
 		$this->representations[$representation::class] = $representation;
 	}
 
-	public function edges(): EdgeConverterRegistry
+	public function getEdges(): EdgeConverterRegistry
 	{
 		return $this->edges;
 	}
 
-	public function fieldTypes(): FieldTypeRegistry
+	public function getFieldTypes(): FieldTypeRegistry
 	{
 		return $this->fieldTypes;
 	}
 
-	public function structuralMappers(): MapperRegistry
+	public function getMappers(): MapperRegistry
 	{
-		return $this->structuralMappers;
+		return $this->mappers;
 	}
 
-	public function map(FieldContext $field): FieldMapping
-	{
-		return new FieldMapping($this, $field);
+	/**
+	 * @param class-string<RepresentationInterface> $from
+	 * @param class-string<RepresentationInterface> $to
+	 */
+	public function convertScalar(
+		mixed $value,
+		FieldContext $field,
+		MappingContext $mapping,
+		ConversionDirection $direction,
+	): mixed {
+		if ($value === null) {
+			return null;
+		}
+
+		$from = $direction === ConversionDirection::Inbound
+			? $mapping->sourceRepresentation
+			: ($mapping->sourceRepresentation ?? PhpRepresentation::class);
+		$to = $direction === ConversionDirection::Inbound
+			? ($mapping->outputRepresentation ?? PhpRepresentation::class)
+			: $mapping->outputRepresentation;
+
+		if ($from === null || $to === null || $from === $to) {
+			return $value;
+		}
+
+		return $this->to($from, $value, $to, $field);
 	}
 
 	/**
@@ -154,22 +184,22 @@ final class ConversionGateway
 			return null;
 		}
 
-		$edge = $this->edges->resolve($from, $to, $field);
+		$edge = $this->getEdges()->resolve($from, $to, $field);
 		if ($edge !== null) {
 			return $edge->convert($value, $field);
 		}
 
-		$handler = $this->fieldTypes->resolve($field);
+		$handler = $this->getFieldTypes()->resolve($field);
 		if ($handler !== null) {
 			return $this->convertWithFieldType($handler, $from, $value, $to, $field);
 		}
 
 		if ($from !== PhpRepresentation::class) {
-			$value = $this->representation($from)->toPhp($value, $field);
+			$value = $this->getRepresentation($from)->toPhp($value, $field);
 		}
 
 		if ($to !== PhpRepresentation::class) {
-			$value = $this->representation($to)->fromPhp($value, $field);
+			$value = $this->getRepresentation($to)->fromPhp($value, $field);
 		}
 
 		return $value;
@@ -205,7 +235,7 @@ final class ConversionGateway
 	/**
 	 * @param class-string<RepresentationInterface> $representation
 	 */
-	private function representation(string $representation): RepresentationInterface
+	private function getRepresentation(string $representation): RepresentationInterface
 	{
 		if (! isset($this->representations[$representation])) {
 			throw UnsupportedConversionException::unregistered($representation);
@@ -214,7 +244,7 @@ final class ConversionGateway
 		return $this->representations[$representation];
 	}
 
-	private static function config(): MapperConfig
+	private static function getConfig(): MapperConfig
 	{
 		return self::$config ??= new MapperConfig();
 	}

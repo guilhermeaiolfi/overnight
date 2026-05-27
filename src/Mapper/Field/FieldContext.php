@@ -6,6 +6,12 @@ namespace ON\Mapper\Field;
 
 use ON\ORM\Definition\Field\FieldInterface;
 
+/**
+ * Typed identity of one field for value conversion (name, type, nullable).
+ *
+ * Output of field resolvers; input to ConversionGateway::to() / convertScalar().
+ * Handlers use this to pick datetime/int/enum rules — not where the value lives in a tree.
+ */
 final class FieldContext
 {
 	public function __construct(

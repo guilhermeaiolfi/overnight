@@ -21,7 +21,7 @@ final class PsrRequestToObjectMapper implements MapperInterface
 	{
 		return [
 			'from' => WireRepresentation::class,
-			'property' => PhpRepresentation::class,
+			'as' => PhpRepresentation::class,
 		];
 	}
 
@@ -46,7 +46,7 @@ final class PsrRequestToObjectMapper implements MapperInterface
 			?? $this->defaultRepresentations()['from']
 			?? WireRepresentation::class;
 
-		return $this->gateway->structuralMappers()->map(
+		return $this->gateway->getMappers()->map(
 			$payload,
 			$to,
 			$context->withSourceRepresentation($sourceRepresentation),

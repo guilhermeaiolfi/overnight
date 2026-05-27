@@ -98,6 +98,9 @@ $wireRows = map($phpRows)
 | ------------------------ | --------------------------------------------- |
 | `from(Rep)`              | Source value encoding                         |
 | `as(Rep)`                | Target value encoding after field conversion  |
+| `using(Mapper, ...)`     | Force structural mapper; optional mapper args  |
+| `args(...)`              | Mapper args (same bag as `using()` spread)    |
+| `resolver(Class, ...)`   | Optional field-type resolver override         |
 | `to(Class)`              | Structural target (DTO, `MutationSpec`, etc.) |
 | `toArray()` / `toJson()` | Terminal array/JSON output                    |
 
@@ -105,6 +108,23 @@ $wireRows = map($phpRows)
 `to()` is reserved for structural targets only. Passing a representation class to `to()` throws — use `as()` instead.
 
 Omit representation hints when values are already in the target shape or when no field-level conversion applies.
+
+### Mapper `args()`
+
+Mapper-specific configuration is passed via `args()` or `using(Mapper::class, ...)`. Each structural mapper documents its argument contract (for example `CollectionRowMapper` expects `[0]` = `CollectionInterface`; `ArrayToStdClassMapper` accepts a `MappingBlueprint` in `args`).
+
+### Custom field resolver
+
+Implement `ON\Mapper\Conversion\ScalarFieldResolverOverrideInterface`. Return `FieldContext` when you handle a field; return `null` to fall back to the active mapper’s default for that field only.
+
+```php
+map($query)
+    ->using(DirectusQueryBuilder::class, $collection)
+    ->resolver(FilterLiteralResolver::class, $registry)
+    ->from(WireRepresentation::class)
+    ->as(PhpRepresentation::class)
+    ->to(QuerySpec::class);
+```
 
 ---
 
@@ -119,8 +139,8 @@ use ON\Mapper\Representation\WireRepresentation;
 
 $gateway = ConversionGateway::createDefault();
 
-// Field-level
-$gateway->map($fieldContext)->to(StorageRepresentation::class, $value, PhpRepresentation::class);
+// Field-level (single value; you already know the field type)
+$gateway->to(StorageRepresentation::class, $value, PhpRepresentation::class, $fieldContext);
 $gateway->to(WireRepresentation::class, $dateTime, PhpRepresentation::class, $fieldContext);
 
 // Row-level
@@ -316,7 +336,7 @@ final class ChapterDto
 
 ### `stdClass` and representations
 
-Structural mappers honor `from()` / `as()` via `MappingContext`. For `stdClass`, field types are **not** guessed — pass an explicit blueprint with `blueprint()`:
+Structural mappers honor `from()` / `as()` via `MappingContext`. For `stdClass`, field types are **not** guessed — pass a `MappingBlueprint` via `args()`:
 
 ```php
 use ON\Mapper\Blueprint\MappingBlueprint;
@@ -327,10 +347,10 @@ $blueprint = MappingBlueprint::fromArray([
 ]);
 
 $object = map(['meta' => ['created_at' => '2024-03-15T10:30:00+00:00']], WireRepresentation::class)
-    ->blueprint($blueprint)
+    ->args($blueprint)
     ->to(\stdClass::class);
 
-$wire = map($object)->blueprint($blueprint)->as(WireRepresentation::class)->toArray();
+$wire = map($object)->args($blueprint)->as(WireRepresentation::class)->toArray();
 ```
 
 From a shape class (public properties + optional `#[MapField]`):

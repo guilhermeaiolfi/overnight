@@ -72,18 +72,6 @@ final class ConversionGatewayTest extends TestCase
 		$this->assertSame('2024-03-15T10:30:00+00:00', $value);
 	}
 
-	public function testFieldMappingFluentEntrypoint(): void
-	{
-		$field = FieldContext::named('starts_at', 'datetime');
-
-		$value = $this->gateway->map($field)->to(
-			StorageRepresentation::class,
-			'2024-03-15 10:30:00',
-			PhpRepresentation::class,
-		);
-
-		$this->assertInstanceOf(\DateTimeImmutable::class, $value);
-	}
 }
 
 final class CollectionRowMapperTest extends TestCase

@@ -85,8 +85,8 @@ final class DirectusQueryBuilder implements MapperInterface
 
 	private function resolveCollection(MappingContext $context): ?CollectionInterface
 	{
-		if ($context->mapperClass === self::class && isset($context->mapperArgs[0])) {
-			$collection = $context->mapperArgs[0];
+		if ($context->mapperClass === self::class && isset($context->args[0])) {
+			$collection = $context->args[0];
 			if ($collection instanceof CollectionInterface) {
 				return $collection;
 			}

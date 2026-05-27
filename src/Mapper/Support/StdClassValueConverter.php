@@ -6,13 +6,17 @@ namespace ON\Mapper\Support;
 
 use ON\Mapper\Blueprint\FieldBlueprintEntry;
 use ON\Mapper\Blueprint\MappingBlueprint;
-use ON\Mapper\ConversionGateway;
+use ON\Mapper\Conversion\ConversionDirection;
+use ON\Mapper\Conversion\FieldConversionCoordinator;
 use ON\Mapper\Field\FieldContext;
-use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Conversion\Resolver\BlueprintFieldContextResolver;
+use ON\Mapper\ConversionGateway;
 use ON\Mapper\Structural\MappingContext;
 
 final class StdClassValueConverter
 {
+	private static ?BlueprintFieldContextResolver $blueprintResolver = null;
+
 	/**
 	 * @param array<string, mixed> $data
 	 */
@@ -69,7 +73,8 @@ final class StdClassValueConverter
 			return self::mapEmptyArray($path, $context);
 		}
 
-		$entry = $context->blueprint?->resolve($path);
+		$blueprint = self::resolveBlueprint($context);
+		$entry = $blueprint?->resolve($path);
 
 		if (ArrayHelper::isList($value)) {
 			return self::mapListInbound($value, $path, $entry, $gateway, $context);
@@ -93,7 +98,8 @@ final class StdClassValueConverter
 		}
 
 		if (is_array($value)) {
-			$entry = $context->blueprint?->resolve($path);
+			$blueprint = self::resolveBlueprint($context);
+			$entry = $blueprint?->resolve($path);
 
 			if (ArrayHelper::isList($value)) {
 				return self::mapListOutbound($value, $path, $entry, $gateway, $context);
@@ -190,7 +196,7 @@ final class StdClassValueConverter
 	): object {
 		$nestedContext = self::nestedContext($context, $entry);
 
-		return $gateway->structuralMappers()->map($value, $entry->type, $nestedContext);
+		return $gateway->getMappers()->map($value, $entry->type, $nestedContext);
 	}
 
 	private static function mapStructuralOutbound(
@@ -202,23 +208,18 @@ final class StdClassValueConverter
 		$nestedContext = self::nestedContext($context, $entry);
 
 		/** @var array<string, mixed> */
-		return $gateway->structuralMappers()->map($value, 'array', $nestedContext);
+		return $gateway->getMappers()->map($value, 'array', $nestedContext);
 	}
 
 	private static function nestedContext(MappingContext $context, FieldBlueprintEntry $entry): MappingContext
 	{
-		$propertyRepresentation = $context->propertyRepresentation
-			?? $context->outputRepresentation
-			?? PhpRepresentation::class;
-
-		return $context
-			->withPropertyRepresentation($propertyRepresentation)
-			->withMapperClass($entry->mapperClass);
+		return $context->withMapperClass($entry->mapperClass);
 	}
 
 	private static function mapEmptyArray(string $path, MappingContext $context): mixed
 	{
-		$entry = $context->blueprint?->resolve($path);
+		$blueprint = self::resolveBlueprint($context);
+		$entry = $blueprint?->resolve($path);
 
 		if ($entry !== null && self::isStructuralClassType($entry->type)) {
 			return new \stdClass();
@@ -237,26 +238,16 @@ final class StdClassValueConverter
 		ConversionGateway $gateway,
 		MappingContext $context,
 	): mixed {
-		$sourceRepresentation = $context->sourceRepresentation;
-		if ($sourceRepresentation === null) {
+		if ($context->sourceRepresentation === null) {
 			return $value;
 		}
 
-		$entry = $context->blueprint?->resolve($path);
-		if ($entry === null) {
+		$field = self::resolveField($gateway, $context, $path, $value, ConversionDirection::Inbound);
+		if ($field === null) {
 			return $value;
 		}
 
-		$propertyRepresentation = $context->propertyRepresentation
-			?? $context->outputRepresentation
-			?? PhpRepresentation::class;
-
-		return $gateway->to(
-			$sourceRepresentation,
-			$value,
-			$propertyRepresentation,
-			FieldContext::named(self::fieldName($path), $entry->type, $value === null),
-		);
+		return self::coordinator($gateway)->convertScalar($value, $field, $context, ConversionDirection::Inbound);
 	}
 
 	private static function convertOutboundScalar(
@@ -265,32 +256,39 @@ final class StdClassValueConverter
 		ConversionGateway $gateway,
 		MappingContext $context,
 	): mixed {
-		$outputRepresentation = $context->outputRepresentation;
-		if ($outputRepresentation === null) {
+		if ($context->outputRepresentation === null) {
 			return $value;
 		}
 
-		$entry = $context->blueprint?->resolve($path);
-		if ($entry === null) {
+		$field = self::resolveField($gateway, $context, $path, $value, ConversionDirection::Outbound);
+		if ($field === null) {
 			return $value;
 		}
 
-		$readRepresentation = $context->sourceRepresentation
-			?? PhpRepresentation::class;
-
-		return $gateway->to(
-			$readRepresentation,
-			$value,
-			$outputRepresentation,
-			FieldContext::named(self::fieldName($path), $entry->type, $value === null),
-		);
+		return self::coordinator($gateway)->convertScalar($value, $field, $context, ConversionDirection::Outbound);
 	}
 
-	private static function path(string $prefix, string|int $key): string
-	{
-		$segment = (string) $key;
+	private static function resolveField(
+		ConversionGateway $gateway,
+		MappingContext $context,
+		string $path,
+		mixed $value,
+		ConversionDirection $direction,
+	): ?FieldContext {
+		$fieldName = self::fieldName($path);
+		$coordinator = self::coordinator($gateway);
 
-		return $prefix === '' ? $segment : $prefix . '.' . $segment;
+		$field = $coordinator->resolveOverride($context, $path, $fieldName, $value, $direction);
+		if ($field !== null) {
+			return $field;
+		}
+
+		$blueprint = self::resolveBlueprint($context);
+		if ($blueprint === null) {
+			return null;
+		}
+
+		return self::blueprintResolver()->forPath($blueprint, $path, $value);
 	}
 
 	private static function fieldName(string $path): string
@@ -298,6 +296,36 @@ final class StdClassValueConverter
 		$parts = explode('.', $path);
 
 		return (string) array_pop($parts);
+	}
+
+	private static function coordinator(ConversionGateway $gateway): FieldConversionCoordinator
+	{
+		return new FieldConversionCoordinator($gateway);
+	}
+
+	private static function blueprintResolver(): BlueprintFieldContextResolver
+	{
+		return self::$blueprintResolver ??= new BlueprintFieldContextResolver();
+	}
+
+	private static function resolveBlueprint(MappingContext $context): ?MappingBlueprint
+	{
+		foreach ($context->args as $arg) {
+			if ($arg instanceof MappingBlueprint) {
+				return $arg;
+			}
+		}
+
+		$first = $context->args[0] ?? null;
+
+		return $first instanceof MappingBlueprint ? $first : null;
+	}
+
+	private static function path(string $prefix, string|int $key): string
+	{
+		$segment = (string) $key;
+
+		return $prefix === '' ? $segment : $prefix . '.' . $segment;
 	}
 
 	/**

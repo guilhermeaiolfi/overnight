@@ -397,7 +397,7 @@ trait RestApiTestFixtures
 
 	protected function registerDirectusMutationBuilder(DirectusMutationBuilder $builder): void
 	{
-		ConversionGateway::get()->structuralMappers()->replace($builder);
+		ConversionGateway::get()->getMappers()->replace($builder);
 	}
 
 	protected function createQueryBuilder(
@@ -416,7 +416,7 @@ trait RestApiTestFixtures
 
 	protected function registerDirectusQueryBuilder(DirectusQueryBuilder $builder): void
 	{
-		ConversionGateway::get()->structuralMappers()->replace($builder);
+		ConversionGateway::get()->getMappers()->replace($builder);
 	}
 
 	protected function createDirectusOperations(

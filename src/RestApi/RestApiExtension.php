@@ -176,7 +176,7 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		$container->get(ConversionGateway::class)
-			->structuralMappers()
+			->getMappers()
 			->replace($container->get(DirectusMutationBuilder::class));
 	}
 
@@ -187,7 +187,7 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		$container->get(ConversionGateway::class)
-			->structuralMappers()
+			->getMappers()
 			->replace($container->get(DirectusQueryBuilder::class));
 	}
 
