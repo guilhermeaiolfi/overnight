@@ -47,7 +47,7 @@
     },
     "autoload": {
       "files": [
-
+        "src/Mapper/functions.php"
       ],
       "psr-4": {
         "ON\\": "src/"
