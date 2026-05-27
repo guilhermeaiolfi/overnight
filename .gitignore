@@ -2,3 +2,4 @@ vendor/*
 .cache/**/*
 .phpunit.result.cache
 .tmp/**/*
+public/i/**/*
