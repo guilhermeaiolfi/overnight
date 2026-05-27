@@ -57,10 +57,8 @@ final class DateTimeFieldType implements FieldTypeInterface
 				: \DateTimeImmutable::createFromInterface($value);
 		}
 
-		if (! is_string($value) || trim($value) === '') {
-			if ($field->isNullable()) {
-				throw new ConversionException('Invalid datetime value.', $field->getName());
-			}
+		if (! is_string($value) || self::isEmpty($value)) {
+			throw new ConversionException('Invalid datetime value.', $field->getName());
 		}
 
 		try {
@@ -76,6 +74,10 @@ final class DateTimeFieldType implements FieldTypeInterface
 			return $value instanceof \DateTimeImmutable
 				? $value
 				: \DateTimeImmutable::createFromInterface($value);
+		}
+
+		if (! is_string($value) || self::isEmpty($value)) {
+			throw new ConversionException('Invalid datetime value.', $field->getName());
 		}
 
 		try {
@@ -96,5 +98,10 @@ final class DateTimeFieldType implements FieldTypeInterface
 		}
 
 		throw new ConversionException('Expected datetime instance.', $field->getName());
+	}
+
+	private static function isEmpty(mixed $value): bool
+	{
+		return is_string($value) && trim($value) === '';
 	}
 }
