@@ -6,76 +6,7 @@ namespace ON\View;
 
 use ON\Config\Config;
 use ON\Router\UrlHelper;
-use RuntimeException;
-
-class Node extends Config
-{
-	public function __construct(array &$items, protected mixed $parent)
-	{
-		$this->setReference($items);
-	}
-
-	public function end(): mixed
-	{
-		return $this->parent;
-	}
-}
-
-class RendererNode extends Node
-{
-	public function inject(string $name, string $class): self
-	{
-		$this->set("inject.{$name}", $class);
-
-		return $this;
-	}
-}
-
-class FormatNode extends Node
-{
-	public function layout(string $name, array $values = []): LayoutNode
-	{
-		if (! isset($this->items['layouts'][$name])) {
-			$this->items['layouts'][$name] = [];
-		}
-
-		$layout = new LayoutNode($this->items['layouts'][$name], $this);
-		$layout->set($values);
-
-		return $layout;
-	}
-
-	public function renderer(string $name, string $class = null): RendererNode
-	{
-		if (! isset($this->items['renderers'][$name])) {
-			$this->items['renderers'][$name] = [];
-		}
-
-		$renderer = new RendererNode($this->items['renderers'][$name], $this);
-		$renderer->set('class', $class);
-
-		return $renderer;
-	}
-}
-
-class SectionNode extends Node
-{
-}
-
-class LayoutNode extends Node
-{
-	public function section(string $name, $path, $controller, $methods, $route_name): self
-	{
-		$this->set("sections.{$name}", [
-			$path,
-			$controller,
-			$methods,
-			$route_name,
-		]);
-
-		return $this;
-	}
-}
+use ON\View\Config\FormatNode;
 
 class ViewConfig extends Config
 {

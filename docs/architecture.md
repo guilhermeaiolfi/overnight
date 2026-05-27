@@ -141,7 +141,7 @@ src/
 │   └── Executor/                # Method invocation with DI
 ├── DB/                          # Database abstraction layer
 │   ├── DatabaseExtension.php
-│   ├── PdoDatabase.php, CycleDatabase.php, LaminasDbDatabase.php, Doctrine2Database.php
+│   ├── PdoDatabase.php, CycleDatabase.php
 │   ├── Command/                 # Migrations
 │   └── Cycle/                   # Cycle ORM support
 ├── Discovery/                   # Class discovery
@@ -161,7 +161,6 @@ src/
 ├── Maintenance/                 # Maintenance mode
 ├── Middleware/                   # PSR-15 middleware
 ├── ORM/                         # Cycle ORM wrapper + definition system
-├── PhpDebugBar/                 # PHP Debug Bar
 ├── RateLimit/                   # Rate limiting
 ├── RequestStack.php             # Request stack
 ├── Response/                    # Response utilities

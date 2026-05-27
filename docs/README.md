@@ -147,7 +147,6 @@ src/
 ├── MiddlewareFactory.php    # Middleware factory
 ├── MiddlewareFactoryInterface.php
 ├── ORM/                     # Cycle ORM wrapper with definition system
-├── PhpDebugBar/             # PHP Debug Bar integration
 ├── RateLimit/               # Rate limiting
 ├── RequestStack.php         # Request stack
 ├── RequestStackInterface.php
