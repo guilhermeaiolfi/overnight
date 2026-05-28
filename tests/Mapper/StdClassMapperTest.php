@@ -8,6 +8,7 @@ use DateTimeImmutable;
 use ON\Mapper\Attribute\MapField;
 use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Representation\WireRepresentation;
+use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
 
 use function ON\Mapper\map;
@@ -167,6 +168,32 @@ final class StdClassMapperTest extends TestCase
 		$this->assertIsArray($array['chapters']);
 		$this->assertSame('One', $array['chapters'][0]['name']);
 		$this->assertSame('Two', $array['chapters'][1]['name']);
+	}
+
+	public function testCollectionBlueprintMapsListRelationScalars(): void
+	{
+		$registry = new Registry();
+		$registry->collection('post')
+			->field('published_at', 'datetime')->end()
+			->hasMany('comments', 'comment')->innerKey('id')->outerKey('post_id')->end()
+			->end();
+		$registry->collection('comment')
+			->field('posted_at', 'datetime')->end()
+			->end();
+
+		$blueprint = MappingBlueprint::fromCollection($registry->getCollection('post'), 1);
+
+		$object = map([
+			'published_at' => '2024-03-15T10:30:00+00:00',
+			'comments' => [
+				['posted_at' => '2024-03-16T11:30:00+00:00'],
+			],
+		], WireRepresentation::class)
+			->args($blueprint)
+			->to(\stdClass::class);
+
+		$this->assertInstanceOf(DateTimeImmutable::class, $object->published_at);
+		$this->assertInstanceOf(DateTimeImmutable::class, $object->comments[0]->posted_at);
 	}
 }
 

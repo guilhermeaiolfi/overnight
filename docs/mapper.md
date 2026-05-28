@@ -368,6 +368,34 @@ $object = map(['meta' => ['created_at' => '2024-03-15T10:30:00+00:00']], WireRep
 $wire = map($object)->args($blueprint)->as(WireRepresentation::class)->toArray();
 ```
 
+Dot-notation input is expanded before the `stdClass` tree is walked, so the same blueprint path is resolved for dotted payload keys:
+
+```php
+$object = map([
+    'meta.created_at' => '2024-03-15T10:30:00+00:00',
+], WireRepresentation::class)
+    ->args($blueprint)
+    ->to(\stdClass::class);
+
+$object->meta->created_at; // DateTimeImmutable
+```
+
+Blueprints can also be generated from ORM collection definitions. The optional depth controls how many relation levels are included; `0` includes only root fields, `1` includes direct relations, `2` includes relations of relations:
+
+```php
+$phpRow = map($storageRow)
+    ->using(CollectionRowMapper::class, $collection)
+    ->from(StorageRepresentation::class)
+    ->as(PhpRepresentation::class)
+    ->toArray();
+
+$blueprint = MappingBlueprint::fromCollection($collection, 2);
+
+$object = map($phpRow)
+    ->args($blueprint)
+    ->to(\stdClass::class);
+```
+
 From a shape class (public properties + optional `#[MapField]`):
 
 ```php

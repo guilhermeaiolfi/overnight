@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Mapper\Blueprint;
 
 use ON\Mapper\Attribute\MapField;
+use ON\ORM\Definition\Collection\CollectionInterface;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -60,9 +61,23 @@ final class MappingBlueprint
 		return $blueprint;
 	}
 
+	public static function fromCollection(CollectionInterface $collection, int $depth = 0): self
+	{
+		if ($depth < 0) {
+			throw new \InvalidArgumentException('Collection blueprint depth cannot be negative.');
+		}
+
+		$blueprint = new self();
+		$blueprint->collectFromCollection($collection, '', $depth, []);
+
+		return $blueprint;
+	}
+
 	public function resolve(string $path): ?FieldBlueprintEntry
 	{
-		return $this->fields[$path] ?? null;
+		return $this->fields[$path]
+			?? $this->fields[self::withoutNumericSegments($path)]
+			?? null;
 	}
 
 	/**
@@ -93,6 +108,40 @@ final class MappingBlueprint
 		}
 	}
 
+	/**
+	 * @param array<string, true> $seen
+	 */
+	private function collectFromCollection(CollectionInterface $collection, string $prefix, int $depth, array $seen): void
+	{
+		$seenKey = $collection->getName() . ':' . $prefix;
+		if (isset($seen[$seenKey])) {
+			return;
+		}
+		$seen[$seenKey] = true;
+
+		foreach ($collection->fields as $name => $field) {
+			if (! is_string($name) || $name === '') {
+				continue;
+			}
+
+			$path = $prefix === '' ? $name : $prefix . '.' . $name;
+			$this->fields[$path] = new FieldBlueprintEntry($field->getType());
+		}
+
+		if ($depth === 0) {
+			return;
+		}
+
+		foreach ($collection->relations as $name => $relation) {
+			if (! is_string($name) || $name === '') {
+				continue;
+			}
+
+			$path = $prefix === '' ? $name : $prefix . '.' . $name;
+			$this->collectFromCollection($relation->getCollection(), $path, $depth - 1, $seen);
+		}
+	}
+
 	private static function entryFromProperty(ReflectionProperty $property): ?FieldBlueprintEntry
 	{
 		$attributes = $property->getAttributes(MapField::class);
@@ -114,6 +163,16 @@ final class MappingBlueprint
 		}
 
 		return null;
+	}
+
+	private static function withoutNumericSegments(string $path): string
+	{
+		$segments = array_filter(
+			explode('.', $path),
+			static fn (string $segment): bool => ! ctype_digit($segment),
+		);
+
+		return implode('.', $segments);
 	}
 
 	/**
