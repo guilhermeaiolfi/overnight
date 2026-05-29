@@ -39,9 +39,12 @@ final class MutationQueue implements MutationQueueInterface
 		return $command->getTask();
 	}
 
-	public function queueDelete(CollectionInterface $collection, FilterNode $criteria): MutationDeleteTaskInterface
-	{
-		$command = new DeleteCommand($collection, $criteria);
+	public function queueDelete(
+		CollectionInterface $collection,
+		FilterNode $criteria,
+		?MutationStateInterface $state = null,
+	): MutationDeleteTaskInterface {
+		$command = new DeleteCommand($collection, $criteria, $state);
 		$this->commands[] = $command;
 
 		return $command->getTask();
@@ -58,7 +61,8 @@ final class MutationQueue implements MutationQueueInterface
 			),
 			'delete' => $this->queueDelete(
 				$node->collection,
-				PrimaryKeyCriteria::build($node->collection, $node->state->getPrimaryKeyValue(false))
+				PrimaryKeyCriteria::build($node->collection, $node->state->getPrimaryKeyValue(false)),
+				$node->state,
 			),
 			default => null,
 		};
@@ -97,7 +101,9 @@ final class MutationQueue implements MutationQueueInterface
 					return null;
 				}
 
-				$node->state->markReady($node->state->getData());
+				if ($node->state->getRow() === null) {
+					$node->state->markReady($node->state->getData());
+				}
 
 				return new ItemDeleted($node->collection, $node->state, true, $node->path, $rootState);
 			});

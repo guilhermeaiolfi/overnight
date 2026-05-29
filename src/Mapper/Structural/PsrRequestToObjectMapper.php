@@ -17,7 +17,7 @@ final class PsrRequestToObjectMapper implements MapperInterface
 	) {
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [
 			'from' => WireRepresentation::class,
@@ -25,7 +25,7 @@ final class PsrRequestToObjectMapper implements MapperInterface
 		];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
 			return false;
@@ -43,7 +43,7 @@ final class PsrRequestToObjectMapper implements MapperInterface
 		));
 
 		$sourceRepresentation = $context->sourceRepresentation
-			?? $this->defaultRepresentations()['from']
+			?? self::defaultRepresentations()['from']
 			?? WireRepresentation::class;
 
 		return $this->gateway->getMappers()->map(

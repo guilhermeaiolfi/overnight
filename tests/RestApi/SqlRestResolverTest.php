@@ -988,6 +988,72 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertContains('Alice Post 2', $titles);
 	}
 
+	public function testUpdateCanAppendHasManyChild(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
+			->end();
+
+		$registry->collection('attachment')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('asset_id', 'int')->type('int')->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->field('file_id', 'int')->type('int')->nullable(false)->end()
+			->field('createdon', 'datetime')->type('datetime')->nullable(false)->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'title' => 'Existing asset'],
+				],
+			],
+			'attachment' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'asset_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+					'file_id' => 'INTEGER NOT NULL',
+					'createdon' => 'TEXT NOT NULL',
+				],
+				'rows' => [
+					['id' => 10, 'asset_id' => 1, 'title' => 'Existing attachment', 'file_id' => 100, 'createdon' => '2025-01-01 10:00:00'],
+				],
+			],
+		]);
+		$resolver = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $resolver);
+
+		$service->update(
+			'asset',
+			'1',
+			$this->m($registry, $resolver, 'asset', [
+				'title' => 'Existing asset',
+				'attachments' => [
+					['id' => 10, 'title' => 'Existing attachment'],
+					['title' => 'New attachment', 'file_id' => 501, 'createdon' => '2026-05-29 12:00:00'],
+				],
+			], 'update', '1'),
+			['dispatchEvents' => false]
+		);
+
+		$stmt = $db->database()->query('SELECT id, asset_id, title, file_id, createdon FROM attachment WHERE asset_id = 1 ORDER BY id');
+		$rows = $stmt->fetchAll();
+		$stmt->close();
+
+		$this->assertCount(2, $rows);
+		$this->assertSame(10, (int) $rows[0]['id']);
+		$this->assertSame(501, (int) $rows[1]['file_id']);
+		$this->assertSame('2026-05-29 12:00:00', $rows[1]['createdon']);
+	}
+
 	public function testBelongsToRelationSurvivesWhenRelationNameCollidesWithForeignKeyColumn(): void
 	{
 		$registry = new Registry();

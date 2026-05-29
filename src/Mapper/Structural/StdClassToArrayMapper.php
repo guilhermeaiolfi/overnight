@@ -14,12 +14,12 @@ final class StdClassToArrayMapper implements MapperInterface
 	) {
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
 			return false;

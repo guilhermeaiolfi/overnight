@@ -20,7 +20,7 @@ final class CollectionRowMapper implements MapperInterface
 	) {
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [
 			'from' => StorageRepresentation::class,
@@ -28,7 +28,7 @@ final class CollectionRowMapper implements MapperInterface
 		];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if (! is_array($from) || $to !== 'array' || $context->mapperClass !== self::class) {
 			return false;
@@ -45,10 +45,10 @@ final class CollectionRowMapper implements MapperInterface
 		}
 
 		$fromRepresentation = $context->sourceRepresentation
-			?? $this->defaultRepresentations()['from']
+			?? self::defaultRepresentations()['from']
 			?? StorageRepresentation::class;
 		$toRepresentation = $context->outputRepresentation
-			?? $this->defaultRepresentations()['as']
+			?? self::defaultRepresentations()['as']
 			?? PhpRepresentation::class;
 
 		if ($fromRepresentation === $toRepresentation) {

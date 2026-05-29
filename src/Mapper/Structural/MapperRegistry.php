@@ -5,50 +5,61 @@ declare(strict_types=1);
 namespace ON\Mapper\Structural;
 
 use ON\Mapper\ConversionGateway;
+use Psr\Container\ContainerInterface;
 use RuntimeException;
 
 final class MapperRegistry
 {
-	/** @var list<MapperInterface> */
+	/** @var list<class-string<MapperInterface>> */
 	private array $mappers = [];
 
-	public function __construct(MapperInterface ...$mappers)
+	/** @var array<class-string<MapperInterface>, MapperInterface> */
+	private array $instances = [];
+
+	public function __construct(
+		private readonly ?ContainerInterface $container = null,
+		private readonly ?ConversionGateway $gateway = null,
+	) {
+	}
+
+	public static function createDefault(ConversionGateway $gateway, ?ContainerInterface $container = null): self
 	{
-		foreach ($mappers as $mapper) {
-			$this->register($mapper);
+		$registry = new self($container, $gateway);
+		$registry->register(CollectionRowMapper::class);
+		$registry->register(PsrRequestToObjectMapper::class);
+		$registry->register(ArrayToStdClassMapper::class);
+		$registry->register(ArrayToObjectMapper::class);
+		$registry->register(StdClassToArrayMapper::class);
+		$registry->register(ObjectToArrayMapper::class);
+
+		return $registry;
+	}
+
+	/** @param class-string<MapperInterface> $mapperClass */
+	public function register(string $mapperClass): void
+	{
+		if (in_array($mapperClass, $this->mappers, true)) {
+			throw new RuntimeException("Mapper `{$mapperClass}` is already registered.");
 		}
+
+		$this->mappers[] = $mapperClass;
 	}
 
-	public static function createDefault(ConversionGateway $gateway): self
-	{
-		return new self(
-			new CollectionRowMapper($gateway),
-			new PsrRequestToObjectMapper($gateway),
-			new ArrayToStdClassMapper($gateway),
-			new ArrayToObjectMapper($gateway),
-			new StdClassToArrayMapper($gateway),
-			new ObjectToArrayMapper($gateway),
-		);
-	}
-
-	public function register(MapperInterface $mapper): void
-	{
-		$this->mappers[] = $mapper;
-	}
-
-	public function replace(MapperInterface $mapper): void
+	/** @param class-string<MapperInterface> $mapperClass */
+	public function replace(string $mapperClass): void
 	{
 		$this->mappers = array_values(array_filter(
 			$this->mappers,
-			static fn (MapperInterface $existing): bool => $existing::class !== $mapper::class,
+			static fn (string $existing): bool => $existing !== $mapperClass,
 		));
-		$this->register($mapper);
+		unset($this->instances[$mapperClass]);
+		$this->mappers[] = $mapperClass;
 	}
 
 	/**
-	 * @return list<MapperInterface>
+	 * @return list<class-string<MapperInterface>>
 	 */
-	public function all(): array
+	public function classes(): array
 	{
 		return $this->mappers;
 	}
@@ -56,10 +67,9 @@ final class MapperRegistry
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
 		if ($context->mapperClass !== null) {
-			foreach ($this->mappers as $mapper) {
-				if ($mapper::class === $context->mapperClass && $mapper->canMap($from, $to, $context)) {
-					return $mapper->map($from, $to, $context);
-				}
+			if (in_array($context->mapperClass, $this->mappers, true)
+				&& $context->mapperClass::canMap($from, $to, $context)) {
+				return $this->resolve($context->mapperClass)->map($from, $to, $context);
 			}
 
 			throw new RuntimeException(sprintf(
@@ -70,9 +80,9 @@ final class MapperRegistry
 			));
 		}
 
-		foreach ($this->mappers as $mapper) {
-			if ($mapper->canMap($from, $to, $context)) {
-				return $mapper->map($from, $to, $context);
+		foreach ($this->mappers as $mapperClass) {
+			if ($mapperClass::canMap($from, $to, $context)) {
+				return $this->resolve($mapperClass)->map($from, $to, $context);
 			}
 		}
 
@@ -81,5 +91,28 @@ final class MapperRegistry
 			is_object($from) ? $from::class : get_debug_type($from),
 			is_string($to) ? $to : get_debug_type($to),
 		));
+	}
+
+	/** @param class-string<MapperInterface> $mapperClass */
+	private function resolve(string $mapperClass): MapperInterface
+	{
+		if (isset($this->instances[$mapperClass])) {
+			return $this->instances[$mapperClass];
+		}
+
+		if ($this->container?->has($mapperClass)) {
+			$mapper = $this->container->get($mapperClass);
+			if (! $mapper instanceof MapperInterface) {
+				throw new RuntimeException("Container entry `{$mapperClass}` is not a mapper.");
+			}
+
+			return $this->instances[$mapperClass] = $mapper;
+		}
+
+		if ($this->gateway !== null) {
+			return $this->instances[$mapperClass] = new $mapperClass($this->gateway);
+		}
+
+		return $this->instances[$mapperClass] = new $mapperClass();
 	}
 }

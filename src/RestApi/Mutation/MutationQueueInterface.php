@@ -24,7 +24,8 @@ interface MutationQueueInterface
 
 	public function queueDelete(
 		CollectionInterface $collection,
-		FilterNode $criteria
+		FilterNode $criteria,
+		?MutationStateInterface $state = null,
 	): MutationDeleteTaskInterface;
 
 	public function queueNode(MutationNode $node): MutationTaskInterface|MutationDeleteTaskInterface|null;

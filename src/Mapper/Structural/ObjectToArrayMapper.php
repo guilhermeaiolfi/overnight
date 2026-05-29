@@ -23,14 +23,14 @@ final class ObjectToArrayMapper implements MapperInterface
 	) {
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [
 			'from' => PhpRepresentation::class,
 		];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
 			return false;
@@ -106,7 +106,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		}
 
 		$readRepresentation = $context->sourceRepresentation
-			?? $this->defaultRepresentations()['from']
+			?? self::defaultRepresentations()['from']
 			?? PhpRepresentation::class;
 
 		$structural = $this->mapStructuralValue($value, $property, $context, $readRepresentation, $conversion);

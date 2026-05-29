@@ -51,6 +51,9 @@ use function ON\Mapper\map;
 
 trait RestApiTestFixtures
 {
+	/** @var array<class-string, object> */
+	protected array $mapperServices = [];
+
 	protected function createUserCollection(Registry $registry): void
 	{
 		$registry->collection('user')
@@ -397,7 +400,7 @@ trait RestApiTestFixtures
 
 	protected function registerDirectusMutationBuilder(DirectusMutationBuilder $builder): void
 	{
-		ConversionGateway::get()->getMappers()->replace($builder);
+		$this->registerMapperService(DirectusMutationBuilder::class, $builder);
 	}
 
 	protected function createQueryBuilder(
@@ -416,7 +419,53 @@ trait RestApiTestFixtures
 
 	protected function registerDirectusQueryBuilder(DirectusQueryBuilder $builder): void
 	{
-		ConversionGateway::get()->getMappers()->replace($builder);
+		$this->registerMapperService(DirectusQueryBuilder::class, $builder);
+	}
+
+	/**
+	 * @param class-string $class
+	 */
+	protected function registerMapperService(string $class, object $service): void
+	{
+		$this->mapperServices[$class] = $service;
+		$services = &$this->mapperServices;
+
+		$container = new class($services) implements ContainerInterface {
+			public ?ConversionGateway $gateway = null;
+
+			/**
+			 * @param array<class-string, object> $services
+			 */
+			public function __construct(private array &$services)
+			{
+			}
+
+			public function get(string $id): mixed
+			{
+				if (isset($this->services[$id])) {
+					return $this->services[$id];
+				}
+
+				if ($this->gateway !== null && is_subclass_of($id, \ON\Mapper\Structural\MapperInterface::class)) {
+					return new $id($this->gateway);
+				}
+
+				throw new \RuntimeException("Unknown service {$id}.");
+			}
+
+			public function has(string $id): bool
+			{
+				return isset($this->services[$id])
+					|| is_subclass_of($id, \ON\Mapper\Structural\MapperInterface::class);
+			}
+		};
+
+		$gateway = ConversionGateway::create(new \ON\Mapper\MapperConfig(), $container);
+		$container->gateway = $gateway;
+		foreach (array_keys($this->mapperServices) as $mapperClass) {
+			$gateway->getMappers()->replace($mapperClass);
+		}
+		ConversionGateway::setInstance($gateway);
 	}
 
 	protected function createDirectusOperations(
@@ -424,6 +473,8 @@ trait RestApiTestFixtures
 		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null,
 	): object {
+		$this->createQueryBuilder();
+
 		return new class(
 			$registry,
 			$items,
@@ -700,6 +751,7 @@ trait RestApiTestFixtures
 			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
 			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
 			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
+			->addAction('directus.update-post', 'POST', '{collection}/{id}', UpdateAction::class)
 			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
 			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
 			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);

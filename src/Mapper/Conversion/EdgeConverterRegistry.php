@@ -9,10 +9,14 @@ use ON\Mapper\Representation\RepresentationInterface;
 
 final class EdgeConverterRegistry
 {
-	/** @var array<string, EdgeConverterInterface> */
+	/** @var array<string, class-string<EdgeConverterInterface>> */
 	private array $edges = [];
 
-	public function register(EdgeConverterInterface $converter): void
+	/** @var array<class-string<EdgeConverterInterface>, EdgeConverterInterface> */
+	private array $instances = [];
+
+	/** @param class-string<EdgeConverterInterface> $converter */
+	public function register(string $converter): void
 	{
 		[$from, $to] = $converter::edge();
 		$this->edges[$this->key($from, $to)] = $converter;
@@ -29,12 +33,12 @@ final class EdgeConverterRegistry
 			return null;
 		}
 
-		$converter = $this->edges[$this->key($from, $to)] ?? null;
-		if ($converter === null || ! $converter::supports($field)) {
+		$converterClass = $this->edges[$this->key($from, $to)] ?? null;
+		if ($converterClass === null || ! $converterClass::supports($field)) {
 			return null;
 		}
 
-		return $converter;
+		return $this->instances[$converterClass] ??= new $converterClass();
 	}
 
 	/**

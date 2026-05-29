@@ -37,7 +37,7 @@ final class DirectusQueryBuilder implements MapperInterface
 		$this->parser = $parser ?? new DirectusQueryParser(defaultLimit: $defaultLimit, maxLimit: $maxLimit);
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [
 			'from' => WireRepresentation::class,
@@ -45,7 +45,7 @@ final class DirectusQueryBuilder implements MapperInterface
 		];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
 			return false;
@@ -59,12 +59,12 @@ final class DirectusQueryBuilder implements MapperInterface
 			return false;
 		}
 
-		return $this->resolveCollection($context) !== null;
+		return self::resolveCollection($context) !== null;
 	}
 
 	public function map(mixed $from, mixed $to, MappingContext $context): QuerySpec
 	{
-		$collection = $this->resolveCollection($context);
+		$collection = self::resolveCollection($context);
 		if ($collection === null) {
 			throw new RuntimeException('DirectusQueryBuilder requires a CollectionInterface argument.');
 		}
@@ -83,7 +83,7 @@ final class DirectusQueryBuilder implements MapperInterface
 		);
 	}
 
-	private function resolveCollection(MappingContext $context): ?CollectionInterface
+	private static function resolveCollection(MappingContext $context): ?CollectionInterface
 	{
 		if ($context->mapperClass === self::class && isset($context->args[0])) {
 			$collection = $context->args[0];

@@ -58,7 +58,7 @@ final class DirectusMutationBuilder implements MapperInterface
 		$this->parser = $parser ?? new DirectusPayloadParser();
 	}
 
-	public function defaultRepresentations(): array
+	public static function defaultRepresentations(): array
 	{
 		return [
 			'from' => WireRepresentation::class,
@@ -66,7 +66,7 @@ final class DirectusMutationBuilder implements MapperInterface
 		];
 	}
 
-	public function canMap(mixed $from, mixed $to, MappingContext $context): bool
+	public static function canMap(mixed $from, mixed $to, MappingContext $context): bool
 	{
 		if ($context->mapperClass !== null && $context->mapperClass !== self::class) {
 			return false;
@@ -76,18 +76,18 @@ final class DirectusMutationBuilder implements MapperInterface
 			return false;
 		}
 
-		return $this->resolveCollection($context) !== null;
+		return self::resolveCollection($context) !== null;
 	}
 
 	public function map(mixed $from, mixed $to, MappingContext $context): MutationSpec
 	{
-		$collection = $this->resolveCollection($context);
+		$collection = self::resolveCollection($context);
 		if ($collection === null) {
 			throw new RuntimeException('DirectusMutationBuilder requires a CollectionInterface argument.');
 		}
 
 		[$mode, $id, $files] = $this->resolveBuildArgs($context);
-		$defaults = $this->defaultRepresentations();
+		$defaults = self::defaultRepresentations();
 
 		return $this->build(
 			$collection,
@@ -247,7 +247,7 @@ final class DirectusMutationBuilder implements MapperInterface
 		return $this->gateway ?? ConversionGateway::get();
 	}
 
-	private function resolveCollection(MappingContext $context): ?CollectionInterface
+	private static function resolveCollection(MappingContext $context): ?CollectionInterface
 	{
 		if ($context->mapperClass === self::class && isset($context->args[0])) {
 			$collection = $context->args[0];

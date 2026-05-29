@@ -262,9 +262,18 @@ class ItemRepository implements ItemRepositoryInterface
 			return new RestApiError('A record with these values already exists.', 'DUPLICATE', null, 409, $e);
 		}
 
-		if (str_contains($message, 'NOT NULL constraint') || str_contains($message, 'cannot be null')) {
-			if (preg_match('/[`\']?(\w+)[`\']?\s+(?:cannot be null|NOT NULL)/i', $message, $matches)) {
-				$field = $collection->getFieldNameByColumn($matches[1]);
+		if (
+			str_contains($message, 'NOT NULL constraint')
+			|| str_contains($message, 'cannot be null')
+			|| preg_match("/Field '([^']+)' doesn't have a default value/i", $message, $defaultValueMatches)
+		) {
+			$column = $defaultValueMatches[1] ?? null;
+			if ($column === null && preg_match('/[`\']?(\w+)[`\']?\s+(?:cannot be null|NOT NULL)/i', $message, $matches)) {
+				$column = $matches[1];
+			}
+
+			if ($column !== null) {
+				$field = $collection->getFieldNameByColumn($column);
 
 				return new RestApiError(
 					"The field {$field} is required.",
@@ -278,7 +287,7 @@ class ItemRepository implements ItemRepositoryInterface
 			return new RestApiError('A required field is missing.', 'REQUIRED_FIELD', null, 400, $e);
 		}
 
-		if (str_contains($message, 'FOREIGN KEY constraint')) {
+		if (stripos($message, 'foreign key constraint') !== false) {
 			return new RestApiError('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION', null, 400, $e);
 		}
 

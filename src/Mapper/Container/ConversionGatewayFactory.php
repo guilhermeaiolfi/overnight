@@ -16,7 +16,7 @@ final class ConversionGatewayFactory
 			? $container->get(MapperConfig::class)
 			: new MapperConfig();
 
-		$gateway = ConversionGateway::create($config);
+		$gateway = ConversionGateway::create($config, $container);
 		ConversionGateway::setInstance($gateway);
 
 		return $gateway;

@@ -154,12 +154,12 @@ final class MapBuilder
 			return $context;
 		}
 
-		foreach ($this->gateway->getMappers()->all() as $mapper) {
-			if ($mapper::class !== $context->mapperClass) {
+		foreach ($this->gateway->getMappers()->classes() as $mapperClass) {
+			if ($mapperClass !== $context->mapperClass) {
 				continue;
 			}
 
-			$defaults = $mapper->defaultRepresentations();
+			$defaults = $mapperClass::defaultRepresentations();
 			$targetRepresentation = $defaults['as'] ?? $defaults['to'] ?? null;
 
 			return new MappingContext(
