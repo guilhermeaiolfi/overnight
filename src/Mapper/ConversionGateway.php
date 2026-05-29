@@ -7,7 +7,6 @@ namespace ON\Mapper;
 use ON\Application;
 use ON\Container\ContainerExtension;
 use ON\Mapper\Conversion\ConversionDirection;
-use ON\Mapper\Conversion\EdgeConverterInterface;
 use ON\Mapper\Conversion\EdgeConverterRegistry;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
@@ -40,9 +39,10 @@ final class ConversionGateway
 		private readonly FieldTypeRegistry $fieldTypes = new FieldTypeRegistry(),
 		private readonly EdgeConverterRegistry $edges = new EdgeConverterRegistry(),
 		?MapperRegistry $mappers = null,
+		?ContainerInterface $container = null,
 		RepresentationInterface ...$representations,
 	) {
-		$this->mappers = $mappers ?? MapperRegistry::createDefault($this);
+		$this->mappers = $mappers ?? MapperRegistry::createDefault($this, $container);
 
 		foreach ($representations as $representation) {
 			$this->register($representation);
@@ -89,7 +89,7 @@ final class ConversionGateway
 		return self::create(new MapperConfig());
 	}
 
-	public static function create(MapperConfig $config): self
+	public static function create(MapperConfig $config, ?ContainerInterface $container = null): self
 	{
 		$fieldTypes = new FieldTypeRegistry();
 		foreach ($config->fieldTypes as $type => $handler) {
@@ -98,7 +98,7 @@ final class ConversionGateway
 
 		$edges = new EdgeConverterRegistry();
 		foreach ($config->edgeConverters as $converterClass) {
-			$edges->register(self::instantiateEdgeConverter($converterClass));
+			$edges->register($converterClass);
 		}
 
 		$representations = [
@@ -111,15 +111,7 @@ final class ConversionGateway
 			$representations[] = new $representationClass($fieldTypes);
 		}
 
-		return new self($fieldTypes, $edges, null, ...$representations);
-	}
-
-	/**
-	 * @param class-string<EdgeConverterInterface> $converterClass
-	 */
-	private static function instantiateEdgeConverter(string $converterClass): EdgeConverterInterface
-	{
-		return new $converterClass();
+		return new self($fieldTypes, $edges, null, $container, ...$representations);
 	}
 
 	public function register(RepresentationInterface $representation): void

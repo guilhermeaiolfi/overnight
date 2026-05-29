@@ -18,6 +18,7 @@ use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
+use ON\Container\BodyParamsMiddlewareFactory;
 use ON\Container\EmitterFactory;
 use ON\Container\ErrorHandlerFactory;
 use ON\Container\ErrorResponseGeneratorFactory;
@@ -100,6 +101,7 @@ class PipelineExtension extends AbstractExtension
 		$containerConfig = $event->config->get(ContainerConfig::class);
 
 		$containerConfig->addFactories([
+			BodyParamsMiddleware::class => BodyParamsMiddlewareFactory::class,
 			EmitterInterface::class => EmitterFactory::class,
 			ErrorHandler::class => ErrorHandlerFactory::class,
 			MiddlewareContainer::class => MiddlewareContainerFactory::class,

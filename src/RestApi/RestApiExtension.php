@@ -18,6 +18,7 @@ use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
 use ON\RestApi\Container\DirectusMutationBuilderFactory;
 use ON\RestApi\Container\DirectusQueryBuilderFactory;
+use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\SqlQuerySpecCompilerFactory;
@@ -31,6 +32,7 @@ use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\Mapper\ConversionGateway;
+use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Repository\ItemRepository;
@@ -65,6 +67,7 @@ class RestApiExtension extends AbstractExtension
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
 			SqlQuerySpecCompiler::class => SqlQuerySpecCompilerFactory::class,
 			HandlerFactory::class => HandlerFactoryFactory::class,
+			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
 			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
 			DirectusQueryBuilder::class => DirectusQueryBuilderFactory::class,
 		]);
@@ -177,7 +180,7 @@ class RestApiExtension extends AbstractExtension
 
 		$container->get(ConversionGateway::class)
 			->getMappers()
-			->replace($container->get(DirectusMutationBuilder::class));
+			->replace(DirectusMutationBuilder::class);
 	}
 
 	protected function registerDirectusQueryBuilder(ContainerInterface $container): void
@@ -188,7 +191,7 @@ class RestApiExtension extends AbstractExtension
 
 		$container->get(ConversionGateway::class)
 			->getMappers()
-			->replace($container->get(DirectusQueryBuilder::class));
+			->replace(DirectusQueryBuilder::class);
 	}
 
 	protected function loadAddons(

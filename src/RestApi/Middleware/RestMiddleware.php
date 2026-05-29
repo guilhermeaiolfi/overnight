@@ -6,6 +6,7 @@ namespace ON\RestApi\Middleware;
 
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
+use ON\Http\MultipartFormDataParser;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
 use ON\Mapper\Representation\WireRepresentation;
@@ -83,9 +84,7 @@ class RestMiddleware implements MiddlewareInterface
 		return [
 			'query' => $this->getQueryParams($request),
 			'body' => $this->parseRequestBody($request),
-			'files' => str_contains($request->getHeaderLine('Content-Type'), 'multipart/form-data')
-				? $request->getUploadedFiles()
-				: [],
+			'files' => $this->resolveUploadedFiles($request),
 			'headers' => $this->headers($request),
 			'method' => strtoupper($request->getMethod()),
 			'request' => $request,
@@ -96,7 +95,7 @@ class RestMiddleware implements MiddlewareInterface
 	{
 		$contentType = $request->getHeaderLine('Content-Type');
 
-		if (str_contains($contentType, 'multipart/form-data')) {
+		if ($this->isMultipartRequest($contentType)) {
 			$parsedBody = $request->getParsedBody();
 			$data = [];
 			if (isset($parsedBody['data'])) {
@@ -181,5 +180,33 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		return $path;
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	protected function resolveUploadedFiles(ServerRequestInterface $request): array
+	{
+		$uploadedFiles = $request->getUploadedFiles();
+		if ($uploadedFiles !== []) {
+			return $uploadedFiles;
+		}
+
+		$contentType = $request->getHeaderLine('Content-Type');
+		if (! $this->isMultipartRequest($contentType)) {
+			return [];
+		}
+
+		$rawBody = (string) $request->getBody();
+		if ($rawBody === '') {
+			return [];
+		}
+
+		return (new MultipartFormDataParser())->parse($contentType, $rawBody)['uploadedFiles'];
+	}
+
+	protected function isMultipartRequest(string $contentType): bool
+	{
+		return 1 === preg_match('#^multipart/form-data($|[ ;])#i', $contentType);
 	}
 }

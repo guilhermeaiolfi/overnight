@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\Mapper\Representation\PhpRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
@@ -14,7 +15,8 @@ final class DeleteCommand extends AbstractMutationCommand
 
 	public function __construct(
 		private CollectionInterface $collection,
-		private FilterNode $criteria
+		private FilterNode $criteria,
+		private ?MutationStateInterface $state = null,
 	) {
 	}
 
@@ -30,6 +32,16 @@ final class DeleteCommand extends AbstractMutationCommand
 
 	public function execute(ItemRepositoryInterface $repository): void
 	{
+		if ($this->state !== null && $this->state->getRow() === null) {
+			$identity = $this->state->getPrimaryKeyValue(false);
+			if ($identity !== null) {
+				$row = $repository->findByIdentity($this->collection, $identity, PhpRepresentation::class);
+				if (is_array($row)) {
+					$this->state->markReady($row);
+				}
+			}
+		}
+
 		$this->result = $repository->delete($this->collection, $this->resolveValue($this->criteria));
 	}
 }

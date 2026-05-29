@@ -21,7 +21,7 @@ final class FileUploadEventEmitter
 {
 	public function __construct(
 		private readonly Registry $registry,
-		private readonly ?EventDispatcherInterface $eventDispatcher = null,
+		private readonly EventDispatcherInterface $eventDispatcher,
 	) {
 	}
 
@@ -49,11 +49,26 @@ final class FileUploadEventEmitter
 
 	private function processAction(RelationAction $action): void
 	{
-		if ($action instanceof CreateAction || $action instanceof UpdateAction) {
-			if ($action->node !== null) {
-				$this->processNode($action->node);
-			}
+		if (! $action instanceof CreateAction && ! $action instanceof UpdateAction) {
+			return;
 		}
+
+		if ($action->node !== null) {
+			$this->processNode($action->node);
+
+			return;
+		}
+
+		if ($action->collection === null || ! is_array($action->data) || $action->data === []) {
+			return;
+		}
+
+		$collection = $this->registry->getCollection($action->collection);
+		if ($collection === null) {
+			return;
+		}
+
+		$action->data = $this->processFields($collection, $action->data);
 	}
 
 	/**
@@ -78,10 +93,6 @@ final class FileUploadEventEmitter
 		string $fieldName,
 		UploadedFileInterface $file
 	): mixed {
-		if ($this->eventDispatcher === null) {
-			throw RestApiError::fileHandlerMissing($fieldName);
-		}
-
 		$event = new FileUpload($collection, $fieldName, $file);
 		$this->eventDispatcher->dispatch($event);
 
