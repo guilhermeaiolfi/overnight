@@ -8,6 +8,7 @@ use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
 use ON\Mapper\Conversion\Resolver\CollectionFieldResolver;
 use ON\Mapper\ConversionGateway;
+use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
@@ -115,6 +116,7 @@ final class CollectionRowMapper implements MapperInterface
 			}
 
 			$row[$relationName] = $this->convertRelationValue(
+				$relationName,
 				$relation->getCollection(),
 				$row[$relationName],
 				$context,
@@ -142,6 +144,7 @@ final class CollectionRowMapper implements MapperInterface
 	}
 
 	private function convertRelationValue(
+		string $relationName,
 		CollectionInterface $target,
 		mixed $value,
 		MappingContext $context,
@@ -162,7 +165,8 @@ final class CollectionRowMapper implements MapperInterface
 
 				foreach ($result[$action] as $index => $item) {
 					if (is_array($item)) {
-						$result[$action][$index] = $this->convertRow(
+						$result[$action][$index] = $this->convertRelationRow(
+							$relationName,
 							$item,
 							$target,
 							$context,
@@ -177,16 +181,50 @@ final class CollectionRowMapper implements MapperInterface
 		}
 
 		if ($this->isAssociativeArray($value)) {
-			return $this->convertRow($value, $target, $context, $conversion, $direction);
+			return $this->convertRelationRow($relationName, $value, $target, $context, $conversion, $direction);
 		}
 
 		foreach ($value as $index => $item) {
 			if (is_array($item)) {
-				$value[$index] = $this->convertRow($item, $target, $context, $conversion, $direction);
+				$value[$index] = $this->convertRelationRow($relationName, $item, $target, $context, $conversion, $direction);
 			}
 		}
 
 		return $value;
+	}
+
+	/**
+	 * @param array<string, mixed> $row
+	 */
+	private function convertRelationRow(
+		string $relationName,
+		array $row,
+		CollectionInterface $target,
+		MappingContext $context,
+		FieldConversionCoordinator $conversion,
+		ConversionDirection $direction,
+	): mixed {
+		$converted = $this->convertRow($row, $target, $context, $conversion, $direction);
+
+		if ($direction !== ConversionDirection::Inbound) {
+			return $converted;
+		}
+
+		$field = FieldContext::named($relationName, $relationName, false);
+		if ($this->gateway->getFieldTypes()->resolve($field) === null) {
+			return $converted;
+		}
+
+		$fromRepresentation = $context->sourceRepresentation
+			?? self::defaultRepresentations()['from']
+			?? StorageRepresentation::class;
+
+		return $this->gateway->to(
+			$fromRepresentation,
+			$converted,
+			PhpRepresentation::class,
+			$field,
+		);
 	}
 
 	private function isRelationActionPayload(array $value): bool

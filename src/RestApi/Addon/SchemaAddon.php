@@ -136,6 +136,16 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 				$entry['validationMessages'] = $validationMessages;
 			}
 
+			$interface = method_exists($field, 'metadata') ? $field->metadata('admin::interface') : null;
+			if ($interface !== null) {
+				$entry['interface'] = $interface;
+			}
+
+			$options = method_exists($field, 'metadata') ? $field->metadata('admin::options') : null;
+			if (is_array($options) && $options !== []) {
+				$entry['options'] = $options;
+			}
+
 			$fields[] = $entry;
 		}
 		return $fields;

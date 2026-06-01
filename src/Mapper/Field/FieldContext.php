@@ -19,6 +19,8 @@ final class FieldContext
 		private readonly string $type,
 		private readonly bool $nullable = false,
 		private readonly ?FieldInterface $field = null,
+		/** @var array<string, mixed> */
+		private readonly array $metadata = [],
 	) {
 	}
 
@@ -34,10 +36,11 @@ final class FieldContext
 
 	/**
 	 * @param class-string|non-empty-string $type
+	 * @param array<string, mixed> $metadata
 	 */
-	public static function named(string $name, string $type, bool $nullable = false): self
+	public static function named(string $name, string $type, bool $nullable = false, array $metadata = []): self
 	{
-		return new self($name, $type, $nullable);
+		return new self($name, $type, $nullable, null, $metadata);
 	}
 
 	public function getName(): string
@@ -58,6 +61,18 @@ final class FieldContext
 	public function getField(): ?FieldInterface
 	{
 		return $this->field;
+	}
+
+	public function metadata(string $key, mixed $default = null): mixed
+	{
+		if ($this->field !== null && method_exists($this->field, 'metadata')) {
+			$value = $this->field->metadata($key);
+			if ($value !== null) {
+				return $value;
+			}
+		}
+
+		return $this->metadata[$key] ?? $default;
 	}
 
 	public function isClassType(): bool

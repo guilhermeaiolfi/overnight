@@ -14,6 +14,7 @@ use ON\Mapper\Field\Handler\IntFieldType;
 use ON\Mapper\Field\Handler\JsonFieldType;
 use ON\Mapper\Field\Handler\PassthroughFieldType;
 use ON\Mapper\Field\Handler\StringFieldType;
+use ON\Mapper\Field\Handler\UrlFieldType;
 
 final class FieldTypeRegistry
 {
@@ -38,6 +39,7 @@ final class FieldTypeRegistry
 		'json' => JsonFieldType::class,
 		'string' => StringFieldType::class,
 		'text' => PassthroughFieldType::class,
+		'url' => UrlFieldType::class,
 	];
 
 	public function __construct()

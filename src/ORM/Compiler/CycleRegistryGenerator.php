@@ -11,7 +11,9 @@ use Cycle\Schema\Definition\Relation as CycleRelation;
 use Cycle\Schema\GeneratorInterface;
 use Cycle\Schema\Registry as CycleRegistry;
 use Cycle\Schema\Table\Column;
+use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Field\FieldTypeInterface;
+use ON\Mapper\Field\FieldTypeRegistry;
 use ON\ORM\Definition\Collection\Collection;
 use ON\ORM\Definition\Exception\FieldException;
 use ON\ORM\Definition\Field\Field;
@@ -275,6 +277,11 @@ class CycleRegistryGenerator implements GeneratorInterface
 			$type = $type::storageType();
 		}
 
+		$fieldType = (new FieldTypeRegistry())->resolve(FieldContext::fromField($onField));
+		if ($fieldType !== null && ! $this->isKnownCycleFieldType($type)) {
+			$type = $fieldType::storageType();
+		}
+
 		if (str_contains($type, '(')) {
 			$this->assertKnownCycleFieldType($this->baseCycleFieldType($type), $onField);
 
@@ -297,7 +304,7 @@ class CycleRegistryGenerator implements GeneratorInterface
 
 	private function assertKnownCycleFieldType(string $type, Field $onField): void
 	{
-		if (! in_array(strtolower($type), self::KNOWN_CYCLE_FIELD_TYPES, true)) {
+		if (! $this->isKnownCycleFieldType($type)) {
 			throw new FieldException(sprintf(
 				'Field(%s) type "%s" is not a known Cycle column type in collection: %s',
 				$onField->getName(),
@@ -305,5 +312,10 @@ class CycleRegistryGenerator implements GeneratorInterface
 				$onField->end()->getName(),
 			));
 		}
+	}
+
+	private function isKnownCycleFieldType(string $type): bool
+	{
+		return in_array(strtolower($type), self::KNOWN_CYCLE_FIELD_TYPES, true);
 	}
 }
