@@ -15,6 +15,7 @@ final class RestApiConfigTest extends TestCase
 
 		$this->assertSame('/items', $config->get('endpointUri'));
 		$this->assertSame(100, $config->get('defaultLimit'));
+		$this->assertSame('directus_files', $config->get('filesCollection'));
 		$this->assertSame([], $config->get('validationMessages'));
 		$this->assertSame('en', $config->get('validationLang'));
 		$this->assertFalse($config->hasActions());

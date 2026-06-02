@@ -56,7 +56,6 @@ final class UpdateAction implements RestActionInterface
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
-		$body = $this->stripHiddenFields($collection, $body);
 		$this->validate($collection, $body, true);
 		$identity = $collection->getPrimaryKey()->getValue((string) ($params['id'] ?? ''));
 		$spec = map($body)

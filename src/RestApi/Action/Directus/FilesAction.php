@@ -9,11 +9,9 @@ use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Support\RegistrySupportTrait;
-use ON\RestApi\Support\ValidationTrait;
 use ON\RestApi\Action\RestActionInterface;
-use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Event\RestEventManager;
+use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationPlan;
@@ -22,11 +20,13 @@ use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
+use ON\RestApi\Support\RegistrySupportTrait;
+use ON\RestApi\Support\ValidationTrait;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
 use function ON\Mapper\map;
 
-final class CreateAction implements RestActionInterface
+final class FilesAction implements RestActionInterface
 {
 	use RegistrySupportTrait;
 	use ValidationTrait;
@@ -50,17 +50,9 @@ final class CreateAction implements RestActionInterface
 			'input' => PhpRepresentation::class,
 			'output' => PhpRepresentation::class,
 		];
-		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
+
+		$collection = $this->getFilesCollection();
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
-
-		if (isset($body[0]) && is_array($body[0])) {
-			$results = [];
-			foreach ($body as $item) {
-				$results[] = $this->createOne($collection, $item, $payload, $options);
-			}
-
-			return ['data' => $results];
-		}
 
 		return ['data' => $this->createOne($collection, $body, $payload, $options)];
 	}
@@ -96,5 +88,17 @@ final class CreateAction implements RestActionInterface
 			->from(StorageRepresentation::class)
 			->as($options['output'])
 			->toArray();
+	}
+
+	private function getFilesCollection(): CollectionInterface
+	{
+		$collectionName = (string) $this->config->get('filesCollection', 'directus_files');
+		$collection = $this->registry->getCollection($collectionName);
+
+		if ($collection === null && $collectionName === 'directus_files') {
+			$collectionName = 'files';
+		}
+
+		return $this->getCollectionOrThrow($this->registry, $collection ?? $collectionName);
 	}
 }

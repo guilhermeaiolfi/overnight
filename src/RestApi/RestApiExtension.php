@@ -26,6 +26,7 @@ use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
 use ON\RestApi\Action\Directus\DeleteAction;
+use ON\RestApi\Action\Directus\FilesAction;
 use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
@@ -165,6 +166,7 @@ class RestApiExtension extends AbstractExtension
 		$config
 			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
 			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
+			->addAction('directus.files', 'POST', 'files', FilesAction::class)
 			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
 			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
 			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)

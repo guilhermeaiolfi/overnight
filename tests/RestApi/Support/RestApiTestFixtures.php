@@ -19,6 +19,7 @@ use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
 use ON\RestApi\Action\Directus\DeleteAction;
+use ON\RestApi\Action\Directus\FilesAction;
 use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
@@ -53,6 +54,20 @@ trait RestApiTestFixtures
 {
 	/** @var array<class-string, object> */
 	protected array $mapperServices = [];
+
+	private function noopEventDispatcher(): EventDispatcherInterface
+	{
+		return new class implements EventDispatcherInterface {
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof \ON\RestApi\Event\AuthorizationAwareEventInterface) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		};
+	}
 
 	protected function createUserCollection(Registry $registry): void
 	{
@@ -707,7 +722,19 @@ trait RestApiTestFixtures
 
 			private function fileUploadEventEmitter(): FileUploadEventEmitter
 			{
-				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter($this->registry, $this->eventDispatcher);
+				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter(
+					$this->registry,
+					$this->eventDispatcher ?? new class implements EventDispatcherInterface {
+						public function dispatch(object $event): object
+						{
+							if ($event instanceof \ON\RestApi\Event\AuthorizationAwareEventInterface) {
+								$event->allow();
+							}
+
+							return $event;
+						}
+					}
+				);
 			}
 
 			public function unserialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, string|array $payload): array
@@ -749,6 +776,7 @@ trait RestApiTestFixtures
 		$config
 			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
 			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
+			->addAction('directus.files', 'POST', 'files', FilesAction::class)
 			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
 			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
 			->addAction('directus.update-post', 'POST', '{collection}/{id}', UpdateAction::class)
@@ -760,6 +788,8 @@ trait RestApiTestFixtures
 			new QueryNormalizer($config->get('dynamicVariables', [])),
 			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
 		));
+
+		$eventDispatcher ??= $this->noopEventDispatcher();
 
 		$container = new class($registry, $items, $mutationBuilder, $config, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
@@ -780,6 +810,7 @@ trait RestApiTestFixtures
 				return match ($id) {
 					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->eventDispatcher),
 					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
+					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
 					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
 					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
 					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
@@ -794,6 +825,7 @@ trait RestApiTestFixtures
 				return in_array($id, [
 					ListAction::class,
 					GetAction::class,
+					FilesAction::class,
 					CreateAction::class,
 					UpdateAction::class,
 					BatchUpdateAction::class,

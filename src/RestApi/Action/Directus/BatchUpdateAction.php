@@ -81,7 +81,6 @@ final class BatchUpdateAction implements RestActionInterface
 				unset($item[$columnName]);
 			}
 
-			$item = $this->stripHiddenFields($collection, $item);
 			$this->validate($collection, $item, true);
 			$spec = map($item)
 				->using(DirectusMutationBuilder::class, $collection, 'update', $identity, $payload['files'] ?? [])

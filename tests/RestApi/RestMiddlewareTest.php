@@ -351,4 +351,146 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertSame('attachment', $resolver->createCalls[0]['collection']);
 		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
 	}
+
+	public function testDirectusFilesEndpointCreatesFileRecordAndDispatchesUploadEvent(): void
+	{
+		$registry = new Registry();
+		$registry->collection('directus_files')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->field('file', 'upload')->type('upload')->nullable(false)->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'directus_files' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+					'file' => 'INTEGER',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new class($registry, $db->database()) extends ItemRepository {
+			public array $createCalls = [];
+
+			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			{
+				parent::__construct($registry, $database);
+			}
+
+			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
+			{
+				$this->createCalls[] = [
+					'collection' => $collection->getName(),
+					'input' => $input,
+				];
+
+				return parent::create($collection, $input);
+			}
+		};
+
+		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
+			public array $uploads = [];
+
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof FileUpload) {
+					$this->uploads[] = [
+						'collection' => $event->getCollection()->getName(),
+						'field' => $event->getFieldName(),
+						'filename' => $event->getFile()->getClientFilename(),
+					];
+					$event->setStoredValue(501);
+				}
+
+				if ($event instanceof ItemCreating) {
+					$event->allow();
+				}
+
+				return $event;
+			}
+		};
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
+			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			['endpointUri' => '/items'],
+			$dispatcher
+		);
+
+		$request = (new ServerRequest(
+			uri: '/files',
+			method: 'POST',
+			headers: ['Content-Type' => 'multipart/form-data; boundary=test'],
+		))
+			->withParsedBody([
+				'data' => json_encode(['title' => 'Uploaded file'], JSON_THROW_ON_ERROR),
+			])
+			->withUploadedFiles([
+				'file' => $this->createUploadedFile('photo.jpg'),
+			]);
+
+		$response = $middleware->process(
+			$request,
+			new class implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame('Uploaded file', $body['data']['title']);
+		$this->assertSame(501, $body['data']['file']);
+		$this->assertSame([[
+			'collection' => 'directus_files',
+			'field' => 'file',
+			'filename' => 'photo.jpg',
+		]], $dispatcher->uploads);
+		$this->assertCount(1, $resolver->createCalls);
+		$this->assertSame('directus_files', $resolver->createCalls[0]['collection']);
+		$this->assertSame(501, $resolver->createCalls[0]['input']['file']);
+	}
+
+	private function createUploadedFile(string $filename): UploadedFileInterface
+	{
+		return new class($filename) implements UploadedFileInterface {
+			public function __construct(private string $filename)
+			{
+			}
+
+			public function getStream(): StreamInterface
+			{
+				throw new \BadMethodCallException('Not needed for this test.');
+			}
+
+			public function moveTo($targetPath): void
+			{
+			}
+
+			public function getSize(): ?int
+			{
+				return null;
+			}
+
+			public function getError(): int
+			{
+				return UPLOAD_ERR_OK;
+			}
+
+			public function getClientFilename(): ?string
+			{
+				return $this->filename;
+			}
+
+			public function getClientMediaType(): ?string
+			{
+				return 'image/jpeg';
+			}
+		};
+	}
 }
