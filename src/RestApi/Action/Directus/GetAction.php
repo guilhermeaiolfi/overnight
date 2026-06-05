@@ -39,7 +39,7 @@ final class GetAction implements RestActionInterface
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
 		private RestApiConfig $config,
-		private ?EventDispatcherInterface $eventDispatcher = null,
+		private EventDispatcherInterface $eventDispatcher,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -64,10 +64,8 @@ final class GetAction implements RestActionInterface
 			);
 		} else {
 			$event = new ItemGet($collection, $identity, $querySpec, $options);
-			$this->eventDispatcher?->dispatch($event);
-			if ($this->eventDispatcher !== null) {
-				AuthorizationGuard::assert($event);
-			}
+			$this->eventDispatcher->dispatch($event);
+			AuthorizationGuard::assert($event);
 			$querySpec = $event->getQuerySpec() ?? $querySpec;
 			$responseOptions = $event->getOptions() + ['output' => PhpRepresentation::class];
 

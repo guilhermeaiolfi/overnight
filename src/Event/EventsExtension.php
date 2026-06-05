@@ -12,8 +12,10 @@ use ON\Application;
 use ON\Config\AppConfig;
 
 
+use ON\Container\Init\Event\ConfigureContainerEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Event\Attribute\EventHandlerAttributeProcessor;
+use ON\Event\Container\EventDispatcherFactory;
 use ON\Event\Event\ReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -47,8 +49,19 @@ class EventsExtension extends AbstractExtension
 	{
 		if ($this->app->hasExtension('container')) {
 			$init->on(ContainerReadyEvent::class, [ $this, 'onContainerReady' ]);
+			$init->on(ConfigureContainerEvent::class, [ $this, 'onContainerConfigure' ]);
 			$init->on(ConfigConfigureEvent::class, [ $this, 'onConfigConfigure' ]);
 		}
+	}
+
+	public function onContainerConfigure(ConfigureContainerEvent $event): void
+	{
+		$event->container->addFactories([
+			EventDispatcherInterface::class => EventDispatcherFactory::class,
+		]);
+		$event->container->addAliases([
+			EventDispatcher::class => EventDispatcherInterface::class,
+		]);
 	}
 
 	public function onConfigConfigure(): void
@@ -67,8 +80,6 @@ class EventsExtension extends AbstractExtension
 
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
-		$this->container = $event->container;
-		$this->container->set(EventDispatcherInterface::class, $this->eventDispatcher);
 		$this->dispatch(new ReadyEvent());
 	}
 

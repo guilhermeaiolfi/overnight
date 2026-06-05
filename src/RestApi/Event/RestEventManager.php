@@ -13,7 +13,7 @@ final class RestEventManager
 	private array $afterEvents = [];
 
 	public function __construct(
-		private ?EventDispatcherInterface $eventDispatcher = null,
+		private EventDispatcherInterface $eventDispatcher,
 	) {}
 
 	public function dispatch(object $event, bool $inheritNestedAuthorization = false): object
@@ -25,10 +25,8 @@ final class RestEventManager
 			}
 		}
 
-		$this->eventDispatcher?->dispatch($event);
-		if ($this->eventDispatcher !== null) {
-			AuthorizationGuard::assert($event);
-		}
+		$this->eventDispatcher->dispatch($event);
+		AuthorizationGuard::assert($event);
 
 		return $event;
 	}
@@ -77,7 +75,7 @@ final class RestEventManager
 				continue;
 			}
 
-			$this->eventDispatcher?->dispatch($event);
+			$this->eventDispatcher->dispatch($event);
 		}
 
 		$this->afterEvents = [];

@@ -33,7 +33,7 @@ final class BatchDeleteAction implements RestActionInterface
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
 		private RestApiConfig $config,
-		private ?EventDispatcherInterface $eventDispatcher = null,
+		private EventDispatcherInterface $eventDispatcher,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed

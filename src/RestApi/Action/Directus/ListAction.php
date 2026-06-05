@@ -38,7 +38,7 @@ final class ListAction implements RestActionInterface
 		private HandlerFactory $relationHandlers,
 		private SqlQuerySpecCompiler $querySpecCompiler,
 		private RestApiConfig $config,
-		private ?EventDispatcherInterface $eventDispatcher = null,
+		private EventDispatcherInterface $eventDispatcher,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -61,10 +61,8 @@ final class ListAction implements RestActionInterface
 			}
 
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->eventDispatcher?->dispatch($event);
-			if ($this->eventDispatcher !== null) {
-				AuthorizationGuard::assert($event);
-			}
+			$this->eventDispatcher->dispatch($event);
+			AuthorizationGuard::assert($event);
 			$querySpec = $event->getQuerySpec();
 
 			if ($event->isDefaultPrevented()) {
@@ -93,10 +91,8 @@ final class ListAction implements RestActionInterface
 		$responseOptions = null;
 		if ($options['dispatchEvents']) {
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->eventDispatcher?->dispatch($event);
-			if ($this->eventDispatcher !== null) {
-				AuthorizationGuard::assert($event);
-			}
+			$this->eventDispatcher->dispatch($event);
+			AuthorizationGuard::assert($event);
 			$querySpec = $event->getQuerySpec();
 			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
 
