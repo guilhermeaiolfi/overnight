@@ -202,6 +202,82 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertSame(501, $resolver->createCalls[1]['input']['file_id']);
 	}
 
+	public function testRootAuthorizationCanAllowNestedCreateOperations(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
+			->end();
+
+		$registry->collection('attachment')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('asset_id', 'int')->type('int')->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+				],
+				'rows' => [],
+			],
+			'attachment' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'asset_id' => 'INTEGER NOT NULL',
+					'title' => 'TEXT',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new ItemRepository($registry, $db->database());
+
+		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof ItemCreating && $event->isRoot()) {
+					$event->allow(true);
+				}
+
+				return $event;
+			}
+		};
+
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
+			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			['endpointUri' => '/items'],
+			$dispatcher
+		);
+
+		$response = $middleware->process(
+			(new ServerRequest(uri: '/items/asset', method: 'POST'))
+				->withBody($this->streamFromJson([
+					'title' => 'Asset',
+					'attachments' => [
+						['title' => 'Attachment one'],
+					],
+				])),
+			new class implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(200, $response->getStatusCode());
+		$this->assertSame('Asset', $body['data']['title']);
+	}
+
 	public function testMultipartNestedUploadedFilesArePassedToDirectusUpdateAction(): void
 	{
 		$registry = new Registry();
@@ -454,6 +530,107 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertCount(1, $resolver->createCalls);
 		$this->assertSame('directus_files', $resolver->createCalls[0]['collection']);
 		$this->assertSame(501, $resolver->createCalls[0]['input']['file']);
+	}
+
+	public function testAuthorizationErrorsReturnReadableMessagesAndExtensions(): void
+	{
+		$registry = new Registry();
+		$registry->collection('asset')
+			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->field('title', 'string')->type('string')->nullable(true)->end()
+			->end();
+
+		$db = new CycleSqliteTestDatabase([
+			'asset' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT',
+				],
+				'rows' => [],
+			],
+		]);
+		$resolver = new ItemRepository($registry, $db->database());
+
+		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof ItemCreating) {
+					$event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
+						'Missing permission "create" on resource "module:news".',
+						['resource' => 'module:news', 'action' => 'create'],
+					));
+				}
+
+				return $event;
+			}
+		};
+
+		$middleware = $this->createRestMiddleware(
+			$registry,
+			$resolver,
+			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			['endpointUri' => '/items'],
+			$dispatcher
+		);
+
+		$response = $middleware->process(
+			(new ServerRequest(uri: '/items/asset', method: 'POST'))
+				->withBody($this->streamFromJson(['title' => 'Blocked asset'])),
+			new class implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(403, $response->getStatusCode());
+		$this->assertSame('Missing permission "create" on resource "module:news".', $body['errors'][0]['message']);
+		$this->assertSame('module:news', $body['errors'][0]['extensions']['resource']);
+		$this->assertSame('create', $body['errors'][0]['extensions']['action']);
+	}
+
+	public function testUnexpectedExceptionsReturnTheOriginalMessage(): void
+	{
+		$middleware = new \ON\RestApi\Middleware\RestMiddleware(
+			new \ON\RestApi\Action\RestActionRouter([
+				['name' => 'boom', 'methods' => ['POST'], 'path' => 'asset', 'action' => 'boom'],
+			]),
+			static function (): never {
+				throw new \RuntimeException('Boom failure');
+			},
+			['endpointUri' => '/items']
+		);
+
+		$response = $middleware->process(
+			new ServerRequest(uri: '/items/asset', method: 'POST'),
+			new class implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+		$exceptionClass = (string) ($body['errors'][0]['extensions']['exception'] ?? '');
+
+		$this->assertSame(500, $response->getStatusCode());
+		$this->assertSame('Boom failure', $body['errors'][0]['message']);
+		$this->assertSame('RuntimeException', basename(str_replace('\\', '/', $exceptionClass)));
+	}
+
+	private function streamFromJson(array $payload): \Laminas\Diactoros\Stream
+	{
+		$stream = fopen('php://temp', 'r+');
+		fwrite($stream, json_encode($payload, JSON_THROW_ON_ERROR));
+		rewind($stream);
+
+		return new \Laminas\Diactoros\Stream($stream);
 	}
 
 	private function createUploadedFile(string $filename): UploadedFileInterface

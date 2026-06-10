@@ -103,6 +103,11 @@ class ConfigExtension extends AbstractExtension
 		return isset($this->data[$className]);
 	}
 
+	public function getCachePath(): ?string
+	{
+		return $this->cachePath;
+	}
+
 	public function set(string $className, mixed $obj)
 	{
 		if ($obj instanceof Config) {

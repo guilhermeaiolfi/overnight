@@ -4,28 +4,23 @@ declare(strict_types=1);
 
 namespace ON\Console\Command;
 
-use FilesystemIterator;
-use ON\Application;
-use ON\Cache\CacheInterface;
-use RecursiveDirectoryIterator;
-use RecursiveIteratorIterator;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CacheClearerRegistry;
+use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Descriptor\ApplicationDescription;
-use Symfony\Component\Console\Helper\DescriptorHelper;
 use Symfony\Component\Console\Helper\FormatterHelper;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
-use Symfony\Component\Console\Question\ConfirmationQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
 
 class ClearCacheCommand extends Command
 {
 	public function __construct(
-		protected CacheInterface $cache,
-		protected Application $app
+		protected CacheClearerRegistry $registry,
+		protected ContainerInterface $container
 	) {
 		parent::__construct();
 	}
@@ -37,9 +32,9 @@ class ClearCacheCommand extends Command
 		$this
 			->setName('cache:clear')
 			->setDefinition([
-				new InputArgument('command_name', InputArgument::OPTIONAL, 'The command name', 'help', fn () => array_keys((new ApplicationDescription($this->getApplication()))->getCommands())),
-				new InputOption('format', null, InputOption::VALUE_REQUIRED, 'The output format (txt, xml, json, or md)', 'txt', fn () => (new DescriptorHelper())->getFormats()),
-				new InputOption('raw', null, InputOption::VALUE_NONE, 'To output raw command help'),
+				new InputArgument('clearers', InputArgument::IS_ARRAY | InputArgument::OPTIONAL, 'Cache clearer names'),
+				new InputOption('all', null, InputOption::VALUE_NONE, 'Clear all registered caches'),
+				new InputOption('list', null, InputOption::VALUE_NONE, 'List registered cache clearers'),
 			])
 			->setDescription('Clear Cache');
 		;
@@ -47,67 +42,107 @@ class ClearCacheCommand extends Command
 
 	protected function execute(InputInterface $input, OutputInterface $output): int
 	{
-		//$helper = $this->getHelper('question');
-
-		//$question = new ConfirmationQuestion('Are you sure?', false);
-
 		$io = new SymfonyStyle($input, $output);
 		$formatter = new FormatterHelper();
+		$definitions = $this->registry->all();
 
-		$helper = $this->getHelper('question');
-		$question = new ChoiceQuestion(
-			'Please select the cache you want to remove',
-			[
-				'1' => 'Cache (from CacheInterface)',
-				'2' => 'Discovery',
-
-				'a' => 'All',
-			],
-			'a'
-		);
-		$question->setMultiselect(true);
-
-		$selection = $helper->ask($input, $output, $question);
-
-		if (in_array('a', $selection) || in_array('1', $selection)) {
-			$this->cache->clear();
-			$output->writeln($formatter->formatSection("OK", "CacheInterface cleared!"));
-		}
-
-		if (in_array('a', $selection) || in_array('2', $selection)) {
-			$this->cache->clear();
-			if ($this->app->hasExtension('discovery')) {
-				$this->app->ext('discovery')->clear();
+		if ($input->getOption('list')) {
+			foreach ($definitions as $name => $definition) {
+				$output->writeln(sprintf(
+					'%s - %s%s',
+					$name,
+					$definition->label,
+					$definition->description !== null ? ' (' . $definition->description . ')' : ''
+				));
 			}
-			$output->writeln($formatter->formatSection("OK", "Discovery Cache cleared!"));
+
+			return Command::SUCCESS;
 		}
 
-		if (in_array('a', $selection, true)) {
-			$this->clearDirectoryContents($this->app->paths->get('cache')->getAbsolutePath());
-			$output->writeln($formatter->formatSection("OK", "Application cache directory cleared!"));
+		try {
+			$selected = $this->resolveSelectedClearers($input, $output, $definitions);
+		} catch (\Throwable $e) {
+			$output->writeln($formatter->formatSection('ERROR', $e->getMessage()));
+
+			return Command::FAILURE;
+		}
+
+		if ($selected === []) {
+			$io->warning('No cache clearers selected.');
+
+			return Command::SUCCESS;
+		}
+
+		foreach ($selected as $definition) {
+			try {
+				$definition->clear($this->container, $output);
+				$output->writeln($formatter->formatSection('OK', $definition->label . ' cleared!'));
+			} catch (\Throwable $e) {
+				$output->writeln($formatter->formatSection('ERROR', sprintf(
+					'Failed clearing %s: %s',
+					$definition->name,
+					$e->getMessage()
+				)));
+
+				return Command::FAILURE;
+			}
 		}
 
 		return Command::SUCCESS;
 	}
 
-	private function clearDirectoryContents(string $directory): void
+	/**
+	 * @param array<string, CacheClearerDefinition> $definitions
+	 * @return CacheClearerDefinition[]
+	 */
+	private function resolveSelectedClearers(InputInterface $input, OutputInterface $output, array $definitions): array
 	{
-		if (! is_dir($directory)) {
-			return;
+		$names = $input->getArgument('clearers');
+
+		if ($input->getOption('all')) {
+			return array_values(array_filter(
+				$definitions,
+				fn (CacheClearerDefinition $definition): bool => $definition->includedInAll
+			));
 		}
 
-		$items = new RecursiveIteratorIterator(
-			new RecursiveDirectoryIterator($directory, FilesystemIterator::SKIP_DOTS),
-			RecursiveIteratorIterator::CHILD_FIRST
-		);
-
-		foreach ($items as $item) {
-			if ($item->isDir()) {
-				rmdir($item->getPathname());
-				continue;
+		if ($names !== []) {
+			$selected = [];
+			foreach ($names as $name) {
+				$selected[] = $this->registry->get($name);
 			}
 
-			unlink($item->getPathname());
+			return $selected;
 		}
+
+		$helper = $this->getHelper('question');
+		$choices = [];
+		foreach ($definitions as $name => $definition) {
+			$choices[$name] = $definition->label;
+		}
+		$choices['all'] = 'All';
+
+		$question = new ChoiceQuestion(
+			'Please select the cache you want to remove',
+			$choices,
+			'all'
+		);
+		$question->setMultiselect(true);
+
+		$selection = $helper->ask($input, $output, $question);
+
+		if (in_array('all', $selection, true)) {
+			return array_values(array_filter(
+				$definitions,
+				fn (CacheClearerDefinition $definition): bool => $definition->includedInAll
+			));
+		}
+
+		$selected = [];
+		foreach ($selection as $name) {
+			$selected[] = $this->registry->get($name);
+		}
+
+		return $selected;
 	}
 }

@@ -5,12 +5,16 @@ declare(strict_types=1);
 namespace ON\Router;
 
 use ON\Application;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
+use ON\FS\Path;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -58,6 +62,9 @@ class RouterExtension extends AbstractExtension
 
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+		}
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
@@ -83,6 +90,26 @@ class RouterExtension extends AbstractExtension
 
 		$context->emit(new RouterSetupEvent($this));
 		$context->emit(new RouterReadyEvent($this));
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'router',
+			label: 'Router',
+			clear: function (): void {
+				$config = $this->app->config->get(RouterConfig::class);
+				$cacheFile = $config->get('cache_file', null);
+				if (is_string($cacheFile) && $cacheFile !== '') {
+					$cacheFile = Path::from($cacheFile, $this->app->paths->get('project'))
+						->getAbsolutePath();
+				}
+
+				CachePathCleaner::removeFile(is_string($cacheFile) ? $cacheFile : null);
+			},
+			priority: 70,
+			description: 'Clears cached FastRoute dispatch data.'
+		));
 	}
 
 	protected function loadRoutes(string $file)

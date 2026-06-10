@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 
 use ON\Config\Init\Event\ConfigConfigureEvent;
@@ -44,6 +47,10 @@ class DatabaseExtension extends AbstractExtension
 				$this->app->console->addCommand(MigrateDownCommand::class);
 				$this->app->console->addCommand(MigrateStatusCommand::class);
 			});
+
+			if (class_exists(CacheClearersConfigureEvent::class)) {
+				$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+			}
 		}
 
 		$init->on(ConfigConfigureEvent::class, function (object $event): void {
@@ -55,6 +62,19 @@ class DatabaseExtension extends AbstractExtension
 
 	public function start(\ON\Init\InitContext $context): void
 	{
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'orm-schema',
+			label: 'ORM schema',
+			clear: function (): void {
+				CachePathCleaner::removeFile($this->app->paths->get('cache')->append('cycle.schema.php')->getAbsolutePath());
+			},
+			priority: 75,
+			description: 'Clears cached Cycle ORM schema.'
+		));
 	}
 
 	public function onContainerConfigure(): void

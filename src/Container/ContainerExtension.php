@@ -14,6 +14,9 @@ use function is_file;
 use function is_numeric;
 use function is_object;
 use ON\Application;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Config;
 use ON\Config\ConfigExtension;
 use ON\Container\Executor\ExecutorFactory;
@@ -52,6 +55,22 @@ class ContainerExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigReadyEvent::class, [$this, 'buildContainer']);
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+		}
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'container',
+			label: 'Container',
+			clear: function (): void {
+				CachePathCleaner::clearDirectoryContents($this->getCachePath(), fast: true);
+			},
+			priority: 90,
+			description: 'Clears compiled container and proxy cache files.'
+		));
 	}
 
 	public function buildContainer(ConfigReadyEvent $event, \ON\Init\InitContext $context): void
@@ -94,6 +113,11 @@ class ContainerExtension extends AbstractExtension
 	public function hasCache()
 	{
 		return is_file(rtrim($this->cache_path, '/') . '/CompiledContainer.php');
+	}
+
+	public function getCachePath(): string
+	{
+		return $this->cache_path;
 	}
 
 	public function createContainer($config)

@@ -7,15 +7,18 @@ namespace ON\RestApi\Error;
 class RestApiError extends \RuntimeException
 {
 	protected array $validationErrors = [];
+	protected array $extensions = [];
 
 	public function __construct(
 		string $message,
 		protected string $errorCode = 'INTERNAL_ERROR',
 		protected ?string $field = null,
 		protected int $httpStatus = 500,
-		?\Throwable $previous = null
+		?\Throwable $previous = null,
+		array $extensions = [],
 	) {
 		parent::__construct($message, 0, $previous);
+		$this->extensions = $extensions;
 	}
 
 	public static function validationFailed(array $fieldErrors): self
@@ -87,14 +90,33 @@ class RestApiError extends \RuntimeException
 		return $this->errorCode;
 	}
 
-	public static function forbidden(string $message = 'Forbidden.'): self
+	public static function forbidden(string $message = 'Forbidden.', array $extensions = []): self
 	{
-		return new self($message, 'FORBIDDEN', null, 403);
+		return new self($message, 'FORBIDDEN', null, 403, null, $extensions);
 	}
 
-	public static function unauthenticated(string $message = 'Authentication required.'): self
+	public static function unauthenticated(string $message = 'Authentication required.', array $extensions = []): self
 	{
-		return new self($message, 'UNAUTHENTICATED', null, 401);
+		return new self($message, 'UNAUTHENTICATED', null, 401, null, $extensions);
+	}
+
+	public static function internal(\Throwable $previous, bool $debug = false): self
+	{
+		$message = trim($previous->getMessage());
+		if ($message === '') {
+			$message = 'Internal server error.';
+		}
+
+		return new self(
+			$debug ? $message : $message,
+			'INTERNAL_ERROR',
+			null,
+			500,
+			$previous,
+			[
+				'exception' => $previous::class,
+			],
+		);
 	}
 
 	public function getHttpStatus(): int
@@ -123,6 +145,10 @@ class RestApiError extends \RuntimeException
 
 		if ($this->field !== null) {
 			$error['extensions']['field'] = $this->field;
+		}
+
+		if ($this->extensions !== []) {
+			$error['extensions'] = array_merge($error['extensions'], $this->extensions);
 		}
 
 		if (!empty($this->validationErrors)) {

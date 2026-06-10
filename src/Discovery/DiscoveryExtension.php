@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace ON\Discovery;
 
 use ON\Application;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
@@ -39,6 +41,9 @@ class DiscoveryExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+		}
 	}
 
 	public function onContainerReady(ContainerReadyEvent $event): void
@@ -46,6 +51,19 @@ class DiscoveryExtension extends AbstractExtension
 		$this->container = $event->container;
 		$this->cache = $event->container->get(DiscoveryCache::class);
 		$this->runDiscovery();
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'discovery',
+			label: 'Discovery',
+			clear: function (): void {
+				$this->clear();
+			},
+			priority: 80,
+			description: 'Clears cached discovery results.'
+		));
 	}
 
 	public function get(string $className): ?DiscoverInterface

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 
 use ON\Application;
@@ -32,6 +35,9 @@ class FileRoutingExtension extends AbstractExtension
 		$init->on(PipelineReadyEvent::class, function (): void {
 			$this->injectMiddleware();
 		});
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+		}
 	}
 
 	public function onConfigConfigure(): void
@@ -66,6 +72,22 @@ class FileRoutingExtension extends AbstractExtension
 			['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 			'filerouting.page',
 		);
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'file-routing',
+			label: 'File routing',
+			clear: function (): void {
+				$config = $this->app->config->get(FileRoutingConfig::class);
+				$cachePath = $config->get('cachePath', null);
+
+				CachePathCleaner::clearDirectoryContents(is_string($cachePath) ? $cachePath : null);
+			},
+			priority: 60,
+			description: 'Clears compiled file-routing controllers, templates, and metadata.'
+		));
 	}
 
 	public function injectMiddleware(): void

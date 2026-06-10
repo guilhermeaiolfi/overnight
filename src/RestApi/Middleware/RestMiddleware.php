@@ -64,13 +64,7 @@ class RestMiddleware implements MiddlewareInterface
 			$response = $this->errorResponse($e);
 		} catch (\Throwable $e) {
 			$debug = $this->options['debug'] ?? false;
-			$internal = new RestApiError(
-				$debug ? $e->getMessage() : 'Internal server error.',
-				'INTERNAL_ERROR',
-				null,
-				500,
-				$e
-			);
+			$internal = RestApiError::internal($e, (bool) $debug);
 			$response = $this->errorResponse($internal);
 		}
 

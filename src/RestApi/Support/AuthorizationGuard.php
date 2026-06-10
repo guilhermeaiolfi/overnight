@@ -20,6 +20,11 @@ final class AuthorizationGuard
 			$event->allow();
 		}
 
+		$authorizationError = $event->getAuthorizationError();
+		if ($authorizationError !== null && $event->getAuthState() !== AuthState::Allowed) {
+			throw $authorizationError;
+		}
+
 		match ($event->getAuthState()) {
 			AuthState::Allowed => null,
 			AuthState::Unauthenticated => throw RestApiError::unauthenticated(),

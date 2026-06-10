@@ -6,8 +6,12 @@ namespace ON\Extension;
 
 use FilesystemIterator;
 use ON\Application;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Discovery\ClassFinder;
 use ON\FS\Path;
+use ON\Init\Init;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -38,6 +42,26 @@ class AutoWiringExtension extends AbstractExtension
 	}
 	public function start(\ON\Init\InitContext $context): void
 	{
+	}
+
+	public function register(Init $init): void
+	{
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
+		}
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'auto-wiring',
+			label: 'Auto-wiring',
+			clear: function (): void {
+				CachePathCleaner::removeFile($this->cacheFile);
+			},
+			priority: 45,
+			description: 'Clears cached auto-discovered extensions.'
+		));
 	}
 
 	private function installDiscoveredExtensions(): void
