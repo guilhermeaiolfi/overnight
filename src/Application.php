@@ -9,6 +9,7 @@ use ON\Extension\ExtensionProfiler;
 use ON\Extension\ExtensionInterface;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
+use ON\Init\NonLifecycleOrderingEventInterface;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -286,6 +287,10 @@ class Application
 		// Infer dependencies from event namespaces
 		foreach ($subscriptionMap as $listenerClass => $events) {
 			foreach ($events as $eventClass) {
+				if (is_string($eventClass) && is_subclass_of($eventClass, NonLifecycleOrderingEventInterface::class, true)) {
+					continue;
+				}
+
 				$ownerClass = $this->inferEventOwner($eventClass, $extensionNamespaces);
 				if ($ownerClass && $ownerClass !== $listenerClass) {
 					$graph[$listenerClass][] = $ownerClass;

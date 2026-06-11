@@ -9,13 +9,8 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 
-use ON\Config\Init\Event\ConfigConfigureEvent;
-
 use ON\Application;
-use ON\Config\ConfigExtension;
-use ON\Container\ContainerConfig;
-
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateAllCommand;
 use ON\DB\Command\MigrateDownCommand;
@@ -53,10 +48,9 @@ class DatabaseExtension extends AbstractExtension
 			}
 		}
 
-		$init->on(ConfigConfigureEvent::class, function (object $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
-			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
-			$containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
+			$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
 		});
 	}
 

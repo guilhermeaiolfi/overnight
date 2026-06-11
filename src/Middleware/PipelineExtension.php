@@ -17,11 +17,11 @@ use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
 use ON\Container\BodyParamsMiddlewareFactory;
 use ON\Container\EmitterFactory;
 use ON\Container\ErrorHandlerFactory;
 use ON\Container\ErrorResponseGeneratorFactory;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Container\MiddlewareContainerFactory;
 use ON\Container\NotFoundHandlerFactory;
@@ -93,14 +93,17 @@ class PipelineExtension extends AbstractExtension
 		}
 
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
+	}
 
-		$containerConfig->addFactories([
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addFactories([
 			BodyParamsMiddleware::class => BodyParamsMiddlewareFactory::class,
 			EmitterInterface::class => EmitterFactory::class,
 			ErrorHandler::class => ErrorHandlerFactory::class,
@@ -116,7 +119,7 @@ class PipelineExtension extends AbstractExtension
 			NotFoundHandler::class => NotFoundHandlerFactory::class,
 		]);
 
-		$containerConfig->addAliases([
+		$event->containerConfig->addAliases([
 			MiddlewarePipeInterface::class => MiddlewarePriorityPipe::class,
 			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
 			RequestStackInterface::class => RequestStack::class,

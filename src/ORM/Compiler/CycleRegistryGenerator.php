@@ -277,6 +277,18 @@ class CycleRegistryGenerator implements GeneratorInterface
 			$type = $type::storageType();
 		}
 
+		// Existing arbitrary classes are valid mapper/runtime types, but they are
+		// not valid Cycle schema column types unless they explicitly implement a
+		// field handler or map through known enum/datetime conventions below.
+		if (
+			class_exists($type)
+			&& ! is_subclass_of($type, FieldTypeInterface::class)
+			&& ! is_subclass_of($type, \DateTimeInterface::class)
+			&& ! enum_exists($type)
+		) {
+			$this->assertKnownCycleFieldType($type, $onField);
+		}
+
 		$fieldType = (new FieldTypeRegistry())->resolve(FieldContext::fromField($onField));
 		if ($fieldType !== null && ! $this->isKnownCycleFieldType($type)) {
 			$type = $fieldType::storageType();

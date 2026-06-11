@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace ON\ORM;
 
 use ON\Application;
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\ORM\Container\RegistryFactory;
@@ -24,12 +23,11 @@ class ORMExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 	}
 
-	public function onConfigConfigure(object $event): void
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
-		$containerConfig->addFactory(Registry::class, RegistryFactory::class);
+		$event->containerConfig->addFactory(Registry::class, RegistryFactory::class);
 	}
 }

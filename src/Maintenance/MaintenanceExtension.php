@@ -8,7 +8,7 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Maintenance\Container\MaintenanceModeFactory;
@@ -38,8 +38,9 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$appCfg = $event->config->get(AppConfig::class);
 			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
-			$containerConfig = $event->config->get(ContainerConfig::class);
-			$containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
+		});
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
 		});
 
 		$init->on(PipelineReadyEvent::class, function (): void {

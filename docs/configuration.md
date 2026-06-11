@@ -326,7 +326,7 @@ return [
 
 ### Extension Configuration & Service Registration
 
-Extensions receive configuration during install, but the preferred way to register services into the container is by listening to the `ConfigConfigureEvent` event. This ensures that service definitions are correctly processed and can be overridden by user configuration.
+Extensions receive configuration during install, but the preferred way to register cacheable container definitions is by listening to the `ContainerConfigureEvent` event. This keeps the container lifecycle separate while still letting definitions benefit from the config cache.
 
 ```php
 use ON\Init\Init;

@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace ON\RateLimit;
 
 use ON\Application;
-
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\RateLimit\Container\RateLimiterFactory;
@@ -24,13 +22,10 @@ class RateLimitExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
-
-			$containerConfig->addFactories([
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
 				RateLimiterInterface::class => RateLimiterFactory::class,
 			]);
-
 		});
 	}
 }

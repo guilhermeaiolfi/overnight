@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace ON\Translation;
 
 use ON\Application;
-use ON\Container\ContainerConfig;
-
-use ON\Config\Init\Event\ConfigConfigureEvent;
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 
@@ -30,16 +27,10 @@ class TranslationExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$config = $event->config;
-
-			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->addFactories([
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
 				TranslationManagerInterface::class => TranslationManagerFactory::class,
 			]);
-
-			$translationConfig = $config->get(TranslationConfig::class);
-
 		});
 	}
 

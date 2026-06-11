@@ -6,6 +6,7 @@ namespace Tests\ON\View;
 
 use ON\Application;
 use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\ContainerExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\ConfigExtension;
@@ -42,6 +43,7 @@ final class LatteExtensionTest extends TestCase
 		$init = new Init();
 		$extension->register($init);
 		$init->emit(new ConfigConfigureEvent($configExt));
+		$init->emit(new ContainerConfigureEvent(new ContainerExtension($app), $containerConfig));
 
 		$this->assertSame('latte', $viewConfig->get('latte.extension'));
 		$this->assertSame(

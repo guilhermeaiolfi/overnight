@@ -22,8 +22,9 @@ use ON\Config\ConfigExtension;
 use ON\Container\Executor\ExecutorFactory;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
-use ON\Container\Init\Event\ConfigureContainerEvent;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Init\Init;
 use Psr\Container\ContainerInterface;
@@ -54,10 +55,17 @@ class ContainerExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
+		$init->on(ConfigConfigureEvent::class, [$this, 'configureContainer']);
 		$init->on(ConfigReadyEvent::class, [$this, 'buildContainer']);
 		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
 			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
 		}
+	}
+
+	public function configureContainer(ConfigConfigureEvent $event, \ON\Init\InitContext $context): void
+	{
+		$containerConfig = $event->config->get(ContainerConfig::class);
+		$context->emit(new ContainerConfigureEvent($this, $containerConfig));
 	}
 
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
@@ -76,9 +84,6 @@ class ContainerExtension extends AbstractExtension
 	public function buildContainer(ConfigReadyEvent $event, \ON\Init\InitContext $context): void
 	{
 		$configs = $event->config->get();
-		$containerConfig = $configs[ContainerConfig::class] ?? $event->config->get(ContainerConfig::class);
-
-		$context->emit(new ConfigureContainerEvent($this, $event->config, $containerConfig));
 
 		$this->createConfiguredContainer($event->config);
 

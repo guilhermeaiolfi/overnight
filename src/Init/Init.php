@@ -46,13 +46,13 @@ class Init
 		return $this->currentExtension;
 	}
 
-	public function on(object|string $event, ?callable $listener = null): EventBinding
+	public function on(object|string $event, ?callable $listener = null, array $options = []): EventBinding
 	{
 		$name = $this->normalizeEventName($event);
-		$binding = new EventBinding($this, $name);
+		$binding = new EventBinding($this, $name, $options);
 
 		if ($listener !== null) {
-			$binding->listen($listener);
+			$this->addListener($name, $listener, $options);
 		}
 
 		return $binding;
@@ -100,7 +100,7 @@ class Init
 		return $payload;
 	}
 
-	public function addListener(string $event, callable $listener): void
+	public function addListener(string $event, callable $listener, array $options = []): void
 	{
 		$owner = $this->currentExtension ?? $this->profiler?->getActiveExtension();
 
@@ -114,7 +114,7 @@ class Init
 		];
 	}
 
-	public function addDoneListener(string $event, callable $listener): void
+	public function addDoneListener(string $event, callable $listener, array $options = []): void
 	{
 		$owner = $this->currentExtension ?? $this->profiler?->getActiveExtension();
 

@@ -14,8 +14,7 @@ use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 
@@ -31,13 +30,13 @@ class AuthExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
-	public function onConfigConfigure(ConfigConfigureEvent $event): void
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
+		$containerConfig = $event->containerConfig;
 		$containerConfig->addAliases([
 			StorageInterface::class => SessionStorage::class,
 			AuthenticatorInterface::class => DummyAuthenticator::class,

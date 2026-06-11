@@ -7,7 +7,7 @@ namespace ON\View;
 use League\Plates\Engine;
 use ON\Application;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -33,18 +33,18 @@ class ViewExtension extends AbstractExtension
 		});
 
 		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
 			$viewConfig = $event->config->get(ViewConfig::class);
-
-			$containerConfig->addFactories([
-				Engine::class => PlatesEngineFactory::class,
-			]);
 
 			$viewConfig->set(
 				'templates.paths.overnight',
 				[__DIR__ . DIRECTORY_SEPARATOR . 'templates']
 			);
 
+		});
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
+				Engine::class => PlatesEngineFactory::class,
+			]);
 		});
 	}
 

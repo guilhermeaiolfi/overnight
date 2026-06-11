@@ -316,12 +316,13 @@ trait RestApiTestFixtures
 		$items = $this->createItems($registry, $db);
 		$handlers = $this->createHandlerFactory($items);
 		$config = new \ON\RestApi\RestApiConfig();
+		$eventDispatcher = $this->noopEventDispatcher();
 		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
 			new QueryNormalizer(),
 			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
 		));
 
-		return new class($registry, $items, $handlers, $config) {
+		return new class($registry, $items, $handlers, $config, $eventDispatcher) {
 			private SqlQuerySpecCompiler $querySpecCompiler;
 
 			public function __construct(
@@ -329,6 +330,7 @@ trait RestApiTestFixtures
 				private ItemRepositoryInterface $items,
 				private HandlerFactory $handlers,
 				private \ON\RestApi\RestApiConfig $config,
+				private EventDispatcherInterface $eventDispatcher,
 			) {
 				$this->querySpecCompiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
 			}
@@ -383,6 +385,7 @@ trait RestApiTestFixtures
 					$this->handlers,
 					$this->querySpecCompiler,
 					$this->config,
+					$this->eventDispatcher,
 				);
 			}
 
@@ -393,6 +396,7 @@ trait RestApiTestFixtures
 					$this->items,
 					$this->handlers,
 					$this->config,
+					$this->eventDispatcher,
 				);
 			}
 		};
@@ -488,6 +492,7 @@ trait RestApiTestFixtures
 		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null,
 	): object {
+		$eventDispatcher ??= $this->noopEventDispatcher();
 		$this->createQueryBuilder();
 
 		return new class(
@@ -509,7 +514,7 @@ trait RestApiTestFixtures
 				private HandlerFactory $relationHandlers,
 				private DirectusMutationBuilder $mutationBuilder,
 				private \ON\RestApi\RestApiConfig $config,
-				private ?EventDispatcherInterface $eventDispatcher = null,
+				private EventDispatcherInterface $eventDispatcher,
 			) {}
 
 			public function getCollection(string|\ON\ORM\Definition\Collection\CollectionInterface $collectionName): \ON\ORM\Definition\Collection\CollectionInterface

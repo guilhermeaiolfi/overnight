@@ -9,10 +9,7 @@ use ON\Cache\Container\CacheClearerRegistryFactory;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
-
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
@@ -34,20 +31,16 @@ class CacheExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$config = $event->config;
-
-			$containerConfig = $config->get(ContainerConfig::class);
-			$containerConfig->addFactories([
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
 				CacheInterface::class => CacheFactory::class,
 				CacheClearerRegistry::class => CacheClearerRegistryFactory::class,
 				FilesystemAdapter::class => FilesystemAdapterFactory::class,
 			]);
 
-			/*$containerConfig->addAliases([
+			/*$event->containerConfig->addAliases([
 				AdapterInterface::class => FilesystemAdapter::class,
 			]);*/
-
 		});
 	}
 
@@ -75,16 +68,6 @@ class CacheExtension extends AbstractExtension
 			},
 			priority: -100,
 			description: 'Clears every file and directory inside the application cache path.'
-		));
-
-		$this->clearers->add(new CacheClearerDefinition(
-			name: 'config',
-			label: 'Config',
-			clear: function (): void {
-				CachePathCleaner::removeFile($this->app->ext('config')->getCachePath());
-			},
-			priority: 95,
-			description: 'Clears cached application configuration.'
 		));
 
 		$this->clearers->add(new CacheClearerDefinition(

@@ -7,11 +7,8 @@ namespace ON\Logging;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 
 use ON\Application;
-use ON\Container\ContainerConfig;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Logging\Command\MonitorLogsCommand;
@@ -36,15 +33,12 @@ class LoggingExtension extends AbstractExtension
 	}
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
-			$containerConfig->addFactories([
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
 				LoggerInterface::class => LoggerFactory::class,
 			]);
-
-
-
-
+		});
+		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			$translationConfig = $event->config->get(LoggingConfig::class);
 			$translationConfig->mergeConfig([
 				"default" => [

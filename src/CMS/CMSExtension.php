@@ -6,11 +6,9 @@ namespace ON\CMS;
 
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Router\Init\Event\RouterSetupEvent;
-use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Application;
 use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
-use ON\Container\ContainerConfig;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Router\RouterExtension;
@@ -30,11 +28,6 @@ class CMSExtension extends AbstractExtension
 			$init->on(ConsoleReadyEvent::class, function (): void {
 			});
 		}
-
-		$init->on(ConfigConfigureEvent::class, function (object $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
-			//			$containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
-		});
 
 		$init->on(RouterSetupEvent::class, [$this, 'onRouterSetup']);
 	}

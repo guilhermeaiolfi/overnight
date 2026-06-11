@@ -18,7 +18,7 @@ use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 
-use ON\Container\Init\Event\ConfigureContainerEvent;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use PHPUnit\Framework\TestCase;
@@ -219,8 +219,8 @@ class BaseExtension extends AbstractExtension
 {
     public function register(Init $init): void
     {
-		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
-            $event->container->set('test_key', 'base');
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+            $event->containerConfig->set('test_key', 'base');
         });
     }
 }
@@ -229,8 +229,8 @@ class OverridingExtension extends AbstractExtension
 {
     public function register(Init $init): void
     {
-		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
-            $event->container->set('test_key', 'overridden');
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+            $event->containerConfig->set('test_key', 'overridden');
         });
     }
 }
@@ -242,8 +242,8 @@ class DependentExtension extends AbstractExtension
         // Inference: This extension listens to an event in BaseExtension's namespace
         $init->on(\Tests\ON\Extension\Base\BaseReadyEvent::class, fn() => null);
 
-		$init->on(ConfigureContainerEvent::class, function (ConfigureContainerEvent $event): void {
-            $event->container->set('test_key', 'dependent_override');
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+            $event->containerConfig->set('test_key', 'dependent_override');
         });
     }
 }

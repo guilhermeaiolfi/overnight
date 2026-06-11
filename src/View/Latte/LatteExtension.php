@@ -8,10 +8,8 @@ use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
-use ON\Container\ContainerConfig;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
@@ -30,15 +28,14 @@ class LatteExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$containerConfig = $event->config->get(ContainerConfig::class);
 			$viewConfig = $event->config->get(ViewConfig::class);
 
 			$viewConfig->add('latte.extension', 'latte');
-
-			$containerConfig->addFactories([
+		});
+		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
+			$event->containerConfig->addFactories([
 				LatteRenderer::class => LatteRendererFactory::class,
 			]);
-
 		});
 
 		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {

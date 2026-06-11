@@ -7,7 +7,7 @@ namespace ON\Mapper;
 use ON\Application;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Mapper\Container\ConversionGatewayFactory;
@@ -25,17 +25,20 @@ final class MapperExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		$init->on(ConfigReadyEvent::class, [$this, 'onConfigReady']);
 	}
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
-		$containerConfig->addFactories([
+		ConversionGateway::configure($event->config->get(MapperConfig::class));
+	}
+
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addFactories([
 			ConversionGateway::class => ConversionGatewayFactory::class,
 		]);
-
-		ConversionGateway::configure($event->config->get(MapperConfig::class));
 	}
 
 	public function onConfigReady(ConfigReadyEvent $event): void

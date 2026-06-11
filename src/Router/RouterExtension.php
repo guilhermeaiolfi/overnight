@@ -10,7 +10,7 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
@@ -62,6 +62,7 @@ class RouterExtension extends AbstractExtension
 
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
 			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
 		}
@@ -71,10 +72,12 @@ class RouterExtension extends AbstractExtension
 	{
 		$appCfg = $event->config->get(AppConfig::class);
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . RouteAttributeProcessor::class, []);
+	}
 
-		$containerConfig = $event->config->get(ContainerConfig::class);
-		$containerConfig->addAlias(RouterInterface::class, Router::class);
-		$containerConfig->addFactories([
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addAlias(RouterInterface::class, Router::class);
+		$event->containerConfig->addFactories([
 			Router::class => RouterFactory::class,
 			RouteMiddleware::class => RouteMiddlewareFactory::class,
 			RouterInterface::class => RouterFactory::class,

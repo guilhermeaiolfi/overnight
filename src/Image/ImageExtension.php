@@ -9,10 +9,8 @@ use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
-use ON\Container\ContainerConfig;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\FS\Path;
@@ -32,6 +30,7 @@ class ImageExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
 			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
 		}
@@ -43,11 +42,6 @@ class ImageExtension extends AbstractExtension
 
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
-
-		$containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
-		$containerConfig->addFactory(InterventionImageManager::class, InterventionImageManagerFactory::class);
-
 		$image_cfg = $event->config->get(ImageConfig::class);
 		$router_cfg = $event->config->get(RouterConfig::class);
 		$router_cfg->addRoute(
@@ -56,6 +50,12 @@ class ImageExtension extends AbstractExtension
 			['GET'],
 			"imagemanager",
 		);
+	}
+
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addFactory(ImageManager::class, ImageManagerFactory::class);
+		$event->containerConfig->addFactory(InterventionImageManager::class, InterventionImageManagerFactory::class);
 	}
 
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void

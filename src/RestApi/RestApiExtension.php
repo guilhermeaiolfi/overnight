@@ -5,8 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Application;
-use ON\Config\Init\Event\ConfigConfigureEvent;
-use ON\Container\ContainerConfig;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -56,14 +55,13 @@ class RestApiExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
-	public function onConfigConfigure(ConfigConfigureEvent $event): void
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$containerConfig = $event->config->get(ContainerConfig::class);
-		$containerConfig->addFactories([
+		$event->containerConfig->addFactories([
 			ItemRepository::class => ItemRepositoryFactory::class,
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
 			SqlQuerySpecCompiler::class => SqlQuerySpecCompilerFactory::class,

@@ -8,8 +8,12 @@ use Closure;
 use Exception;
 use Laminas\Stdlib\Glob;
 use ON\Application;
+use ON\Cache\CacheClearerDefinition;
+use ON\Cache\CachePathCleaner;
+use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\InitContext;
+use ON\Init\Init;
 use ON\FS\Path;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
@@ -44,6 +48,13 @@ class ConfigExtension extends AbstractExtension
 				->getAbsolutePath();
 		} else {
 			$this->cachePath = $app->paths->get('cache')->append('config.php')->getAbsolutePath();
+		}
+	}
+
+	public function register(Init $init): void
+	{
+		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
+			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
 		}
 	}
 
@@ -205,6 +216,19 @@ class ConfigExtension extends AbstractExtension
 		}
 
 		return false;
+	}
+
+	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
+	{
+		$event->registry->add(new CacheClearerDefinition(
+			name: 'config',
+			label: 'Config',
+			clear: function (): void {
+				CachePathCleaner::removeFile($this->getCachePath());
+			},
+			priority: 95,
+			description: 'Clears cached application configuration.'
+		));
 	}
 
 	protected function saveCache(): void

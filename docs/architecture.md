@@ -59,7 +59,7 @@ Each extension provides:
 - `start()` — Called in auto-resolved dependency order during the start phase.
 - Dependency order is automatically inferred from event subscription namespaces — no manual `requires()` needed.
 
-**Service Registration:** Register services into the container by listening to typed event objects (e.g. `ConfigConfigureEvent::class`) during `register()`.
+**Service Registration:** Register cacheable container definitions by listening to `ContainerConfigureEvent::class`, which is emitted during config assembly and benefits from the config cache.
 
 ### Dependency Injection Container
 
