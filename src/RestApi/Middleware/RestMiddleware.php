@@ -24,6 +24,7 @@ class RestMiddleware implements MiddlewareInterface
 		protected mixed $executeAction,
 		protected array $options = [],
 		protected ?EventDispatcherInterface $eventDispatcher = null,
+		protected mixed $activate = null,
 	) {
 	}
 
@@ -37,6 +38,10 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		try {
+			if (is_callable($this->activate)) {
+				($this->activate)();
+			}
+
 			$routeResult = $this->router->match(
 				$request->getMethod(),
 				$this->extractRemainder($path, $basePath)

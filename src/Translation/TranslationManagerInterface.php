@@ -33,9 +33,9 @@ interface TranslationManagerInterface
 
 	public function _n($number, $domain = null, $locale = null);
 
-	public function _($message, $domain = null, $locale = null, array $parameters = null);
+	public function _($message, $domain = null, $locale = null, ?array $parameters = null);
 
-	public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, array $parameters = null);
+	public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, ?array $parameters = null);
 
 	public function getDomainTranslator($domain, $type);
 

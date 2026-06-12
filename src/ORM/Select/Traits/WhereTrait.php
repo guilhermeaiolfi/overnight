@@ -22,7 +22,7 @@ trait WhereTrait
 	private function setWhere(
 		SelectQuery $query,
 		string $target,
-		array|Closure $where = null
+		array|Closure|null $where = null
 	): SelectQuery {
 		if ($where === []) {
 			// no conditions, nothing to do

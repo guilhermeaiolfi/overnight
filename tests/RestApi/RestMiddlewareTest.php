@@ -624,6 +624,41 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertSame('RuntimeException', basename(str_replace('\\', '/', $exceptionClass)));
 	}
 
+	public function testActivationCallbackRunsBeforeMatchedRestRequest(): void
+	{
+		$activations = 0;
+		$middleware = new \ON\RestApi\Middleware\RestMiddleware(
+			new \ON\RestApi\Action\RestActionRouter([
+				['name' => 'ok', 'methods' => ['GET'], 'path' => 'asset', 'action' => 'ok'],
+			]),
+			static function (): array {
+				return ['ok' => true];
+			},
+			['endpointUri' => '/items'],
+			null,
+			static function () use (&$activations): void {
+				$activations++;
+			}
+		);
+
+		$response = $middleware->process(
+			new ServerRequest(uri: '/items/asset', method: 'GET'),
+			new class implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(200, $response->getStatusCode());
+		$this->assertSame(['ok' => true], $body);
+		$this->assertSame(1, $activations);
+	}
+
 	private function streamFromJson(array $payload): \Laminas\Diactoros\Stream
 	{
 		$stream = fopen('php://temp', 'r+');

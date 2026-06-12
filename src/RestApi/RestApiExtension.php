@@ -29,6 +29,7 @@ use ON\RestApi\Action\Directus\FilesAction;
 use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
+use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\Mapper\ConversionGateway;
@@ -46,6 +47,8 @@ class RestApiExtension extends AbstractExtension
 	public const ID = 'restapi';
 
 	protected ?ContainerInterface $container = null;
+	protected bool $activated = false;
+	protected ?RestApiConfig $config = null;
 
 	public function __construct(
 		protected Application $app,
@@ -76,7 +79,7 @@ class RestApiExtension extends AbstractExtension
 	{
 		$container = $event->container;
 		$this->container = $container;
-		$config = $container->get(RestApiConfig::class);
+		$config = $this->config = $container->get(RestApiConfig::class);
 		$this->registerDefaultActions($config);
 		$this->registerDirectusMutationBuilder($container);
 		$this->registerDirectusQueryBuilder($container);
@@ -100,6 +103,7 @@ class RestApiExtension extends AbstractExtension
 				'debug' => $debug,
 			],
 			$container->get(\Psr\EventDispatcher\EventDispatcherInterface::class),
+			[$this, 'ensureActivated'],
 		);
 
 		// Add rate limiting if the extension is installed
@@ -128,6 +132,8 @@ class RestApiExtension extends AbstractExtension
 			throw new \RuntimeException('REST API extension cannot execute actions before the container is ready.');
 		}
 
+		$this->ensureActivated();
+
 		if (is_string($action)) {
 			$action = $this->container->get($this->resolveActionClass($action));
 		}
@@ -137,6 +143,23 @@ class RestApiExtension extends AbstractExtension
 			'payload' => $payload,
 			'options' => $options,
 		]);
+	}
+
+	public function ensureActivated(): void
+	{
+		if ($this->activated || $this->container === null) {
+			return;
+		}
+
+		$this->activated = true;
+		$config = $this->config ?? $this->container->get(RestApiConfig::class);
+		$dispatcher = $this->container->get(\Psr\EventDispatcher\EventDispatcherInterface::class);
+
+		$dispatcher->dispatch(new RestApiActivatedEvent(
+			$this->container,
+			$config,
+			(string) $config->get('endpointUri', '/items'),
+		));
 	}
 
 	private function resolveActionClass(string $action): string

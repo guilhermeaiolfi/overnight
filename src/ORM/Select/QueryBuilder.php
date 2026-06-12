@@ -102,7 +102,7 @@ final class QueryBuilder
 	 */
 	public function withForward(
 		#[ExpectedValues(values: ['where', 'onWhere'])]
-		string $forward = null
+		?string $forward = null
 	): self {
 		$builder = clone $this;
 		$builder->forward = $forward;

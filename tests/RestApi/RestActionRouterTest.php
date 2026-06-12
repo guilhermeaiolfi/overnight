@@ -6,10 +6,12 @@ namespace Tests\ON\RestApi;
 
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
+use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\RestApiExtension;
 use ON\Container\Executor\ExecutorInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Container\ContainerInterface;
 
 final class RestActionRouterTest extends TestCase
@@ -56,13 +58,33 @@ final class RestActionRouterTest extends TestCase
 							return null;
 						}
 					},
+					RestApiConfig::class => $this->createConfig(),
+					EventDispatcherInterface::class => new class implements EventDispatcherInterface {
+						public function dispatch(object $event): object
+						{
+							return $event;
+						}
+					},
 					default => throw new \RuntimeException("Unknown service {$id}."),
 				};
 			}
 
 			public function has(string $id): bool
 			{
-				return in_array($id, [TestRestAction::class, ExecutorInterface::class], true);
+				return in_array($id, [
+					TestRestAction::class,
+					ExecutorInterface::class,
+					RestApiConfig::class,
+					EventDispatcherInterface::class,
+				], true);
+			}
+
+			private function createConfig(): RestApiConfig
+			{
+				$config = new RestApiConfig();
+				$config->endpointUri = '/items';
+
+				return $config;
 			}
 		};
 
@@ -82,6 +104,78 @@ final class RestActionRouterTest extends TestCase
 			'payload' => ['query' => ['limit' => 1]],
 			'options' => ['dispatchEvents' => false],
 		], $result);
+	}
+
+	public function testRestApiExtensionActivatesOnlyOnceOnFirstExecute(): void
+	{
+		$dispatcher = new class implements EventDispatcherInterface {
+			public int $activationCalls = 0;
+
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof RestApiActivatedEvent) {
+					$this->activationCalls++;
+				}
+
+				return $event;
+			}
+		};
+
+		$container = new class($dispatcher) implements ContainerInterface {
+			public function __construct(private EventDispatcherInterface $dispatcher)
+			{
+			}
+
+			public function get(string $id): mixed
+			{
+				return match ($id) {
+					TestRestAction::class => new TestRestAction(),
+					ExecutorInterface::class => new class implements ExecutorInterface {
+						public function execute($callableOrMethodStr, array $args = [])
+						{
+							return $callableOrMethodStr($args['params'], $args['payload'], $args['options']);
+						}
+
+						public function getContainer(): ?ContainerInterface
+						{
+							return null;
+						}
+					},
+					RestApiConfig::class => $this->createConfig(),
+					EventDispatcherInterface::class => $this->dispatcher,
+					default => throw new \RuntimeException("Unknown service {$id}."),
+				};
+			}
+
+			public function has(string $id): bool
+			{
+				return in_array($id, [
+					TestRestAction::class,
+					ExecutorInterface::class,
+					RestApiConfig::class,
+					EventDispatcherInterface::class,
+				], true);
+			}
+
+			private function createConfig(): RestApiConfig
+			{
+				$config = new RestApiConfig();
+				$config->endpointUri = '/items';
+
+				return $config;
+			}
+		};
+
+		$extension = (new \ReflectionClass(RestApiExtension::class))->newInstanceWithoutConstructor();
+		$containerProperty = new \ReflectionProperty(RestApiExtension::class, 'container');
+		$containerProperty->setValue($extension, $container);
+		$configProperty = new \ReflectionProperty(RestApiExtension::class, 'config');
+		$configProperty->setValue($extension, $container->get(RestApiConfig::class));
+
+		$extension->execute(TestRestAction::class, ['collection' => 'post']);
+		$extension->execute(TestRestAction::class, ['collection' => 'post']);
+
+		$this->assertSame(1, $dispatcher->activationCalls);
 	}
 }
 

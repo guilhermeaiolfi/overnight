@@ -18,7 +18,7 @@ class FormatNode extends Node
 		return $layout;
 	}
 
-	public function renderer(string $name, string $class = null): RendererNode
+	public function renderer(string $name, ?string $class = null): RendererNode
 	{
 		if (! isset($this->items['renderers'][$name])) {
 			$this->items['renderers'][$name] = [];

@@ -403,7 +403,7 @@ class TranslationManager implements TranslationManagerInterface
 	 * @author     Dominik del Bondio <ddb@bitxtender.com>
 	 * @since      0.11.0
 	 */
-	public function _($message, $domain = null, $locale = null, array $parameters = null)
+	public function _($message, $domain = null, $locale = null, ?array $parameters = null)
 	{
 		if ($domain === null) {
 			$domain = $this->defaultDomain;
@@ -443,7 +443,7 @@ class TranslationManager implements TranslationManagerInterface
 	 * @author     David Zülke <dz@bitxtender.com>
 	 * @since      0.11.0
 	 */
-	public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, array $parameters = null)
+	public function __($singularMessage, $pluralMessage, $amount, $domain = null, $locale = null, ?array $parameters = null)
 	{
 		return $this->_([$singularMessage, $pluralMessage, $amount], $domain, $locale, $parameters);
 	}
