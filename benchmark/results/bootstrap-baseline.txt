@@ -1,0 +1,19 @@
+
+Aggregate by Subject
+====================
+
+Aggregate results by subject and group by benchmark class.
+This is a preview report and may change in minor version updates.
+
+BootstrapBench
++------------------------------------------+------+-----+----------+-------------+---------+--------+
+| name                                     | revs | its | mem_peak | mode        | rstdev  | diff   |
++------------------------------------------+------+-----+----------+-------------+---------+--------+
+| benchBareApplicationDebug                | 5    | 3   | 5.661mb  | 221.529μs   | ±5.20%  | 1.00x  |
+| benchCoreExtensionsDebug                 | 5    | 3   | 5.661mb  | 975.902μs   | ±12.70% | 4.41x  |
+| benchCoreExtensionsProductionCold        | 1    | 3   | 5.661mb  | 1,081.458μs | ±5.19%  | 4.88x  |
+| benchCoreExtensionsProductionWarmCaches  | 5    | 3   | 5.741mb  | 824.510μs   | ±2.71%  | 3.72x  |
+| benchProductionStackDebug                | 5    | 3   | 6.412mb  | 3,511.571μs | ±3.87%  | 15.85x |
+| benchProductionStackProductionCold       | 1    | 3   | 6.232mb  | 8,496.681μs | ±10.67% | 38.35x |
+| benchProductionStackProductionWarmCaches | 5    | 3   | 6.419mb  | 3,246.712μs | ±6.21%  | 14.66x |
++------------------------------------------+------+-----+----------+-------------+---------+--------+

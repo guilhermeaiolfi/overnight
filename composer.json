@@ -38,12 +38,21 @@
         "phpunit/phpunit": "^11.5",
         "kint-php/kint": "^5.1",
         "filp/whoops": "^2.16",
-        "friendsofphp/php-cs-fixer": "^3.64"
+        "friendsofphp/php-cs-fixer": "^3.64",
+        "latte/latte": "^3.1",
+        "phpbench/phpbench": "^1.4"
     },
     "autoload-dev": {
       "psr-4": {
-        "Tests\\ON\\": "tests/"
+        "Tests\\ON\\": "tests/",
+        "Benchmarks\\ON\\": "benchmarks/"
       }
+    },
+    "scripts": {
+      "bench": "phpbench run --config=phpbench.json",
+      "bench:bootstrap": "phpbench run --config=phpbench.json --filter=BootstrapBench",
+      "bench:bootstrap:record": "php benchmark/bootstrap_bench.php record",
+      "bench:bootstrap:compare": "php benchmark/bootstrap_bench.php compare"
     },
     "autoload": {
       "files": [

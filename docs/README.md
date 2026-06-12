@@ -87,6 +87,7 @@ class HelloPage
 - [Mapper](mapper.md) - Value conversion and structural mapping (`map()->to()`)
 - [CLI](cli.md) - Console commands
 - [Testing](testing.md) - Writing tests
+- [Benchmarking](benchmarking.md) - Tracking bootstrap performance
 
 ### Extension Modules
 - [Routing](extensions/routing.md) - Routes, parameters, and URL generation

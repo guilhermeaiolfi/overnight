@@ -1,0 +1,65 @@
+[
+    {
+        "name": "benchBareApplicationDebug",
+        "revs": 5,
+        "its": 3,
+        "mem_peak": 5661136,
+        "mode": 221.52915851271717,
+        "rstdev": 5.196694194641048,
+        "diff": "1.00x"
+    },
+    {
+        "name": "benchCoreExtensionsDebug",
+        "revs": 5,
+        "its": 3,
+        "mem_peak": 5661136,
+        "mode": 975.9021526418771,
+        "rstdev": 12.699388880126369,
+        "diff": "4.41x"
+    },
+    {
+        "name": "benchCoreExtensionsProductionCold",
+        "revs": 1,
+        "its": 3,
+        "mem_peak": 5661160,
+        "mode": 1081.4579256359991,
+        "rstdev": 5.185786073865662,
+        "diff": "4.88x"
+    },
+    {
+        "name": "benchCoreExtensionsProductionWarmCaches",
+        "revs": 5,
+        "its": 3,
+        "mem_peak": 5741312,
+        "mode": 824.5095890410769,
+        "rstdev": 2.7057268452365513,
+        "diff": "3.72x"
+    },
+    {
+        "name": "benchProductionStackDebug",
+        "revs": 5,
+        "its": 3,
+        "mem_peak": 6412112,
+        "mode": 3511.5706457925653,
+        "rstdev": 3.869182025947087,
+        "diff": "15.85x"
+    },
+    {
+        "name": "benchProductionStackProductionCold",
+        "revs": 1,
+        "its": 3,
+        "mem_peak": 6232080,
+        "mode": 8496.681017612536,
+        "rstdev": 10.666369706180193,
+        "diff": "38.35x"
+    },
+    {
+        "name": "benchProductionStackProductionWarmCaches",
+        "revs": 5,
+        "its": 3,
+        "mem_peak": 6419168,
+        "mode": 3246.7119373776763,
+        "rstdev": 6.209472812043055,
+        "diff": "14.66x"
+    }
+]
