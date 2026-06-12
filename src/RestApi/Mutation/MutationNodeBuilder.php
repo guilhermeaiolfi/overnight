@@ -9,20 +9,9 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\ItemCreated;
-use ON\RestApi\Event\ItemCreating;
-use ON\RestApi\Event\ItemDeleting;
-use ON\RestApi\Event\ItemUpdated;
-use ON\RestApi\Event\ItemUpdating;
-use ON\RestApi\Event\RelationConnected;
-use ON\RestApi\Event\RelationConnecting;
-use ON\RestApi\Event\RelationDisconnected;
-use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction as PayloadCreateAction;
 use ON\RestApi\Payload\Action\DeleteAction as PayloadDeleteAction;
-use ON\RestApi\Payload\Action\DisconnectAction;
 use ON\RestApi\Payload\Action\UpdateAction as PayloadUpdateAction;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
@@ -30,14 +19,9 @@ use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
-final readonly class MutationPlan
+final class MutationNodeBuilder
 {
 	private const CHILD_ACTIONS = ['create', 'update', 'delete'];
-
-	public function __construct(
-		public MutationNode $root,
-	) {
-	}
 
 	public static function fromSpec(
 		MutationSpec $spec,
@@ -47,7 +31,7 @@ final readonly class MutationPlan
 		HandlerFactory $handlers,
 		PrimaryKeyValue|string|null $id = null,
 		array $path = [],
-	): ?self {
+	): ?MutationNode {
 		$collection = $registry->getCollection($spec->root->collection);
 		$rootState = new MutationState($collection, $spec->root->fields);
 		$state = $path === [] ? $rootState : new MutationState($collection, $spec->root->fields);
@@ -69,26 +53,8 @@ final readonly class MutationPlan
 		}
 		self::assertCreateIdAvailable($items, $parentOperation, $collection, $state);
 		$state->setData($spec->root->fields);
-		$root = self::nodeFromSpec($registry, $items, $handlers, $spec->root, $mode, $state, $id, $path);
 
-		return $root === null ? null : new self($root);
-	}
-
-	/**
-	 * @return list<object>
-	 */
-	public function getBeforeMutationEvents(
-		MutationQueue $queue,
-	): array {
-		return $this->beforeMutationEvents($this->root, $queue, $this->root->state);
-	}
-
-	/**
-	 * @return list<object>
-	 */
-	public function getAfterMutationEvents(): array
-	{
-		return $this->afterMutationEvents($this->root, $this->root->state);
+		return self::nodeFromSpec($registry, $items, $handlers, $spec->root, $mode, $state, $id, $path);
 	}
 
 	private static function nodeFromSpec(
@@ -245,137 +211,4 @@ final readonly class MutationPlan
 		}
 	}
 
-	/**
-	 * @return list<object>
-	 */
-	private function beforeMutationEvents(
-		MutationNode $node,
-		MutationQueue $queue,
-		MutationStateInterface $rootState,
-	): array {
-		$events = [];
-		$id = $node->operation !== 'create'
-			? $node->state->getPrimaryKeyValue()
-			: null;
-		$event = match ($node->operation) {
-			'create' => new ItemCreating($node, $queue, $node->path, $rootState),
-			'update' => $id === null ? null : new ItemUpdating($node, $id, $queue, $node->path, $rootState),
-			'delete' => $id === null ? null : new ItemDeleting($node, $id, $queue, $node->path, $rootState),
-			default => null,
-		};
-		if ($event !== null) {
-			$events[] = $event;
-		}
-
-		foreach ($node->relations as $relation) {
-			foreach (self::CHILD_ACTIONS as $action) {
-				foreach ($relation->children[$action] as $child) {
-					array_push($events, ...$this->beforeMutationEvents($child, $queue, $rootState));
-				}
-			}
-
-			array_push($events, ...$this->beforeRelationEvents($relation, $queue, $rootState));
-		}
-
-		return $events;
-	}
-
-	/**
-	 * @return list<object>
-	 */
-	private function afterMutationEvents(
-		MutationNode $node,
-		MutationStateInterface $rootState,
-	): array {
-		$events = [];
-		foreach ($node->relations as $relation) {
-			foreach (self::CHILD_ACTIONS as $action) {
-				foreach ($relation->children[$action] as $child) {
-					array_push($events, ...$this->afterMutationEvents($child, $rootState));
-				}
-			}
-
-			array_push($events, ...$this->afterRelationEvents($relation, $rootState));
-		}
-
-		$event = match ($node->operation) {
-			'create' => new ItemCreated($node->collection, $node->state, $node->path, $rootState),
-			'update' => new ItemUpdated($node->collection, $node->state, $node->path, $rootState),
-			default => null,
-		};
-		if ($event !== null) {
-			$events[] = $event;
-		}
-
-		return $events;
-	}
-
-	/**
-	 * @return list<object>
-	 */
-	private function beforeRelationEvents(
-		RelationNode $relation,
-		MutationQueue $queue,
-		MutationStateInterface $rootState,
-	): array {
-		$events = [];
-		foreach ($relation->payload->actions as $action) {
-			$event = match (true) {
-				$action instanceof ConnectAction && $action->target !== null => new RelationConnecting(
-					$relation,
-					$action->target,
-					$relation->path,
-					$rootState,
-					$queue
-				),
-				$action instanceof DisconnectAction && $action->target !== null => new RelationDisconnecting(
-					$relation,
-					$action->target,
-					$relation->path,
-					$rootState,
-					$queue
-				),
-				default => null,
-			};
-
-			if ($event !== null) {
-				$events[] = $event;
-			}
-		}
-
-		return $events;
-	}
-
-	/**
-	 * @return list<object>
-	 */
-	private function afterRelationEvents(
-		RelationNode $relation,
-		MutationStateInterface $rootState,
-	): array {
-		$events = [];
-		foreach ($relation->payload->actions as $action) {
-			$event = match (true) {
-				$action instanceof ConnectAction && $action->target !== null => new RelationConnected(
-					$relation,
-					$action->target,
-					$relation->path,
-					$rootState
-				),
-				$action instanceof DisconnectAction && $action->target !== null => new RelationDisconnected(
-					$relation,
-					$action->target,
-					$relation->path,
-					$rootState
-				),
-				default => null,
-			};
-
-			if ($event !== null) {
-				$events[] = $event;
-			}
-		}
-
-		return $events;
-	}
 }

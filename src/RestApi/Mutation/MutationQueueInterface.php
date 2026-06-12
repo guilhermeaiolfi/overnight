@@ -5,7 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Event\RestEventManager;
+use ON\RestApi\Hook\RestHookDispatcher;
+use ON\RestApi\Hook\RestHookTransaction;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
@@ -32,7 +33,8 @@ interface MutationQueueInterface
 
 	public function fill(
 		MutationNode $node,
-		RestEventManager $events,
+		RestHookDispatcher $dispatcher,
+		RestHookTransaction $afterHooksTx,
 		bool $dispatchEvents
 	): MutationTaskInterface|MutationDeleteTaskInterface|null;
 

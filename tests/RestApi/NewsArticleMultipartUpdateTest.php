@@ -9,6 +9,8 @@ use Laminas\Diactoros\ServerRequest;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Repository\ItemRepository;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -284,39 +286,40 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			}
 		};
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof FileUpload) {
-					$event->setStoredValue(501);
-				}
+		RestHooks::for($registry->getCollection('news_article_file'))
+			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501))
+			->on('create.before', static function (ItemCreating $event): void {
+				$state = $event->getState();
+				$data = $state->getData();
+				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$state->setData($data);
+			})
+			->on('update.before', static function (ItemUpdating $event): void {
+				$state = $event->getState();
+				$data = $state->getData();
+				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$state->setData($data);
+			});
 
-				if ($event instanceof ItemCreating || $event instanceof \ON\RestApi\Event\ItemUpdating) {
-					if ($event->getCollection()->getName() === 'news_article_file') {
-						$data = $event->getState()->getData();
-						$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
-						$event->getState()->setData($data);
-					}
-
-					if ($event->getCollection()->getName() === 'news_article') {
-						$data = $event->getState()->getData();
-						$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
-						$event->getState()->setData($data);
-					}
-
-					$event->allow();
-				}
-
-				return $event;
-			}
-		};
+		RestHooks::for($registry->getCollection('news_article'))
+			->on('create.before', static function (ItemCreating $event): void {
+				$state = $event->getState();
+				$data = $state->getData();
+				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$state->setData($data);
+			})
+			->on('update.before', static function (ItemUpdating $event): void {
+				$state = $event->getState();
+				$data = $state->getData();
+				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$state->setData($data);
+			});
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		return [$registry, $resolver, $middleware];

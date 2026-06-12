@@ -200,7 +200,7 @@ final class SqlRestResolverTest extends TestCase
 			new HandlerFactory(HandlerRegistry::defaults(), $items, $compiler),
 			$compiler,
 			new \ON\RestApi\RestApiConfig(),
-			$this->noopEventDispatcher(),
+			$this->noopHookDispatcher($registry),
 		);
 
 		$result = $action(

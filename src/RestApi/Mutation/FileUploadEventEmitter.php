@@ -11,17 +11,17 @@ use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
-use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\UploadedFileInterface;
 
 final class FileUploadEventEmitter
 {
 	public function __construct(
 		private readonly Registry $registry,
-		private readonly EventDispatcherInterface $eventDispatcher,
+		private readonly RestHookDispatcher $hooks,
 	) {
 	}
 
@@ -94,7 +94,7 @@ final class FileUploadEventEmitter
 		UploadedFileInterface $file
 	): mixed {
 		$event = new FileUpload($collection, $fieldName, $file);
-		$this->eventDispatcher->dispatch($event);
+		$this->hooks->dispatch($collection, 'file.upload', $event, false);
 
 		if ($event->getStoredValue() !== null) {
 			return $event->getStoredValue();

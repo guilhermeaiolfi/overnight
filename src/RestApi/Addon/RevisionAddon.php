@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace ON\RestApi\Addon;
 
 use ON\DB\DatabaseManager;
-use ON\Event\EventsExtension;
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdating;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
 /**
@@ -35,7 +37,7 @@ class RevisionAddon implements RestApiAddonInterface
 	protected ?array $collections = null;
 
 	public function __construct(
-		protected EventsExtension $events,
+		protected Registry $registry,
 		protected DatabaseManager $databaseManager,
 		protected ItemRepositoryInterface $items
 	) {
@@ -46,52 +48,66 @@ class RevisionAddon implements RestApiAddonInterface
 		$this->table = $options['table'] ?? 'revisions';
 		$this->collections = $options['collections'] ?? null;
 
-		$this->events->registerListener('restapi.item.creating', [$this, 'onItemCreate']);
-		$this->events->registerListener('restapi.item.updating', [$this, 'onItemUpdate']);
-		$this->events->registerListener('restapi.item.deleting', [$this, 'onItemDelete']);
+		foreach ($this->registry->getCollections() as $collection) {
+			if ($this->shouldTrack($collection->getName())) {
+				$this->registerCollectionHooks($collection);
+			}
+		}
 	}
 
 	public function onItemCreate(ItemCreating $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
+		$state = $event->getState();
 
-		if (!$this->shouldTrack($collectionName)) {
+		if ($state === null || !$this->shouldTrack($collectionName)) {
 			return;
 		}
 
-		$this->writeRevision($collectionName, '', 'create', null, $event->getState()->getData());
+		$this->writeRevision($collectionName, '', 'create', null, $state->getData());
 	}
 
 	public function onItemUpdate(ItemUpdating $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
+		$identity = $event->getPrimaryKeyValue();
+		$state = $event->getState();
 
-		if (!$this->shouldTrack($collectionName)) {
+		if ($identity === null || $state === null || !$this->shouldTrack($collectionName)) {
 			return;
 		}
 
 		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
-			$event->getPrimaryKeyValue(),
+			$identity,
 		);
 
-		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'update', $currentItem, $event->getState()->getData());
+		$this->writeRevision($collectionName, $identity->toUrlId(), 'update', $currentItem, $state->getData());
 	}
 
 	public function onItemDelete(ItemDeleting $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
+		$identity = $event->getPrimaryKeyValue();
 
-		if (!$this->shouldTrack($collectionName)) {
+		if ($identity === null || !$this->shouldTrack($collectionName)) {
 			return;
 		}
 
 		$currentItem = $this->items->findByIdentity(
 			$event->getCollection(),
-			$event->getPrimaryKeyValue(),
+			$identity,
 		);
 
-		$this->writeRevision($collectionName, $event->getPrimaryKeyValue()->toUrlId(), 'delete', $currentItem, null);
+		$this->writeRevision($collectionName, $identity->toUrlId(), 'delete', $currentItem, null);
+	}
+
+	protected function registerCollectionHooks(CollectionInterface $collection): void
+	{
+		RestHooks::for($collection)
+			->on('create.before', [self::class, 'onItemCreate'])
+			->on('update.before', [self::class, 'onItemUpdate'])
+			->on('delete.before', [self::class, 'onItemDelete']);
 	}
 
 	protected function shouldTrack(string $collectionName): bool

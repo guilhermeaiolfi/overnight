@@ -15,13 +15,12 @@ use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-use ON\RestApi\Support\AuthorizationGuard;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 use function ON\Mapper\map;
 
@@ -38,7 +37,7 @@ final class ListAction implements RestActionInterface
 		private HandlerFactory $relationHandlers,
 		private SqlQuerySpecCompiler $querySpecCompiler,
 		private RestApiConfig $config,
-		private EventDispatcherInterface $eventDispatcher,
+		private RestHookDispatcher $hooks,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -61,8 +60,7 @@ final class ListAction implements RestActionInterface
 			}
 
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->eventDispatcher->dispatch($event);
-			AuthorizationGuard::assert($event);
+			$this->hooks->dispatch($collection, 'list', $event);
 			$querySpec = $event->getQuerySpec();
 
 			if ($event->isDefaultPrevented()) {
@@ -91,8 +89,7 @@ final class ListAction implements RestActionInterface
 		$responseOptions = null;
 		if ($options['dispatchEvents']) {
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->eventDispatcher->dispatch($event);
-			AuthorizationGuard::assert($event);
+			$this->hooks->dispatch($collection, 'list', $event);
 			$querySpec = $event->getQuerySpec();
 			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
 

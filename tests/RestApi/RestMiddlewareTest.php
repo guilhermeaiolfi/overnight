@@ -6,9 +6,10 @@ namespace Tests\ON\RestApi;
 
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
+use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
-use ON\ORM\Definition\Registry;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepository;
@@ -114,26 +115,14 @@ final class RestMiddlewareTest extends TestCase
 			}
 		};
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof FileUpload) {
-					$event->setStoredValue(501);
-				}
+		RestHooks::for($registry->getCollection('attachment'))
+			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
 
-				if ($event instanceof ItemCreating) {
-					$event->allow();
-				}
-
-				return $event;
-			}
-		};
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		$request = (new ServerRequest(
@@ -236,23 +225,11 @@ final class RestMiddlewareTest extends TestCase
 		]);
 		$resolver = new ItemRepository($registry, $db->database());
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof ItemCreating && $event->isRoot()) {
-					$event->allow(true);
-				}
-
-				return $event;
-			}
-		};
-
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		$response = $middleware->process(
@@ -338,26 +315,14 @@ final class RestMiddlewareTest extends TestCase
 			}
 		};
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof FileUpload) {
-					$event->setStoredValue(501);
-				}
+		RestHooks::for($registry->getCollection('attachment'))
+			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
 
-				if ($event instanceof ItemCreating || $event instanceof \ON\RestApi\Event\ItemUpdating) {
-					$event->allow();
-				}
-
-				return $event;
-			}
-		};
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		$request = (new ServerRequest(
@@ -466,33 +431,25 @@ final class RestMiddlewareTest extends TestCase
 			}
 		};
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
+		$uploads = [];
+		RestHooks::for($registry->getCollection('directus_files'))
+			->on('file.upload', static function (FileUpload $event) use (&$uploads): void {
+				$uploads[] = [
+					'collection' => $event->getCollection()->getName(),
+					'field' => $event->getFieldName(),
+					'filename' => $event->getFile()->getClientFilename(),
+				];
+				$event->setStoredValue(501);
+			});
+
+		$dispatcher = new class {
 			public array $uploads = [];
-
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof FileUpload) {
-					$this->uploads[] = [
-						'collection' => $event->getCollection()->getName(),
-						'field' => $event->getFieldName(),
-						'filename' => $event->getFile()->getClientFilename(),
-					];
-					$event->setStoredValue(501);
-				}
-
-				if ($event instanceof ItemCreating) {
-					$event->allow();
-				}
-
-				return $event;
-			}
 		};
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		$request = (new ServerRequest(
@@ -526,7 +483,7 @@ final class RestMiddlewareTest extends TestCase
 			'collection' => 'directus_files',
 			'field' => 'file',
 			'filename' => 'photo.jpg',
-		]], $dispatcher->uploads);
+		]], $uploads);
 		$this->assertCount(1, $resolver->createCalls);
 		$this->assertSame('directus_files', $resolver->createCalls[0]['collection']);
 		$this->assertSame(501, $resolver->createCalls[0]['input']['file']);
@@ -551,26 +508,17 @@ final class RestMiddlewareTest extends TestCase
 		]);
 		$resolver = new ItemRepository($registry, $db->database());
 
-		$dispatcher = new class implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function dispatch(object $event): object
-			{
-				if ($event instanceof ItemCreating) {
-					$event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
-						'Missing permission "create" on resource "module:news".',
-						['resource' => 'module:news', 'action' => 'create'],
-					));
-				}
-
-				return $event;
-			}
-		};
+		RestHooks::for($registry->getCollection('asset'))
+			->on('create.before', static fn (ItemCreating $event) => $event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
+				'Missing permission "create" on resource "module:news".',
+				['resource' => 'module:news', 'action' => 'create'],
+			)), 100);
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver, $dispatcher),
+			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
-			$dispatcher
 		);
 
 		$response = $middleware->process(

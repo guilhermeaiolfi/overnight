@@ -28,10 +28,10 @@ Mutations follow a strict four-phase pipeline:
 
 ```
 file uploads (pre-plan)
-  → plan()           parse + normalize payload → build MutationNode tree → MutationPlan
-  → commit()         before-events on full plan → schedule after-events → queue fill()
+  → build node       parse + normalize payload → build MutationNode tree
+  → fill queue       dispatch before-hooks → queue mutations → schedule after-hooks
   → transaction { queue.execute() }
-  → dispatchAfterEvents()
+  → flush after-hooks
 ```
 
 ---
@@ -47,8 +47,8 @@ file uploads (pre-plan)
 | `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
 | `RelationPayload` | One relation occurrence: flat `list<RelationAction>` |
 | `RelationAction` | `CreateAction`, `UpdateAction`, `DeleteAction`, `ConnectAction`, `DisconnectAction` |
-| Directus mutation actions | Plan mutation trees, commit through the queue, and dispatch lifecycle events |
-| `MutationPlan` | Readonly result of planning: root `MutationNode` tree, ready for `commit()` |
+| Directus mutation actions | Build mutation trees, commit through the queue, and dispatch collection hooks |
+| `MutationNodeBuilder` | Builds a root `MutationNode` tree from a normalized `MutationSpec` |
 | `MutationNode` | One entity in the plan tree: operation, state, nested relations |
 | `RelationNode` | One relation on a node: handler, `RelationPayload`, planned child nodes |
 | `MutationQueue` | Ordered list of insert/update/delete commands; resolves `ValueRef` deps at execute time |
@@ -73,7 +73,7 @@ src/RestApi/
 │   ├── Action/                 CreateAction, ConnectAction, BasicRelationAction, …
 │   └── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
 ├── Mutation/
-│   ├── MutationPlan.php
+│   ├── MutationNodeBuilder.php
 │   ├── MutationQueue.php
 │   ├── MutationNode.php
 │   └── RelationNode.php
@@ -92,14 +92,14 @@ src/RestApi/
 
 1. **`DirectusPayloadParser::parse()`** — split scalars vs relations; detailed → typed actions; basic → `BasicRelationAction`.
 2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::mutation()` returns a handler that normalizes the payload in one call (`normalizeRelation()`).
-3. **`MutationPlan::fromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
-4. Return `MutationPlan` — **no events yet**.
+3. **`MutationNodeBuilder::fromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
+4. Return the root `MutationNode` — **no hooks yet**.
 
 ## Commit phase (`commit`)
 
-1. **Before-events** — depth-first: item → child nodes → relation connect/disconnect (from `RelationPayload.actions`).
-2. **After-events scheduled** — child nodes → relation events → item.
-3. **`MutationQueue::fill()`** — depth-first: child nodes → `applyRelation()` → `queueNode()`.
+1. **Before-hooks** — depth-first: item → child nodes → relation connect/disconnect (from `RelationPayload.actions`).
+2. **`MutationQueue::fill()`** — depth-first: child nodes → `applyRelation()` → `queueNode()`.
+3. **After-hooks scheduled** — relation hooks and item hooks are flushed after commit.
 
 Row CRUD never lives in relation handlers. Handlers only interpret relation semantics at apply time.
 

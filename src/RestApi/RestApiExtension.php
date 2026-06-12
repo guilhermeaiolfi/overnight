@@ -20,6 +20,7 @@ use ON\RestApi\Container\DirectusQueryBuilderFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
+use ON\RestApi\Container\RestHookDispatcherFactory;
 use ON\RestApi\Container\SqlQuerySpecCompilerFactory;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
@@ -30,6 +31,7 @@ use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Event\RestApiActivatedEvent;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\Mapper\ConversionGateway;
@@ -70,6 +72,7 @@ class RestApiExtension extends AbstractExtension
 			SqlQuerySpecCompiler::class => SqlQuerySpecCompilerFactory::class,
 			HandlerFactory::class => HandlerFactoryFactory::class,
 			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
+			RestHookDispatcher::class => RestHookDispatcherFactory::class,
 			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
 			DirectusQueryBuilder::class => DirectusQueryBuilderFactory::class,
 		]);

@@ -108,6 +108,10 @@ class ContainerExtension extends AbstractExtension
 		$this->container->set(Application::class, $this->app);
 		$this->container->set(get_class($this->app), $this->app);
 
+		foreach ($this->app->getInstalledExtensions() as $extensionClass) {
+			$this->container->set($extensionClass, $this->app->ext($extensionClass));
+		}
+
 	}
 
 	public function getContainer(): ContainerInterface

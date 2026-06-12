@@ -29,13 +29,17 @@ use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
+use ON\Container\Executor\ExecutorInterface;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\RestEventManager;
+use ON\RestApi\Event\AuthState;
+use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Hook\RestHookDispatcher;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationPlan;
+use ON\RestApi\Mutation\MutationNodeBuilder;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Query\DirectusQueryBuilder;
@@ -67,6 +71,48 @@ trait RestApiTestFixtures
 				return $event;
 			}
 		};
+	}
+
+	private function noopHookDispatcher(Registry $registry): RestHookDispatcher
+	{
+		foreach ($registry->getCollections() as $collection) {
+			RestHooks::for($collection)
+				->on('list', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
+				->on('get', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
+				->on('create.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
+				->on('update.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
+				->on('delete.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null);
+		}
+
+		$container = new class implements ContainerInterface {
+			public function get(string $id): mixed
+			{
+				throw new \RuntimeException("Unknown service {$id}.");
+			}
+
+			public function has(string $id): bool
+			{
+				return false;
+			}
+		};
+
+		$executor = new class($container) implements ExecutorInterface {
+			public function __construct(private ContainerInterface $container)
+			{
+			}
+
+			public function execute($callableOrMethodStr, array $args = [])
+			{
+				return $callableOrMethodStr($args['event'] ?? $args['hook'] ?? $args['payload'] ?? null);
+			}
+
+			public function getContainer(): ?ContainerInterface
+			{
+				return $this->container;
+			}
+		};
+
+		return new RestHookDispatcher($container, $executor);
 	}
 
 	protected function createUserCollection(Registry $registry): void
@@ -316,13 +362,13 @@ trait RestApiTestFixtures
 		$items = $this->createItems($registry, $db);
 		$handlers = $this->createHandlerFactory($items);
 		$config = new \ON\RestApi\RestApiConfig();
-		$eventDispatcher = $this->noopEventDispatcher();
+		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
 			new QueryNormalizer(),
 			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
 		));
 
-		return new class($registry, $items, $handlers, $config, $eventDispatcher) {
+		return new class($registry, $items, $handlers, $config, $hookDispatcher) {
 			private SqlQuerySpecCompiler $querySpecCompiler;
 
 			public function __construct(
@@ -330,7 +376,7 @@ trait RestApiTestFixtures
 				private ItemRepositoryInterface $items,
 				private HandlerFactory $handlers,
 				private \ON\RestApi\RestApiConfig $config,
-				private EventDispatcherInterface $eventDispatcher,
+				private RestHookDispatcher $hookDispatcher,
 			) {
 				$this->querySpecCompiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
 			}
@@ -385,7 +431,7 @@ trait RestApiTestFixtures
 					$this->handlers,
 					$this->querySpecCompiler,
 					$this->config,
-					$this->eventDispatcher,
+					$this->hookDispatcher,
 				);
 			}
 
@@ -396,7 +442,7 @@ trait RestApiTestFixtures
 					$this->items,
 					$this->handlers,
 					$this->config,
-					$this->eventDispatcher,
+					$this->hookDispatcher,
 				);
 			}
 		};
@@ -493,6 +539,7 @@ trait RestApiTestFixtures
 		?EventDispatcherInterface $eventDispatcher = null,
 	): object {
 		$eventDispatcher ??= $this->noopEventDispatcher();
+		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$this->createQueryBuilder();
 
 		return new class(
@@ -501,7 +548,7 @@ trait RestApiTestFixtures
 			$this->createHandlerFactory($items),
 			$this->createMutationBuilder($registry, $items, $eventDispatcher),
 			new \ON\RestApi\RestApiConfig(),
-			$eventDispatcher,
+			$hookDispatcher,
 		) {
 			use RegistrySupportTrait;
 
@@ -514,7 +561,7 @@ trait RestApiTestFixtures
 				private HandlerFactory $relationHandlers,
 				private DirectusMutationBuilder $mutationBuilder,
 				private \ON\RestApi\RestApiConfig $config,
-				private EventDispatcherInterface $eventDispatcher,
+				private RestHookDispatcher $hookDispatcher,
 			) {}
 
 			public function getCollection(string|\ON\ORM\Definition\Collection\CollectionInterface $collectionName): \ON\ORM\Definition\Collection\CollectionInterface
@@ -600,20 +647,21 @@ trait RestApiTestFixtures
 				];
 				$this->fileUploadEventEmitter()->process($spec);
 				$queue = new MutationQueue();
-				$events = new RestEventManager($this->eventDispatcher);
-				$plan = MutationPlan::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
+				$afterHooksTx = $this->hookDispatcher->start();
+				$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
 				$root = null;
-				if ($plan !== null) {
-					if ($options['dispatchEvents']) {
-						$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
-						$events->scheduleAfterEvent($plan->getAfterMutationEvents());
-					}
-					$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
+				if ($rootNode !== null) {
+					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
 				}
 
-				$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-				$events->dispatchAfterEvents();
+				try {
+					$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
+					$afterHooksTx->flush();
+				} catch (\Throwable $throwable) {
+					$afterHooksTx->rollback();
+					throw $throwable;
+				}
 
 				return map($result)
 					->using(CollectionRowMapper::class, $collection)
@@ -636,20 +684,21 @@ trait RestApiTestFixtures
 				];
 				$this->fileUploadEventEmitter()->process($spec);
 				$queue = new MutationQueue();
-				$events = new RestEventManager($this->eventDispatcher);
-				$plan = MutationPlan::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
+				$afterHooksTx = $this->hookDispatcher->start();
+				$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
 				$root = null;
-				if ($plan !== null) {
-					if ($options['dispatchEvents']) {
-						$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
-						$events->scheduleAfterEvent($plan->getAfterMutationEvents());
-					}
-					$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
+				if ($rootNode !== null) {
+					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
 				}
 
-				$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
-				$events->dispatchAfterEvents();
+				try {
+					$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
+					$afterHooksTx->flush();
+				} catch (\Throwable $throwable) {
+					$afterHooksTx->rollback();
+					throw $throwable;
+				}
 
 				return $result !== null
 					? map($result)
@@ -669,21 +718,22 @@ trait RestApiTestFixtures
 				$identity = $collection->getPrimaryKey()->getValue($identity);
 				$options = $options + ['dispatchEvents' => true];
 				$queue = new MutationQueue();
-				$events = new RestEventManager($this->eventDispatcher);
-				$plan = new MutationPlan(new MutationNode(
+				$afterHooksTx = $this->hookDispatcher->start();
+				$rootNode = new MutationNode(
 					operation: 'delete',
 					collection: $collection,
 					state: new MutationState($collection, $identity->values()),
-				));
-				if ($options['dispatchEvents']) {
-					$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
-					$events->scheduleAfterEvent($plan->getAfterMutationEvents());
-				}
-				$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
+				);
+				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 				$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
-				$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
-				$events->dispatchAfterEvents();
+				try {
+					$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+					$afterHooksTx->flush();
+				} catch (\Throwable $throwable) {
+					$afterHooksTx->rollback();
+					throw $throwable;
+				}
 
 				return $result;
 			}
@@ -710,7 +760,7 @@ trait RestApiTestFixtures
 					$this->relationHandlers,
 					$this->querySpecCompiler(),
 					$this->config,
-					$this->eventDispatcher,
+					$this->hookDispatcher,
 				);
 			}
 
@@ -721,7 +771,7 @@ trait RestApiTestFixtures
 					$this->items,
 					$this->relationHandlers,
 					$this->config,
-					$this->eventDispatcher,
+					$this->hookDispatcher,
 				);
 			}
 
@@ -729,16 +779,7 @@ trait RestApiTestFixtures
 			{
 				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter(
 					$this->registry,
-					$this->eventDispatcher ?? new class implements EventDispatcherInterface {
-						public function dispatch(object $event): object
-						{
-							if ($event instanceof \ON\RestApi\Event\AuthorizationAwareEventInterface) {
-								$event->allow();
-							}
-
-							return $event;
-						}
-					}
+					$this->hookDispatcher
 				);
 			}
 
@@ -795,8 +836,9 @@ trait RestApiTestFixtures
 		));
 
 		$eventDispatcher ??= $this->noopEventDispatcher();
+		$hookDispatcher = $this->noopHookDispatcher($registry);
 
-		$container = new class($registry, $items, $mutationBuilder, $config, $eventDispatcher) implements ContainerInterface {
+		$container = new class($registry, $items, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
 
 			public function __construct(
@@ -804,6 +846,7 @@ trait RestApiTestFixtures
 				private ItemRepositoryInterface $items,
 				private DirectusMutationBuilder $mutationBuilder,
 				private \ON\RestApi\RestApiConfig $config,
+				private RestHookDispatcher $hookDispatcher,
 				private ?EventDispatcherInterface $eventDispatcher = null,
 			) {
 				$compiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
@@ -813,14 +856,14 @@ trait RestApiTestFixtures
 			public function get(string $id): mixed
 			{
 				return match ($id) {
-					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->eventDispatcher),
-					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
-					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
-					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
-					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
-					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->eventDispatcher), $this->config, $this->eventDispatcher),
-					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
-					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->eventDispatcher),
+					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->hookDispatcher),
+					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
+					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
+					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
+					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
+					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
+					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
+					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
 					default => throw new \RuntimeException("Unknown service {$id}."),
 				};
 			}

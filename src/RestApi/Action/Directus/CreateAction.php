@@ -13,16 +13,15 @@ use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Event\RestEventManager;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationPlan;
+use ON\RestApi\Mutation\MutationNodeBuilder;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 use function ON\Mapper\map;
 
@@ -39,7 +38,7 @@ final class CreateAction implements RestActionInterface
 		private HandlerFactory $relationHandlers,
 		private FileUploadEventEmitter $fileUploadEventEmitter,
 		private RestApiConfig $config,
-		private EventDispatcherInterface $eventDispatcher,
+		private RestHookDispatcher $hookDispatcher,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -76,20 +75,21 @@ final class CreateAction implements RestActionInterface
 
 		$this->fileUploadEventEmitter->process($spec);
 		$queue = new MutationQueue();
-		$events = new RestEventManager($this->eventDispatcher);
-		$plan = MutationPlan::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
+		$afterHooksTx = $this->hookDispatcher->start();
+		$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
 		$root = null;
-		if ($plan !== null) {
-			if ($options['dispatchEvents']) {
-				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
-				$events->scheduleAfterEvent($plan->getAfterMutationEvents());
-			}
-			$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
+		if ($rootNode !== null) {
+			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 			$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
 		}
 
-		$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-		$events->dispatchAfterEvents();
+		try {
+			$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
+			$afterHooksTx->flush();
+		} catch (\Throwable $throwable) {
+			$afterHooksTx->rollback();
+			throw $throwable;
+		}
 
 		return map($result)
 			->using(CollectionRowMapper::class, $collection)
@@ -97,4 +97,5 @@ final class CreateAction implements RestActionInterface
 			->as($options['output'])
 			->toArray();
 	}
+
 }

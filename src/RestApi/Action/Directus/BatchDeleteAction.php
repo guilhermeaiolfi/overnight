@@ -12,16 +12,14 @@ use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\RestEventManager;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationPlan;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
-use Psr\EventDispatcher\EventDispatcherInterface;
 
 final class BatchDeleteAction implements RestActionInterface
 {
@@ -33,7 +31,7 @@ final class BatchDeleteAction implements RestActionInterface
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
 		private RestApiConfig $config,
-		private EventDispatcherInterface $eventDispatcher,
+		private RestHookDispatcher $hookDispatcher,
 	) {}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -67,21 +65,22 @@ final class BatchDeleteAction implements RestActionInterface
 
 			$queue = new MutationQueue();
 			$rootState = new MutationState($collection, $identity->values());
-			$events = new RestEventManager($this->eventDispatcher);
-			$plan = new MutationPlan(new MutationNode(
+			$afterHooksTx = $this->hookDispatcher->start();
+			$rootNode = new MutationNode(
 				operation: 'delete',
 				collection: $collection,
 				state: $rootState,
-			));
-			if ($options['dispatchEvents']) {
-				$events->dispatchBeforeEvents($plan->getBeforeMutationEvents($queue));
-				$events->scheduleAfterEvent($plan->getAfterMutationEvents());
-			}
-			$task = $queue->fill($plan->root, $events, $options['dispatchEvents']);
+			);
+			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 			$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
-			$this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
-			$events->dispatchAfterEvents();
+			try {
+				$this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+				$afterHooksTx->flush();
+			} catch (\Throwable $throwable) {
+				$afterHooksTx->rollback();
+				throw $throwable;
+			}
 		}
 
 		return null;

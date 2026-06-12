@@ -112,4 +112,6 @@ interface CollectionInterface
 	public function setFileDefinitionLocation(?string $file = null): void;
 
 	public function getFileDefinitionLocation(): ?string;
+
+	public function metadata(string $key, mixed $value = null): mixed;
 }
