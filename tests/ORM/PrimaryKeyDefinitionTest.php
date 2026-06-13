@@ -18,10 +18,10 @@ final class PrimaryKeyDefinitionTest extends TestCase
 			->end()
 			->getCollection('article');
 
-		$identity = $collection->getPrimaryKey()->extractFromInput(['id' => 123]);
+		$identity = $collection->getPrimaryKey()->extract(['id' => 123]);
 
 		$this->assertNotNull($identity);
-		$this->assertSame(['id' => 123], $identity->values());
+		$this->assertSame(['id' => 123], $identity->getValues());
 		$this->assertSame('123', $identity->toUrlId());
 	}
 
@@ -36,7 +36,7 @@ final class PrimaryKeyDefinitionTest extends TestCase
 			->getCollection('page');
 
 		$primaryKey = $collection->getPrimaryKey();
-		$identity = $primaryKey->extractFromInput(['tenant_id' => 10, 'slug' => 'home']);
+		$identity = $primaryKey->extract(['tenant_id' => 10, 'slug' => 'home']);
 
 		$this->assertNotNull($identity);
 		$this->assertTrue($primaryKey->isComposite());
@@ -44,7 +44,7 @@ final class PrimaryKeyDefinitionTest extends TestCase
 
 		$decoded = $primaryKey->getValueFromUrlId($identity->toUrlId());
 
-		$this->assertSame(['tenant_id' => 10, 'slug' => 'home'], $decoded->values());
+		$this->assertSame(['tenant_id' => 10, 'slug' => 'home'], $decoded->getValues());
 	}
 
 	public function testCompositePrimaryKeyCanExtractByColumnName(): void
@@ -57,13 +57,13 @@ final class PrimaryKeyDefinitionTest extends TestCase
 			->end()
 			->getCollection('page');
 
-		$identity = $collection->getPrimaryKey()->extractFromRow([
+		$identity = $collection->getPrimaryKey()->extract([
 			'tenant_id' => 7,
 			'page_slug' => 'about',
 		]);
 
 		$this->assertNotNull($identity);
-		$this->assertSame(['tenantId' => 7, 'slug' => 'about'], $identity->values());
+		$this->assertSame(['tenantId' => 7, 'slug' => 'about'], $identity->getValues());
 		$this->assertSame([], $collection->getPrimaryKey()->getMissingFieldNames([
 			'tenant_id' => 7,
 			'page_slug' => 'about',

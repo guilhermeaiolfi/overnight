@@ -34,37 +34,37 @@ final class MutationQueue implements MutationQueueInterface
 	/** @var list<MutationCommandInterface> */
 	private array $commands = [];
 
-	public function queueInsert(MutationStateInterface $state, bool $ignoreDuplicate = false): MutationTaskInterface
+	public function queueInsert(MutationStateInterface $state, bool $ignoreDuplicate = false): MutationStateInterface
 	{
 		$command = new InsertCommand($state, $ignoreDuplicate);
 		$this->commands[] = $command;
 
-		return $command->getTask();
+		return $command->getState();
 	}
 
 	public function queueUpdate(
 		CollectionInterface $collection,
 		FilterNode $criteria,
 		array|MutationStateInterface $input
-	): MutationTaskInterface {
+	): MutationStateInterface {
 		$command = new UpdateCommand($collection, $criteria, $input);
 		$this->commands[] = $command;
 
-		return $command->getTask();
+		return $command->getState();
 	}
 
 	public function queueDelete(
 		CollectionInterface $collection,
 		FilterNode $criteria,
 		?MutationStateInterface $state = null,
-	): MutationDeleteTaskInterface {
+	): MutationStateInterface {
 		$command = new DeleteCommand($collection, $criteria, $state);
 		$this->commands[] = $command;
 
-		return $command->getTask();
+		return $command->getState();
 	}
 
-	public function queueNode(MutationNode $node): MutationTaskInterface|MutationDeleteTaskInterface|null
+	public function queueNode(MutationNode $node): ?MutationStateInterface
 	{
 		return match ($node->operation) {
 			'create' => $this->queueInsert($node->state),
@@ -87,7 +87,7 @@ final class MutationQueue implements MutationQueueInterface
 		RestHookDispatcher $dispatcher,
 		RestHookTransaction $afterHooksTx,
 		bool $dispatchEvents
-	): MutationTaskInterface|MutationDeleteTaskInterface|null {
+	): ?MutationStateInterface {
 		$inheritNestedAuthorization = false;
 
 		return $this->fillNode($node, $dispatcher, $afterHooksTx, $node->state, $dispatchEvents, $inheritNestedAuthorization);
@@ -100,7 +100,7 @@ final class MutationQueue implements MutationQueueInterface
 		MutationStateInterface $rootState,
 		bool $dispatchEvents,
 		bool &$inheritNestedAuthorization
-	): MutationTaskInterface|MutationDeleteTaskInterface|null {
+	): ?MutationStateInterface {
 		if ($dispatchEvents) {
 			$this->dispatchBeforeNodeHook($dispatcher, $node, $rootState, $inheritNestedAuthorization);
 		}
@@ -125,12 +125,12 @@ final class MutationQueue implements MutationQueueInterface
 			}
 		}
 
-		$task = $this->queueNode($node);
+		$state = $this->queueNode($node);
 		if ($dispatchEvents) {
-			$this->scheduleAfterNodeHook($afterHooksTx, $node, $task, $rootState);
+			$this->scheduleAfterNodeHook($afterHooksTx, $node, $rootState);
 		}
 
-		return $task;
+		return $state;
 	}
 
 	private function dispatchBeforeNodeHook(
@@ -153,7 +153,7 @@ final class MutationQueue implements MutationQueueInterface
 		}
 
 		$inherit = $inheritNestedAuthorization && $event->getPath() !== [];
-		$this->dispatchMutationHook($dispatcher, $node->operation . '.before', $event, $inherit);
+		$this->dispatchMutationHook($dispatcher, $event, $inherit);
 
 		if ($event->getPath() === [] && $event->shouldInheritAuthToNested()) {
 			$inheritNestedAuthorization = true;
@@ -169,14 +169,12 @@ final class MutationQueue implements MutationQueueInterface
 			match (true) {
 				$action instanceof ConnectAction && $action->target !== null => $this->dispatchMutationHook(
 					$dispatcher,
-					'relation.connect.before',
 					new RelationConnecting($relation, $action->target, $relation->path, $rootState, $this),
 					false,
 					false
 				),
 				$action instanceof DisconnectAction && $action->target !== null => $this->dispatchMutationHook(
 					$dispatcher,
-					'relation.disconnect.before',
 					new RelationDisconnecting($relation, $action->target, $relation->path, $rootState, $this),
 					false,
 					false
@@ -188,7 +186,6 @@ final class MutationQueue implements MutationQueueInterface
 
 	private function dispatchMutationHook(
 		RestHookDispatcher $dispatcher,
-		string $slot,
 		object $event,
 		bool $inheritNestedAuthorization = false,
 		bool $assertAuthorization = true
@@ -200,7 +197,7 @@ final class MutationQueue implements MutationQueueInterface
 			}
 		}
 
-		return $dispatcher->dispatch($event->getCollection(), $slot, $event, $assertAuthorization);
+		return $dispatcher->dispatch($event, $assertAuthorization);
 	}
 
 	private function scheduleAfterRelationHooks(
@@ -211,11 +208,9 @@ final class MutationQueue implements MutationQueueInterface
 		foreach ($relation->payload->actions as $action) {
 			match (true) {
 				$action instanceof ConnectAction && $action->target !== null => $afterHooksTx->schedule(
-					'relation.connect.after',
 					new RelationConnected($relation, $action->target, $relation->path, $rootState)
 				),
 				$action instanceof DisconnectAction && $action->target !== null => $afterHooksTx->schedule(
-					'relation.disconnect.after',
 					new RelationDisconnected($relation, $action->target, $relation->path, $rootState)
 				),
 				default => null,
@@ -226,27 +221,20 @@ final class MutationQueue implements MutationQueueInterface
 	private function scheduleAfterNodeHook(
 		RestHookTransaction $afterHooksTx,
 		MutationNode $node,
-		MutationTaskInterface|MutationDeleteTaskInterface|null $task,
 		MutationStateInterface $rootState
 	): void {
-		match ($node->operation) {
-			'create' => $afterHooksTx->schedule('create.after', new ItemCreated($node->collection, $node->state, $node->path, $rootState)),
-			'update' => $afterHooksTx->schedule('update.after', new ItemUpdated($node->collection, $node->state, $node->path, $rootState)),
-			'delete' => $task instanceof MutationDeleteTaskInterface
-				? $afterHooksTx->schedule('delete.after', static function () use ($node, $task, $rootState): ?ItemDeleted {
-					if (! $task->getResult()) {
-						return null;
-					}
+		$afterHooksTx->schedule(static function () use ($node, $rootState): object|null {
+			if ($node->state->getRow() === null) {
+				return null;
+			}
 
-					if ($node->state->getRow() === null) {
-						$node->state->markReady($node->state->getData());
-					}
-
-					return new ItemDeleted($node->collection, $node->state, true, $node->path, $rootState);
-				})
-				: null,
-			default => null,
-		};
+			return match ($node->operation) {
+				'create' => new ItemCreated($node->collection, $node->state, $node->path, $rootState),
+				'update' => new ItemUpdated($node->collection, $node->state, $node->path, $rootState),
+				'delete' => new ItemDeleted($node->collection, $node->state, true, $node->path, $rootState),
+				default => null,
+			};
+		});
 	}
 
 

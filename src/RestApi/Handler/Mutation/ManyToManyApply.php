@@ -73,10 +73,10 @@ trait ManyToManyApply
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
 		$payload = [];
 		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$payload[$through->throughInnerKeys()[$index]] = $parentId->value($innerKey);
+			$payload[$through->throughInnerKeys()[$index]] = $parentId->getValue($innerKey);
 		}
 		foreach ($this->relation->outerKeys() as $index => $outerKey) {
-			$payload[$through->throughOuterKeys()[$index]] = $targetIdentity->value($outerKey);
+			$payload[$through->throughOuterKeys()[$index]] = $targetIdentity->getValue($outerKey);
 		}
 
 		$queue->queueInsert(new MutationState($through->getCollection(), $payload), true);
@@ -93,14 +93,14 @@ trait ManyToManyApply
 			$filters[] = new ComparisonFilter(
 				new FieldExpression($through->throughInnerKeys()[$index]),
 				ComparisonOperator::Eq,
-				new LiteralValue($parentId->value($innerKey))
+				new LiteralValue($parentId->getValue($innerKey))
 			);
 		}
 		foreach ($this->relation->outerKeys() as $index => $outerKey) {
 			$filters[] = new ComparisonFilter(
 				new FieldExpression($through->throughOuterKeys()[$index]),
 				ComparisonOperator::Eq,
-				new LiteralValue($targetIdentity->value($outerKey))
+				new LiteralValue($targetIdentity->getValue($outerKey))
 			);
 		}
 

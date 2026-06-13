@@ -105,9 +105,9 @@ class RevisionAddon implements RestApiAddonInterface
 	protected function registerCollectionHooks(CollectionInterface $collection): void
 	{
 		RestHooks::for($collection)
-			->on('create.before', [self::class, 'onItemCreate'])
-			->on('update.before', [self::class, 'onItemUpdate'])
-			->on('delete.before', [self::class, 'onItemDelete']);
+			->on(ItemCreating::class, [self::class, 'onItemCreate'])
+			->on(ItemUpdating::class, [self::class, 'onItemUpdate'])
+			->on(ItemDeleting::class, [self::class, 'onItemDelete']);
 	}
 
 	protected function shouldTrack(string $collectionName): bool

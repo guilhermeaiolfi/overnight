@@ -287,14 +287,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		};
 
 		RestHooks::for($registry->getCollection('news_article_file'))
-			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501))
-			->on('create.before', static function (ItemCreating $event): void {
+			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501))
+			->on(ItemCreating::class, static function (ItemCreating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
 				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			})
-			->on('update.before', static function (ItemUpdating $event): void {
+			->on(ItemUpdating::class, static function (ItemUpdating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
 				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
@@ -302,13 +302,13 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			});
 
 		RestHooks::for($registry->getCollection('news_article'))
-			->on('create.before', static function (ItemCreating $event): void {
+			->on(ItemCreating::class, static function (ItemCreating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
 				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			})
-			->on('update.before', static function (ItemUpdating $event): void {
+			->on(ItemUpdating::class, static function (ItemUpdating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
 				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');

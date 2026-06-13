@@ -34,10 +34,14 @@ use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleting;
+use ON\RestApi\Event\ItemGet;
+use ON\RestApi\Event\ItemList;
+use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationNodeBuilder;
 use ON\RestApi\Mutation\MutationQueue;
@@ -77,11 +81,11 @@ trait RestApiTestFixtures
 	{
 		foreach ($registry->getCollections() as $collection) {
 			RestHooks::for($collection)
-				->on('list', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
-				->on('get', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
-				->on('create.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
-				->on('update.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
-				->on('delete.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null);
+				->on(ItemList::class, static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
+				->on(ItemGet::class, static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow() : null)
+				->on(ItemCreating::class, static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
+				->on(ItemUpdating::class, static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null)
+				->on(ItemDeleting::class, static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null);
 		}
 
 		$container = new class implements ContainerInterface {
@@ -651,8 +655,7 @@ trait RestApiTestFixtures
 				$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
 				$root = null;
 				if ($rootNode !== null) {
-					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+					$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 				}
 
 				try {
@@ -688,8 +691,7 @@ trait RestApiTestFixtures
 				$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
 				$root = null;
 				if ($rootNode !== null) {
-					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+					$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 				}
 
 				try {
@@ -722,13 +724,12 @@ trait RestApiTestFixtures
 				$rootNode = new MutationNode(
 					operation: 'delete',
 					collection: $collection,
-					state: new MutationState($collection, $identity->values()),
+					state: new MutationState($collection, $identity->getValues()),
 				);
 				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
 				try {
-					$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+					$result = $this->items->commit($queue, fn (): bool => $task?->getRow() !== null);
 					$afterHooksTx->flush();
 				} catch (\Throwable $throwable) {
 					$afterHooksTx->rollback();

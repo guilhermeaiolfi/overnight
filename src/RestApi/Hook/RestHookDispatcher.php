@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi\Hook;
 
 use ON\Container\Executor\ExecutorInterface;
-use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Support\AuthorizationGuard;
 use Psr\Container\ContainerInterface;
 
@@ -22,9 +22,9 @@ final class RestHookDispatcher
 		return new RestHookTransaction($this);
 	}
 
-	public function dispatch(CollectionInterface $collection, string $slot, object $payload, bool $assertAuthorization = true): object
+	public function dispatch(object $payload, bool $assertAuthorization = true): object
 	{
-		$definitions = $this->definitions($collection, $slot);
+		$definitions = $this->definitions($this->collectionFromPayload($payload), $payload);
 		foreach ($definitions as $definition) {
 			$this->executor->execute($this->resolveHandler($definition['handler'] ?? null), [
 				get_class($payload) => $payload,
@@ -41,20 +41,34 @@ final class RestHookDispatcher
 		return $payload;
 	}
 
-
 	/**
 	 * @return list<array{handler: mixed, priority: int}>
 	 */
-	private function definitions(CollectionInterface $collection, string $slot): array
+	private function definitions(CollectionInterface $collection, object $payload): array
 	{
 		$hooks = $collection->metadata(RestHooks::METADATA_KEY) ?? [];
-		$definitions = $hooks[$slot] ?? [];
+		$definitions = $hooks[ltrim($payload::class, '\\')] ?? [];
 		usort(
 			$definitions,
 			static fn (array $left, array $right): int => ($right['priority'] ?? 0) <=> ($left['priority'] ?? 0)
 		);
 
 		return $definitions;
+	}
+
+	private function collectionFromPayload(object $payload): CollectionInterface
+	{
+		if (method_exists($payload, 'getCollection')) {
+			$collection = $payload->getCollection();
+			if ($collection instanceof CollectionInterface) {
+				return $collection;
+			}
+		}
+
+		throw new \InvalidArgumentException(sprintf(
+			'RestApi hook payload of type %s must provide getCollection(): CollectionInterface.',
+			$payload::class
+		));
 	}
 
 	private function resolveHandler(mixed $handler): mixed

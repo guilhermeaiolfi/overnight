@@ -63,7 +63,7 @@ final class GetAction implements RestActionInterface
 			);
 		} else {
 			$event = new ItemGet($collection, $identity, $querySpec, $options);
-			$this->hooks->dispatch($collection, 'get', $event);
+			$this->hooks->dispatch($event);
 			$querySpec = $event->getQuerySpec() ?? $querySpec;
 			$responseOptions = $event->getOptions() + ['output' => PhpRepresentation::class];
 

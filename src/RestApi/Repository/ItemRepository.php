@@ -95,14 +95,14 @@ class ItemRepository implements ItemRepositoryInterface
 	{
 		try {
 			$storageInput = $this->mapInputToColumns($collection, $input);
-			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($storageInput);
+			$primaryKeyValue = $collection->getPrimaryKey()->extract($storageInput);
 			$lastId = $this->database->insert($collection->getTable())
 				->values($storageInput)
 				->run();
 
 			$id = $primaryKeyValue;
 			if ($id === null && $lastId !== null && ! $collection->getPrimaryKey()->isComposite()) {
-				$id = $collection->getPrimaryKey()->extractFromInput([
+				$id = $collection->getPrimaryKey()->extract([
 					$collection->getPrimaryKey()->getFieldNames()[0] => $lastId,
 				], false);
 			}
@@ -147,13 +147,18 @@ class ItemRepository implements ItemRepositoryInterface
 		}
 	}
 
-	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
+	public function delete(CollectionInterface $collection, FilterNode $criteria): ?array
 	{
 		try {
+			$row = $this->firstByCriteria($collection, $criteria);
+			if ($row === null) {
+				return null;
+			}
+
 			$query = $this->database->delete($collection->getTable());
 			$this->applyCriteriaFilter($query, $collection, $criteria);
 
-			return $query->run() > 0;
+			return $query->run() > 0 ? $row : null;
 		} catch (\Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}

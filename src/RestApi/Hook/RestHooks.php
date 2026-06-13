@@ -19,10 +19,10 @@ final class RestHooks
 		return new self($collection);
 	}
 
-	public function on(string $slot, mixed $handler, int $priority = 0): self
+	public function on(string $eventClass, mixed $handler, int $priority = 0): self
 	{
 		$hooks = $this->collection->metadata(self::METADATA_KEY) ?? [];
-		$hooks[$slot][] = [
+		$hooks[ltrim($eventClass, '\\')][] = [
 			'handler' => $handler,
 			'priority' => $priority,
 		];

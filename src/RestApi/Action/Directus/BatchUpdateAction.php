@@ -18,7 +18,6 @@ use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNodeBuilder;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Payload\DirectusMutationBuilder;
@@ -62,7 +61,7 @@ final class BatchUpdateAction implements RestActionInterface
 
 		$results = [];
 		foreach ($body as $item) {
-			$identity = $collection->getPrimaryKey()->extractFromInput($item);
+			$identity = $collection->getPrimaryKey()->extract($item);
 			if ($identity === null) {
 				$missing = $collection->getPrimaryKey()->getMissingFieldNames($item);
 				throw new RestApiError(
@@ -95,8 +94,7 @@ final class BatchUpdateAction implements RestActionInterface
 			$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
 			$root = null;
 			if ($rootNode !== null) {
-				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+				$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 			}
 
 			try {

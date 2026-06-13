@@ -47,7 +47,7 @@ trait RelationPayloadNormalizeSupport
 		}
 
 		$collection = $context->source->getCollection()->getRegistry()->getCollection($targetCollection);
-		$id = $collection->getPrimaryKey()->extractFromInput($action->data);
+		$id = $collection->getPrimaryKey()->extract($action->data);
 		if ($id !== null) {
 			$action->target = $id;
 		}
@@ -69,13 +69,13 @@ trait RelationPayloadNormalizeSupport
 	protected function omittedChildActions(array $row, string $targetCollection): array
 	{
 		$actions = [];
-		$id = $this->getTargetCollection()->getPrimaryKey()->extractFromInput($row);
+		$id = $this->getTargetCollection()->getPrimaryKey()->extract($row);
 		if ($id === null) {
 			return $actions;
 		}
 
 		if ($this->relation->isCascade() || !$this->relation->isNullable()) {
-			$actions[] = new DeleteAction(collection: $targetCollection, data: $id->values());
+			$actions[] = new DeleteAction(collection: $targetCollection, data: $id->getValues());
 
 			return $actions;
 		}

@@ -4,25 +4,25 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\Mapper\Representation\PhpRepresentation;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class DeleteCommand extends AbstractMutationCommand
 {
-	private bool $result = false;
+	private MutationStateInterface $state;
 
 	public function __construct(
 		private CollectionInterface $collection,
 		private FilterNode $criteria,
-		private ?MutationStateInterface $state = null,
+		?MutationStateInterface $state = null,
 	) {
+		$this->state = $state ?? new MutationState($collection);
 	}
 
-	public function getTask(): MutationDeleteTaskInterface
+	public function getState(): MutationStateInterface
 	{
-		return new MutationDeleteTask(fn (): bool => $this->result);
+		return $this->state;
 	}
 
 	public function isReady(): bool
@@ -32,16 +32,9 @@ final class DeleteCommand extends AbstractMutationCommand
 
 	public function execute(ItemRepositoryInterface $repository): void
 	{
-		if ($this->state !== null && $this->state->getRow() === null) {
-			$identity = $this->state->getPrimaryKeyValue(false);
-			if ($identity !== null) {
-				$row = $repository->findByIdentity($this->collection, $identity, PhpRepresentation::class);
-				if (is_array($row)) {
-					$this->state->markReady($row);
-				}
-			}
+		$row = $repository->delete($this->collection, $this->resolveValue($this->criteria));
+		if ($row !== null) {
+			$this->state->markReady($row);
 		}
-
-		$this->result = $repository->delete($this->collection, $this->resolveValue($this->criteria));
 	}
 }

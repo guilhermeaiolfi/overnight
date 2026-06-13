@@ -42,12 +42,12 @@ final class MutationNodeBuilder
 
 		$resolvedId = $id;
 		if ($resolvedId === null && $mode !== 'create') {
-			$resolvedId = $collection->getPrimaryKey()->extractFromInput($spec->root->fields);
+			$resolvedId = $collection->getPrimaryKey()->extract($spec->root->fields);
 		}
 		$resolvedId = $resolvedId === null ? null : $collection->getPrimaryKey()->getValue($resolvedId);
 		$parentOperation = self::resolveOperation($items, $mode, $collection, $resolvedId);
 		if ($parentOperation === 'update' && $resolvedId !== null) {
-			foreach ($resolvedId->values() as $fieldName => $value) {
+			foreach ($resolvedId->getValues() as $fieldName => $value) {
 				$state->setValue($fieldName, $value);
 			}
 		}
@@ -74,7 +74,7 @@ final class MutationNodeBuilder
 			: $parentState->rebindValueRefs($spec->fields);
 		$state->setData($fields);
 		if ($id === null && $mode !== 'create') {
-			$id = $collection->getPrimaryKey()->extractFromInput($spec->fields);
+			$id = $collection->getPrimaryKey()->extract($spec->fields);
 		}
 		$id = $id === null ? null : $collection->getPrimaryKey()->getValue($id);
 		$operation = self::resolveOperation($items, $mode, $collection, $id);
@@ -82,7 +82,7 @@ final class MutationNodeBuilder
 			return null;
 		}
 		if ($operation === 'update') {
-			foreach ($id->values() as $fieldName => $value) {
+			foreach ($id->getValues() as $fieldName => $value) {
 				$state->setValue($fieldName, $value);
 			}
 		}
@@ -152,7 +152,7 @@ final class MutationNodeBuilder
 				$action->node,
 				'upsert',
 				$childState,
-				$collection->getPrimaryKey()->extractFromInput($action->node->fields),
+				$collection->getPrimaryKey()->extract($action->node->fields),
 				$path,
 				$state,
 			),
@@ -166,19 +166,19 @@ final class MutationNodeBuilder
 			return null;
 		}
 		$collection = $registry->getCollection($action->collection);
-		$item = $action->data ?? PrimaryKeyCriteria::normalize($collection, $action->target)->values();
+		$item = $action->data ?? PrimaryKeyCriteria::normalize($collection, $action->target)->getValues();
 
 		return self::deleteChildNode($collection, $item, $path);
 	}
 
 	private static function deleteChildNode(CollectionInterface $collection, array $item, array $path): ?MutationNode
 	{
-		$id = $collection->getPrimaryKey()->extractFromInput($item);
+		$id = $collection->getPrimaryKey()->extract($item);
 		if ($id === null) {
 			return null;
 		}
 
-		return new MutationNode('delete', $collection, new MutationState($collection, $collection->getPrimaryKey()->getValue($id)->values()), $path);
+		return new MutationNode('delete', $collection, new MutationState($collection, $collection->getPrimaryKey()->getValue($id)->getValues()), $path);
 	}
 
 	private static function resolveOperation(ItemRepositoryInterface $items, string $mode, CollectionInterface $collection, ?PrimaryKeyValue $id): string
@@ -196,10 +196,10 @@ final class MutationNodeBuilder
 			return;
 		}
 
-		$createId = $collection->getPrimaryKey()->extractFromInput($state->getData());
+		$createId = $collection->getPrimaryKey()->extract($state->getData());
 		if (
 			$createId !== null
-			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
+			&& ! array_filter($createId->getValues(), static fn (mixed $value): bool => $value instanceof ValueRef)
 			&& $items->findByIdentity($collection, $createId, StorageRepresentation::class) !== null
 		) {
 			throw new RestApiError(

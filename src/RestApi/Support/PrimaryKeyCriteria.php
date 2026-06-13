@@ -23,7 +23,7 @@ final class PrimaryKeyCriteria
 		}
 
 		if (is_array($value)) {
-			$identity = $collection->getPrimaryKey()->extractFromInput($value);
+			$identity = $collection->getPrimaryKey()->extract($value);
 			if ($identity !== null) {
 				return $identity;
 			}
@@ -51,7 +51,7 @@ final class PrimaryKeyCriteria
 			$filters[] = new ComparisonFilter(
 				new FieldExpression($field->getName()),
 				ComparisonOperator::Eq,
-				new LiteralValue($identity->value($field->getName()))
+				new LiteralValue($identity->getValue($field->getName()))
 			);
 		}
 
@@ -65,7 +65,7 @@ final class PrimaryKeyCriteria
 		$identity = self::normalize($collection, $value);
 
 		foreach ($collection->getPrimaryKey()->getFields() as $field) {
-			$query->where($field->getColumn(), $identity->value($field->getName()));
+			$query->where($field->getColumn(), $identity->getValue($field->getName()));
 		}
 	}
 }

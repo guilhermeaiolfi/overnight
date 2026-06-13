@@ -122,7 +122,7 @@ final class DirectusMutationBuilder implements MapperInterface
 
 		if ($id !== null) {
 			$identity = PrimaryKeyCriteria::normalize($collection, $id);
-			foreach ($identity->values() as $fieldName => $value) {
+			foreach ($identity->getValues() as $fieldName => $value) {
 				$normalizeState->setValue($fieldName, $value);
 			}
 		}
@@ -152,7 +152,7 @@ final class DirectusMutationBuilder implements MapperInterface
 			return $mode;
 		}
 
-		$resolvedId = $id ?? $collection->getPrimaryKey()->extractFromInput($spec->root->fields);
+		$resolvedId = $id ?? $collection->getPrimaryKey()->extract($spec->root->fields);
 		if ($resolvedId === null) {
 			return 'create';
 		}

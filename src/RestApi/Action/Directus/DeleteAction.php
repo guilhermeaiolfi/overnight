@@ -14,7 +14,6 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
@@ -44,7 +43,7 @@ final class DeleteAction implements RestActionInterface
 		$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
 		$queue = new MutationQueue();
-		$rootState = new MutationState($collection, $identity->values());
+		$rootState = new MutationState($collection, $identity->getValues());
 		$afterHooksTx = $this->hookDispatcher->start();
 		$rootNode = new MutationNode(
 			operation: 'delete',
@@ -52,17 +51,16 @@ final class DeleteAction implements RestActionInterface
 			state: $rootState,
 		);
 		$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-		$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
 		try {
-			$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+			$result = $this->items->commit($queue, fn (): ?array => $task?->getRow());
 			$afterHooksTx->flush();
 		} catch (\Throwable $throwable) {
 			$afterHooksTx->rollback();
 			throw $throwable;
 		}
 
-		if (!$result) {
+		if ($result === null) {
 			throw RestApiError::notFound();
 		}
 

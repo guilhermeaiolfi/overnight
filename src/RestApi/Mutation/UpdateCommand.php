@@ -22,9 +22,9 @@ final class UpdateCommand extends AbstractMutationCommand
 			: new MutationState($collection, $input);
 	}
 
-	public function getTask(): MutationTaskInterface
+	public function getState(): MutationStateInterface
 	{
-		return new MutationTask($this->state);
+		return $this->state;
 	}
 
 	public function isReady(): bool
@@ -42,6 +42,8 @@ final class UpdateCommand extends AbstractMutationCommand
 			$this->resolveValue($this->criteria),
 			$this->resolveValue($input)
 		);
-		$this->state->markReady($row ?? []);
+		if ($row !== null) {
+			$this->state->markReady($row);
+		}
 	}
 }

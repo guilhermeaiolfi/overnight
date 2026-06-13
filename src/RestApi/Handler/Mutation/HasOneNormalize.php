@@ -38,7 +38,7 @@ trait HasOneNormalize
 
 		if (!is_array($input)) {
 			$current = $context->parentOperation === 'create' ? null : ($this->getCurrentRelationRows($context->source)[0] ?? null);
-			$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extractFromInput($current) : null;
+			$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extract($current) : null;
 			if ($currentId !== null && $currentId->toUrlId() !== (string) $input) {
 				$actions = array_merge($actions, $this->omittedChildActions($current, $targetName));
 			}
@@ -50,12 +50,12 @@ trait HasOneNormalize
 		}
 
 		$current = $context->parentOperation === 'create' ? null : ($this->getCurrentRelationRows($context->source)[0] ?? null);
-		$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extractFromInput($current) : null;
+		$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extract($current) : null;
 		$desired = $input;
-		$desiredId = $targetCollection->getPrimaryKey()->extractFromInput($desired);
+		$desiredId = $targetCollection->getPrimaryKey()->extract($desired);
 
 		if ($desiredId === null && $currentId !== null) {
-			foreach ($currentId->values() as $fieldName => $value) {
+			foreach ($currentId->getValues() as $fieldName => $value) {
 				$desired[$fieldName] = $value;
 			}
 			$desiredId = $currentId;
@@ -71,7 +71,7 @@ trait HasOneNormalize
 		}
 
 		$this->applySourceValuesToTargetInput($desired, $context->source);
-		if ($targetCollection->getPrimaryKey()->extractFromInput($desired) === null) {
+		if ($targetCollection->getPrimaryKey()->extract($desired) === null) {
 			$actions[] = new CreateAction(collection: $targetName, data: $desired);
 		} else {
 			$actions[] = new UpdateAction(collection: $targetName, data: $desired);

@@ -744,7 +744,8 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '1']]));
-		$this->assertTrue($deleted);
+		$this->assertSame(1, $deleted['id']);
+		$this->assertSame('John', $deleted['name']);
 
 		// Verify it's gone
 		$item = $this->createDirectusReadActions($registry, $db)->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user')));
@@ -759,7 +760,7 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_eq' => '999']]));
-		$this->assertFalse($deleted);
+		$this->assertNull($deleted);
 	}
 
 	public function testDeleteWithInCriteria(): void
@@ -771,7 +772,7 @@ final class SqlRestResolverTest extends TestCase
 
 		$deleted = $resolver->delete($registry->getCollection('user'), $this->filter($registry->getCollection('user'), ['id' => ['_in' => ['1', '2']]]));
 
-		$this->assertTrue($deleted);
+		$this->assertSame(1, $deleted['id']);
 		$this->assertNull($this->createDirectusReadActions($registry, $db)->get($registry->getCollection('user'), '1', $this->q($registry->getCollection('user'))));
 		$this->assertNull($this->createDirectusReadActions($registry, $db)->get($registry->getCollection('user'), '2', $this->q($registry->getCollection('user'))));
 	}

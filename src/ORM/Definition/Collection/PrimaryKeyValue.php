@@ -15,7 +15,7 @@ final class PrimaryKeyValue
 	) {
 	}
 
-	public function collection(): CollectionInterface
+	public function getCollection(): CollectionInterface
 	{
 		return $this->collection;
 	}
@@ -23,12 +23,12 @@ final class PrimaryKeyValue
 	/**
 	 * @return array<string, mixed>
 	 */
-	public function values(): array
+	public function getValues(): array
 	{
 		return $this->values;
 	}
 
-	public function value(string $fieldName): mixed
+	public function getValue(string $fieldName): mixed
 	{
 		return $this->values[$fieldName] ?? null;
 	}

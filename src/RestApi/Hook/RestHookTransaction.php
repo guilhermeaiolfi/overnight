@@ -16,13 +16,13 @@ final class RestHookTransaction
 	/**
 	 * @param object|\Closure(): ?object $payload
 	 */
-	public function schedule(string $slot, mixed $payload, bool $assertAuthorization = false): RestHook
+	public function schedule(mixed $payload, bool $assertAuthorization = false): RestHook
 	{
 		if (! is_object($payload)) {
 			throw new \InvalidArgumentException('Scheduled RestApi hook payload must be an object or Closure.');
 		}
 
-		$hook = new RestHook($slot, $payload, $assertAuthorization);
+		$hook = new RestHook($payload, $assertAuthorization);
 		$this->scheduled[] = $hook;
 
 		return $hook;
@@ -39,7 +39,7 @@ final class RestHookTransaction
 				continue;
 			}
 
-			$this->dispatcher->dispatch($payload->getCollection(), $hook->slot, $payload, $hook->assertAuthorization);
+			$this->dispatcher->dispatch($payload, $hook->assertAuthorization);
 		}
 
 		$this->scheduled = [];

@@ -14,7 +14,6 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
@@ -47,7 +46,7 @@ final class BatchDeleteAction implements RestActionInterface
 
 		foreach ($body as $id) {
 			$identity = is_array($id)
-				? $collection->getPrimaryKey()->extractFromInput($id)
+				? $collection->getPrimaryKey()->extract($id)
 				: $collection->getPrimaryKey()->getValue((string) $id);
 			if ($identity === null) {
 				$missing = is_array($id) ? $collection->getPrimaryKey()->getMissingFieldNames($id) : $collection->getPrimaryKey()->getFieldNames();
@@ -64,7 +63,7 @@ final class BatchDeleteAction implements RestActionInterface
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
 			$queue = new MutationQueue();
-			$rootState = new MutationState($collection, $identity->values());
+			$rootState = new MutationState($collection, $identity->getValues());
 			$afterHooksTx = $this->hookDispatcher->start();
 			$rootNode = new MutationNode(
 				operation: 'delete',
@@ -72,10 +71,9 @@ final class BatchDeleteAction implements RestActionInterface
 				state: $rootState,
 			);
 			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-			$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
 
 			try {
-				$this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
+				$this->items->commit($queue, fn (): ?array => $task?->getRow());
 				$afterHooksTx->flush();
 			} catch (\Throwable $throwable) {
 				$afterHooksTx->rollback();

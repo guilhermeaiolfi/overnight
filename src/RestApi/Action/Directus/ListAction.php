@@ -60,7 +60,7 @@ final class ListAction implements RestActionInterface
 			}
 
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->hooks->dispatch($collection, 'list', $event);
+			$this->hooks->dispatch($event);
 			$querySpec = $event->getQuerySpec();
 
 			if ($event->isDefaultPrevented()) {
@@ -89,7 +89,7 @@ final class ListAction implements RestActionInterface
 		$responseOptions = null;
 		if ($options['dispatchEvents']) {
 			$event = new ItemList($collection, $querySpec, $options);
-			$this->hooks->dispatch($collection, 'list', $event);
+			$this->hooks->dispatch($event);
 			$querySpec = $event->getQuerySpec();
 			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
 

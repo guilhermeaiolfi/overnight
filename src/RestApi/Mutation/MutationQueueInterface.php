@@ -15,28 +15,28 @@ interface MutationQueueInterface
 	public function queueInsert(
 		MutationStateInterface $state,
 		bool $ignoreDuplicate = false
-	): MutationTaskInterface;
+	): MutationStateInterface;
 
 	public function queueUpdate(
 		CollectionInterface $collection,
 		FilterNode $criteria,
 		array|MutationStateInterface $input
-	): MutationTaskInterface;
+	): MutationStateInterface;
 
 	public function queueDelete(
 		CollectionInterface $collection,
 		FilterNode $criteria,
 		?MutationStateInterface $state = null,
-	): MutationDeleteTaskInterface;
+	): MutationStateInterface;
 
-	public function queueNode(MutationNode $node): MutationTaskInterface|MutationDeleteTaskInterface|null;
+	public function queueNode(MutationNode $node): ?MutationStateInterface;
 
 	public function fill(
 		MutationNode $node,
 		RestHookDispatcher $dispatcher,
 		RestHookTransaction $afterHooksTx,
 		bool $dispatchEvents
-	): MutationTaskInterface|MutationDeleteTaskInterface|null;
+	): ?MutationStateInterface;
 
 	public function execute(ItemRepositoryInterface $repository): void;
 }

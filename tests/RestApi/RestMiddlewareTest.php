@@ -116,7 +116,7 @@ final class RestMiddlewareTest extends TestCase
 		};
 
 		RestHooks::for($registry->getCollection('attachment'))
-			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
+			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501));
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
@@ -316,7 +316,7 @@ final class RestMiddlewareTest extends TestCase
 		};
 
 		RestHooks::for($registry->getCollection('attachment'))
-			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
+			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501));
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
@@ -433,7 +433,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$uploads = [];
 		RestHooks::for($registry->getCollection('directus_files'))
-			->on('file.upload', static function (FileUpload $event) use (&$uploads): void {
+			->on(FileUpload::class, static function (FileUpload $event) use (&$uploads): void {
 				$uploads[] = [
 					'collection' => $event->getCollection()->getName(),
 					'field' => $event->getFieldName(),
@@ -509,7 +509,7 @@ final class RestMiddlewareTest extends TestCase
 		$resolver = new ItemRepository($registry, $db->database());
 
 		RestHooks::for($registry->getCollection('asset'))
-			->on('create.before', static fn (ItemCreating $event) => $event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
+			->on(ItemCreating::class, static fn (ItemCreating $event) => $event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
 				'Missing permission "create" on resource "module:news".',
 				['resource' => 'module:news', 'action' => 'create'],
 			)), 100);

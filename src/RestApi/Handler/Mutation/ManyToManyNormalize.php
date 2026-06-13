@@ -40,7 +40,7 @@ trait ManyToManyNormalize
 				continue;
 			}
 
-			$pivotId = $throughCollection->getPrimaryKey()->extractFromInput($row);
+			$pivotId = $throughCollection->getPrimaryKey()->extract($row);
 			$targetId = $this->extractThroughTargetIdentity($row);
 			if ($pivotId !== null) {
 				$currentByPivotId[$pivotId->toUrlId()] = $row;
@@ -71,7 +71,7 @@ trait ManyToManyNormalize
 				continue;
 			}
 
-			$targetId = $targetCollection->getPrimaryKey()->extractFromInput($item);
+			$targetId = $targetCollection->getPrimaryKey()->extract($item);
 			if ($targetId === null) {
 				$actions[] = new CreateAction(collection: $targetName, data: $item, index: $index);
 				continue;
@@ -94,7 +94,7 @@ trait ManyToManyNormalize
 				continue;
 			}
 
-			$pivotId = $throughCollection->getPrimaryKey()->extractFromInput($row);
+			$pivotId = $throughCollection->getPrimaryKey()->extract($row);
 			$targetId = $this->extractThroughTargetIdentity($row);
 			if ($pivotId !== null && isset($seenPivot[$pivotId->toUrlId()])) {
 				continue;
@@ -195,10 +195,10 @@ trait ManyToManyNormalize
 
 		if ($targetId !== null && isset($currentByTargetId[$targetId->toUrlId()])) {
 			$existing = $currentByTargetId[$targetId->toUrlId()];
-			$existingPivotId = $manyToMany->through->getCollection()->getPrimaryKey()->extractFromInput($existing);
+			$existingPivotId = $manyToMany->through->getCollection()->getPrimaryKey()->extract($existing);
 			if ($existingPivotId !== null) {
 				$seenPivot[$existingPivotId->toUrlId()] = true;
-				foreach ($existingPivotId->values() as $fieldName => $value) {
+				foreach ($existingPivotId->getValues() as $fieldName => $value) {
 					$normalized[$fieldName] = $value;
 				}
 			}

@@ -94,7 +94,7 @@ final class FileUploadEventEmitter
 		UploadedFileInterface $file
 	): mixed {
 		$event = new FileUpload($collection, $fieldName, $file);
-		$this->hooks->dispatch($collection, 'file.upload', $event, false);
+		$this->hooks->dispatch($event, false);
 
 		if ($event->getStoredValue() !== null) {
 			return $event->getStoredValue();

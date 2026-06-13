@@ -29,7 +29,7 @@ trait BelongsToApply
 					? $action->target
 					: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $action->target);
 				foreach ($this->relation->innerKeys() as $index => $key) {
-					$source->setValue($key, $identity->value($this->relation->outerKeys()[$index]));
+					$source->setValue($key, $identity->getValue($this->relation->outerKeys()[$index]));
 				}
 
 				return;

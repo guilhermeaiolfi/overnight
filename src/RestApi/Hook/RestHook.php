@@ -10,7 +10,6 @@ final readonly class RestHook
 	 * @param object|\Closure(): ?object $payload
 	 */
 	public function __construct(
-		public string $slot,
 		public mixed $payload,
 		public bool $assertAuthorization = true,
 	) {}

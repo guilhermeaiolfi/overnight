@@ -18,9 +18,9 @@ final class InsertCommand extends AbstractMutationCommand
 		$this->state = $input;
 	}
 
-	public function getTask(): MutationTaskInterface
+	public function getState(): MutationStateInterface
 	{
-		return new MutationTask($this->state);
+		return $this->state;
 	}
 
 	public function isReady(): bool

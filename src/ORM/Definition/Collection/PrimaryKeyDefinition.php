@@ -46,19 +46,34 @@ final class PrimaryKeyDefinition
 		return count($this->fields) > 1;
 	}
 
-	public function extractFromInput(array $input, bool $allowColumnNames = true): ?PrimaryKeyValue
+	/**
+	 * @param array<string, mixed> $input
+	 */
+	public function extract(array $input, bool $allowColumnNames = true): ?PrimaryKeyValue
 	{
-		return $this->extract($input, $allowColumnNames);
-	}
+		$values = [];
 
-	public function extractFromRow(array $row, bool $allowColumnNames = true): ?PrimaryKeyValue
-	{
-		return $this->extract($row, $allowColumnNames);
+		foreach ($this->fields as $field) {
+			$name = $field->getName();
+			if (array_key_exists($name, $input)) {
+				$values[$name] = $input[$name];
+				continue;
+			}
+
+			if ($allowColumnNames && array_key_exists($field->getColumn(), $input)) {
+				$values[$name] = $input[$field->getColumn()];
+				continue;
+			}
+
+			return null;
+		}
+
+		return new PrimaryKeyValue($this->collection, $values);
 	}
 
 	public function requireFromInput(array $input, string $context): PrimaryKeyValue
 	{
-		$value = $this->extractFromInput($input);
+		$value = $this->extract($input);
 		if ($value !== null) {
 			return $value;
 		}
@@ -114,36 +129,6 @@ final class PrimaryKeyDefinition
 	}
 
 	public function getValue(PrimaryKeyValue|array|string|int|float $value): PrimaryKeyValue
-	{
-		return $this->normalizeValue($value);
-	}
-
-	/**
-	 * @param array<string, mixed> $input
-	 */
-	private function extract(array $input, bool $allowColumnNames): ?PrimaryKeyValue
-	{
-		$values = [];
-
-		foreach ($this->fields as $field) {
-			$name = $field->getName();
-			if (array_key_exists($name, $input)) {
-				$values[$name] = $input[$name];
-				continue;
-			}
-
-			if ($allowColumnNames && array_key_exists($field->getColumn(), $input)) {
-				$values[$name] = $input[$field->getColumn()];
-				continue;
-			}
-
-			return null;
-		}
-
-		return new PrimaryKeyValue($this->collection, $values);
-	}
-
-	private function normalizeValue(PrimaryKeyValue|array|string|int|float $value): PrimaryKeyValue
 	{
 		if ($value instanceof PrimaryKeyValue) {
 			return $value;

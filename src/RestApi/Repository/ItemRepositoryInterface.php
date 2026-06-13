@@ -43,7 +43,7 @@ interface ItemRepositoryInterface
 
 	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array;
 
-	public function delete(CollectionInterface $collection, FilterNode $criteria): bool;
+	public function delete(CollectionInterface $collection, FilterNode $criteria): ?array;
 
 	public function commit(MutationQueue $queue, callable $resolve): mixed;
 
