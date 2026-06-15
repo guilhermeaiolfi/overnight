@@ -7,20 +7,20 @@ namespace ON\RestApi\Event;
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\RecordNode;
+use ON\RestApi\Mutation\OperationQueue;
+use ON\RestApi\Mutation\NodeStateInterface;
 
 class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInterface
 {
 	use AuthorizationAwareEventTrait;
 
 	public function __construct(
-		protected MutationNode $node,
+		protected RecordNode $node,
 		protected PrimaryKeyValue $identity,
-		protected MutationQueue $queue,
+		protected OperationQueue $queue,
 		protected array $path = [],
-		protected ?MutationStateInterface $rootState = null
+		protected ?NodeStateInterface $rootState = null
 	) {
 		$this->path = $path === [] ? $node->path : $path;
 		$this->rootState ??= $node->state;
@@ -31,7 +31,7 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return 'restapi.item.deleting';
 	}
 
-	public function getNode(): MutationNode
+	public function getNode(): RecordNode
 	{
 		return $this->node;
 	}
@@ -51,12 +51,12 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return $this->getPrimaryKeyValue();
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->node->state;
 	}
 
-	public function getQueue(): MutationQueue
+	public function getQueue(): OperationQueue
 	{
 		return $this->queue;
 	}
@@ -81,7 +81,7 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return $this->rootState->getCollection();
 	}
 
-	public function getRootState(): MutationStateInterface
+	public function getRootState(): NodeStateInterface
 	{
 		return $this->rootState;
 	}

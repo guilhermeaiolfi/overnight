@@ -4,55 +4,48 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Payload\Action\ConnectAction;
-use ON\RestApi\Payload\Action\DisconnectAction;
-use ON\RestApi\Payload\Node\RelationPayload;
-use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Mutation\OperationQueue;
+use ON\RestApi\Mutation\NodeStateInterface;
+use ON\RestApi\Mutation\RelationNode;
 
 trait BelongsToApply
 {
 	use RelationApplySupport;
 
 	public function applyRelation(
-		MutationQueue $queue,
-		MutationStateInterface $source,
-		RelationPayload $relation,
-		array $children
+		OperationQueue $queue,
+		NodeStateInterface $source,
+		RelationNode $relation
 	): void {
-		foreach ($relation->actions as $action) {
-			if ($action instanceof ConnectAction && $action->target !== null) {
-				$identity = $action->target instanceof PrimaryKeyValue
-					? $action->target
-					: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $action->target);
+		foreach ($relation->children as $child) {
+			if (in_array($child->operation, ['create', 'update'], true) && $child->state !== null) {
+				$this->linkForeignKeyOnSourceToTarget($source, $child->state);
+
+				return;
+			}
+		}
+
+		foreach ($relation->children as $child) {
+			if (
+				$child->relationIntent === 'desired'
+				&& $child->inputIdentity !== null
+				&& ($child->currentIdentity === null || $child->currentIdentity->toUrlId() !== $child->inputIdentity->toUrlId())
+			) {
 				foreach ($this->relation->innerKeys() as $index => $key) {
-					$source->setValue($key, $identity->getValue($this->relation->outerKeys()[$index]));
+					$source->setValue($key, $child->inputIdentity->getValue($this->relation->outerKeys()[$index]));
 				}
 
 				return;
 			}
 		}
 
-		foreach ($relation->actions as $action) {
-			if ($action instanceof DisconnectAction) {
+		foreach ($relation->children as $child) {
+			if ($child->relationIntent === 'omitted' || $child->operation === 'delete') {
 				foreach ($this->relation->innerKeys() as $key) {
 					$source->setValue($key, null);
 				}
 
 				return;
-			}
-		}
-
-		foreach (['create', 'update'] as $operation) {
-			foreach ($children[$operation] ?? [] as $child) {
-				if ($child instanceof MutationNode) {
-					$this->linkForeignKeyOnSourceToTarget($source, $child->state);
-
-					return;
-				}
 			}
 		}
 	}

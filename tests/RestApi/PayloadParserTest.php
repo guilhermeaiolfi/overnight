@@ -5,9 +5,6 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\ORM\Definition\Registry;
-use ON\RestApi\Payload\Action\BasicRelationAction;
-use ON\RestApi\Payload\Action\ConnectAction;
-use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Parser\DirectusPayloadParser;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
@@ -23,24 +20,25 @@ final class PayloadParserTest extends TestCase
 		$post = $registry->getCollection('post');
 		$parser = new DirectusPayloadParser();
 
-		$spec = $parser->parse($post, [
+		$node = $parser->parse($post, [
 			'title' => 'Hello',
 			'tags' => [
 				'create' => [['name' => 'New Tag']],
-				'connect' => [1],
+				'delete' => [2],
 			],
 		]);
 
-		$this->assertSame('post', $spec->root->collection);
-		$this->assertSame(['title' => 'Hello'], $spec->root->fields);
-		$this->assertCount(1, $spec->root->relations);
+		$this->assertSame('post', $node->collection->getName());
+		$this->assertSame(['title' => 'Hello'], $node->fields);
+		$this->assertCount(1, $node->relations);
 
-		$tags = $spec->root->relations[0];
+		$tags = $node->relations['tags'];
 		$this->assertSame('tags', $tags->relationName);
-		$this->assertCount(2, $tags->actions);
-		$this->assertInstanceOf(CreateAction::class, $tags->actions[0]);
-		$this->assertTrue($tags->actions[0]->explicitOperation);
-		$this->assertInstanceOf(ConnectAction::class, $tags->actions[1]);
+		$this->assertCount(2, $tags->children);
+		$this->assertSame('create', $tags->children[0]->plannedOperation);
+		$this->assertSame(['name' => 'New Tag'], $tags->children[0]->relationData);
+		$this->assertSame('delete', $tags->children[1]->plannedOperation);
+		$this->assertSame(2, $tags->children[1]->relationData);
 	}
 
 	public function testParsesBasicRelationAsWrapper(): void
@@ -50,7 +48,7 @@ final class PayloadParserTest extends TestCase
 		$post = $registry->getCollection('post');
 		$parser = new DirectusPayloadParser();
 
-		$spec = $parser->parse($post, [
+		$node = $parser->parse($post, [
 			'title' => 'Hello',
 			'tags' => [
 				['name' => 'Inline'],
@@ -58,12 +56,11 @@ final class PayloadParserTest extends TestCase
 			],
 		]);
 
-		$tags = $spec->root->relations[0];
-		$this->assertCount(1, $tags->actions);
-		$this->assertInstanceOf(BasicRelationAction::class, $tags->actions[0]);
-		$this->assertSame([
-			['name' => 'Inline'],
-			2,
-		], $tags->actions[0]->items);
+		$tags = $node->relations['tags'];
+		$this->assertCount(2, $tags->children);
+		$this->assertSame(['name' => 'Inline'], $tags->children[0]->relationData);
+		$this->assertSame(2, $tags->children[1]->relationData);
+		$this->assertNull($tags->children[0]->plannedOperation);
+		$this->assertNull($tags->children[1]->plannedOperation);
 	}
 }

@@ -15,6 +15,7 @@ use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
 use ON\RestApi\Query\Node\WildcardSelection;
+use ON\RestApi\Mutation\CycleRecordLoader;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\RegistrySupportTrait;
@@ -32,6 +33,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		protected CollectionInterface $collection,
 		protected RelationInterface $relation,
 		protected ItemRepositoryInterface $items,
+		protected ?CycleRecordLoader $records,
 		protected SqlQuerySpecCompiler $querySpecCompiler,
 		protected ?RelationSelection $selection = null,
 		protected ?AliasRegistry $aliases = null

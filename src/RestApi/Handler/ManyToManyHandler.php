@@ -10,8 +10,11 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Handler\Mutation\ManyToManyApply;
-use ON\RestApi\Handler\Mutation\ManyToManyNormalize;
+use ON\RestApi\Handler\Mutation\ManyToManyCompile;
+use ON\RestApi\Mutation\OperationQueue;
+use ON\RestApi\Mutation\NodeStateInterface;
+use ON\RestApi\Mutation\RelationNode;
+use ON\RestApi\Mutation\CycleRecordLoader;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -19,8 +22,7 @@ use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 class ManyToManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
 	use LimitedSubquerySupport;
-	use ManyToManyApply;
-	use ManyToManyNormalize;
+	use ManyToManyCompile;
 
 	private ?string $junctionAlias = null;
 	private ?string $targetAlias = null;
@@ -29,11 +31,12 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		CollectionInterface $collection,
 		protected M2MRelation $manyToMany,
 		ItemRepositoryInterface $items,
+		?CycleRecordLoader $records,
 		SqlQuerySpecCompiler $querySpecCompiler,
 		?RelationSelection $selection = null,
 		?AliasRegistry $aliases = null
 	) {
-		parent::__construct($collection, $manyToMany, $items, $querySpecCompiler, $selection, $aliases);
+		parent::__construct($collection, $manyToMany, $items, $records, $querySpecCompiler, $selection, $aliases);
 	}
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
@@ -132,6 +135,22 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		$this->parseRows($node, $query->fetchAll(CycleStatementInterface::FETCH_NUM));
 
 		return null;
+	}
+
+	public function applyRelation(
+		OperationQueue $queue,
+		NodeStateInterface $source,
+		RelationNode $relation
+	): void {
+		$throughName = $this->manyToMany->through->getCollection()->getName();
+
+		foreach ($relation->children as $child) {
+			if ($child->collection->getName() !== $throughName) {
+				continue;
+			}
+
+			$queue->queueNode($child);
+		}
 	}
 
 	private function resultNodeColumns(): array

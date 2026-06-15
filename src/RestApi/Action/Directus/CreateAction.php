@@ -14,11 +14,10 @@ use ON\RestApi\Support\ValidationTrait;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
-use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Mutation\CycleRecordCommitter;
+use ON\RestApi\Mutation\RecordStore;
+use ON\RestApi\Payload\DirectusRecordStoreBuilder;
+use ON\RestApi\Payload\MutationInputPreparer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 
@@ -35,7 +34,8 @@ final class CreateAction implements RestActionInterface
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
-		private FileUploadEventEmitter $fileUploadEventEmitter,
+		private MutationInputPreparer $inputPreparer,
+		private CycleRecordCommitter $committer,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hookDispatcher,
 	) {}
@@ -65,29 +65,17 @@ final class CreateAction implements RestActionInterface
 
 	private function createOne(CollectionInterface $collection, array $item, array $payload, array $options): array
 	{
+		$item = $this->inputPreparer->prepare($collection, $item, is_array($payload['files'] ?? null) ? $payload['files'] : []);
 		$this->validate($collection, $item);
-		$spec = map($item)
-			->using(DirectusMutationBuilder::class, $collection, 'create', null, $payload['files'] ?? [])
+		$store = map($item)
+			->using(DirectusRecordStoreBuilder::class, $collection, 'create')
 			->from($options['input'])
 			->as(self::INTERMEDIATE_REPRESENTATION)
-			->to(MutationSpec::class);
+			->to(RecordStore::class);
 
-		$this->fileUploadEventEmitter->process($spec);
-		$queue = new MutationQueue();
-		$afterHooksTx = $this->hookDispatcher->start();
-		$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
-		$root = null;
-		if ($rootNode !== null) {
-			$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-		}
-
-		try {
-			$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-			$afterHooksTx->flush();
-		} catch (\Throwable $throwable) {
-			$afterHooksTx->rollback();
-			throw $throwable;
-		}
+		$result = $store !== null
+			? $this->committer->commit($store, $options['dispatchEvents']) ?? []
+			: [];
 
 		return map($result)
 			->using(CollectionRowMapper::class, $collection)

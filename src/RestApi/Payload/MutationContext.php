@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace ON\RestApi\Payload;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\NodeStateInterface;
 
 final class MutationContext
 {
 	public function __construct(
 		public readonly CollectionInterface $collection,
-		public readonly MutationStateInterface $source,
+		public readonly NodeStateInterface $source,
 		public readonly string $parentOperation,
 	) {
 	}
 
-	public function withCollection(CollectionInterface $collection, MutationStateInterface $source): self
+	public function withCollection(CollectionInterface $collection, NodeStateInterface $source): self
 	{
 		return new self($collection, $source, $this->parentOperation);
 	}

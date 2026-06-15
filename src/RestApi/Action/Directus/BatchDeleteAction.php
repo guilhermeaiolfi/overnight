@@ -14,9 +14,10 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Mutation\CycleRecordCommitter;
+use ON\RestApi\Mutation\RecordNode;
+use ON\RestApi\Mutation\NodeState;
+use ON\RestApi\Mutation\RecordStore;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 
@@ -29,6 +30,7 @@ final class BatchDeleteAction implements RestActionInterface
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
+		private CycleRecordCommitter $committer,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hookDispatcher,
 	) {}
@@ -62,23 +64,12 @@ final class BatchDeleteAction implements RestActionInterface
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
-			$queue = new MutationQueue();
-			$rootState = new MutationState($collection, $identity->getValues());
-			$afterHooksTx = $this->hookDispatcher->start();
-			$rootNode = new MutationNode(
+			$store = new RecordStore(new RecordNode(
 				operation: 'delete',
 				collection: $collection,
-				state: $rootState,
-			);
-			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-
-			try {
-				$this->items->commit($queue, fn (): ?array => $task?->getRow());
-				$afterHooksTx->flush();
-			} catch (\Throwable $throwable) {
-				$afterHooksTx->rollback();
-				throw $throwable;
-			}
+				state: new NodeState($collection, $identity->getValues()),
+			));
+			$this->committer->commit($store, $options['dispatchEvents']);
 		}
 
 		return null;

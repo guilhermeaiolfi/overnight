@@ -6,9 +6,9 @@ namespace ON\RestApi\Event;
 
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\OperationQueue;
 use ON\RestApi\Mutation\RelationNode;
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\NodeStateInterface;
 
 abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 {
@@ -16,8 +16,8 @@ abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 		protected RelationNode $relation,
 		protected mixed $target,
 		protected array $path = [],
-		protected ?MutationStateInterface $rootState = null,
-		protected ?MutationQueue $queue = null,
+		protected ?NodeStateInterface $rootState = null,
+		protected ?OperationQueue $queue = null,
 	) {
 		$this->path = $path === [] ? $relation->path : $path;
 		$this->rootState ??= $relation->state;
@@ -43,7 +43,7 @@ abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 		return $this->relation->handler->getTargetCollection();
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->relation->state;
 	}
@@ -68,12 +68,12 @@ abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 		return $this->rootState->getCollection();
 	}
 
-	public function getRootState(): MutationStateInterface
+	public function getRootState(): NodeStateInterface
 	{
 		return $this->rootState;
 	}
 
-	public function getQueue(): MutationQueue
+	public function getQueue(): OperationQueue
 	{
 		if ($this->queue === null) {
 			throw new \LogicException('Queue is only available on before relation events.');

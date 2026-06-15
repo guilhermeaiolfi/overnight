@@ -7,14 +7,14 @@ namespace ON\RestApi\Handler;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
+use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetCompile;
 use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
-use ON\RestApi\Handler\Mutation\HasManyNormalize;
 
 class HasManyHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
 	use LimitedSubquerySupport;
+	use ForeignKeyOnTargetCompile;
 	use ForeignKeyOnTargetApply;
-	use HasManyNormalize;
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{

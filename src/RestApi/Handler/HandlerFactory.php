@@ -6,6 +6,7 @@ namespace ON\RestApi\Handler;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Relation\RelationInterface;
+use ON\RestApi\Mutation\CycleRecordLoader;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -15,6 +16,7 @@ class HandlerFactory
 	public function __construct(
 		private HandlerRegistry $registry,
 		private ItemRepositoryInterface $items,
+		private ?CycleRecordLoader $records,
 		private SqlQuerySpecCompiler $querySpecCompiler,
 	) {
 	}
@@ -114,6 +116,7 @@ class HandlerFactory
 			$source,
 			$relation,
 			$this->items,
+			$this->records,
 			$this->querySpecCompiler,
 			$selection,
 			$aliases

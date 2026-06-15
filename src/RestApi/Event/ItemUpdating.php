@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\RecordNode;
+use ON\RestApi\Mutation\OperationQueue;
+use ON\RestApi\Mutation\NodeStateInterface;
 
 class ItemUpdating extends ItemCreating
 {
 	public function __construct(
-		MutationNode $node,
+		RecordNode $node,
 		protected PrimaryKeyValue $identity,
-		MutationQueue $queue,
+		OperationQueue $queue,
 		array $path = [],
-		?MutationStateInterface $rootState = null
+		?NodeStateInterface $rootState = null
 	) {
 		parent::__construct($node, $queue, $path, $rootState);
 	}

@@ -8,12 +8,12 @@ use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use ON\RestApi\Handler\Mutation\BelongsToApply;
-use ON\RestApi\Handler\Mutation\BelongsToNormalize;
+use ON\RestApi\Handler\Mutation\BelongsToCompile;
 
 class BelongsToHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
 	use BelongsToApply;
-	use BelongsToNormalize;
+	use BelongsToCompile;
 	use LimitedSubquerySupport;
 
 	public function configureParserNode(AbstractNode $parent): AbstractNode

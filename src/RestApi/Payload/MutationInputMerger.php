@@ -141,9 +141,6 @@ final class MutationInputMerger
 	}
 
 	/**
-	 * Support alternate normalized upload shapes such as
-	 * files[relation][file_id][3] in addition to files[relation][3][file_id].
-	 *
 	 * @param array<string, mixed> $relationFiles
 	 * @return array<string, mixed>
 	 */
@@ -166,7 +163,7 @@ final class MutationInputMerger
 
 	private function hasOperationPayload(array $input): bool
 	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+		foreach (['create', 'update', 'delete'] as $key) {
 			if (array_key_exists($key, $input)) {
 				return true;
 			}
@@ -176,10 +173,6 @@ final class MutationInputMerger
 	}
 
 	/**
-	 * Some PSR-7 stacks preserve multipart names like "images[3][file_id]" as
-	 * flat keys. Expand them so relation file merging can use the same indexed
-	 * payload shape as PHP's native uploaded file normalization.
-	 *
 	 * @param array<string, mixed> $files
 	 * @return array<string, mixed>
 	 */

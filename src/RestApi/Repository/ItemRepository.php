@@ -15,7 +15,7 @@ use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\OperationQueue;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\PrimaryKeyCriteria;
@@ -164,7 +164,7 @@ class ItemRepository implements ItemRepositoryInterface
 		}
 	}
 
-	public function commit(MutationQueue $queue, callable $resolve): mixed
+	public function commit(OperationQueue $queue, callable $resolve): mixed
 	{
 		return $this->database->transaction(function () use ($queue, $resolve): mixed {
 			$queue->execute($this);
@@ -236,6 +236,7 @@ class ItemRepository implements ItemRepositoryInterface
 
 		return $row !== null ? $collection->mapVisibleRowFromColumns($row) : null;
 	}
+
 
 	protected function firstByCriteria(CollectionInterface $collection, FilterNode $criteria): ?array
 	{

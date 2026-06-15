@@ -13,13 +13,14 @@ use Cycle\Database\DatabaseManager;
 class CycleSqliteTestDatabase
 {
 	private DatabaseInterface $database;
+	private DatabaseManager $manager;
 
 	/**
 	 * @param array<string, array{columns: array<string, string>, rows: list<array<string, mixed>>}> $tables
 	 */
 	public function __construct(array $tables = [])
 	{
-		$manager = new DatabaseManager(new DatabaseConfig([
+		$this->manager = new DatabaseManager(new DatabaseConfig([
 			'default' => 'default',
 			'databases' => [
 				'default' => ['connection' => 'sqlite'],
@@ -31,7 +32,7 @@ class CycleSqliteTestDatabase
 			],
 		]));
 
-		$this->database = $manager->database('default');
+		$this->database = $this->manager->database('default');
 
 		foreach ($tables as $name => $definition) {
 			$this->createTable($name, $definition['columns'], $definition['rows']);
@@ -41,6 +42,11 @@ class CycleSqliteTestDatabase
 	public function database(): DatabaseInterface
 	{
 		return $this->database;
+	}
+
+	public function manager(): DatabaseManager
+	{
+		return $this->manager;
 	}
 
 	private function createTable(string $name, array $columns, array $rows): void

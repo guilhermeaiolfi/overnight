@@ -6,15 +6,15 @@ namespace ON\RestApi\Event;
 
 use ON\Event\HasEventNameInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\NodeStateInterface;
 
 class ItemCreated implements HasEventNameInterface
 {
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected MutationStateInterface $state,
+		protected NodeStateInterface $state,
 		protected array $path = [],
-		protected ?MutationStateInterface $rootState = null
+		protected ?NodeStateInterface $rootState = null
 	) {
 		$this->rootState ??= $state;
 	}
@@ -29,7 +29,7 @@ class ItemCreated implements HasEventNameInterface
 		return $this->collection;
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->state;
 	}
@@ -59,7 +59,7 @@ class ItemCreated implements HasEventNameInterface
 		return $this->rootState->getCollection();
 	}
 
-	public function getRootState(): MutationStateInterface
+	public function getRootState(): NodeStateInterface
 	{
 		return $this->rootState;
 	}

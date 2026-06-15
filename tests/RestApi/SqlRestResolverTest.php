@@ -183,12 +183,13 @@ final class SqlRestResolverTest extends TestCase
 		$this->createPostCollection($registry);
 		$db = $this->createTestDatabase();
 		// maxLimit = 1000 by default; set a custom one
-		$items = new ItemRepository(
+		$items = $this->registerItemsLoader(new ItemRepository(
 			$registry,
 			$db->database(),
 			defaultLimit: 10,
 			maxLimit: 2
-		);
+		), $registry, $db);
+		$records = $this->createCycleRecordLoader($registry, $db);
 		$compiler = new SqlQuerySpecCompiler($db->database(), 10, 2);
 		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
 			new QueryNormalizer(),
@@ -197,7 +198,7 @@ final class SqlRestResolverTest extends TestCase
 		$action = new ListAction(
 			$registry,
 			$items,
-			new HandlerFactory(HandlerRegistry::defaults(), $items, $compiler),
+			new HandlerFactory(HandlerRegistry::defaults(), $items, $records, $compiler),
 			$compiler,
 			new \ON\RestApi\RestApiConfig(),
 			$this->noopHookDispatcher($registry),
@@ -383,12 +384,12 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createFullDatabase();
 		$resolver = $this->createItems($registry, $db);
 
-		$spec = $this->m($registry, $resolver, 'user', [
+		$node = $this->m($registry, $resolver, 'user', [
 			'name' => 'Ignored Relation',
 			'latest_post' => ['title' => 'Should not be normalized'],
 		]);
 
-		$this->assertSame([], $spec->root->relations[0]->actions);
+		$this->assertSame([], $node->relations['latest_post']->children);
 	}
 
 	public function testReadOnlyRelationInputCanOptIntoErrors(): void
@@ -1244,10 +1245,10 @@ final class SqlRestResolverTest extends TestCase
 	}
 
 	// -------------------------------------------------------------------------
-	// M2M Connect / Disconnect
+	// M2M relation updates
 	// -------------------------------------------------------------------------
 
-	public function testNestedM2MConnect(): void
+	public function testNestedM2MCreateJunctionRows(): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
@@ -1255,7 +1256,7 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createDirectusOperations($registry, $resolver);
 
-		// Create a new post and connect it to tags 1 and 2
+		// Create a new post and link it to two existing tags through junction rows
 		$created = $service->create(
 			'post',
 			$this->m($registry, $resolver, 'post', [
@@ -1263,7 +1264,12 @@ final class SqlRestResolverTest extends TestCase
 				'title' => 'Tagged Post',
 				'content' => 'Content',
 				'status' => 'published',
-				'tags' => ['connect' => [1, 2]],
+				'tags' => [
+					'create' => [
+						['tag_id' => 1],
+						['tag_id' => 2],
+					],
+				],
 			]),
 			['dispatchEvents' => false]
 		);
@@ -1311,7 +1317,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame(['InlineA', 'InlineB'], $names);
 	}
 
-	public function testNestedM2MDisconnect(): void
+	public function testNestedM2MRemoveByOmission(): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
@@ -1319,8 +1325,8 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createDirectusOperations($registry, $resolver);
 
-		// Post 1 is connected to tags 1 and 2. Disconnect tag 1.
-		$service->update('post', '1', $this->m($registry, $resolver, 'post', ['tags' => ['disconnect' => [1]]], 'update', '1'), ['dispatchEvents' => false]);
+		// Post 1 is connected to tags 1 and 2. Omitting tag 1 removes the junction row.
+		$service->update('post', '1', $this->m($registry, $resolver, 'post', ['tags' => [['tag_id' => 2]]], 'update', '1'), ['dispatchEvents' => false]);
 
 		// Verify only tag 2 remains
 		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
@@ -1330,7 +1336,31 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame([2], array_map('intval', array_column($tagIds, 'tag_id')));
 	}
 
-	public function testNestedM2MConnectAndCreateWithStringPrimaryKeys(): void
+	public function testNestedM2MDeleteRemovesJunctionRow(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$resolver = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $resolver);
+
+		$service->update(
+			'post',
+			'1',
+			$this->m($registry, $resolver, 'post', ['tags' => ['delete' => [1]]], 'update', '1'),
+			['dispatchEvents' => false]
+		);
+
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
+		$tagIds = $stmt->fetchAll();
+		$stmt->close();
+
+		$this->assertSame([2], array_map('intval', array_column($tagIds, 'tag_id')));
+		$tag = $db->database()->query('SELECT id FROM tag WHERE id = 1')->fetch();
+		$this->assertSame(1, (int) ($tag['id'] ?? 0));
+	}
+
+	public function testNestedM2MCreateAndNestedCreateWithStringPrimaryKeys(): void
 	{
 		$registry = new Registry();
 
@@ -1393,8 +1423,8 @@ final class SqlRestResolverTest extends TestCase
 			$this->m($registry, $resolver, 'report', [
 				'title' => 'Tagged Report',
 				'tags' => [
-					'connect' => ['homepage'],
 					'create' => [
+						['tag_id' => 'homepage'],
 						['id' => 'budget-2026', 'label' => 'Budget 2026', 'active' => true],
 					],
 				],

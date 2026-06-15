@@ -17,11 +17,10 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Mutation\CycleRecordCommitter;
+use ON\RestApi\Mutation\RecordStore;
+use ON\RestApi\Payload\DirectusRecordStoreBuilder;
+use ON\RestApi\Payload\MutationInputPreparer;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 
@@ -39,7 +38,8 @@ final class BatchUpdateAction implements RestActionInterface
 		private Registry $registry,
 		private ItemRepositoryInterface $items,
 		private HandlerFactory $relationHandlers,
-		private FileUploadEventEmitter $fileUploadEventEmitter,
+		private MutationInputPreparer $inputPreparer,
+		private CycleRecordCommitter $committer,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hookDispatcher,
 	) {}
@@ -79,31 +79,19 @@ final class BatchUpdateAction implements RestActionInterface
 				unset($item[$columnName]);
 			}
 
+			$item = $this->inputPreparer->prepare($collection, $item, is_array($payload['files'] ?? null) ? $payload['files'] : []);
 			$this->validate($collection, $item, true);
-			$spec = map($item)
-				->using(DirectusMutationBuilder::class, $collection, 'update', $identity, $payload['files'] ?? [])
+			$store = map($item)
+				->using(DirectusRecordStoreBuilder::class, $collection, 'update', $identity)
 				->from($options['input'])
 				->as(self::INTERMEDIATE_REPRESENTATION)
-				->to(MutationSpec::class);
+				->to(RecordStore::class);
 			$identity = $collection->getPrimaryKey()->getValue($identity);
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
-			$this->fileUploadEventEmitter->process($spec);
-			$queue = new MutationQueue();
-			$afterHooksTx = $this->hookDispatcher->start();
-			$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
-			$root = null;
-			if ($rootNode !== null) {
-				$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-			}
-
-			try {
-				$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
-				$afterHooksTx->flush();
-			} catch (\Throwable $throwable) {
-				$afterHooksTx->rollback();
-				throw $throwable;
-			}
+			$result = $store !== null
+				? $this->committer->commit($store, $options['dispatchEvents'])
+				: null;
 			$results[] = $result !== null
 				? map($result)
 					->using(CollectionRowMapper::class, $collection)

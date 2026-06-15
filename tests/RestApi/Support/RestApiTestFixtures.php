@@ -10,10 +10,9 @@ use ON\ORM\Definition\Relation\M2MRelation;
 use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\PayloadNormalizer;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Mutation\FileUploadEventEmitter;
+use ON\RestApi\Payload\DirectusRecordStoreBuilder;
+use ON\RestApi\Payload\MutationInputMerger;
+use ON\RestApi\Payload\MutationInputPreparer;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
@@ -42,10 +41,11 @@ use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Mutation\RecordNode;
+use ON\RestApi\Mutation\CycleRecordLoader;
+use ON\RestApi\Mutation\CycleRecordCommitter;
+use ON\RestApi\Mutation\NodeState;
+use ON\RestApi\Mutation\RecordStore;
 use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
@@ -62,6 +62,9 @@ trait RestApiTestFixtures
 {
 	/** @var array<class-string, object> */
 	protected array $mapperServices = [];
+
+	/** @var array<int, CycleRecordLoader> */
+	protected array $cycleRecordLoaders = [];
 
 	private function noopEventDispatcher(): EventDispatcherInterface
 	{
@@ -346,19 +349,59 @@ trait RestApiTestFixtures
 
 	protected function createItems(Registry $registry, CycleSqliteTestDatabase $db): ItemRepository
 	{
-		return new ItemRepository(
+		$items = new ItemRepository(
 			$registry,
 			$db->database(),
 		);
+
+		$this->registerItemsLoader($items, $registry, $db);
+
+		return $items;
 	}
 
-	protected function createHandlerFactory(ItemRepositoryInterface $items): HandlerFactory
+	protected function registerItemsLoader(
+		ItemRepositoryInterface $items,
+		Registry $registry,
+		CycleSqliteTestDatabase $db,
+	): ItemRepositoryInterface {
+		$this->cycleRecordLoaders[spl_object_id($items)] = $this->createCycleRecordLoader($registry, $db);
+
+		return $items;
+	}
+
+	protected function createHandlerFactory(ItemRepositoryInterface $items, ?CycleRecordLoader $records = null): HandlerFactory
 	{
+		$records ??= $this->recordsFor($items);
+
 		return new HandlerFactory(
 			HandlerRegistry::defaults(),
 			$items,
+			$records,
 			new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
 		);
+	}
+
+	protected function createCycleRecordLoader(Registry $registry, CycleSqliteTestDatabase $db): CycleRecordLoader
+	{
+		$cycleRegistry = new \Cycle\Schema\Registry($db->manager());
+		$schema = (new \Cycle\Schema\Compiler())->compile($cycleRegistry, [
+			new \ON\ORM\Compiler\CycleRegistryGenerator($registry),
+			new \Cycle\Schema\Generator\GenerateRelations(),
+			new \Cycle\Schema\Generator\GenerateModifiers(),
+			new \Cycle\Schema\Generator\ValidateEntities(),
+			new \Cycle\Schema\Generator\RenderTables(),
+			new \Cycle\Schema\Generator\RenderRelations(),
+			new \Cycle\Schema\Generator\RenderModifiers(),
+			new \Cycle\Schema\Generator\ForeignKeys(),
+			new \Cycle\Schema\Generator\GenerateTypecast(),
+		]);
+
+		$orm = new \Cycle\ORM\ORM(
+			new \Cycle\ORM\Factory($db->manager()),
+			new \Cycle\ORM\Schema($schema),
+		);
+
+		return new CycleRecordLoader($orm);
 	}
 
 	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db): object
@@ -452,24 +495,28 @@ trait RestApiTestFixtures
 		};
 	}
 
-	protected function createMutationBuilder(
+	protected function createRecordStoreBuilder(
 		Registry $registry,
 		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null,
-	): DirectusMutationBuilder {
-		$builder = new DirectusMutationBuilder(
+		?CycleRecordLoader $records = null,
+	): DirectusRecordStoreBuilder {
+		$records ??= $this->recordsFor($items);
+
+		$builder = new DirectusRecordStoreBuilder(
 			$registry,
 			$items,
-			new PayloadNormalizer($this->createHandlerFactory($items), $registry),
+			$this->createHandlerFactory($items, $records),
+			$records,
 		);
-		$this->registerDirectusMutationBuilder($builder);
+		$this->registerDirectusRecordStoreBuilder($builder);
 
 		return $builder;
 	}
 
-	protected function registerDirectusMutationBuilder(DirectusMutationBuilder $builder): void
+	protected function registerDirectusRecordStoreBuilder(DirectusRecordStoreBuilder $builder): void
 	{
-		$this->registerMapperService(DirectusMutationBuilder::class, $builder);
+		$this->registerMapperService(DirectusRecordStoreBuilder::class, $builder);
 	}
 
 	protected function createQueryBuilder(
@@ -544,26 +591,28 @@ trait RestApiTestFixtures
 	): object {
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
+		$records = $this->recordsFor($items);
 		$this->createQueryBuilder();
 
 		return new class(
 			$registry,
 			$items,
-			$this->createHandlerFactory($items),
-			$this->createMutationBuilder($registry, $items, $eventDispatcher),
+			$this->createHandlerFactory($items, $records),
+			$this->createRecordStoreBuilder($registry, $items, $eventDispatcher, $records),
+			new CycleRecordCommitter($items, $records, $hookDispatcher),
 			new \ON\RestApi\RestApiConfig(),
 			$hookDispatcher,
 		) {
 			use RegistrySupportTrait;
 
-			private ?FileUploadEventEmitter $fileUploadEventEmitter = null;
+			private ?MutationInputPreparer $inputPreparer = null;
 			private ?SqlQuerySpecCompiler $querySpecCompiler = null;
-
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
 				private HandlerFactory $relationHandlers,
-				private DirectusMutationBuilder $mutationBuilder,
+				private DirectusRecordStoreBuilder $recordStoreBuilder,
+				private CycleRecordCommitter $committer,
 				private \ON\RestApi\RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
 			) {}
@@ -642,29 +691,16 @@ trait RestApiTestFixtures
 				return $response['data'] ?? [];
 			}
 
-			public function create(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Payload\Node\MutationSpec $spec, array $options = []): array
+			public function create(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, RecordNode $rootNode, array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$this->fileUploadEventEmitter()->process($spec);
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
-				$root = null;
-				if ($rootNode !== null) {
-					$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				}
-
-				try {
-					$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
-					$afterHooksTx->rollback();
-					throw $throwable;
-				}
+				$result = $rootNode !== null
+					? $this->committer->commit(new RecordStore($rootNode), $options['dispatchEvents']) ?? []
+					: [];
 
 				return map($result)
 					->using(CollectionRowMapper::class, $collection)
@@ -676,7 +712,7 @@ trait RestApiTestFixtures
 			public function update(
 				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
 				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
-				\ON\RestApi\Payload\Node\MutationSpec $spec,
+				RecordNode $rootNode,
 				array $options = []
 			): ?array {
 				$collection = $this->getCollection($collection);
@@ -685,22 +721,9 @@ trait RestApiTestFixtures
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$this->fileUploadEventEmitter()->process($spec);
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
-				$root = null;
-				if ($rootNode !== null) {
-					$root = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				}
-
-				try {
-					$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
-					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
-					$afterHooksTx->rollback();
-					throw $throwable;
-				}
+				$result = $rootNode !== null
+					? $this->committer->commit(new RecordStore($rootNode), $options['dispatchEvents'])
+					: null;
 
 				return $result !== null
 					? map($result)
@@ -719,24 +742,13 @@ trait RestApiTestFixtures
 				$collection = $this->getCollection($collection);
 				$identity = $collection->getPrimaryKey()->getValue($identity);
 				$options = $options + ['dispatchEvents' => true];
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = new MutationNode(
+				$rootNode = new RecordNode(
 					operation: 'delete',
 					collection: $collection,
-					state: new MutationState($collection, $identity->getValues()),
+					state: new NodeState($collection, $identity->getValues()),
 				);
-				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
 
-				try {
-					$result = $this->items->commit($queue, fn (): bool => $task?->getRow() !== null);
-					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
-					$afterHooksTx->rollback();
-					throw $throwable;
-				}
-
-				return $result;
+				return $this->committer->commit(new RecordStore($rootNode), $options['dispatchEvents']) !== null;
 			}
 
 			public function serialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $phpRow): array
@@ -776,11 +788,11 @@ trait RestApiTestFixtures
 				);
 			}
 
-			private function fileUploadEventEmitter(): FileUploadEventEmitter
+			private function inputPreparer(): MutationInputPreparer
 			{
-				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter(
-					$this->registry,
-					$this->hookDispatcher
+				return $this->inputPreparer ??= new MutationInputPreparer(
+					new MutationInputMerger(),
+					$this->hookDispatcher,
 				);
 			}
 
@@ -815,7 +827,7 @@ trait RestApiTestFixtures
 	protected function createRestMiddleware(
 		Registry $registry,
 		ItemRepositoryInterface $items,
-		DirectusMutationBuilder $mutationBuilder,
+		DirectusRecordStoreBuilder $recordStoreBuilder,
 		array $options = ['endpointUri' => '/items'],
 		?EventDispatcherInterface $eventDispatcher = null,
 	): RestMiddleware {
@@ -838,20 +850,24 @@ trait RestApiTestFixtures
 
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
+		$records = $this->recordsFor($items);
 
-		$container = new class($registry, $items, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
+		$container = new class($registry, $items, $recordStoreBuilder, $config, $hookDispatcher, $records, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
+			private CycleRecordCommitter $committer;
 
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
-				private DirectusMutationBuilder $mutationBuilder,
+				private DirectusRecordStoreBuilder $recordStoreBuilder,
 				private \ON\RestApi\RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
+				private CycleRecordLoader $records,
 				private ?EventDispatcherInterface $eventDispatcher = null,
 			) {
 				$compiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
-				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items, $compiler);
+				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items, $this->records, $compiler);
+				$this->committer = new CycleRecordCommitter($this->items, $this->records, $this->hookDispatcher);
 			}
 
 			public function get(string $id): mixed
@@ -859,12 +875,12 @@ trait RestApiTestFixtures
 				return match ($id) {
 					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->hookDispatcher),
 					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
-					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
-					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
+					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new MutationInputPreparer(new MutationInputMerger(), $this->hookDispatcher), $this->committer, $this->config, $this->hookDispatcher),
+					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new MutationInputPreparer(new MutationInputMerger(), $this->hookDispatcher), $this->committer, $this->config, $this->hookDispatcher),
+					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new MutationInputPreparer(new MutationInputMerger(), $this->hookDispatcher), $this->committer, $this->config, $this->hookDispatcher),
+					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new MutationInputPreparer(new MutationInputMerger(), $this->hookDispatcher), $this->committer, $this->config, $this->hookDispatcher),
+					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->committer, $this->config, $this->hookDispatcher),
+					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->committer, $this->config, $this->hookDispatcher),
 					default => throw new \RuntimeException("Unknown service {$id}."),
 				};
 			}
@@ -899,7 +915,7 @@ trait RestApiTestFixtures
 	 * @param array<string, mixed> $files
 	 * @param 'create'|'update'|'upsert' $mode
 	 */
-	protected function buildMutationSpec(
+	protected function buildRecordNode(
 		Registry $registry,
 		ItemRepositoryInterface $items,
 		CollectionInterface|string $collection,
@@ -909,10 +925,10 @@ trait RestApiTestFixtures
 		array $files = [],
 		?EventDispatcherInterface $eventDispatcher = null,
 		bool $unserializeWire = true,
-	): MutationSpec {
+	): RecordNode {
 		$collection = is_string($collection) ? $registry->getCollection($collection) : $collection;
 
-		return $this->createMutationBuilder($registry, $items)->build(
+		return $this->createRecordStoreBuilder($registry, $items)->build(
 			$collection,
 			$input,
 			$mode,
@@ -920,7 +936,17 @@ trait RestApiTestFixtures
 			$files,
 			$unserializeWire ? WireRepresentation::class : PhpRepresentation::class,
 			PhpRepresentation::class,
-		);
+		)->root;
+	}
+
+	private function recordsFor(ItemRepositoryInterface $items): CycleRecordLoader
+	{
+		$loader = $this->cycleRecordLoaders[spl_object_id($items)] ?? null;
+		if ($loader !== null) {
+			return $loader;
+		}
+
+		throw new \RuntimeException('No CycleRecordLoader registered for this item repository.');
 	}
 
 	/**
@@ -936,7 +962,7 @@ trait RestApiTestFixtures
 		string $mode = 'create',
 		PrimaryKeyValue|string|null $id = null,
 		array $files = [],
-	): MutationSpec {
-		return $this->buildMutationSpec($registry, $items, $collection, $input, $mode, $id, $files);
+	): RecordNode {
+		return $this->buildRecordNode($registry, $items, $collection, $input, $mode, $id, $files);
 	}
 }

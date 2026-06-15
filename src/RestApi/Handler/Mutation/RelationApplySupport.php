@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\NodeStateInterface;
 use ON\RestApi\Mutation\ValueRef;
 
 trait RelationApplySupport
@@ -12,8 +12,8 @@ trait RelationApplySupport
 	use RelationStateSupport;
 
 	protected function linkForeignKeyOnSourceToTarget(
-		MutationStateInterface $source,
-		MutationStateInterface $target
+		NodeStateInterface $source,
+		NodeStateInterface $target
 	): void {
 		foreach ($this->relation->innerKeys() as $index => $innerKey) {
 			$outerKey = $this->relation->outerKeys()[$index];

@@ -5,56 +5,33 @@ declare(strict_types=1);
 namespace ON\RestApi\Payload\Parser;
 
 use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Payload\Action\BasicRelationAction;
-use ON\RestApi\Payload\Action\ConnectAction;
-use ON\RestApi\Payload\Action\CreateAction;
-use ON\RestApi\Payload\Action\DeleteAction;
-use ON\RestApi\Payload\Action\DisconnectAction;
-use ON\RestApi\Payload\Action\RelationAction;
-use ON\RestApi\Payload\Action\UpdateAction;
-use ON\RestApi\Payload\MutationInputMerger;
-use ON\RestApi\Payload\Node\MutationNodeSpec;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Payload\Node\RelationPayload;
+use ON\RestApi\Mutation\RecordNode;
+use ON\RestApi\Mutation\RelationNode;
 use ON\RestApi\Support\MutationInput;
 
 final class DirectusPayloadParser implements PayloadParserInterface
 {
-	private const OPERATIONS = ['create', 'update', 'delete', 'connect', 'disconnect'];
-
-	public function __construct(
-		private readonly MutationInputMerger $inputMerger = new MutationInputMerger(),
-	) {
-	}
+	private const OPERATIONS = ['create', 'update', 'delete'];
 
 	public function parse(
 		CollectionInterface $collection,
 		array $input,
-		string $mode = 'upsert',
-		PrimaryKeyValue|string|null $id = null,
-		array $files = [],
-	): MutationSpec {
-		if ($files !== []) {
-			$input = $this->inputMerger->mergeFiles($collection, $input, $files);
-		}
-
+	): RecordNode {
 		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $input);
 
-		return new MutationSpec(new MutationNodeSpec(
-			collection: $collection->getName(),
+		return new RecordNode(
+			collection: $collection,
 			fields: $scalars,
 			relations: $this->parseRelations($collection, $relations),
-			operation: $mode,
-		));
+		);
 	}
 
-	public function parseNode(CollectionInterface $collection, array $input): MutationNodeSpec
+	public function parseNode(CollectionInterface $collection, array $input): RecordNode
 	{
 		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $input);
 
-		return new MutationNodeSpec(
-			collection: $collection->getName(),
+		return new RecordNode(
+			collection: $collection,
 			fields: $scalars,
 			relations: $this->parseRelations($collection, $relations),
 		);
@@ -62,7 +39,7 @@ final class DirectusPayloadParser implements PayloadParserInterface
 
 	/**
 	 * @param array<string, mixed> $relations
-	 * @return list<RelationPayload>
+	 * @return array<string, RelationNode>
 	 */
 	private function parseRelations(CollectionInterface $collection, array $relations): array
 	{
@@ -74,10 +51,11 @@ final class DirectusPayloadParser implements PayloadParserInterface
 			}
 
 			$relation = $collection->relations->get((string) $relationName);
-			$parsed[] = new RelationPayload(
+			$parsed[(string) $relationName] = new RelationNode(
 				relationName: (string) $relationName,
-				targetCollection: $relation->getCollection()->getName(),
-				actions: $this->parseRelationInput($relation->getCardinality() === 'single', $rawInput),
+				targetCollection: $relation->getCollection(),
+				children: $this->parseRelationInput($relation->getCollection(), $relation->getCardinality() === 'single', $rawInput),
+				definition: $relation,
 			);
 		}
 
@@ -85,76 +63,82 @@ final class DirectusPayloadParser implements PayloadParserInterface
 	}
 
 	/**
-	 * @return list<RelationAction>
+	 * @return list<RecordNode>
 	 */
-	public function parseRelationInput(bool $single, mixed $rawInput): array
+	public function parseRelationInput(CollectionInterface $targetCollection, bool $single, mixed $rawInput): array
 	{
 		if (is_array($rawInput) && MutationInput::isAssociativeArray($rawInput) && $this->hasOperationPayload($rawInput)) {
-			return $this->parseDetailedRelation($rawInput);
+			return $this->parseDetailedRelation($targetCollection, $rawInput);
 		}
 
 		if ($single) {
-			return [new BasicRelationAction(item: $rawInput)];
+			return $rawInput === null ? [] : [$this->parseBasicItem($targetCollection, $rawInput, 0)];
 		}
 
 		if (!is_array($rawInput)) {
-			return [new BasicRelationAction(items: [$rawInput])];
+			return [$this->parseBasicItem($targetCollection, $rawInput, 0)];
 		}
 
 		if (MutationInput::isAssociativeArray($rawInput)) {
-			return [new BasicRelationAction(items: [$rawInput])];
+			return [$this->parseBasicItem($targetCollection, $rawInput, 0)];
 		}
 
-		return [new BasicRelationAction(items: $rawInput)];
+		$children = [];
+		foreach ($rawInput as $index => $item) {
+			$children[] = $this->parseBasicItem($targetCollection, $item, (int) $index);
+		}
+
+		return $children;
 	}
 
 	/**
-	 * @return list<RelationAction>
+	 * @return list<RecordNode>
 	 */
-	private function parseDetailedRelation(array $input): array
+	private function parseDetailedRelation(CollectionInterface $targetCollection, array $input): array
 	{
-		$actions = [];
+		$children = [];
 
 		foreach (self::OPERATIONS as $operation) {
 			foreach (MutationInput::normalizeRelationItems($input[$operation] ?? []) as $index => $item) {
-				$actions[] = $this->parseDetailedItem($operation, $item, $index);
+				$children[] = $this->parseRelationItem(
+					$targetCollection,
+					$item,
+					$index,
+					'explicit',
+					match ($operation) {
+						'create' => 'create',
+						'update' => 'upsert',
+						'delete' => 'delete',
+					},
+				);
 			}
 		}
 
-		return $actions;
+		return $children;
 	}
 
-	private function parseDetailedItem(string $operation, mixed $item, int $index): RelationAction
+	private function parseBasicItem(CollectionInterface $targetCollection, mixed $item, int $index): RecordNode
 	{
-		return match ($operation) {
-			'create' => new CreateAction(
-				data: is_array($item) ? $item : [],
-				index: $index,
-				explicitOperation: true,
-			),
-			'update' => new UpdateAction(
-				data: is_array($item) ? $item : [],
-				index: $index,
-				explicitOperation: true,
-			),
-			'delete' => new DeleteAction(
-				data: is_array($item) ? $item : null,
-				target: is_array($item) ? null : $item,
-				index: $index,
-				explicitOperation: true,
-			),
-			'connect' => new ConnectAction(
-				target: $item,
-				data: is_array($item) ? $item : null,
-				index: $index,
-				explicitOperation: true,
-			),
-			'disconnect' => new DisconnectAction(
-				target: $item,
-				index: $index,
-				explicitOperation: true,
-			),
-		};
+		return $this->parseRelationItem($targetCollection, $item, $index, 'desired');
+	}
+
+	private function parseRelationItem(
+		CollectionInterface $targetCollection,
+		mixed $item,
+		int $index,
+		string $intent,
+		?string $plannedOperation = null,
+	): RecordNode {
+		$node = is_array($item)
+			? $this->parseNode($targetCollection, $item)
+			: new RecordNode($targetCollection);
+		$node->relationIntent = $intent;
+		$node->relationIndex = $index;
+		$node->relationData = $item;
+		$node->plannedOperation = $plannedOperation;
+		$node->relationMutation = is_array($item);
+
+		return $node;
 	}
 
 	private function hasOperationPayload(array $input): bool

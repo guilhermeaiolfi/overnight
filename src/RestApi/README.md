@@ -8,17 +8,17 @@ User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest
 
 ## Read vs write pipelines
 
-**Reads** and **writes** share the same handler registry but use symmetric spec pipelines:
+**Reads** and **writes** share the same handler registry but use symmetric compiler-style pipelines:
 
 ```
 Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → action read logic → storage rows
                                                                               ↓
-Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → Directus mutation actions → storage rows
+Writes: JSON body  → DirectusPayloadParser → RecordStoreCompiler passes → OperationQueue → storage rows
                                                                               ↓
         Directus actions format response rows → PHP (default) | wire (serialize) | storage (raw)
 ```
 
-Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the planner, queue, and handler apply layer stay unchanged.
+Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the compiler passes, queue, and handler apply layer stay unchanged.
 
 ---
 
@@ -27,8 +27,8 @@ Swapping Directus for another wire format means swapping `DirectusQueryParser` /
 Mutations follow a strict four-phase pipeline:
 
 ```
-file uploads (pre-plan)
-  → build node       parse + normalize payload → build MutationNode tree
+compile mutation
+  → parse payload    raw RecordNode tree → compiler passes → executable RecordNode tree
   → fill queue       dispatch before-hooks → queue mutations → schedule after-hooks
   → transaction { queue.execute() }
   → flush after-hooks
@@ -42,20 +42,20 @@ file uploads (pre-plan)
 |------|------|
 | `Directus\Action\*` | HTTP/action orchestration; shapes responses via hydrate/serialize helpers |
 | Directus read actions | Build handler trees, run list/get/aggregate, and return storage rows |
-| `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
-| `PayloadNormalizer` | Walks the mutation tree; delegates relation payload normalization to handlers |
-| `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
-| `RelationPayload` | One relation occurrence: flat `list<RelationAction>` |
-| `RelationAction` | `CreateAction`, `UpdateAction`, `DeleteAction`, `ConnectAction`, `DisconnectAction` |
-| Directus mutation actions | Build mutation trees, commit through the queue, and dispatch collection hooks |
-| `MutationNodeBuilder` | Builds a root `MutationNode` tree from a normalized `MutationSpec` |
-| `MutationNode` | One entity in the plan tree: operation, state, nested relations |
-| `RelationNode` | One relation on a node: handler, `RelationPayload`, planned child nodes |
-| `MutationQueue` | Ordered list of insert/update/delete commands; resolves `ValueRef` deps at execute time |
-| `MutationState` | Mutable row values for one entity during a mutation |
+| `MergeMutationInput` | First compiler pass; folds multipart uploads into the raw input payload |
+| `ParseDirectusPayload` | Parser pass; converts wire-format input into the initial raw `RecordNode` tree |
+| `DirectusPayloadParser` | Wire-format parser: JSON → raw `RecordNode` tree with relation child `RecordNode`s |
+| `RecordStoreCompiler` | Runs ordered passes that enrich one evolving record store |
+| `HydrationPassInterface` | Extension point for compile-time mutation lowering |
+| `MutationInputPreparer` | Prepares request payloads before compilation: merges multipart files and resolves `FileUpload` hooks recursively |
+| Directus write actions | Compile record stores, commit through the queue, and dispatch collection hooks |
+| `RecordNode` | One entity in the plan tree: operation, state, nested relations |
+| `RelationNode` | One relation on a node: relation definition, handler, and planned child nodes |
+| `OperationQueue` | Ordered list of insert/update/delete commands; resolves `ValueRef` deps at execute time |
+| `NodeState` | Mutable row values for one entity during a mutation |
 | `ValueRef` | Deferred field value from another state's PK (cross-row FK wiring) |
 | `Handler` / `HandlerRegistry` | Relation-scoped read + write implementation per relation kind |
-| `HandlerFactory` | `relation()` reads, `mutation()` normalize + apply |
+| `HandlerFactory` | `relation()` reads, `mutation()` apply-time relation handler |
 
 ---
 
@@ -68,21 +68,18 @@ src/RestApi/
 ├── Query/
 │   └── Parser/                 Directus-style query → QuerySpec
 ├── Payload/
-│   ├── Parser/                 DirectusPayloadParser → MutationSpec
-│   ├── PayloadNormalizer.php   tree walk + handler delegation
-│   ├── Action/                 CreateAction, ConnectAction, BasicRelationAction, …
-│   └── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
+│   └── Parser/                 DirectusPayloadParser → raw RecordNode tree
 ├── Mutation/
-│   ├── MutationNodeBuilder.php
-│   ├── MutationQueue.php
-│   ├── MutationNode.php
+│   ├── Compiler/               RecordStoreCompiler + ordered compiler passes
+│   ├── OperationQueue.php
+│   ├── RecordNode.php
 │   └── RelationNode.php
 ├── Handler/
 │   ├── HandlerRegistry.php
 │   ├── HandlerFactory.php
 │   ├── HasOneHandler.php …     Read + applyRelation()
 │   ├── Read/
-│   └── Mutation/               Normalize + apply traits (HasManyNormalize, ForeignKeyOnTargetApply, …)
+│   └── Mutation/               Apply traits (ForeignKeyOnTargetApply, BelongsToApply, …)
 └── Event/
 ```
 
@@ -90,31 +87,31 @@ src/RestApi/
 
 ## Plan Phase
 
-1. **`DirectusPayloadParser::parse()`** — split scalars vs relations; detailed → typed actions; basic → `BasicRelationAction`.
-2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::mutation()` returns a handler that normalizes the payload in one call (`normalizeRelation()`).
-3. **`MutationNodeBuilder::fromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
-4. Return the root `MutationNode` — **no hooks yet**.
+1. **`MergeMutationInput`** — merge multipart files into the raw payload before parsing.
+2. **`ParseDirectusPayload`** — split scalars vs relations and return a raw `RecordNode` tree whose relation children are also `RecordNode`s.
+3. **`RecordStoreCompiler` passes** — attach relation definitions, resolve operations/state, hydrate Cycle records, let relation handlers reconcile relation children, and validate the plan.
+4. Return the compiled root `RecordNode` — **no item/relation hooks yet**.
 
 ## Commit phase (`commit`)
 
-1. **Before-hooks** — depth-first: item → child nodes → relation connect/disconnect (from `RelationPayload.actions`).
-2. **`MutationQueue::fill()`** — depth-first: child nodes → `applyRelation()` → `queueNode()`.
+1. **Before-hooks** — depth-first across the compiled record graph and relation children.
+2. **Cycle commit + deferred relation commands** — persist the Cycle graph, then let handlers queue relation-specific work such as pivot-row writes.
 3. **After-hooks scheduled** — relation hooks and item hooks are flushed after commit.
 
 Row CRUD never lives in relation handlers. Handlers only interpret relation semantics at apply time.
 
 ---
 
-## Payload actions (Option B)
+## Relation children
 
-Each `RelationPayload` holds a flat `list<RelationAction>`. The planner uses a two-pass model:
+Each `RelationNode` holds a flat `list<RecordNode>`. Relation children start as parsed input or omitted current rows, then compiler passes and relation handlers enrich the same nodes with:
 
-| Pass | Action types | Work |
-|------|-------------|------|
-| Entity | `CreateAction`, `UpdateAction`, `DeleteAction` | Plan nested `MutationNode` trees (recursive) |
-| Link | `ConnectAction`, `DisconnectAction` | `applyRelation()` — FK wiring, pivot inserts |
+- desired vs omitted intent
+- current and input identity
+- compile mode (`create`, `upsert`, `delete`, ...)
+- compile metadata telling whether the child is only relation intent or a concrete nested record mutation
 
-Basic vs detailed is a **parser/normalizer** concern only. By plan time, `BasicRelationAction` is gone and every action is fully typed.
+Basic vs detailed Directus payloads are normalized into this child model during parsing and compile-time hydration.
 
 ---
 
@@ -123,14 +120,14 @@ Basic vs detailed is a **parser/normalizer** concern only. By plan time, `BasicR
 One **handler class per relation kind**. Each handler implements:
 
 - **Read** (`HandlerInterface`): `configureParserNode()`, `load()`
-- **Write** (`RelationMutationHandlerInterface`): `normalizeRelation()`, `applyRelation()`
+- **Write** (`RelationMutationHandlerInterface`): `applyRelation()`
 
-| Kind | Handler | Normalize trait | Apply trait |
-|------|---------|-----------------|-------------|
-| hasOne | `HasOneHandler` | `HasOneNormalize` | `ForeignKeyOnTargetApply` |
-| hasMany | `HasManyHandler` | `HasManyNormalize` | `ForeignKeyOnTargetApply` |
-| belongsTo | `BelongsToHandler` | `BelongsToNormalize` | `BelongsToApply` |
-| manyToMany | `ManyToManyHandler` | `ManyToManyNormalize` | `ManyToManyApply` |
+| Kind | Handler | Apply trait |
+|------|---------|-------------|
+| hasOne | `HasOneHandler` | `ForeignKeyOnTargetApply` |
+| hasMany | `HasManyHandler` | `ForeignKeyOnTargetApply` |
+| belongsTo | `BelongsToHandler` | `BelongsToApply` |
+| manyToMany | `ManyToManyHandler` | `ManyToManyApply` |
 
 ### Register a custom handler
 
@@ -138,31 +135,28 @@ One **handler class per relation kind**. Each handler implements:
 $registry = HandlerRegistry::defaults()
     ->relation('post', 'tags', MyCustomM2MHandler::class);
 
-$factory = new HandlerFactory($registry, $dataSource, $querySpecCompiler);
+$factory = new HandlerFactory($registry, $dataSource, $records, $querySpecCompiler);
 ```
 
 ### Custom handler checklist
 
 1. Extend `AbstractRelationHandler` (or an existing handler if behavior is close).
 2. Implement read: parser node + `load()`.
-3. Add a `*Normalize` trait (use `RelationPayloadNormalizeEntry` or extend an existing normalize trait).
-4. Add a `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
+3. Add an apply trait implementing `applyRelation()` over compiled relation child `RecordNode`s.
+4. Add or replace compiler passes when compile-time relation behavior cannot be expressed generically.
 5. Register in `HandlerRegistry`.
 6. Add tests under `tests/RestApi/`.
 
 ### Polymorphic example (sketch)
 
-Resolve target collection inside `coerceBasicActions()` when normalizing basic/detailed create actions:
+Resolve target collection inside a compiler pass when lowering parsed relation children:
 
 ```php
-protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
+public function run(HydrationSubjectInterface $subject): HydrationSubjectInterface
 {
-    $actions = [];
-    foreach ($basic->items as $item) {
-        $collection = $this->resolveMorphCollection($item['type'] ?? '');
-        $actions[] = new CreateAction(collection: $collection->getName(), data: $item);
-    }
-    return $actions;
+    assert($subject instanceof RecordNode);
+    // Walk relation children and rewrite morph payloads before child nodes are completed.
+    return $subject;
 }
 ```
 
@@ -178,9 +172,9 @@ protected function coerceBasicActions(MutationContext $context, BasicRelationAct
 | `ItemUpdating` | `ItemUpdated` | `restapi.item.updating` / `.updated` |
 | `ItemDeleting` | `ItemDeleted` | `restapi.item.deleting` / `.deleted` |
 
-### Relation events (connect/disconnect)
+### Relation events
 
-Dispatched from `ConnectAction` / `DisconnectAction` on `RelationPayload.actions`. Path arrays identify nested location, e.g. `['tags', 'connect', 1]`.
+Dispatched from compiled relation child intent during commit. Path arrays still identify nested location.
 
 ---
 
@@ -202,4 +196,4 @@ Directus mutation actions check explicit create IDs during **plan**, before the 
 
 ### Polymorphic relations
 
-Not in the default handler set. Register a custom handler with normalize + apply traits; resolve target collection in `coerceBasicActions()` / `resolvePayloadAction()`.
+Not in the default handler set. Register a custom handler with an apply trait and add a compiler pass to resolve target collections during relation-child compilation.

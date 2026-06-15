@@ -29,7 +29,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 	public function testPatchUpdateAcceptsNestedUploadedFiles(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, $resolver, $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -68,15 +68,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Updated article', $body['data']['title'] ?? null);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
-		$this->assertSame(1, $resolver->createCalls[0]['input']['news_id']);
+		$rows = $db->database()->query('SELECT file_id, news_id FROM news_article_file WHERE news_id = 1 ORDER BY id')->fetchAll();
+		$this->assertSame([100, 501], array_map('intval', array_column($rows, 'file_id')));
+		$this->assertSame([1, 1], array_map('intval', array_column($rows, 'news_id')));
 	}
 
 	public function testPatchUpdateAcceptsExplicitCreateUpdatePayloadWithNestedUpload(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, $resolver, $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -120,14 +119,13 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$rows = $db->database()->query('SELECT file_id FROM news_article_file WHERE news_id = 1 ORDER BY id')->fetchAll();
+		$this->assertSame([100, 501], array_map('intval', array_column($rows, 'file_id')));
 	}
 
 	public function testPatchUpdateAcceptsFlatArrayPayloadWithCreateFileUploadKey(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, $resolver, $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -167,9 +165,8 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$rows = $db->database()->query('SELECT file_id FROM news_article_file WHERE news_id = 1 ORDER BY id')->fetchAll();
+		$this->assertSame([100, 501], array_map('intval', array_column($rows, 'file_id')));
 	}
 
 	private function createUploadedFile(string $filename): UploadedFileInterface
@@ -211,7 +208,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 	}
 
 	/**
-	 * @return array{0: Registry, 1: ItemRepository, 2: \ON\RestApi\Middleware\RestMiddleware}
+	 * @return array{0: Registry, 1: ItemRepository, 2: \ON\RestApi\Middleware\RestMiddleware, 3: CycleSqliteTestDatabase}
 	 */
 	private function createNewsArticleFixture(): array
 	{
@@ -266,7 +263,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			],
 		]);
 
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = $this->registerItemsLoader(new class($registry, $db->database()) extends ItemRepository {
 			/** @var list<array{collection: string, input: array<string, mixed>}> */
 			public array $createCalls = [];
 
@@ -284,7 +281,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 				return parent::create($collection, $input);
 			}
-		};
+		}, $registry, $db);
 
 		RestHooks::for($registry->getCollection('news_article_file'))
 			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501))
@@ -318,10 +315,10 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
-		return [$registry, $resolver, $middleware];
+		return [$registry, $resolver, $middleware, $db];
 	}
 }

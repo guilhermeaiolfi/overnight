@@ -155,7 +155,7 @@ final class CollectionRowMapper implements MapperInterface
 			return $value;
 		}
 
-		if ($this->isRelationActionPayload($value)) {
+		if ($this->isDetailedRelationPayload($value)) {
 			$result = $value;
 
 			foreach (['create', 'update'] as $action) {
@@ -227,7 +227,7 @@ final class CollectionRowMapper implements MapperInterface
 		);
 	}
 
-	private function isRelationActionPayload(array $value): bool
+	private function isDetailedRelationPayload(array $value): bool
 	{
 		return $this->isAssociativeArray($value)
 			&& (array_key_exists('create', $value)

@@ -4,20 +4,41 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\ORM\Definition\Relation\RelationInterface;
 use ON\RestApi\Handler\RelationMutationHandlerInterface;
-use ON\RestApi\Payload\Node\RelationPayload;
 
-final readonly class RelationNode
+final class RelationNode
 {
 	/**
-	 * @param array{create: list<MutationNode>, update: list<MutationNode>, delete: list<MutationNode>} $children
+	 * @param list<RecordNode> $children
 	 */
 	public function __construct(
-		public RelationMutationHandlerInterface $handler,
-		public RelationPayload $payload,
-		public MutationStateInterface $state,
-		public array $path,
-		public array $children,
+		public string $relationName,
+		public CollectionInterface $targetCollection,
+		public array $children = [],
+		public ?RelationInterface $definition = null,
+		public ?RelationMutationHandlerInterface $handler = null,
+		public ?NodeStateInterface $state = null,
+		public array $path = [],
 	) {
+	}
+
+	/**
+	 * @return list<RecordNode>
+	 */
+	public function childRecordsByOperation(?string $operation = null): array
+	{
+		$records = [];
+
+		foreach ($this->children as $child) {
+			if ($operation !== null && $child->operation !== $operation) {
+				continue;
+			}
+
+			$records[] = $child;
+		}
+
+		return $records;
 	}
 }

@@ -10,17 +10,17 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class DeleteCommand extends AbstractMutationCommand
 {
-	private MutationStateInterface $state;
+	private NodeStateInterface $state;
 
 	public function __construct(
 		private CollectionInterface $collection,
 		private FilterNode $criteria,
-		?MutationStateInterface $state = null,
+		?NodeStateInterface $state = null,
 	) {
-		$this->state = $state ?? new MutationState($collection);
+		$this->state = $state ?? new NodeState($collection);
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->state;
 	}

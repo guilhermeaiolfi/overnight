@@ -7,17 +7,17 @@ namespace ON\RestApi\Mutation;
 final class ValueRef
 {
 	public function __construct(
-		private MutationStateInterface $state,
+		private NodeStateInterface $state,
 		private string $field
 	) {
 	}
 
-	public static function forStateField(MutationStateInterface $state, string $field): self
+	public static function forStateField(NodeStateInterface $state, string $field): self
 	{
 		return new self($state, $field);
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->state;
 	}

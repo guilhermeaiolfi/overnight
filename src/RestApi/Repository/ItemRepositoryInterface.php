@@ -10,7 +10,7 @@ use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
 use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\RestApi\Mutation\MutationQueue;
+use ON\RestApi\Mutation\OperationQueue;
 use ON\RestApi\Query\Node\FilterNode;
 
 interface ItemRepositoryInterface
@@ -45,7 +45,7 @@ interface ItemRepositoryInterface
 
 	public function delete(CollectionInterface $collection, FilterNode $criteria): ?array;
 
-	public function commit(MutationQueue $queue, callable $resolve): mixed;
+	public function commit(OperationQueue $queue, callable $resolve): mixed;
 
 	/**
 	 * Advanced escape hatch: direct database access bypasses the canonical model.

@@ -40,7 +40,7 @@ final class RestMiddlewareValidationTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			[
 				'endpointUri' => '/items',
 				'validationMessages' => [
@@ -88,7 +88,7 @@ final class RestMiddlewareValidationTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items']
 		);
 

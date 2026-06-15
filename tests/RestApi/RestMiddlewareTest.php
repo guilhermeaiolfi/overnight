@@ -37,7 +37,7 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items']
 		);
 
@@ -72,7 +72,7 @@ final class RestMiddlewareTest extends TestCase
 			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
-			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
+			->field('file_id', 'int')->type('int')->nullable(true)->end()
 			->end();
 
 		$db = new CycleSqliteTestDatabase([
@@ -93,7 +93,7 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = $this->registerItemsLoader(new class($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
 			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
@@ -113,7 +113,7 @@ final class RestMiddlewareTest extends TestCase
 
 				return parent::create($collection, $input);
 			}
-		};
+		}, $registry, $db);
 
 		RestHooks::for($registry->getCollection('attachment'))
 			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501));
@@ -121,7 +121,7 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -187,8 +187,8 @@ final class RestMiddlewareTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame('Asset', $body['data']['title']);
-		$this->assertCount(2, $resolver->createCalls);
-		$this->assertSame(501, $resolver->createCalls[1]['input']['file_id']);
+		$attachments = $db->database()->query('SELECT file_id FROM attachment ORDER BY id')->fetchAll();
+		$this->assertSame([501], array_map('intval', array_column($attachments, 'file_id')));
 	}
 
 	public function testRootAuthorizationCanAllowNestedCreateOperations(): void
@@ -223,12 +223,12 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new ItemRepository($registry, $db->database());
+		$resolver = $this->registerItemsLoader(new ItemRepository($registry, $db->database()), $registry, $db);
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -268,7 +268,7 @@ final class RestMiddlewareTest extends TestCase
 			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
-			->field('file_id', 'upload')->type('upload')->nullable(false)->end()
+			->field('file_id', 'int')->type('int')->nullable(false)->end()
 			->end();
 
 		$db = new CycleSqliteTestDatabase([
@@ -293,7 +293,7 @@ final class RestMiddlewareTest extends TestCase
 				],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = $this->registerItemsLoader(new class($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
 			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
@@ -313,7 +313,7 @@ final class RestMiddlewareTest extends TestCase
 
 				return parent::create($collection, $input);
 			}
-		};
+		}, $registry, $db);
 
 		RestHooks::for($registry->getCollection('attachment'))
 			->on(FileUpload::class, static fn (FileUpload $event) => $event->setStoredValue(501));
@@ -321,7 +321,7 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -388,9 +388,8 @@ final class RestMiddlewareTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame('Updated asset', $body['data']['title']);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('attachment', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$attachments = $db->database()->query('SELECT file_id FROM attachment WHERE asset_id = 1 ORDER BY id')->fetchAll();
+		$this->assertSame([100, 501], array_map('intval', array_column($attachments, 'file_id')));
 	}
 
 	public function testDirectusFilesEndpointCreatesFileRecordAndDispatchesUploadEvent(): void
@@ -399,7 +398,7 @@ final class RestMiddlewareTest extends TestCase
 		$registry->collection('directus_files')
 			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
-			->field('file', 'upload')->type('upload')->nullable(false)->end()
+			->field('file', 'int')->type('int')->nullable(false)->end()
 			->end();
 
 		$db = new CycleSqliteTestDatabase([
@@ -412,7 +411,7 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = $this->registerItemsLoader(new class($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
 			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
@@ -429,7 +428,7 @@ final class RestMiddlewareTest extends TestCase
 
 				return parent::create($collection, $input);
 			}
-		};
+		}, $registry, $db);
 
 		$uploads = [];
 		RestHooks::for($registry->getCollection('directus_files'))
@@ -448,7 +447,7 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -484,9 +483,8 @@ final class RestMiddlewareTest extends TestCase
 			'field' => 'file',
 			'filename' => 'photo.jpg',
 		]], $uploads);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('directus_files', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file']);
+		$files = $db->database()->query('SELECT file FROM directus_files ORDER BY id')->fetchAll();
+		$this->assertSame([501], array_map('intval', array_column($files, 'file')));
 	}
 
 	public function testAuthorizationErrorsReturnReadableMessagesAndExtensions(): void
@@ -506,7 +504,7 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new ItemRepository($registry, $db->database());
+		$resolver = $this->registerItemsLoader(new ItemRepository($registry, $db->database()), $registry, $db);
 
 		RestHooks::for($registry->getCollection('asset'))
 			->on(ItemCreating::class, static fn (ItemCreating $event) => $event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
@@ -517,7 +515,7 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
+			$this->createRecordStoreBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 

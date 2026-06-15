@@ -9,16 +9,16 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class InsertCommand extends AbstractMutationCommand
 {
-	private MutationStateInterface $state;
+	private NodeStateInterface $state;
 
 	public function __construct(
-		private MutationStateInterface $input,
+		private NodeStateInterface $input,
 		private bool $ignoreDuplicate = false
 	) {
 		$this->state = $input;
 	}
 
-	public function getState(): MutationStateInterface
+	public function getState(): NodeStateInterface
 	{
 		return $this->state;
 	}
