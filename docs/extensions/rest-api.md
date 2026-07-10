@@ -111,16 +111,36 @@ RestApiExtension::install($app, [
 
 **Writes** go through `MutationCoordinator`:
 
-1. **Parse** — `DirectusPayloadParser` → `ToOneMutation` / `ToManyImplicitMutation` / `ToManyExplicitMutation`.
-2. **Bind** — `DirectusMutationBinder` attaches intent to an ON\Data `Session` (recursive nested relations).
-3. **Before-events** — parent then children; preventable hooks stop flush.
+1. **Parse** — `DirectusPayloadParser` → `ToOneMutation` / `ToManyImplicitMutation` / `ToManyExplicitMutation` (rejects duplicate related identities).
+2. **Bind** — `DirectusMutationBinder` attaches intent to an ON\Data `Session`, verifying related identities exist and scoping explicit update/delete to the current relation baseline.
+3. **Before-events** — parent then children; `preventDefault()` stops flush (no after-events).
 4. **Flush** — `Session::sync()` + `Session::flush()` (one transaction for batch endpoints).
-5. **After-events** — children then parent; skipped on rollback.
+5. **After-events** — children then parent; skipped on rollback or prevention.
 6. **Reload** — result rows via ON\Data query.
 
-Implicit to-many arrays define **final membership** (omitted members are unlinked, not deleted). Explicit `{ create, update, delete }` applies only those deltas; `delete` removes the represented row. There is no `connect` / `disconnect` payload operation.
+#### Implicit vs explicit to-many
 
-Internal architecture: [`src/RestApi/README.md`](../../src/RestApi/README.md).
+```json
+{ "children": [1, 3] }
+```
+
+Implicit list = **final membership**. Listed existing items may be retained or newly assigned (when authorized). Omitted baseline members are **unlinked**, not deleted.
+
+```json
+{
+  "children": {
+    "update": [{ "id": 3, "name": "Changed" }],
+    "delete": [2]
+  }
+}
+```
+
+Explicit `update` / `delete` identities **must already belong** to the relation being mutated. Out-of-scope identities fail with `INVALID_RELATION_TARGET` before persistence.
+
+Missing related identities fail with `RELATED_NOT_FOUND` (payload path included). Duplicate identities in one relation payload fail with `DUPLICATE_RELATED_IDENTITY`.
+
+Internal architecture: [`src/RestApi/README.md`](../../src/RestApi/README.md).  
+Upgrade notes for removed relation events: [`rest-api-mutation-upgrade.md`](./rest-api-mutation-upgrade.md).
 
 ---
 
@@ -479,9 +499,11 @@ All nested operations are wrapped in a database transaction. If any part fails, 
 
 ## Many-to-Many Operations
 
-M2M relations support `connect`, `disconnect`, and `create` operations:
+Overnight M2M mutations use the same implicit / explicit shapes as other to-many relations. There is no `connect` / `disconnect` payload operation.
 
-### Connect existing items
+Common Overnight schemas represent the **related target** (for example `tag` via `post_tag`). Relation-scope checks use that represented collection’s identities currently linked to the parent. Junction-represented M2M (relation target = through collection) scopes against junction identities instead.
+
+### Assign / retain membership (implicit)
 
 ```bash
 curl -X POST http://localhost/items/post \
@@ -490,47 +512,29 @@ curl -X POST http://localhost/items/post \
     "title": "Tagged Post",
     "user_id": 1,
     "status": "published",
-    "tags": {"connect": [1, 3, 5]}
+    "tags": [1, 3, 5]
 }'
 ```
 
-### Disconnect items
+Listed existing tags are linked (or kept). Tags omitted from a later implicit update are unlinked, not deleted.
 
-```bash
-curl -X PATCH http://localhost/items/post/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tags": {"disconnect": [2, 4]}
-}'
-```
-
-### Create and connect new items
-
-```bash
-curl -X PATCH http://localhost/items/post/1 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tags": {"create": [{"name": "PHP"}, {"name": "REST"}]}
-}'
-```
-
-### Combined operations
+### Create related items inline
 
 ```bash
 curl -X PATCH http://localhost/items/post/1 \
   -H "Content-Type: application/json" \
   -d '{
     "tags": {
-        "create": [{"name": "NewTag"}],
-        "connect": [5],
-        "disconnect": [1]
+        "create": [{"name": "PHP"}, {"name": "REST"}],
+        "update": [{"id": 5, "name": "Renamed"}],
+        "delete": [1]
     }
 }'
 ```
 
-Execution order: `create` → `connect` → `disconnect`. All operations are idempotent — connecting an already-connected ID or disconnecting a non-existent link produces no error.
+Explicit `update` / `delete` require the identity to already be in the parent’s relation membership.
 
-When creating new tags inline (nested objects without IDs), the handler connects pivot rows using `ValueRef` to the newly inserted tag PKs — pivot inserts wait until tag rows exist in the queue.
+See [mutation upgrade notes](./rest-api-mutation-upgrade.md) for migration from legacy connect/disconnect events.
 
 ---
 
@@ -627,13 +631,19 @@ Order:
 
 Before-events expose:
 
-- `getState()` — `MutationStateInterface`; modify pending values with `setValue()` (reapplied onto the Session representation before flush)
+- `getState()` — `MutationStateInterface`; modify pending **scalar** values with `setValue()` / `setData()` (reapplied onto the Session representation before flush)
 - `getPath()` — nested path segments (empty for root)
-- `preventDefault(?array $result)` — stop the write
+- `preventDefault(?array $result = null)` — stop the write (no flush, no after-events). Root may supply an alternate result.
+
+Hook mutability boundaries:
+
+- **Supported:** scalar field changes, including fields absent from the original payload; explicit `null` via `setValue`.
+- **Unsupported:** changing primary-key fields on existing items (`IDENTITY_MUTATION_NOT_ALLOWED`); mutating relation membership / normalized relation intent through hooks (relation names are not scalar fields — there is no relation-intent hook API).
+- `setData()` replaces the pending value map; keys omitted from `setData` are not written again (representation values already set remain unchanged — not an implicit null).
 
 Authorization: implement `AuthorizationAwareEventInterface` listeners (`allow()`, `forbid()`, `requireAuthentication()`).
 
-Relation connect/disconnect events are not part of the Session mutation path. Membership changes are expressed as item create/update/delete events on represented rows plus ON\Data relation-state unlinks.
+Relation connect/disconnect events are not part of the Session mutation path. See [mutation upgrade notes](./rest-api-mutation-upgrade.md).
 
 ### How writes flow
 

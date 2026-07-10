@@ -13,6 +13,7 @@ use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 use Psr\Http\Message\UploadedFileInterface;
+use Throwable;
 
 /**
  * Directus wire-format parser → compact normalized mutation model.
@@ -121,12 +122,23 @@ final class DirectusPayloadParser
 
 		$items = MutationInput::isAssociativeArray($rawInput) ? [$rawInput] : $rawInput;
 		$parsedItems = [];
+		$seenIdentities = [];
 		foreach ($items as $index => $item) {
-			$parsedItems[] = $this->parseRelatedItemOrIdentity(
+			$itemPath = $path->append((int) $index);
+			$parsed = $this->parseRelatedItemOrIdentity(
 				$relation->getCollection(),
 				$item,
-				$path->append((int) $index),
+				$itemPath,
 			);
+			if ($parsed->identity !== null) {
+				$this->assertUniqueIdentity(
+					$relation,
+					$parsed->identity,
+					$itemPath,
+					$seenIdentities,
+				);
+			}
+			$parsedItems[] = $parsed;
 		}
 
 		return new ToManyImplicitMutation($relation, $path, $parsedItems);
@@ -141,6 +153,10 @@ final class DirectusPayloadParser
 		$create = [];
 		$update = [];
 		$delete = [];
+		/** @var array<string, string> $seenUpdateOrDelete hash => operation */
+		$seenUpdateOrDelete = [];
+		/** @var array<string, true> $seenCreate */
+		$seenCreate = [];
 
 		foreach (array_keys($input) as $key) {
 			if (! in_array((string) $key, self::DETAILED_KEYS, true)) {
@@ -156,7 +172,21 @@ final class DirectusPayloadParser
 					$path->append('create')->append((int) $index)->toString() => ['Create payloads must be objects.'],
 				]);
 			}
-			$create[] = $this->parseRelatedItem($target, $item, $path->append('create')->append((int) $index), forceNew: true);
+			$itemPath = $path->append('create')->append((int) $index);
+			$related = $this->parseRelatedItem($target, $item, $itemPath, forceNew: true);
+			if ($related->identity !== null) {
+				$hash = $related->identity->getHash();
+				if (isset($seenCreate[$hash]) || isset($seenUpdateOrDelete[$hash])) {
+					throw RestApiError::duplicateRelatedIdentity(
+						$target->getName(),
+						$related->identity->getValues(),
+						$relation->getName(),
+						$itemPath->toString(),
+					);
+				}
+				$seenCreate[$hash] = true;
+			}
+			$create[] = $related;
 		}
 
 		foreach (MutationInput::normalizeRelationItems($input['update'] ?? []) as $index => $item) {
@@ -165,20 +195,84 @@ final class DirectusPayloadParser
 					$path->append('update')->append((int) $index)->toString() => ['Update payloads must be objects with an identity.'],
 				]);
 			}
-			$related = $this->parseRelatedItem($target, $item, $path->append('update')->append((int) $index));
+			$itemPath = $path->append('update')->append((int) $index);
+			$related = $this->parseRelatedItem($target, $item, $itemPath);
 			if ($related->identity === null) {
 				throw RestApiError::validationFailed([
-					$path->append('update')->append((int) $index)->toString() => ['Update payloads require an identity.'],
+					$itemPath->toString() => ['Update payloads require an identity.'],
 				]);
 			}
+			$this->assertUniqueExplicitIdentity(
+				$relation,
+				$related->identity,
+				$itemPath,
+				$seenUpdateOrDelete,
+				$seenCreate,
+				'update',
+			);
 			$update[] = $related;
 		}
 
 		foreach (MutationInput::normalizeRelationItems($input['delete'] ?? []) as $index => $item) {
-			$delete[] = $this->identityFromMixed($target, $item, $path->append('delete')->append((int) $index));
+			$itemPath = $path->append('delete')->append((int) $index);
+			$key = $this->identityFromMixed($target, $item, $itemPath);
+			$this->assertUniqueExplicitIdentity(
+				$relation,
+				$key,
+				$itemPath,
+				$seenUpdateOrDelete,
+				$seenCreate,
+				'delete',
+			);
+			$delete[] = $key;
 		}
 
 		return new ToManyExplicitMutation($relation, $path, $create, $update, $delete);
+	}
+
+	/**
+	 * @param array<string, true> $seenIdentities
+	 */
+	private function assertUniqueIdentity(
+		RelationInterface $relation,
+		Key $identity,
+		PayloadPath $path,
+		array &$seenIdentities,
+	): void {
+		$hash = $identity->getHash();
+		if (isset($seenIdentities[$hash])) {
+			throw RestApiError::duplicateRelatedIdentity(
+				$relation->getCollection()->getName(),
+				$identity->getValues(),
+				$relation->getName(),
+				$path->toString(),
+			);
+		}
+		$seenIdentities[$hash] = true;
+	}
+
+	/**
+	 * @param array<string, string> $seenUpdateOrDelete
+	 * @param array<string, true> $seenCreate
+	 */
+	private function assertUniqueExplicitIdentity(
+		RelationInterface $relation,
+		Key $identity,
+		PayloadPath $path,
+		array &$seenUpdateOrDelete,
+		array $seenCreate,
+		string $operation,
+	): void {
+		$hash = $identity->getHash();
+		if (isset($seenCreate[$hash]) || isset($seenUpdateOrDelete[$hash])) {
+			throw RestApiError::duplicateRelatedIdentity(
+				$relation->getCollection()->getName(),
+				$identity->getValues(),
+				$relation->getName(),
+				$path->toString(),
+			);
+		}
+		$seenUpdateOrDelete[$hash] = $operation;
 	}
 
 	/**
@@ -253,7 +347,7 @@ final class DirectusPayloadParser
 			$identity = PrimaryKey::of($collection)->getValue($value);
 
 			return $this->toKey($collection, $identity);
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			throw RestApiError::validationFailed([
 				$path->toString() !== '' ? $path->toString() : '_root' => ['Invalid related item identity.'],
 			]);

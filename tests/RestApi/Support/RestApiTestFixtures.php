@@ -67,7 +67,7 @@ trait RestApiTestFixtures
 		};
 	}
 
-	private function noopHookDispatcher(Registry $registry): RestHookDispatcher
+	protected function noopHookDispatcher(Registry $registry): RestHookDispatcher
 	{
 		foreach ($registry->getCollections() as $collection) {
 			RestHooks::for($collection)

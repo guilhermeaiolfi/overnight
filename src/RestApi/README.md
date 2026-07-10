@@ -2,7 +2,8 @@
 
 Developer reference for the REST API mutation pipeline after the ON\Data Session cutover.
 
-User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest-api.md).
+User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest-api.md).  
+Upgrade notes: [`docs/extensions/rest-api-mutation-upgrade.md`](../../docs/extensions/rest-api-mutation-upgrade.md).
 
 ---
 
@@ -37,16 +38,44 @@ Reads continue to use ON\Data `SelectQuery`. Writes use one Session path only �
 
 There is no Directus `connect` / `disconnect` payload operation. Linking existing members uses implicit arrays (or nested identities). Unlinking uses implicit omission.
 
+### Existing related-item validation
+
+Any payload that references an existing related identity is verified through `ItemRepository` / ON\Data before flush:
+
+| Path | Existence | Relation scope |
+|------|-----------|----------------|
+| To-one scalar / object identity | Required | N/A (assignment) |
+| Implicit identity (with or without updates) | Required | **Not** required — may assign an unrelated existing item |
+| Explicit `update` / `delete` | Required | **Required** — must be in `RelationBaseline` for that owner+relation |
+| Nested identities | Same rules recursively | Same rules recursively |
+
+Errors:
+
+| Code | Meaning |
+|------|---------|
+| `RELATED_NOT_FOUND` | Represented identity does not exist |
+| `INVALID_RELATION_TARGET` | Exists but is not a current member of this relation |
+| `DUPLICATE_RELATED_IDENTITY` | Same normalized identity appears twice in one relation payload |
+| `IDENTITY_MUTATION_NOT_ALLOWED` | Before-hook tried to change an existing primary key |
+| `MUTATION_PREVENTED` | Before-hook called `preventDefault()` without an alternate root result |
+
+Duplicate detection uses `ON\Data\Key` normalization (canonical PK field order), including composite keys.
+
+### M2M representation
+
+- Target-represented M2M (common Overnight schemas): baseline and scope use **target** identities currently linked to the parent.
+- Junction-represented M2M (relation collection = through table): baseline and scope use **junction** identities. Do not scope only by nested target FK.
+
 ---
 
 ## Binding rules
 
 - RestApi expresses membership intent only (`add` / `remove` / `Session::remove`).
 - ON\Data planners own FK updates, through-row insert/delete, and generated-key ordering.
-- Relation baselines for implicit reconciliation load through ON\Data mutable queries (`RelationBaselineReader`), not through-table scans in RestApi.
+- Relation baselines for implicit reconciliation and explicit scope load through ON\Data mutable queries (`RelationBaselineReader` → `RelationBaseline`), not through-table scans in RestApi.
 - Nested relation payloads bind recursively on the same Session.
-- M2M represented items may be junction items when the relation target is the through collection; target-represented M2M (common Overnight schemas) treat target identities as membership.
 - First-of-many relations are read-only for mutations.
+- Request-local identity lookup cache is cleared per coordinator operation (shared across batch roots).
 
 ---
 
@@ -57,7 +86,15 @@ There is no Directus `connect` / `disconnect` payload operation. Linking existin
 - **before:** parent then children (pre-order)
 - **after:** children then parent (post-order)
 
-Prevented before-events stop flush. After-events are not emitted on rollback.
+`preventDefault()` on a before-event stops further child before-events for that plan, skips flush, and skips after-events. After-events are not emitted on rollback.
+
+### Hook mutability
+
+| Supported | Unsupported |
+|-----------|-------------|
+| Scalar `setValue` / `setData` | PK changes on existing items |
+| Hook-added scalar fields | Relation membership / relation-intent changes |
+| Explicit null scalars | Restoring removed Relation* events |
 
 ---
 
@@ -69,7 +106,7 @@ Prevented before-events stop flush. After-events are not emitted on rollback.
 one request → one Session → bind all roots → all before-events → one Session::flush() → all after-events → ordered reloads
 ```
 
-One flush uses the transactional command executor when available, so the batch is atomic.
+One flush uses the transactional command executor when available, so the batch is atomic. A failure while binding or flushing any root rolls back the whole batch; no after-events fire.
 
 ---
 
@@ -80,6 +117,7 @@ src/RestApi/Mutation/
 ├── MutationCoordinator.php      create/update/delete + batch*
 ├── DirectusMutationBinder.php   recursive Directus → Session binding
 ├── RelationBaselineReader.php   current membership via ON\Data queries
+├── RelationBaseline.php         normalized identity baseline
 ├── SessionFactory.php
 ├── BoundMutation.php / BoundItemState.php
 ├── Event/MutationEventPlan.php

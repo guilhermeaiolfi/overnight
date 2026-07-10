@@ -12,12 +12,16 @@ use ON\Data\ORM\Session;
 use function ON\Data\Query\x;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use stdClass;
+use Throwable;
 
 /**
  * Loads current represented relation membership through ON\Data mutable queries.
  *
  * The baseline query runs in an isolated Session so relation sync from the read
  * does not pollute the mutation Session. Identities are re-attached with identify().
+ *
+ * Returns represented-collection identities only (target or junction, whichever
+ * the relation exposes via getCollection()). Through-table metadata is not leaked.
  */
 final class RelationBaselineReader
 {
@@ -25,6 +29,16 @@ final class RelationBaselineReader
 		private readonly ItemRepositoryInterface $items,
 		private readonly SessionFactory $sessions,
 	) {
+	}
+
+	public function loadToMany(
+		Session $session,
+		RecordState $ownerRecord,
+		RelationInterface $relation,
+	): RelationBaseline {
+		$keys = $this->loadRelatedKeys($ownerRecord, $relation);
+
+		return $this->toBaseline($session, $relation, $keys);
 	}
 
 	/**
@@ -35,14 +49,7 @@ final class RelationBaselineReader
 		RecordState $ownerRecord,
 		RelationInterface $relation,
 	): array {
-		$keys = $this->loadRelatedKeys($ownerRecord, $relation);
-		$target = $relation->getCollection();
-		$objects = [];
-		foreach ($keys as $key) {
-			$objects[] = $session->identify($target, $key);
-		}
-
-		return $objects;
+		return $this->loadToMany($session, $ownerRecord, $relation)->items();
 	}
 
 	public function loadToOneIdentity(
@@ -50,12 +57,34 @@ final class RelationBaselineReader
 		RecordState $ownerRecord,
 		RelationInterface $relation,
 	): ?object {
-		$keys = $this->loadRelatedKeys($ownerRecord, $relation);
-		if ($keys === []) {
-			return null;
+		$baseline = $this->loadToMany($session, $ownerRecord, $relation);
+		$items = $baseline->items();
+
+		return $items[0] ?? null;
+	}
+
+	/**
+	 * @param list<Key> $keys
+	 */
+	private function toBaseline(
+		Session $session,
+		RelationInterface $relation,
+		array $keys,
+	): RelationBaseline {
+		$target = $relation->getCollection();
+		$keysByHash = [];
+		$itemsByNormalizedKey = [];
+
+		foreach ($keys as $key) {
+			$hash = $key->getHash();
+			if (isset($keysByHash[$hash])) {
+				continue;
+			}
+			$keysByHash[$hash] = $key;
+			$itemsByNormalizedKey[$hash] = $session->identify($target, $key);
 		}
 
-		return $session->identify($relation->getCollection(), $keys[0]);
+		return new RelationBaseline($keysByHash, $itemsByNormalizedKey);
 	}
 
 	/**
@@ -99,14 +128,21 @@ final class RelationBaselineReader
 		};
 
 		$keys = [];
+		$seen = [];
 		foreach ($items as $item) {
 			if (! is_object($item)) {
 				continue;
 			}
 			$key = $this->keyFromTracked($readSession, $item, $targetCollection->getName());
-			if ($key !== null) {
-				$keys[] = $key;
+			if ($key === null) {
+				continue;
 			}
+			$hash = $key->getHash();
+			if (isset($seen[$hash])) {
+				continue;
+			}
+			$seen[$hash] = true;
+			$keys[] = $key;
 		}
 
 		return $keys;
@@ -121,7 +157,7 @@ final class RelationBaselineReader
 
 		try {
 			$record = $session->getRecords()->getFromRepresentation($state);
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			return null;
 		}
 

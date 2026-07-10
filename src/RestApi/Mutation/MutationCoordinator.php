@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\DataRuntime;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Representation\State\RepresentationState;
@@ -14,6 +14,7 @@ use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemCreated;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -21,11 +22,10 @@ use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdated;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHookDispatcher;
+use ON\RestApi\Hook\RestHookTransaction;
 use ON\RestApi\Mutation\Event\MutationEventPlan;
-use ON\RestApi\Mutation\Payload\DirectusMutation;
 use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 use Throwable;
 
@@ -61,6 +61,7 @@ final class MutationCoordinator
 		string $output = PhpRepresentation::class,
 	): array {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$mutation = $this->parser->parse($collection, $input, $files);
 		$bound = $this->binder->bindCreate($session, $collection, $mutation);
 
@@ -82,6 +83,7 @@ final class MutationCoordinator
 		string $output = PhpRepresentation::class,
 	): array {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$mutation = $this->parser->parse($collection, $input, $files);
 		$bound = $this->binder->bindUpdate($session, $collection, $mutation, $identity);
 
@@ -94,6 +96,7 @@ final class MutationCoordinator
 		bool $dispatchEvents = true,
 	): bool {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$bound = $this->binder->bindDelete($session, $collection, $identity);
 		$this->executeDelete($session, [$bound], $dispatchEvents);
 
@@ -114,6 +117,7 @@ final class MutationCoordinator
 		string $output = PhpRepresentation::class,
 	): array {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$bound = [];
 		foreach ($inputs as $input) {
 			$mutation = $this->parser->parse($collection, $input);
@@ -135,6 +139,7 @@ final class MutationCoordinator
 		string $output = PhpRepresentation::class,
 	): array {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$bound = [];
 		foreach ($items as $item) {
 			$mutation = $this->parser->parse($collection, $item['input']);
@@ -153,6 +158,7 @@ final class MutationCoordinator
 		bool $dispatchEvents = true,
 	): bool {
 		$session = $this->sessions->create();
+		$this->binder->resetLookupCache();
 		$bound = [];
 		foreach ($identities as $identity) {
 			$bound[] = $this->binder->bindDelete($session, $collection, $identity);
@@ -182,7 +188,15 @@ final class MutationCoordinator
 		try {
 			if ($dispatchEvents) {
 				foreach ($plans as $index => $plan) {
-					$this->dispatchBefore($plan, $roots[$index]);
+					$prevented = $this->dispatchBefore($plan, $roots[$index]);
+					if ($prevented !== null) {
+						$afterHooksTx->rollback();
+						if (count($roots) !== 1) {
+							throw RestApiError::mutationPrevented();
+						}
+
+						return [$prevented];
+					}
 					foreach ($plan->before as $item) {
 						$this->reapplyHookMutations($session, $roots[$index], $item);
 					}
@@ -237,7 +251,12 @@ final class MutationCoordinator
 		try {
 			if ($dispatchEvents) {
 				foreach ($plans as $index => $plan) {
-					$this->dispatchBefore($plan, $roots[$index]);
+					$prevented = $this->dispatchBefore($plan, $roots[$index]);
+					if ($prevented !== null) {
+						$afterHooksTx->rollback();
+
+						return;
+					}
 				}
 			}
 
@@ -259,7 +278,7 @@ final class MutationCoordinator
 		}
 	}
 
-	private function dispatchBefore(MutationEventPlan $plan, BoundMutation $root): void
+	private function dispatchBefore(MutationEventPlan $plan, BoundMutation $root): ?array
 	{
 		$inheritNested = false;
 		foreach ($plan->before as $bound) {
@@ -292,21 +311,31 @@ final class MutationCoordinator
 
 			if ($inheritNested && ! $event->isRoot()) {
 				$event->inheritNestedAuthorization();
-				if ($event->getAuthState() === \ON\RestApi\Event\AuthState::Pending) {
+				if ($event->getAuthState() === AuthState::Pending) {
 					$event->allow();
 				}
 			}
 
 			$this->hooks->dispatch($bound->collection, $bound->operation . '.before', $event);
 
+			if ($event->isDefaultPrevented()) {
+				if ($event->isRoot() && $event->getPreventResult() !== null) {
+					return $event->getPreventResult();
+				}
+
+				throw RestApiError::mutationPrevented();
+			}
+
 			if ($event->isRoot() && method_exists($event, 'shouldInheritAuthToNested') && $event->shouldInheritAuthToNested()) {
 				$inheritNested = true;
 			}
 		}
+
+		return null;
 	}
 
 	private function scheduleAfter(
-		\ON\RestApi\Hook\RestHookTransaction $afterHooksTx,
+		RestHookTransaction $afterHooksTx,
 		MutationEventPlan $plan,
 		BoundMutation $root,
 	): void {
@@ -397,6 +426,7 @@ final class MutationCoordinator
 		}
 
 		$record = null;
+
 		try {
 			$state = $session->getRepresentations()->get($bound->representation);
 			if ($state instanceof RepresentationState) {

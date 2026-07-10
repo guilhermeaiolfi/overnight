@@ -49,6 +49,125 @@ class RestApiError extends RuntimeException
 		return new self($message, 'NOT_FOUND', null, 404);
 	}
 
+	/**
+	 * Related payload identity does not exist in the represented collection.
+	 *
+	 * @param array<string, mixed>|string|int|float|bool $identity
+	 */
+	public static function relatedNotFound(
+		string $collection,
+		array|string|int|float|bool $identity,
+		string $relation,
+		string $path,
+		string $operation = 'reference',
+	): self {
+		$pathKey = $path !== '' ? $path : '_root';
+		$message = sprintf(
+			"Related item in '%s' was not found for relation '%s' (%s).",
+			$collection,
+			$relation,
+			$operation,
+		);
+
+		$error = new self($message, 'RELATED_NOT_FOUND', $pathKey, 404, null, [
+			'collection' => $collection,
+			'identity' => $identity,
+			'relation' => $relation,
+			'path' => $pathKey,
+			'operation' => $operation,
+		]);
+		$error->validationErrors = [
+			$pathKey => [$message],
+		];
+
+		return $error;
+	}
+
+	/**
+	 * Related identity exists but is not a current member of the mutated relation.
+	 *
+	 * @param array<string, mixed>|string|int|float|bool $identity
+	 */
+	public static function relationTargetOutOfScope(
+		string $collection,
+		array|string|int|float|bool $identity,
+		string $relation,
+		string $path,
+		string $operation = 'update',
+	): self {
+		$pathKey = $path !== '' ? $path : '_root';
+		$message = sprintf(
+			"Related item in '%s' is not part of relation '%s' (%s).",
+			$collection,
+			$relation,
+			$operation,
+		);
+
+		$error = new self($message, 'INVALID_RELATION_TARGET', $pathKey, 400, null, [
+			'collection' => $collection,
+			'identity' => $identity,
+			'relation' => $relation,
+			'path' => $pathKey,
+			'operation' => $operation,
+			'reason' => 'out_of_scope',
+		]);
+		$error->validationErrors = [
+			$pathKey => [$message],
+		];
+
+		return $error;
+	}
+
+	/**
+	 * The same represented identity appears more than once in one relation payload.
+	 *
+	 * @param array<string, mixed>|string|int|float|bool $identity
+	 */
+	public static function duplicateRelatedIdentity(
+		string $collection,
+		array|string|int|float|bool $identity,
+		string $relation,
+		string $path,
+	): self {
+		$pathKey = $path !== '' ? $path : '_root';
+		$message = sprintf(
+			"Duplicate related identity in relation '%s'.",
+			$relation,
+		);
+
+		$error = new self($message, 'DUPLICATE_RELATED_IDENTITY', $pathKey, 400, null, [
+			'collection' => $collection,
+			'identity' => $identity,
+			'relation' => $relation,
+			'path' => $pathKey,
+		]);
+		$error->validationErrors = [
+			$pathKey => [$message],
+		];
+
+		return $error;
+	}
+
+	public static function identityMutationNotAllowed(string $path = ''): self
+	{
+		$pathKey = $path !== '' ? $path : '_root';
+		$message = 'Primary key fields cannot be changed through mutation hooks.';
+
+		$error = new self($message, 'IDENTITY_MUTATION_NOT_ALLOWED', $pathKey, 400, null, [
+			'path' => $pathKey,
+		]);
+		$error->validationErrors = [
+			$pathKey => [$message],
+		];
+
+		return $error;
+	}
+
+	public static function mutationPrevented(string $message = 'Mutation prevented.'): self
+	{
+		return new self($message, 'MUTATION_PREVENTED', null, 400);
+	}
+
 	public static function collectionNotFound(string $collection): self
 	{
 		return new self("Collection '{$collection}' not found.", 'COLLECTION_NOT_FOUND', null, 404);

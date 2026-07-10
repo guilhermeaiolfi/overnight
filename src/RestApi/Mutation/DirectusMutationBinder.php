@@ -31,6 +31,7 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 use stdClass;
+use Throwable;
 
 /**
  * Binds Directus-normalized mutations onto ON\Data Session projections and relation state.
@@ -41,6 +42,9 @@ final class DirectusMutationBinder
 {
 	private readonly RelationBaselineReader $baselines;
 
+	/** @var array<string, array<string, mixed>|null> collection|hash => row */
+	private array $identityLookupCache = [];
+
 	public function __construct(
 		private readonly ItemRepositoryInterface $items,
 		SessionFactory|RelationBaselineReader $sessionsOrBaselines,
@@ -48,6 +52,11 @@ final class DirectusMutationBinder
 		$this->baselines = $sessionsOrBaselines instanceof RelationBaselineReader
 			? $sessionsOrBaselines
 			: new RelationBaselineReader($items, $sessionsOrBaselines);
+	}
+
+	public function resetLookupCache(): void
+	{
+		$this->identityLookupCache = [];
 	}
 
 	public function bindCreate(
@@ -79,10 +88,7 @@ final class DirectusMutationBinder
 		PrimaryKeyValue|Key|string|int $identity,
 	): BoundMutation {
 		$key = $this->normalizeKey($collection, $identity);
-		$previous = $this->items->findByIdentity(
-			$collection,
-			new PrimaryKeyValue($collection, $key->getValues()),
-		);
+		$previous = $this->findRow($collection, $key);
 		if ($previous === null) {
 			throw RestApiError::notFound();
 		}
@@ -97,7 +103,7 @@ final class DirectusMutationBinder
 		$projection->properties($source->all())->end();
 		$session->remove($representation);
 
-		$state = new BoundItemState($collection, $representation, $previous, $previous, true);
+		$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false);
 
 		return new BoundMutation(
 			operation: 'delete',
@@ -132,10 +138,7 @@ final class DirectusMutationBinder
 			if ($identity === null) {
 				throw RestApiError::notFound();
 			}
-			$previous = $this->items->findByIdentity(
-				$collection,
-				new PrimaryKeyValue($collection, $identity->getValues()),
-			);
+			$previous = $this->findRow($collection, $identity);
 			if ($previous === null) {
 				throw RestApiError::notFound();
 			}
@@ -186,6 +189,7 @@ final class DirectusMutationBinder
 			$operation === 'update' ? $seed : null,
 			$operation === 'update',
 			$mutation->path,
+			identityMutable: $operation === 'create',
 		);
 
 		return new BoundMutation(
@@ -296,6 +300,13 @@ final class DirectusMutationBinder
 		}
 
 		if ($mutation->kind === ToOneKind::Existing && $mutation->item === null && $mutation->identity !== null) {
+			$this->requireRelatedExists(
+				$relation->getCollection(),
+				$mutation->identity,
+				$mutation->path(),
+				$relation->getName(),
+				'assign',
+			);
 			$projection->existing($relationRef, $mutation->identity);
 
 			return null;
@@ -355,9 +366,9 @@ final class DirectusMutationBinder
 		$targetCollection = $relation->getCollection();
 		$relatedSchema = new RepresentationSchema($targetCollection);
 
-		$baseline = $this->baselines->loadToManyIdentities($session, $ownerRecord, $relation);
+		$baseline = $this->baselines->loadToMany($session, $ownerRecord, $relation);
 		$session->getRelations()->remove($ownerRecord, $relationName);
-		$toMany = ToManyRelationState::full($ownerRecord, $relationName, $relatedSchema, $baseline);
+		$toMany = ToManyRelationState::full($ownerRecord, $relationName, $relatedSchema, $baseline->items());
 		$session->getRelations()->add($toMany);
 
 		$desired = [];
@@ -366,7 +377,7 @@ final class DirectusMutationBinder
 		foreach ($mutation->items as $item) {
 			$reused = null;
 			if (! $item->isNew() && $item->identity !== null) {
-				$reused = $this->findByKey($session, $baseline, $item->identity);
+				$reused = $baseline->find($item->identity);
 			}
 
 			if ($reused !== null) {
@@ -382,6 +393,16 @@ final class DirectusMutationBinder
 				continue;
 			}
 
+			if (! $item->isNew() && $item->identity !== null) {
+				$this->requireRelatedExists(
+					$targetCollection,
+					$item->identity,
+					$item->path,
+					$relationName,
+					$item->values === [] && $item->relations === [] ? 'assign' : 'update',
+				);
+			}
+
 			$childBound = $this->bindRelatedItem(
 				$session,
 				$projection,
@@ -394,7 +415,7 @@ final class DirectusMutationBinder
 			$desired[spl_object_id($childBound->representation)] = $childBound->representation;
 		}
 
-		foreach ($baseline as $existing) {
+		foreach ($baseline->items() as $existing) {
 			if (isset($desired[spl_object_id($existing)])) {
 				continue;
 			}
@@ -423,6 +444,8 @@ final class DirectusMutationBinder
 	): array {
 		$relation = $mutation->relation();
 		$relationRef = $this->relationRef($source, $relation, $mutation->path());
+		$ownerRecord = $source->getTargetRecord();
+		$baseline = $this->baselines->loadToMany($session, $ownerRecord, $relation);
 		$bound = [];
 
 		foreach ($mutation->create as $item) {
@@ -437,6 +460,13 @@ final class DirectusMutationBinder
 		}
 
 		foreach ($mutation->update as $item) {
+			$this->assertInRelationScope(
+				$baseline,
+				$item->identity,
+				$relation,
+				$item->path,
+				'update',
+			);
 			$bound[] = $this->bindRelatedItem(
 				$session,
 				$projection,
@@ -444,11 +474,27 @@ final class DirectusMutationBinder
 				$ownerRepresentation,
 				$item,
 				$propertyRefs,
+				requireExists: true,
+				existenceOperation: 'update',
 			);
 		}
 
-		foreach ($mutation->delete as $key) {
-			$bound[] = $this->bindExplicitDelete($session, $relation->getCollection(), $key, $mutation->path());
+		foreach ($mutation->delete as $index => $key) {
+			$deletePath = $mutation->path()->append('delete')->append((int) $index);
+			$this->assertInRelationScope(
+				$baseline,
+				$key,
+				$relation,
+				$deletePath,
+				'delete',
+			);
+			$bound[] = $this->bindExplicitDelete(
+				$session,
+				$relation->getCollection(),
+				$key,
+				$deletePath,
+				$relation->getName(),
+			);
 		}
 
 		return $bound;
@@ -459,14 +505,15 @@ final class DirectusMutationBinder
 		CollectionInterface $collection,
 		Key $key,
 		PayloadPath $path,
+		string $relationName,
 	): BoundMutation {
-		$previous = $this->items->findByIdentity(
+		$previous = $this->requireRelatedExists(
 			$collection,
-			new PrimaryKeyValue($collection, $key->getValues()),
+			$key,
+			$path,
+			$relationName,
+			'delete',
 		);
-		if ($previous === null) {
-			throw RestApiError::notFound();
-		}
 
 		$representation = new stdClass();
 		foreach ($previous as $field => $value) {
@@ -482,7 +529,15 @@ final class DirectusMutationBinder
 			operation: 'delete',
 			collection: $collection,
 			representation: $representation,
-			state: new BoundItemState($collection, $representation, $previous, $previous, true, $path),
+			state: new BoundItemState(
+				$collection,
+				$representation,
+				$previous,
+				$previous,
+				true,
+				$path,
+				identityMutable: false,
+			),
 			mutation: new DirectusMutation([], [], $path),
 			identity: $key,
 			path: $path,
@@ -499,8 +554,13 @@ final class DirectusMutationBinder
 		object $ownerRepresentation,
 		RelatedItemInput $item,
 		array &$propertyRefs,
+		bool $requireExists = true,
+		string $existenceOperation = 'reference',
 	): BoundMutation {
 		$collection = $relationRef->getDefinition()->getCollection();
+		$relationName = $relationRef->getName();
+		/** @var array<string, mixed>|null $previous */
+		$previous = null;
 
 		if ($item->isNew()) {
 			$seed = $item->values;
@@ -509,14 +569,18 @@ final class DirectusMutationBinder
 			}
 			$relatedSource = $projection->create($relationRef, $seed);
 		} else {
-			$seed = $item->identity?->getValues() ?? [];
-			$previous = $this->items->findByIdentity(
-				$collection,
-				new PrimaryKeyValue($collection, $item->identity->getValues()),
-			);
-			if ($previous !== null) {
-				$seed = $previous;
+			if ($item->identity !== null && $requireExists) {
+				$previous = $this->requireRelatedExists(
+					$collection,
+					$item->identity,
+					$item->path,
+					$relationName,
+					$existenceOperation,
+				);
+			} elseif ($item->identity !== null) {
+				$previous = $this->findRow($collection, $item->identity);
 			}
+			$seed = $previous ?? ($item->identity?->getValues() ?? []);
 			$relatedSource = $projection->existing($relationRef, $item->identity, $seed);
 		}
 
@@ -545,10 +609,11 @@ final class DirectusMutationBinder
 			$collection,
 			$ownerRepresentation,
 			$item->values,
-			null,
+			$previous,
 			! $item->isNew(),
 			$item->path,
 			$fieldPaths,
+			identityMutable: $item->isNew(),
 		);
 		$state->setRelatedSource($relatedSource);
 
@@ -582,6 +647,7 @@ final class DirectusMutationBinder
 					null,
 					true,
 					$item->path,
+					identityMutable: false,
 				),
 				mutation: new DirectusMutation([], [], $item->path),
 				identity: $item->identity,
@@ -633,6 +699,7 @@ final class DirectusMutationBinder
 				null,
 				true,
 				$item->path,
+				identityMutable: false,
 			),
 			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
 			identity: $item->identity,
@@ -695,19 +762,85 @@ final class DirectusMutationBinder
 		return new RelationRef($source, $relation->getName(), $relation);
 	}
 
-	/**
-	 * @param list<object> $candidates
-	 */
-	private function findByKey(Session $session, array $candidates, Key $key): ?object
-	{
-		foreach ($candidates as $candidate) {
-			$record = $this->recordFor($session, $candidate);
-			if ($record instanceof RecordState && $record->hasKey() && $record->getKey()?->equals($key)) {
-				return $candidate;
-			}
+	private function assertInRelationScope(
+		RelationBaseline $baseline,
+		?Key $identity,
+		RelationInterface $relation,
+		PayloadPath $path,
+		string $operation,
+	): void {
+		if ($identity === null) {
+			throw RestApiError::validationFailed([
+				$path->toString() => ['Related item identity is required.'],
+			]);
 		}
 
-		return null;
+		if ($baseline->contains($identity)) {
+			return;
+		}
+
+		// Distinguish missing globally vs present but out of scope.
+		$row = $this->findRow($relation->getCollection(), $identity);
+		if ($row === null) {
+			throw RestApiError::relatedNotFound(
+				$relation->getCollection()->getName(),
+				$identity->isComposite() ? $identity->getValues() : $identity->getValue(),
+				$relation->getName(),
+				$path->toString(),
+				$operation,
+			);
+		}
+
+		throw RestApiError::relationTargetOutOfScope(
+			$relation->getCollection()->getName(),
+			$identity->isComposite() ? $identity->getValues() : $identity->getValue(),
+			$relation->getName(),
+			$path->toString(),
+			$operation,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>
+	 */
+	private function requireRelatedExists(
+		CollectionInterface $collection,
+		Key $identity,
+		PayloadPath $path,
+		string $relationName,
+		string $operation,
+	): array {
+		$row = $this->findRow($collection, $identity);
+		if ($row !== null) {
+			return $row;
+		}
+
+		throw RestApiError::relatedNotFound(
+			$collection->getName(),
+			$identity->isComposite() ? $identity->getValues() : $identity->getValue(),
+			$relationName,
+			$path->toString(),
+			$operation,
+		);
+	}
+
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	private function findRow(CollectionInterface $collection, Key $identity): ?array
+	{
+		$cacheKey = $collection->getName() . '|' . $identity->getHash();
+		if (array_key_exists($cacheKey, $this->identityLookupCache)) {
+			return $this->identityLookupCache[$cacheKey];
+		}
+
+		$row = $this->items->findByIdentity(
+			$collection,
+			new PrimaryKeyValue($collection, $identity->getValues()),
+		);
+		$this->identityLookupCache[$cacheKey] = $row;
+
+		return $row;
 	}
 
 	/**
@@ -743,7 +876,7 @@ final class DirectusMutationBinder
 
 		try {
 			$record = $session->getRecords()->getFromRepresentation($state);
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			return null;
 		}
 

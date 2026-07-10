@@ -6,11 +6,13 @@ namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
+use ON\Event\PreventableEventInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
 
-class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInterface
+class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
 	use AuthorizationAwareEventTrait;
+	use PreventableWriteEventTrait;
 
 	public function __construct(
 		protected CollectionInterface $collection,

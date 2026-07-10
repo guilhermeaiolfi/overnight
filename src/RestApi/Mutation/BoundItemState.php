@@ -7,12 +7,20 @@ namespace ON\RestApi\Mutation;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\ORM\Representation\Schema\Manual\PropertyRef;
 use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
+use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\Payload\PayloadPath;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 
 /**
  * Hook-facing mutable item state backed by the same representation Session will flush.
+ *
+ * Supported before-hook mutations: scalar field setValue/setData (including fields
+ * absent from the original payload). Removing a key from setData leaves the prior
+ * representation value unchanged (not an explicit null).
+ *
+ * Unsupported: changing primary-key fields on existing items; mutating relation
+ * membership / normalized relation intent (relation names are not scalar fields).
  */
 final class BoundItemState implements MutationStateInterface
 {
@@ -39,6 +47,7 @@ final class BoundItemState implements MutationStateInterface
 		bool $ready = false,
 		private readonly PayloadPath $path = new PayloadPath([]),
 		array $fieldPaths = [],
+		private readonly bool $identityMutable = true,
 	) {
 		$this->values = $values;
 		$this->row = $row;
@@ -113,6 +122,7 @@ final class BoundItemState implements MutationStateInterface
 
 	public function setData(array $data): void
 	{
+		$this->assertIdentityMutable($data);
 		$this->values = $data;
 		$this->writeRepresentation($data);
 	}
@@ -132,6 +142,7 @@ final class BoundItemState implements MutationStateInterface
 
 	public function setValue(string $column, mixed $value): void
 	{
+		$this->assertIdentityMutable([$column => $value]);
 		$this->values[$column] = $value;
 		$this->writeField($column, $value);
 	}
@@ -162,7 +173,9 @@ final class BoundItemState implements MutationStateInterface
 	{
 		$this->row = $row;
 		foreach ($row as $field => $value) {
-			$this->setValue((string) $field, $value);
+			$name = (string) $field;
+			$this->values[$name] = $value;
+			$this->writeField($name, $value);
 		}
 		$this->ready = true;
 	}
@@ -223,5 +236,26 @@ final class BoundItemState implements MutationStateInterface
 
 		$this->fieldPaths[$field] = $field;
 		$this->representation->{$field} = $value;
+	}
+
+	/**
+	 * @param array<string, mixed> $data
+	 */
+	private function assertIdentityMutable(array $data): void
+	{
+		if ($this->identityMutable) {
+			return;
+		}
+
+		$pkFields = PrimaryKey::of($this->collection)->getFieldNames();
+		foreach ($pkFields as $fieldName) {
+			if (! array_key_exists($fieldName, $data)) {
+				continue;
+			}
+			$current = $this->getValue($fieldName);
+			if ($current !== $data[$fieldName]) {
+				throw RestApiError::identityMutationNotAllowed($this->path->toString());
+			}
+		}
 	}
 }

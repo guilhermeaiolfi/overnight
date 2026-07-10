@@ -6,12 +6,14 @@ namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
+use ON\Event\PreventableEventInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Support\PrimaryKeyValue;
 
-class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInterface
+class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
 	use AuthorizationAwareEventTrait;
+	use PreventableWriteEventTrait;
 
 	public function __construct(
 		protected CollectionInterface $collection,
