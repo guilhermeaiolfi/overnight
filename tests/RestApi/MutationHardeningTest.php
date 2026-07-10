@@ -576,6 +576,143 @@ final class MutationHardeningTest extends TestCase
 		$this->assertSame(0, $afterCount);
 	}
 
+	public function testBatchItemUpdatesRelatedThenAnotherRootReferencesIt(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$coordinator = $this->coordinator($registry, $items);
+
+		$results = $coordinator->batchUpdate($registry->getCollection('post'), [
+			[
+				'identity' => '1',
+				'input' => [
+					'tags' => [
+						'update' => [['id' => 1, 'name' => 'PHP Batch']],
+					],
+				],
+			],
+			[
+				'identity' => '2',
+				'input' => [
+					'tags' => [1],
+				],
+			],
+		], false);
+
+		$this->assertCount(2, $results);
+
+		$stmt = $db->database()->query('SELECT name FROM tag WHERE id = 1');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertSame('PHP Batch', $row['name']);
+
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 2 ORDER BY tag_id');
+		$ids = array_map('intval', array_column($stmt->fetchAll(), 'tag_id'));
+		$stmt->close();
+		$this->assertSame([1], $ids);
+	}
+
+	public function testBatchItemDeletesRelatedThenAnotherRootReferencingItFailsCleanly(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$coordinator = $this->coordinator($registry, $items);
+		$beforeTags = $this->countRows($db, 'tag');
+
+		try {
+			$coordinator->batchUpdate($registry->getCollection('post'), [
+				[
+					'identity' => '1',
+					'input' => [
+						'tags' => [
+							'delete' => [2],
+						],
+					],
+				],
+				[
+					'identity' => '2',
+					'input' => [
+						'tags' => [2],
+					],
+				],
+			], false);
+			$this->fail('Expected RELATED_NOT_FOUND after earlier batch root deleted the identity');
+		} catch (RestApiError $error) {
+			$this->assertSame('RELATED_NOT_FOUND', $error->getErrorCode());
+			$this->assertSame('tags.0', $error->getField());
+		}
+
+		$this->assertSame($beforeTags, $this->countRows($db, 'tag'));
+	}
+
+	public function testBatchTwoRootsAssignSameRelatedItem(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$coordinator = $this->coordinator($registry, $items);
+
+		$coordinator->batchUpdate($registry->getCollection('post'), [
+			[
+				'identity' => '1',
+				'input' => ['tags' => [1, 3]],
+			],
+			[
+				'identity' => '2',
+				'input' => ['tags' => [3]],
+			],
+		], false);
+
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
+		$this->assertSame([1, 3], array_map('intval', array_column($stmt->fetchAll(), 'tag_id')));
+		$stmt->close();
+
+		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 2 ORDER BY tag_id');
+		$this->assertSame([3], array_map('intval', array_column($stmt->fetchAll(), 'tag_id')));
+		$stmt->close();
+	}
+
+	public function testBatchCannotReferenceIdentityCreatedByEarlierRootInSameBatch(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$coordinator = $this->coordinator($registry, $items);
+
+		try {
+			$coordinator->batchCreate($registry->getCollection('user'), [
+				[
+					'id' => 50,
+					'name' => 'Manual',
+					'email' => 'manual@test.com',
+				],
+				[
+					'name' => 'ChildOwner',
+					'email' => 'child@test.com',
+					'posts' => [
+						[
+							'title' => 'Needs author 50',
+							'content' => 'Body',
+							'status' => 'draft',
+							'author' => 50,
+						],
+					],
+				],
+			], false);
+			$this->fail('Expected RELATED_NOT_FOUND for cross-root create-then-reference');
+		} catch (RestApiError $error) {
+			$this->assertSame('RELATED_NOT_FOUND', $error->getErrorCode());
+		}
+
+		$this->assertSame(0, $this->countRows($db, 'user', 'id = 50'));
+	}
+
 	/**
 	 * @return array{0: object, 1: CycleSqliteTestDatabase}
 	 */

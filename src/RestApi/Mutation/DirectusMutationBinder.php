@@ -37,13 +37,30 @@ use Throwable;
  * Binds Directus-normalized mutations onto ON\Data Session projections and relation state.
  *
  * Expresses membership intent only. ON\Data planners own FK / through-row persistence.
+ *
+ * Identity lookup cache: request-local (cleared per MutationCoordinator operation). It
+ * memoizes DB existence reads only. Identities scheduled for Session::remove() in earlier
+ * batch roots are treated as missing for later roots (stable RELATED_NOT_FOUND). Pending
+ * Session creates are not visible to later roots — cross-root "create then reference" in
+ * one batch is unsupported; existence is evaluated against committed rows plus pending removals.
  */
 final class DirectusMutationBinder
 {
 	private readonly RelationBaselineReader $baselines;
 
-	/** @var array<string, array<string, mixed>|null> collection|hash => row */
+	/**
+	 * Committed-row snapshot for this coordinator operation.
+	 *
+	 * @var array<string, array<string, mixed>|null> collection|hash => row
+	 */
 	private array $identityLookupCache = [];
+
+	/**
+	 * Identities scheduled for Session::remove() in this operation (batch-aware).
+	 *
+	 * @var array<string, true> collection|hash => true
+	 */
+	private array $pendingRemovedIdentities = [];
 
 	public function __construct(
 		private readonly ItemRepositoryInterface $items,
@@ -57,6 +74,7 @@ final class DirectusMutationBinder
 	public function resetLookupCache(): void
 	{
 		$this->identityLookupCache = [];
+		$this->pendingRemovedIdentities = [];
 	}
 
 	public function bindCreate(
@@ -102,6 +120,7 @@ final class DirectusMutationBinder
 		$source = $projection->from($collection)->existing($key, $previous);
 		$projection->properties($source->all())->end();
 		$session->remove($representation);
+		$this->markPendingRemoved($collection, $key);
 
 		$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false);
 
@@ -524,6 +543,7 @@ final class DirectusMutationBinder
 		$childSource = $childProjection->from($collection)->existing($key, $previous);
 		$childProjection->properties($childSource->all())->end();
 		$session->remove($representation);
+		$this->markPendingRemoved($collection, $key);
 
 		return new BoundMutation(
 			operation: 'delete',
@@ -829,7 +849,11 @@ final class DirectusMutationBinder
 	 */
 	private function findRow(CollectionInterface $collection, Key $identity): ?array
 	{
-		$cacheKey = $collection->getName() . '|' . $identity->getHash();
+		$cacheKey = $this->identityCacheKey($collection, $identity);
+		if (isset($this->pendingRemovedIdentities[$cacheKey])) {
+			return null;
+		}
+
 		if (array_key_exists($cacheKey, $this->identityLookupCache)) {
 			return $this->identityLookupCache[$cacheKey];
 		}
@@ -841,6 +865,18 @@ final class DirectusMutationBinder
 		$this->identityLookupCache[$cacheKey] = $row;
 
 		return $row;
+	}
+
+	private function markPendingRemoved(CollectionInterface $collection, Key $identity): void
+	{
+		$cacheKey = $this->identityCacheKey($collection, $identity);
+		$this->pendingRemovedIdentities[$cacheKey] = true;
+		$this->identityLookupCache[$cacheKey] = null;
+	}
+
+	private function identityCacheKey(CollectionInterface $collection, Key $identity): string
+	{
+		return $collection->getName() . '|' . $identity->getHash();
 	}
 
 	/**

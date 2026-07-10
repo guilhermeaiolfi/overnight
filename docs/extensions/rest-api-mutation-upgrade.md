@@ -17,6 +17,11 @@ Those events were removed with `MutationQueue` / relation persistence handlers. 
 
 There is **no replacement event** for pure relation membership changes (link/unlink only).
 
+This is a **deliberate extension API break**, not full event parity with the legacy engine.
+Extensions that relied on connect/disconnect notifications for silent membership changes must
+be redesigned (for example, compare before/after relation loads in item after-events, or
+accept that pure assignment is silent).
+
 ### What remains
 
 Item lifecycle events on represented rows:
@@ -36,8 +41,8 @@ Traversal:
 
 | Old behavior | New approach |
 |--------------|--------------|
-| Listen for `RelationConnected` | Listen for `ItemCreating` / `ItemUpdating` on the related (or junction) collection when the payload creates/updates that row; for pure link of an existing identity, there is no dedicated event |
-| Listen for `RelationDisconnected` | Implicit omission unlinks silently at relation-state level; listen for `ItemDeleting` only when the payload uses explicit `delete` |
+| Listen for `RelationConnected` | **Partial substitute only:** `ItemCreating` / `ItemUpdating` when the payload creates/updates that related or junction row. Pure assignment of an already-existing identity emits **no** event — migrate away from depending on connect notifications |
+| Listen for `RelationDisconnected` | **Partial substitute only:** `ItemDeleting` when the payload uses explicit `delete`. Implicit unlink emits **no** event |
 | `tags: { connect: [1] }` | `tags: [1, …]` (include all desired members) |
 | `tags: { disconnect: [2] }` | Omit `2` from the implicit membership array |
 | `preventDefault()` on relation events | Use `preventDefault()` on item before-events (`ItemCreating` / `ItemUpdating` / `ItemDeleting`) |

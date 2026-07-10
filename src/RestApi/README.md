@@ -76,6 +76,7 @@ Duplicate detection uses `ON\Data\Key` normalization (canonical PK field order),
 - Nested relation payloads bind recursively on the same Session.
 - First-of-many relations are read-only for mutations.
 - Request-local identity lookup cache is cleared per coordinator operation (shared across batch roots).
+- The cache is a **committed-row** snapshot only, plus identities already scheduled for `Session::remove()` in earlier batch roots (treated as missing). Pending Session creates in earlier roots do not populate it. Referencing an identity that another root in the same batch is creating (manual PK) fails with `RELATED_NOT_FOUND` — that cross-root pattern is unsupported by design.
 
 ---
 
