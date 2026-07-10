@@ -46,12 +46,9 @@ use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\PayloadNormalizer;
-use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
@@ -65,6 +62,9 @@ trait RestApiTestFixtures
 {
 	/** @var array<class-string, object> */
 	protected array $mapperServices = [];
+
+	/** @var array<int, DataRuntime> */
+	protected array $itemRuntimes = [];
 
 	private function noopEventDispatcher(): EventDispatcherInterface
 	{
@@ -357,10 +357,15 @@ trait RestApiTestFixtures
 
 	protected function createItems(Registry $registry, CycleSqliteTestDatabase $db): ItemRepository
 	{
-		return new ItemRepository(
+		$runtime = $this->createDataRuntime($db);
+		$items = new ItemRepository(
 			$registry,
+			$runtime,
 			$db->database(),
 		);
+		$this->itemRuntimes[spl_object_id($items)] = $runtime;
+
+		return $items;
 	}
 
 	protected function createHandlerFactory(ItemRepositoryInterface $items): HandlerFactory
@@ -368,7 +373,6 @@ trait RestApiTestFixtures
 		return new HandlerFactory(
 			HandlerRegistry::defaults(),
 			$items,
-			new SqlQuerySpecCompiler($items->getDatabase(), 100, 1000)
 		);
 	}
 
@@ -381,9 +385,12 @@ trait RestApiTestFixtures
 
 	protected function createDataRuntime(CycleSqliteTestDatabase $db): DataRuntime
 	{
+		$gateway = DataConversionGateway::createDefault();
+		$gateway->getMapperManager()->register(UploadPassthroughFieldType::class);
+
 		return (new CycleRuntimeFactory())->create(
 			$db->database(),
-			DataConversionGateway::createDefault(),
+			$gateway,
 		);
 	}
 
@@ -486,22 +493,6 @@ trait RestApiTestFixtures
 		$this->registerMapperService(DirectusMutationBuilder::class, $builder);
 	}
 
-	protected function createQueryBuilder(
-		array $dynamicVariables = [],
-	): DirectusQueryBuilder {
-		$builder = new DirectusQueryBuilder(
-			new QueryNormalizer($dynamicVariables),
-		);
-		$this->registerDirectusQueryBuilder($builder);
-
-		return $builder;
-	}
-
-	protected function registerDirectusQueryBuilder(DirectusQueryBuilder $builder): void
-	{
-		$this->registerMapperService(DirectusQueryBuilder::class, $builder);
-	}
-
 	/**
 	 * @param class-string $class
 	 */
@@ -557,10 +548,7 @@ trait RestApiTestFixtures
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$config ??= new RestApiConfig(['databaseType' => 'sqlite']);
-		$runtime = (new CycleRuntimeFactory())->create(
-			$items->getDatabase(),
-			DataConversionGateway::createDefault(),
-		);
+		$runtime = $this->runtimeForItems($items);
 
 		return new class (
 			$registry,
@@ -688,7 +676,7 @@ trait RestApiTestFixtures
 
 				return map($result)
 					->using(CollectionRowMapper::class, $collection)
-					->from(StorageRepresentation::class)
+					->from(PhpRepresentation::class)
 					->as($options['output'])
 					->toArray();
 			}
@@ -727,7 +715,7 @@ trait RestApiTestFixtures
 				return $result !== null
 					? map($result)
 						->using(CollectionRowMapper::class, $collection)
-						->from(StorageRepresentation::class)
+						->from(PhpRepresentation::class)
 						->as($options['output'])
 						->toArray()
 					: null;
@@ -847,16 +835,9 @@ trait RestApiTestFixtures
 			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
 			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
 
-		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
-			new QueryNormalizer($config->get('dynamicVariables', [])),
-		));
-
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
-		$runtime = (new CycleRuntimeFactory())->create(
-			$items->getDatabase(),
-			DataConversionGateway::createDefault(),
-		);
+		$runtime = $this->runtimeForItems($items);
 
 		$container = new class ($registry, $items, $runtime, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
@@ -868,10 +849,9 @@ trait RestApiTestFixtures
 				private DirectusMutationBuilder $mutationBuilder,
 				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
-				private ?EventDispatcherInterface $eventDispatcher = null,
+			private ?EventDispatcherInterface $eventDispatcher = null,
 			) {
-				$compiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
-				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items, $compiler);
+				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items);
 			}
 
 			public function get(string $id): mixed
@@ -912,6 +892,16 @@ trait RestApiTestFixtures
 			$options,
 			$eventDispatcher,
 		);
+	}
+
+	protected function runtimeForItems(ItemRepositoryInterface $items): DataRuntime
+	{
+		$id = spl_object_id($items);
+		if (! isset($this->itemRuntimes[$id])) {
+			throw new RuntimeException('No DataRuntime registered for this item repository fixture.');
+		}
+
+		return $this->itemRuntimes[$id];
 	}
 
 	/**

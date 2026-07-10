@@ -14,6 +14,7 @@ use ON\Data\Query\Relation\RelationRef;
 use ON\Data\Query\SelectQuery;
 use ON\Data\Query\Selection\SelectionTag;
 use function ON\Data\Query\x;
+use ON\RestApi\Query\Directus\DirectusParameterParser;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Directus\DirectusFunctionParser;
 use ON\RestApi\Query\QueryContext;
@@ -26,6 +27,7 @@ final class DirectusQueryParser implements QueryParserInterface
 	public function __construct(
 		private readonly DataRuntime $runtime,
 		private readonly DirectusFunctionParser $functions = new DirectusFunctionParser(),
+		private readonly DirectusParameterParser $parameters = new DirectusParameterParser(),
 	) {
 	}
 
@@ -36,7 +38,7 @@ final class DirectusQueryParser implements QueryParserInterface
 	): SelectQuery {
 		$query = $this->runtime->query($collection);
 
-		$aliases = $this->normalizeAliases($parameters['alias'] ?? []);
+		$aliases = $this->parameters->normalizeAliases($parameters['alias'] ?? []);
 		$deep = is_array($parameters['deep'] ?? null) ? $parameters['deep'] : [];
 
 		$aggregates = is_array($parameters['aggregate'] ?? null) ? $parameters['aggregate'] : [];
@@ -51,7 +53,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		$this->applySearch($query, $collection, $parameters['search'] ?? null);
 		$this->applySort($query, $collection, $parameters['sort'] ?? null, $context);
 		$this->applyPagination($query, $parameters, $context);
-		$context->setMeta($this->parseArrayValue($parameters['meta'] ?? []));
+		$context->setMeta($this->parameters->parseArrayValue($parameters['meta'] ?? []));
 
 		return $query;
 	}
@@ -67,7 +69,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		$selects = [];
 
 		$groupByMeta = [];
-		foreach ($this->parseArrayValue($parameters['groupBy'] ?? []) as $field) {
+		foreach ($this->parameters->parseArrayValue($parameters['groupBy'] ?? []) as $field) {
 			$field = (string) $field;
 			if ($field === '') {
 				continue;
@@ -80,7 +82,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		foreach ($parameters['aggregate'] as $function => $fields) {
-			foreach ($this->parseArrayValue($fields) as $field) {
+			foreach ($this->parameters->parseArrayValue($fields) as $field) {
 				$field = (string) $field;
 				$alias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $function . '_' . $field);
 				$selects[] = $this->aggregateExpression($query, $collection, (string) $function, $field, $context)->as($alias);
@@ -100,7 +102,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		$this->applySearch($query, $collection, $parameters['search'] ?? null);
 		$context->setAggregates($aggregateMeta);
 		$context->setGroupBy($groupByMeta);
-		$context->setMeta($this->parseArrayValue($parameters['meta'] ?? []));
+		$context->setMeta($this->parameters->parseArrayValue($parameters['meta'] ?? []));
 	}
 
 	private function applySelection(
@@ -113,7 +115,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		QueryContext $context,
 		?RelationRef $relationRef = null,
 	): void {
-		$fieldPaths = $this->fieldPaths($fields);
+		$fieldPaths = $this->parameters->fieldPaths($fields);
 		if ($fieldPaths === null) {
 			if ($relationRef !== null) {
 				$relationRef->load();
@@ -288,7 +290,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		$sorts = [];
-		foreach ($this->parseArrayValue($deep['_sort'] ?? null) as $item) {
+		foreach ($this->parameters->parseArrayValue($deep['_sort'] ?? null) as $item) {
 			$item = trim((string) $item);
 			if ($item === '') {
 				continue;
@@ -606,7 +608,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		$left = $relationSource !== null
 			? $this->relationValueExpression($relationSource, $collection, $field, $context)
 			: $this->valueExpression($query, $collection, $field, $context);
-		$resolved = $this->resolveOperand($operand, $context);
+		$resolved = $this->parameters->resolveOperand($operand, $context);
 
 		return match ($operator) {
 			'_eq' => x()->eq($left, $resolved),
@@ -619,8 +621,8 @@ final class DirectusQueryParser implements QueryParserInterface
 			'_ncontains' => x()->notContains($left, (string) $resolved),
 			'_starts_with' => x()->startsWith($left, (string) $resolved),
 			'_ends_with' => x()->endsWith($left, (string) $resolved),
-			'_in' => x()->in($left, $this->resolveList($operand, $context)),
-			'_nin' => x()->notIn($left, $this->resolveList($operand, $context)),
+			'_in' => x()->in($left, $this->parameters->resolveList($operand, $context)),
+			'_nin' => x()->notIn($left, $this->parameters->resolveList($operand, $context)),
 			'_between' => $this->betweenCondition($left, $operand, false, $context),
 			'_nbetween' => $this->betweenCondition($left, $operand, true, $context),
 			'_null' => x()->isNull($left),
@@ -637,14 +639,14 @@ final class DirectusQueryParser implements QueryParserInterface
 		bool $negated,
 		QueryContext $context,
 	): ?ConditionInterface {
-		$values = $this->parseArrayValue($operand);
+		$values = $this->parameters->parseArrayValue($operand);
 		if (count($values) !== 2) {
 			return null;
 		}
 
 		$condition = x()->and(
-			x()->gte($left, $this->resolveOperand($values[0], $context)),
-			x()->lte($left, $this->resolveOperand($values[1], $context)),
+			x()->gte($left, $this->parameters->resolveOperand($values[0], $context)),
+			x()->lte($left, $this->parameters->resolveOperand($values[1], $context)),
 		);
 
 		return $negated ? x()->not($condition) : $condition;
@@ -688,7 +690,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		QueryContext $context,
 	): void {
 		$sorts = [];
-		foreach ($this->parseArrayValue($sort) as $item) {
+		foreach ($this->parameters->parseArrayValue($sort) as $item) {
 			$item = trim((string) $item);
 			if ($item === '') {
 				continue;
@@ -864,33 +866,6 @@ final class DirectusQueryParser implements QueryParserInterface
 		};
 	}
 
-	private function resolveOperand(mixed $operand, QueryContext $context): mixed
-	{
-		if (is_string($operand) && str_starts_with($operand, '$')) {
-			$resolved = $context->resolveDynamicValue(substr($operand, 1));
-
-			return $resolved ?? $operand;
-		}
-
-		return $operand;
-	}
-
-	/**
-	 * @return non-empty-list<mixed>
-	 */
-	private function resolveList(mixed $operand, QueryContext $context): array
-	{
-		$values = array_map(
-			fn (mixed $item) => $this->resolveOperand($item, $context),
-			$this->parseArrayValue($operand),
-		);
-		if ($values === []) {
-			$values = [null];
-		}
-
-		return $values;
-	}
-
 	/**
 	 * @return list<string>
 	 */
@@ -919,34 +894,6 @@ final class DirectusQueryParser implements QueryParserInterface
 		return $fields;
 	}
 
-	private function fieldPaths(mixed $fields): ?array
-	{
-		if ($fields === null || $fields === '' || $fields === '*') {
-			return null;
-		}
-
-		if (is_array($fields)) {
-			$paths = array_values(array_map('strval', $fields));
-
-			return $paths === ['*'] ? null : $paths;
-		}
-
-		return array_values(array_filter(array_map('trim', explode(',', (string) $fields)), fn (string $field) => $field !== ''));
-	}
-
-	private function parseArrayValue(mixed $value): array
-	{
-		if ($value === null || $value === '') {
-			return [];
-		}
-
-		if (is_array($value)) {
-			return array_values($value);
-		}
-
-		return array_values(array_filter(array_map('trim', explode(',', (string) $value)), fn (string $item) => $item !== ''));
-	}
-
 	private function isOperatorArray(array $value): bool
 	{
 		if ($value === []) {
@@ -960,23 +907,6 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		return true;
-	}
-
-	private function normalizeAliases(mixed $aliases): array
-	{
-		if (! is_array($aliases)) {
-			return [];
-		}
-
-		$normalized = [];
-		foreach ($aliases as $alias => $target) {
-			if (! is_string($alias) || ! is_string($target)) {
-				continue;
-			}
-			$normalized[$alias] = $target;
-		}
-
-		return $normalized;
 	}
 
 	private function relationName(CollectionInterface $collection, string $responseName, array $aliases, string $scope): ?string

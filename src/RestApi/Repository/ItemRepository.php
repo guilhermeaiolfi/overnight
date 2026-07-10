@@ -71,7 +71,7 @@ class ItemRepository implements ItemRepositoryInterface
 		try {
 			return map($row)
 				->using(CollectionRowMapper::class, $collection)
-				->from(StorageRepresentation::class)
+				->from(PhpRepresentation::class)
 				->as($output)
 				->toArray();
 		} catch (ConversionException $e) {
@@ -204,7 +204,14 @@ class ItemRepository implements ItemRepositoryInterface
 	protected function applyCriteriaWhere(object $query, CollectionInterface $collection, array $criteria): void
 	{
 		foreach ($criteria as $fieldName => $value) {
-			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
+			$column = $collection->fields->get((string) $fieldName)->getColumn();
+			if (is_array($value)) {
+				$query->where($column, 'in', $value);
+
+				continue;
+			}
+
+			$query->where($column, $value);
 		}
 	}
 
@@ -229,7 +236,8 @@ class ItemRepository implements ItemRepositoryInterface
 	private function applyReadCriteria(SelectQuery $query, array $criteria): void
 	{
 		foreach ($criteria as $fieldName => $value) {
-			$query->where(x()->eq($query->field((string) $fieldName), $value));
+			$field = $query->field((string) $fieldName);
+			$query->where(is_array($value) ? x()->in($field, $value) : x()->eq($field, $value));
 		}
 	}
 

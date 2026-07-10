@@ -9,6 +9,7 @@ use Cycle\Database\DatabaseInterface;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\RestApi\Action\RestActionRouter;
@@ -101,13 +102,15 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class ($registry, $db->database()) extends ItemRepository {
+		$runtime = $this->createDataRuntime($db);
+		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, DatabaseInterface $database)
+			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
 			{
 				parent::__construct(
 					$registry,
+					$runtime,
 					$database,
 				);
 			}
@@ -122,6 +125,7 @@ final class RestMiddlewareTest extends TestCase
 				return parent::create($collection, $input);
 			}
 		};
+		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		RestHooks::for($registry->getCollection('attachment'))
 			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
@@ -233,7 +237,7 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new ItemRepository($registry, $db->database());
+		$resolver = $this->createItems($registry, $db);
 
 		$middleware = $this->createRestMiddleware(
 			$registry,
@@ -305,13 +309,15 @@ final class RestMiddlewareTest extends TestCase
 				],
 			],
 		]);
-		$resolver = new class ($registry, $db->database()) extends ItemRepository {
+		$runtime = $this->createDataRuntime($db);
+		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, DatabaseInterface $database)
+			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
 			{
 				parent::__construct(
 					$registry,
+					$runtime,
 					$database,
 				);
 			}
@@ -326,6 +332,7 @@ final class RestMiddlewareTest extends TestCase
 				return parent::create($collection, $input);
 			}
 		};
+		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		RestHooks::for($registry->getCollection('attachment'))
 			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501));
@@ -425,12 +432,13 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class ($registry, $db->database()) extends ItemRepository {
+		$runtime = $this->createDataRuntime($db);
+		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, DatabaseInterface $database)
+			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
 			{
-				parent::__construct($registry, $database);
+				parent::__construct($registry, $runtime, $database);
 			}
 
 			public function create(CollectionInterface $collection, array $input): ?array
@@ -443,6 +451,7 @@ final class RestMiddlewareTest extends TestCase
 				return parent::create($collection, $input);
 			}
 		};
+		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		$uploads = [];
 		RestHooks::for($registry->getCollection('directus_files'))
@@ -520,7 +529,7 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new ItemRepository($registry, $db->database());
+		$resolver = $this->createItems($registry, $db);
 
 		RestHooks::for($registry->getCollection('asset'))
 			->on('create.before', static fn (ItemCreating $event) => $event->forbid(RestApiError::forbidden(

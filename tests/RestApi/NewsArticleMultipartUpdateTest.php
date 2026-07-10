@@ -9,6 +9,7 @@ use Cycle\Database\DatabaseInterface;
 use DateTimeImmutable;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\RestApi\Event\FileUpload;
@@ -273,13 +274,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			],
 		]);
 
-		$resolver = new class ($registry, $db->database()) extends ItemRepository {
+		$runtime = $this->createDataRuntime($db);
+		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
 			/** @var list<array{collection: string, input: array<string, mixed>}> */
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, DatabaseInterface $database)
+			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
 			{
-				parent::__construct($registry, $database);
+				parent::__construct($registry, $runtime, $database);
 			}
 
 			public function create(CollectionInterface $collection, array $input): ?array
@@ -292,6 +294,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 				return parent::create($collection, $input);
 			}
 		};
+		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		RestHooks::for($registry->getCollection('news_article_file'))
 			->on('file.upload', static fn (FileUpload $event) => $event->setStoredValue(501))

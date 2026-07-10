@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
@@ -15,9 +14,6 @@ use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use ON\RestApi\Support\PrimaryKeyValue;
 
-/**
- * @property M2MRelation $manyToMany
- */
 trait ManyToManyApply
 {
 	use RelationApplySupport;
@@ -61,7 +57,7 @@ trait ManyToManyApply
 
 	private function connect(MutationQueue $queue, PrimaryKeyValue $parentId, mixed $targetId): void
 	{
-		$through = $this->manyToMany->through;
+		$through = $this->relation->through;
 		$targetIdentity = $targetId instanceof PrimaryKeyValue
 			? $targetId
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
@@ -78,7 +74,7 @@ trait ManyToManyApply
 
 	private function disconnect(MutationQueue $queue, PrimaryKeyValue $parentId, mixed $targetId): void
 	{
-		$through = $this->manyToMany->through;
+		$through = $this->relation->through;
 		$targetIdentity = $targetId instanceof PrimaryKeyValue
 			? $targetId
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);

@@ -9,7 +9,6 @@ use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\RestApiConfig;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -557,7 +556,7 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame('Alice', $result['data'][0]['displayName']);
 	}
 
-	public function testDirectGetWithoutQuerySpecReturnsVisibleFieldNames(): void
+	public function testDirectGetWithoutExplicitQueryReturnsVisibleFieldNames(): void
 	{
 		$registry = new Registry();
 		$this->createProfileCollection($registry);
@@ -1463,12 +1462,28 @@ final class SqlRestResolverTest extends TestCase
 		return $params;
 	}
 
-	private function filter(CollectionInterface $collection, array $filter): FilterNode
+	private function filter(CollectionInterface $collection, array $filter): array
 	{
-		$node = $this->createQueryParser()->parseFilterAst($collection, $filter);
-		$this->assertNotNull($node);
+		$criteria = [];
+		foreach ($filter as $fieldName => $condition) {
+			$this->assertTrue($collection->fields->has((string) $fieldName));
+			$this->assertIsArray($condition);
+			if (array_key_exists('_eq', $condition)) {
+				$criteria[(string) $fieldName] = $condition['_eq'];
 
-		return $node;
+				continue;
+			}
+
+			if (array_key_exists('_in', $condition)) {
+				$criteria[(string) $fieldName] = $condition['_in'];
+
+				continue;
+			}
+
+			$this->fail('Mutation criteria fixtures only support _eq and _in.');
+		}
+
+		return $criteria;
 	}
 
 	private function countRows(CycleSqliteTestDatabase $db, string $table): int

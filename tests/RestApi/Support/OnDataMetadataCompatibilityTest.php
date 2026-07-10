@@ -10,7 +10,7 @@ use ON\RestApi\Support\PrimaryKey;
 use PHPUnit\Framework\TestCase;
 
 /**
- * RestApi metadata compatibility against ON\Data definitions (QuerySpec layer unchanged).
+ * RestApi metadata compatibility against ON\Data definitions.
  */
 final class OnDataMetadataCompatibilityTest extends TestCase
 {

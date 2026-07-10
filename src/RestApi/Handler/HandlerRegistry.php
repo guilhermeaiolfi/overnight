@@ -7,6 +7,7 @@ namespace ON\RestApi\Handler;
 use LogicException;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Relation\BelongsToRelation;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\HasManyRelation;
 use ON\Data\Definition\Relation\HasOneRelation;
 use ON\Data\Definition\Relation\M2MRelation;
@@ -99,6 +100,10 @@ class HandlerRegistry
 
 		if ($relation instanceof BelongsToRelation) {
 			return 'belongsTo';
+		}
+
+		if ($relation instanceof FirstOfManyRelation) {
+			return 'readOnly';
 		}
 
 		if ($relation instanceof HasManyRelation) {

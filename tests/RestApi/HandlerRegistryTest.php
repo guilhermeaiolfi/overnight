@@ -8,7 +8,6 @@ use LogicException;
 use ON\Data\Definition\Registry;
 use ON\Data\Query\Expression\FieldRef;
 use ON\Data\Query\Selection\SelectionTag;
-use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Handler\HasManyHandler;
 use ON\RestApi\Handler\ManyToManyHandler;
@@ -97,14 +96,5 @@ final class HandlerRegistryTest extends TestCase
 		$tags = $posts->relation('tags');
 		$this->assertTrue($tags->isSelected());
 		$this->assertSame(['name'], $tags->getFields());
-	}
-
-	public function testAliasRegistryCreatesReadableUniqueAliases(): void
-	{
-		$aliases = new AliasRegistry();
-
-		$this->assertSame('__on_tags_parent_key', $aliases->alias('__on_tags_parent_key'));
-		$this->assertSame('__on_tags_parent_key_1', $aliases->alias('__on_tags_parent_key'));
-		$this->assertSame('tags_parent_key', $aliases->alias('tags.parent-key'));
 	}
 }

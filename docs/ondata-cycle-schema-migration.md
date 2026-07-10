@@ -90,9 +90,9 @@ It does **not** mark every primary-key field as generated. A plain `int` (or oth
 
 RestApi may still model first-of-many behavior at the **query / handler** layer (`FirstOfManyHandler`, ordering, single cardinality). That is a runtime concern outside Cycle schema compilation — do not approximate FirstOfMany as `hasMany` in the generator.
 
-## RestApi and QuerySpec
+## RestApi and ONData queries
 
-RestApi still builds and executes **`QuerySpec`** for list/get/aggregate flows. Collection, field, and relation **metadata** come from ON\Data (`Registry` / `CollectionInterface`).
+RestApi list/get/aggregate flows now build ONData **`SelectQuery`** objects directly. Collection, field, and relation metadata also come from ON\Data (`Registry` / `CollectionInterface`).
 
 Primary-key helpers are RestApi-local value objects over ON\Data collections:
 
@@ -100,12 +100,11 @@ Primary-key helpers are RestApi-local value objects over ON\Data collections:
 |-------|------|
 | `ON\RestApi\Support\PrimaryKey` | Field/column names, extract from input/row, composite detection |
 | `ON\RestApi\Support\PrimaryKeyValue` | Concrete identity values for a collection |
-| `ON\RestApi\Support\PrimaryKeyCriteria` | Apply identity to Select/`where` |
+| `ON\RestApi\Support\PrimaryKeyCriteria` | Build concrete identity criteria for mutation writes |
 
 These are not part of the ON\Data package.
 
 ## Related docs
 
 - [ORM Entity Definition](orm-entity-definition.md) — fluent ON\Data API
-- [Query AST / QuerySpec](query-ast.md) — RestApi query model
 - [Mapper](mapper.md) — Storage / PHP / Wire conversion

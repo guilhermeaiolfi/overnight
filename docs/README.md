@@ -101,7 +101,6 @@ class HelloPage
 - [File Routing](extensions/file-routing.md) - File-based directory routing
 - [GraphQL](extensions/graphql.md) - Auto-generated GraphQL API
 - [REST API](extensions/rest-api.md) - Auto-generated REST endpoints
-- [Query AST Specification](query-ast.md) - Internal query model for REST parsers and SQL resolvers
 - [Image Processing](extensions/image.md) - Image manipulation
 - [Auto-Wiring](extensions/auto-wiring.md) - Automatic extension discovery
 - [Maintenance](extensions/maintenance.md) - Maintenance mode

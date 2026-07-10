@@ -8,14 +8,14 @@ User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest
 
 ## Read vs write pipelines
 
-**Reads** and **writes** share the same handler registry but use symmetric spec pipelines:
+**Reads** use ONData `SelectQuery` objects directly. **Writes** still use the RestApi mutation planner and queue:
 
 ```
-Reads:  HTTP params → QueryParser → QuerySpec → QueryNormalizer → action read logic → storage rows
+Reads:  HTTP params → QueryParser → ONData SelectQuery → action read logic → PHP rows
+                                                                      ↓
+Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → Directus mutation actions → PHP rows
                                                                               ↓
-Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → Directus mutation actions → storage rows
-                                                                              ↓
-        Directus actions format response rows → PHP (default) | wire (serialize) | storage (raw)
+        Directus actions format response rows → PHP (default) | wire (serialize)
 ```
 
 Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the planner, queue, and handler apply layer stay unchanged.
@@ -40,8 +40,8 @@ file uploads (pre-plan)
 
 | Term | Role |
 |------|------|
-| `Directus\Action\*` | HTTP/action orchestration; shapes responses via hydrate/serialize helpers |
-| Directus read actions | Build handler trees, run list/get/aggregate, and return storage rows |
+| `Directus\Action\*` | HTTP/action orchestration; shapes responses via mapper representations |
+| Directus read actions | Build ONData `SelectQuery` objects, run list/get/aggregate, and return PHP rows |
 | `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
 | `PayloadNormalizer` | Walks the mutation tree; delegates relation payload normalization to handlers |
 | `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
@@ -54,8 +54,8 @@ file uploads (pre-plan)
 | `MutationQueue` | Ordered list of insert/update/delete commands; resolves `ValueRef` deps at execute time |
 | `MutationState` | Mutable row values for one entity during a mutation |
 | `ValueRef` | Deferred field value from another state's PK (cross-row FK wiring) |
-| `Handler` / `HandlerRegistry` | Relation-scoped read + write implementation per relation kind |
-| `HandlerFactory` | `relation()` reads, `mutation()` normalize + apply |
+| `Handler` / `HandlerRegistry` | Relation-scoped mutation implementation per relation kind |
+| `HandlerFactory` | `mutation()` normalize + apply |
 
 ---
 
@@ -66,7 +66,7 @@ src/RestApi/
 ├── Action/                     Generic action router and action interface
 ├── Directus/Action/            Directus-compatible list/get/create/update/delete actions
 ├── Query/
-│   └── Parser/                 Directus-style query → QuerySpec
+│   └── Parser/                 Directus/CMS query params → ONData SelectQuery
 ├── Payload/
 │   ├── Parser/                 DirectusPayloadParser → MutationSpec
 │   ├── PayloadNormalizer.php   tree walk + handler delegation
@@ -80,8 +80,7 @@ src/RestApi/
 ├── Handler/
 │   ├── HandlerRegistry.php
 │   ├── HandlerFactory.php
-│   ├── HasOneHandler.php …     Read + applyRelation()
-│   ├── Read/
+│   ├── HasOneHandler.php …     normalizeRelation() + applyRelation()
 │   └── Mutation/               Normalize + apply traits (HasManyNormalize, ForeignKeyOnTargetApply, …)
 └── Event/
 ```
@@ -120,9 +119,8 @@ Basic vs detailed is a **parser/normalizer** concern only. By plan time, `BasicR
 
 ## Handler model
 
-One **handler class per relation kind**. Each handler implements:
+One **mutation handler class per relation kind**. Reads are described directly on ONData relation refs by the query parsers; handlers only implement:
 
-- **Read** (`HandlerInterface`): `configureParserNode()`, `load()`
 - **Write** (`RelationMutationHandlerInterface`): `normalizeRelation()`, `applyRelation()`
 
 | Kind | Handler | Normalize trait | Apply trait |
@@ -138,17 +136,16 @@ One **handler class per relation kind**. Each handler implements:
 $registry = HandlerRegistry::defaults()
     ->relation('post', 'tags', MyCustomM2MHandler::class);
 
-$factory = new HandlerFactory($registry, $dataSource, $querySpecCompiler);
+$factory = new HandlerFactory($registry, $items);
 ```
 
 ### Custom handler checklist
 
 1. Extend `AbstractRelationHandler` (or an existing handler if behavior is close).
-2. Implement read: parser node + `load()`.
-3. Add a `*Normalize` trait (use `RelationPayloadNormalizeEntry` or extend an existing normalize trait).
-4. Add a `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
-5. Register in `HandlerRegistry`.
-6. Add tests under `tests/RestApi/`.
+2. Add a `*Normalize` trait (use `RelationPayloadNormalizeEntry` or extend an existing normalize trait).
+3. Add a `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
+4. Register in `HandlerRegistry`.
+5. Add tests under `tests/RestApi/`.
 
 ### Polymorphic example (sketch)
 

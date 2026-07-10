@@ -11,10 +11,8 @@ use ON\Data\Query\Expression\AggregateExpression;
 use ON\Data\Query\Expression\AggregateFunction;
 use ON\Data\Query\Expression\FieldRef;
 use ON\Data\Query\Expression\RawSqlExpression;
+use ON\Data\Query\Relation\LoadStrategy;
 use ON\Data\Query\Selection\SelectionTag;
-use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\RelationLoadHint;
-use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Query\Parser\CmsQueryParser;
 use ON\RestApi\Query\QueryContext;
 use PHPUnit\Framework\TestCase;
@@ -137,18 +135,24 @@ final class QueryParserTest extends TestCase
 		$this->createFullSchema($registry);
 
 		$query = (new CmsQueryParser($registry))->parseQuery('post{id,!comments{body},~author{name},*}');
-		$nodes = $query->selection->nodes;
-		$relations = $this->relationsByResponseName($nodes);
+		$explicitQuery = (new CmsQueryParser($registry))->parseQuery('post{id}');
 
-		$this->assertSame('post', $query->collection);
-		$this->assertInstanceOf(FieldSelection::class, $nodes[0]);
-		$this->assertSame('id', $nodes[0]->responseName);
-		$this->assertInstanceOf(WildcardSelection::class, $nodes[3]);
+		$this->assertSame('post', $query->getCollection()->getName());
+		$this->assertContains('id', array_map(
+			static fn ($s) => $s->getExpression() instanceof FieldRef
+				? $s->getExpression()->getName()
+				: null,
+			$explicitQuery->getSelections()->getAll(),
+		));
 
-		$this->assertSame(RelationLoadHint::Join, $relations['comments']->loadHint);
-		$this->assertSame(RelationLoadHint::LeftJoin, $relations['author']->loadHint);
-		$this->assertSame('body', $relations['comments']->query->selection->nodes[0]->responseName);
-		$this->assertSame('name', $relations['author']->query->selection->nodes[0]->responseName);
+		$comments = $query->relation('comments');
+		$author = $query->relation('author');
+		$this->assertTrue($comments->isSelected());
+		$this->assertTrue($author->isSelected());
+		$this->assertSame(LoadStrategy::JOIN, $comments->getStrategy());
+		$this->assertSame(LoadStrategy::JOIN, $author->getStrategy());
+		$this->assertSame(['body'], $comments->getFields());
+		$this->assertSame(['name'], $author->getFields());
 	}
 
 	public function testCmsDottedRelationAndDirectusDottedRelationShareShape(): void
@@ -163,7 +167,14 @@ final class QueryParserTest extends TestCase
 			new QueryContext(),
 		);
 
-		$this->assertSame('id', $cms->selection->nodes[0]->responseName);
+		$this->assertContains('id', array_map(
+			static fn ($s) => $s->getExpression() instanceof FieldRef
+				? $s->getExpression()->getName()
+				: null,
+			$cms->getSelections()->getAll(),
+		));
+		$this->assertTrue($cms->relation('comments')->isSelected());
+		$this->assertSame(['body'], $cms->relation('comments')->getFields());
 		$this->assertTrue($directus->relation('comments')->isSelected());
 		$this->assertContains('id', array_map(
 			static fn ($s) => $s->getExpression() instanceof FieldRef
@@ -171,21 +182,5 @@ final class QueryParserTest extends TestCase
 				: null,
 			$directus->getSelections()->getByTag(SelectionTag::PUBLIC),
 		));
-	}
-
-	/**
-	 * @param list<object> $nodes
-	 * @return array<string, object>
-	 */
-	private function relationsByResponseName(array $nodes): array
-	{
-		$result = [];
-		foreach ($nodes as $node) {
-			if (isset($node->responseName) && isset($node->loadHint)) {
-				$result[$node->responseName] = $node;
-			}
-		}
-
-		return $result;
 	}
 }
