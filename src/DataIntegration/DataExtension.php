@@ -22,6 +22,7 @@ use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
 use Psr\Container\ContainerInterface;
+use Symfony\Component\Console\Output\OutputInterface;
 
 final class DataExtension extends AbstractExtension
 {
@@ -72,7 +73,7 @@ final class DataExtension extends AbstractExtension
 		$event->registry->add(new CacheClearerDefinition(
 			name: 'data-definitions',
 			label: 'ON\Data definitions',
-			clear: static function (ContainerInterface $container): void {
+			clear: static function (ContainerInterface $container, OutputInterface $output): void {
 				$container->get(DefinitionCache::class)->clear();
 			},
 			priority: 92,
