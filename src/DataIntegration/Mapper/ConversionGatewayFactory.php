@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\DataIntegration\Mapper;
 
+use DI\FactoryInterface;
 use ON\Application;
 use ON\Data\Mapper\ConversionGateway;
-use ON\Data\Mapper\Mapping;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
 use RuntimeException;
@@ -15,11 +15,17 @@ final class ConversionGatewayFactory
 {
 	public function __invoke(ContainerInterface $container): ConversionGateway
 	{
+		if (! $container instanceof FactoryInterface) {
+			throw new RuntimeException(
+				'Conversion gateway construction requires a container that implements DI\\FactoryInterface.'
+			);
+		}
+
 		$gateway = ConversionGateway::createDefault();
 		$gateway->getMapperManager()->setConstructor(
 			static function (string $component) use ($container): object {
 				try {
-					$instance = $container->get($component);
+					$instance = $container->make($component);
 
 					if (! $instance instanceof $component) {
 						throw new RuntimeException(sprintf(
@@ -46,8 +52,6 @@ final class ConversionGatewayFactory
 		foreach ($config->components as $component) {
 			$gateway->getMapperManager()->register($component);
 		}
-
-		Mapping::setDefaultGateway($gateway);
 
 		return $gateway;
 	}

@@ -12,6 +12,7 @@ use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Data\Definition\Registry;
 use ON\Data\Mapper\ConversionGateway;
+use ON\Data\Mapper\Mapping;
 use ON\DataIntegration\Command\DefinitionsClearCommand;
 use ON\DataIntegration\Command\DefinitionsWarmupCommand;
 use ON\DataIntegration\Definition\DefinitionCache;
@@ -37,7 +38,9 @@ final class DataExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+		// Install the default gateway after normal ContainerReady listeners so
+		// Mapping::getDefaultGateway() is not raced by earlier consumers.
+		$init->on(ContainerReadyEvent::class)->done([$this, 'onContainerReady']);
 
 		if ($this->app->isCli()) {
 			$init->on(ConsoleReadyEvent::class, [$this, 'onConsoleReady']);
@@ -59,7 +62,7 @@ final class DataExtension extends AbstractExtension
 
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
-		$event->container->get(ConversionGateway::class);
+		Mapping::setDefaultGateway($event->container->get(ConversionGateway::class));
 	}
 
 	public function onConsoleReady(ConsoleReadyEvent $event): void
