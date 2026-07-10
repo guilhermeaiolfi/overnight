@@ -20,8 +20,15 @@ final class DefinitionRegistryProvider
 		}
 
 		$registry = new Registry();
-		$event = $container->get(Application::class)->init()->emit(new DataDefinitionConfigureEvent($registry));
-		$definitions = $event->definitions();
+
+		$container
+			->get(Application::class)
+			->init()
+			->emit(new DataDefinitionConfigureEvent($registry));
+
+		$definitions = $registry->all();
+
+		$cache->write($definitions);
 
 		return new Registry($definitions);
 	}

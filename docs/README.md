@@ -163,7 +163,7 @@ src/
 
 ## Requirements
 
-- PHP 8.1+
+- PHP 8.3+
 - PSR-7 (HTTP messages)
 - PSR-11 (Container)
 - PSR-15 (Middleware)

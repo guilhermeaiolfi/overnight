@@ -17,11 +17,11 @@ use ON\DataIntegration\Command\DefinitionsWarmupCommand;
 use ON\DataIntegration\Definition\DefinitionCache;
 use ON\DataIntegration\Definition\DefinitionCacheFactory;
 use ON\DataIntegration\Definition\DefinitionRegistryProvider;
-use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
 use ON\DataIntegration\Mapper\ConversionGatewayFactory;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
+use Psr\Container\ContainerInterface;
 
 final class DataExtension extends AbstractExtension
 {
@@ -37,7 +37,6 @@ final class DataExtension extends AbstractExtension
 	{
 		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
-		$init->on(DataDefinitionConfigureEvent::class)->done([$this, 'onDataDefinitionConfigureDone']);
 
 		if ($this->app->isCli()) {
 			$init->on(ConsoleReadyEvent::class, [$this, 'onConsoleReady']);
@@ -73,17 +72,12 @@ final class DataExtension extends AbstractExtension
 		$event->registry->add(new CacheClearerDefinition(
 			name: 'data-definitions',
 			label: 'ON\Data definitions',
-			clear: function (): void {
-				(new DefinitionCache($this->getCacheFile()))->clear();
+			clear: static function (ContainerInterface $container): void {
+				$container->get(DefinitionCache::class)->clear();
 			},
 			priority: 92,
 			description: 'Clears cached ON\Data definition registry.'
 		));
-	}
-
-	public function onDataDefinitionConfigureDone(DataDefinitionConfigureEvent $event): void
-	{
-		(new DefinitionCache($this->getCacheFile()))->write($event->definitions());
 	}
 
 	public function getCacheFile(): string

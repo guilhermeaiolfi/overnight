@@ -30,10 +30,13 @@ use ON\DataIntegration\Definition\DefinitionCache;
 use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Init\InitException;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use RuntimeException;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Output\NullOutput;
 use Symfony\Component\Console\Tester\CommandTester;
 
 final class DefinitionRegistryProviderTest extends TestCase
@@ -46,6 +49,7 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->previousCwd = getcwd();
 		$this->projectDir = $this->createProjectDir();
 		DataDefinitionProbeExtension::reset();
+		FailingDataDefinitionExtension::reset();
 	}
 
 	protected function tearDown(): void
@@ -54,6 +58,7 @@ final class DefinitionRegistryProviderTest extends TestCase
 		Application::$instance = null;
 		Mapping::resetDefaultGateway();
 		DataDefinitionProbeExtension::reset();
+		FailingDataDefinitionExtension::reset();
 		ConfiguredDataResolver::reset();
 		$this->removeDirectory($this->projectDir);
 	}
@@ -65,13 +70,15 @@ final class DefinitionRegistryProviderTest extends TestCase
 
 		$registry = $container->get(Registry::class);
 		$cache = $container->get(DefinitionCache::class);
+		$cachedDefinitions = require $cache->getFile();
 
 		$this->assertInstanceOf(Registry::class, $registry);
 		$this->assertSame(1, DataDefinitionProbeExtension::$configureCalls);
 		$this->assertSame(1, DataDefinitionProbeExtension::$doneCalls);
 		$this->assertFileExists($cache->getFile());
 		$this->assertSame(['id'], $registry->getCollection('users')?->getPrimaryKey());
-		$this->assertSame(require $cache->getFile(), $registry->all());
+		$this->assertSame($cachedDefinitions, $registry->all());
+		$this->assertSame($cachedDefinitions, (new Registry($cachedDefinitions))->all());
 		$this->assertStringStartsWith("<?php\n\nreturn array (", file_get_contents($cache->getFile()) ?: '');
 	}
 
@@ -91,6 +98,27 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertSame(0, DataDefinitionProbeExtension::$doneCalls);
 		$this->assertTrue($registry->hasCollection('cached_users'));
 		$this->assertFalse($registry->hasCollection('users'));
+	}
+
+	public function testFailingDefinitionListenerDoesNotWriteCache(): void
+	{
+		$app = $this->createApplication(extraExtensions: [
+			FailingDataDefinitionExtension::class => [],
+		]);
+		$container = $app->ext('container')->getContainer();
+		$cache = $container->get(DefinitionCache::class);
+
+		try {
+			$container->get(Registry::class);
+			$this->fail('Expected InitException was not thrown.');
+		} catch (InitException $exception) {
+			$this->assertSame(DataDefinitionConfigureEvent::class, $exception->getEvent());
+			$this->assertInstanceOf(RuntimeException::class, $exception->getPrevious());
+			$this->assertSame('definition listener failed', $exception->getPrevious()->getMessage());
+		}
+
+		$this->assertSame(1, FailingDataDefinitionExtension::$configureCalls);
+		$this->assertFileDoesNotExist($cache->getFile());
 	}
 
 	public function testExportRestoreSymmetry(): void
@@ -147,6 +175,23 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertTrue($registry->has('data-definitions'));
 	}
 
+	public function testCacheClearerClearsContainerManagedDefinitionCache(): void
+	{
+		$app = $this->createApplication(includeCache: true);
+		$container = $app->ext('container')->getContainer();
+		$cache = $container->get(DefinitionCache::class);
+
+		$container->get(Registry::class);
+		$this->assertFileExists($cache->getFile());
+
+		$container->get(CacheClearerRegistry::class)
+			->get('data-definitions')
+			->clear($container, new NullOutput());
+
+		$this->assertFileDoesNotExist($cache->getFile());
+		$this->assertFalse($cache->exists());
+	}
+
 	public function testContainerGatewayBecomesDefaultMapperGateway(): void
 	{
 		$app = $this->createApplication(includeMapperConfig: true);
@@ -170,10 +215,14 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertSame(1, ConfiguredDataResolver::$resolveCalls);
 	}
 
+	/**
+	 * @param array<class-string, array<string, mixed>> $extraExtensions
+	 */
 	private function createApplication(
 		bool $writeFiles = true,
 		bool $includeCache = false,
 		bool $includeMapperConfig = false,
+		array $extraExtensions = [],
 	): Application {
 		if ($writeFiles) {
 			$this->writeProjectFiles($includeMapperConfig);
@@ -190,6 +239,7 @@ final class DefinitionRegistryProviderTest extends TestCase
 				ConsoleExtension::class => [],
 				DataExtension::class => [],
 				DataDefinitionProbeExtension::class => [],
+				...$extraExtensions,
 			],
 			'debug' => true,
 		]);
@@ -304,6 +354,28 @@ final class DataDefinitionProbeExtension extends AbstractExtension
 	public function onDataDefinitionConfigureDone(DataDefinitionConfigureEvent $event): void
 	{
 		self::$doneCalls++;
+	}
+}
+
+final class FailingDataDefinitionExtension extends AbstractExtension
+{
+	public static int $configureCalls = 0;
+
+	public function register(Init $init): void
+	{
+		$init->on(DataDefinitionConfigureEvent::class, [$this, 'onDataDefinitionConfigure']);
+	}
+
+	public static function reset(): void
+	{
+		self::$configureCalls = 0;
+	}
+
+	public function onDataDefinitionConfigure(DataDefinitionConfigureEvent $event): void
+	{
+		self::$configureCalls++;
+
+		throw new RuntimeException('definition listener failed');
 	}
 }
 
