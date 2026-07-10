@@ -12,6 +12,17 @@ use ON\Config\ConfigExtension;
 use ON\Console\ConsoleExtension;
 use ON\Container\ContainerExtension;
 use ON\Data\Definition\Registry;
+use ON\Data\Mapper\ConversionGateway;
+use ON\Data\Mapper\FieldTypeInterface;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Mapping;
+use ON\Data\Mapper\MappingNode;
+use ON\Data\Mapper\MappingRuntime;
+use ON\Data\Mapper\Representation\StorageRepresentation;
+use ON\Data\Mapper\Resolution\BranchNodeResolutionInterface;
+use ON\Data\Mapper\Resolution\LeafNodeResolution;
+use ON\Data\Mapper\Resolution\LeafNodeResolutionInterface;
+use ON\Data\Mapper\Resolver\NodeResolverInterface;
 use ON\DataIntegration\Command\DefinitionsClearCommand;
 use ON\DataIntegration\Command\DefinitionsWarmupCommand;
 use ON\DataIntegration\DataExtension;
@@ -41,7 +52,9 @@ final class DefinitionRegistryProviderTest extends TestCase
 	{
 		chdir($this->previousCwd);
 		Application::$instance = null;
+		Mapping::resetDefaultGateway();
 		DataDefinitionProbeExtension::reset();
+		ConfiguredDataResolver::reset();
 		$this->removeDirectory($this->projectDir);
 	}
 
@@ -134,10 +147,36 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertTrue($registry->has('data-definitions'));
 	}
 
-	private function createApplication(bool $writeFiles = true, bool $includeCache = false): Application
+	public function testContainerGatewayBecomesDefaultMapperGateway(): void
 	{
+		$app = $this->createApplication(includeMapperConfig: true);
+		$gateway = $app->ext('container')->getContainer()->get(ConversionGateway::class);
+
+		$this->assertSame($gateway, Mapping::getDefaultGateway());
+		$this->assertTrue($gateway->getMapperManager()->has(ConfiguredDataFieldType::class));
+		$this->assertTrue($gateway->getMapperManager()->has(ConfiguredDataResolver::class));
+	}
+
+	public function testPackageMapHelperUsesConfiguredDefaultGateway(): void
+	{
+		$this->createApplication(includeMapperConfig: true);
+
+		$result = map(['code' => 'abc'])
+			->from(StorageRepresentation::class)
+			->to([]);
+
+		$this->assertSame(['code' => 'configured:abc'], $result);
+		$this->assertSame(1, ConfiguredDataResolver::$constructCalls);
+		$this->assertSame(1, ConfiguredDataResolver::$resolveCalls);
+	}
+
+	private function createApplication(
+		bool $writeFiles = true,
+		bool $includeCache = false,
+		bool $includeMapperConfig = false,
+	): Application {
 		if ($writeFiles) {
-			$this->writeProjectFiles();
+			$this->writeProjectFiles($includeMapperConfig);
 		}
 
 		return new Application([
@@ -156,13 +195,34 @@ final class DefinitionRegistryProviderTest extends TestCase
 		]);
 	}
 
-	private function writeProjectFiles(): void
+	private function writeProjectFiles(bool $includeMapperConfig = false): void
 	{
 		if (! is_dir($this->projectDir . '/config')) {
 			mkdir($this->projectDir . '/config', 0777, true);
 		}
 
 		file_put_contents($this->projectDir . '/.env', "APP_DEBUG=true\nAPP_ENV=testing\n");
+
+		if (! $includeMapperConfig) {
+			return;
+		}
+
+		file_put_contents(
+			$this->projectDir . '/config/data-mapper.all.php',
+			<<<'PHP'
+<?php
+
+use ON\DataIntegration\Mapper\DataMapperConfig;
+use Tests\ON\DataIntegration\ConfiguredDataFieldType;
+use Tests\ON\DataIntegration\ConfiguredDataResolver;
+
+$config = new DataMapperConfig();
+$config->register(ConfiguredDataFieldType::class);
+$config->prepend(ConfiguredDataResolver::class);
+
+return $config;
+PHP
+		);
 	}
 
 	/**
@@ -244,5 +304,67 @@ final class DataDefinitionProbeExtension extends AbstractExtension
 	public function onDataDefinitionConfigureDone(DataDefinitionConfigureEvent $event): void
 	{
 		self::$doneCalls++;
+	}
+}
+
+final class ConfiguredDataFieldType implements FieldTypeInterface
+{
+	public static function getNames(): array
+	{
+		return ['configured-data'];
+	}
+
+	public static function getStorageType(): string
+	{
+		return 'string';
+	}
+
+	public static function toPhp(mixed $value, LeafNodeResolutionInterface $field): mixed
+	{
+		return 'configured:' . (string) $value;
+	}
+
+	public static function fromPhp(mixed $value, LeafNodeResolutionInterface $field): mixed
+	{
+		return (string) $value;
+	}
+}
+
+final class ConfiguredDataResolverDependency
+{
+}
+
+final class ConfiguredDataResolver implements NodeResolverInterface
+{
+	public static int $constructCalls = 0;
+	public static int $resolveCalls = 0;
+
+	public function __construct(
+		private readonly ConfiguredDataResolverDependency $dependency,
+	) {
+		self::$constructCalls++;
+	}
+
+	public static function reset(): void
+	{
+		self::$constructCalls = 0;
+		self::$resolveCalls = 0;
+	}
+
+	public function resolve(
+		MappingNode $node,
+		MappingRuntime $runtime,
+	): LeafNodeResolutionInterface|BranchNodeResolutionInterface|null {
+		if (! $this->dependency instanceof ConfiguredDataResolverDependency) {
+			return null;
+		}
+
+		if ($node->getName() !== 'code') {
+			return null;
+		}
+
+		self::$resolveCalls++;
+
+		return LeafNodeResolution::named('code', 'configured-data');
 	}
 }
