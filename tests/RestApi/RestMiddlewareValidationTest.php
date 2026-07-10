@@ -7,7 +7,7 @@ namespace Tests\ON\RestApi;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -24,7 +24,8 @@ final class RestMiddlewareValidationTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3', [
 					'min' => 'Name must be at least :min characters.',
@@ -51,7 +52,7 @@ final class RestMiddlewareValidationTest extends TestCase
 
 		$response = $middleware->process(
 			$this->jsonRequest('POST', '/items/user', ['name' => 'Jo']),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -74,7 +75,8 @@ final class RestMiddlewareValidationTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3')
 				->end()
@@ -94,7 +96,7 @@ final class RestMiddlewareValidationTest extends TestCase
 
 		$response = $middleware->process(
 			$this->jsonRequest('PATCH', '/items/user/1', ['name' => 'Al']),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);

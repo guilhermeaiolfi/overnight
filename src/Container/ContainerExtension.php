@@ -19,20 +19,19 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Config;
 use ON\Config\ConfigExtension;
-use ON\Container\Executor\ExecutorFactory;
-use ON\Container\Executor\ExecutorInterface;
-use ON\Extension\AbstractExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
+use ON\Container\Executor\ExecutorFactory;
+use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
-use ON\Init\Init;
-use Psr\Container\ContainerInterface;
-use RuntimeException;
-use function getcwd;
-use function preg_match;
-use function rtrim;
+use ON\Extension\AbstractExtension;
 use ON\FS\Path;
+use ON\Init\Init;
+use ON\Init\InitContext;
+use Psr\Container\ContainerInterface;
+use function rtrim;
+use RuntimeException;
 
 class ContainerExtension extends AbstractExtension
 {
@@ -62,7 +61,7 @@ class ContainerExtension extends AbstractExtension
 		}
 	}
 
-	public function configureContainer(ConfigConfigureEvent $event, \ON\Init\InitContext $context): void
+	public function configureContainer(ConfigConfigureEvent $event, InitContext $context): void
 	{
 		$containerConfig = $event->config->get(ContainerConfig::class);
 		$context->emit(new ContainerConfigureEvent($this, $containerConfig));
@@ -81,7 +80,7 @@ class ContainerExtension extends AbstractExtension
 		));
 	}
 
-	public function buildContainer(ConfigReadyEvent $event, \ON\Init\InitContext $context): void
+	public function buildContainer(ConfigReadyEvent $event, InitContext $context): void
 	{
 		$configs = $event->config->get();
 

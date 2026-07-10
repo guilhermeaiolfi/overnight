@@ -16,8 +16,8 @@ use ON\CMS\Parser\Normalizer\MergeRelationsNormalizer;
 use ON\CMS\Parser\Normalizer\UpdateRelationNormalizer;
 use ON\CMS\Parser\Normalizer\VerifyNamesNormalizer;
 use ON\CMS\Parser\QueryParser;
+use ON\Data\Definition\Registry as DefinitionRegistry;
 use ON\DB\DatabaseManager;
-use ON\ORM\Definition\Registry as DefinitionRegistry;
 use ON\ORM\Factory;
 use ON\ORM\Select;
 

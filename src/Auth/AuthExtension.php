@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use ON\Middleware\Init\Event\PipelineReadyEvent;
-
 use ON\Application;
 use ON\Auth\Authenticator\DummyAuthenticator;
 use ON\Auth\Container\AuthenticationServiceFactory;
@@ -13,15 +11,15 @@ use ON\Auth\Middleware\AuthorizationMiddleware;
 use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
-
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 
 class AuthExtension extends AbstractExtension
 {
 	public const ID = 'auth';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -54,5 +52,4 @@ class AuthExtension extends AbstractExtension
 		$this->app->pipe("/", AuthorizationMiddleware::class, 1);
 
 	}
-
 }

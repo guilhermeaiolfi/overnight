@@ -12,6 +12,7 @@ use Invoker\ParameterResolver\TypeHintResolver;
 use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
+use Laminas\Diactoros\Uri;
 use ON\Application;
 use ON\Auth\AuthenticationServiceInterface;
 use ON\Auth\Middleware\AuthorizationMiddleware;
@@ -24,6 +25,7 @@ use ON\Router\RouteResult;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 class AuthMiddlewareTest extends TestCase
@@ -47,8 +49,11 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testSecurityMiddlewareReturns401WhenLoginRouteIsMissing(): void
 	{
-		$page = new class {
-			public function isSecure(): bool { return true; }
+		$page = new class () {
+			public function isSecure(): bool
+			{
+				return true;
+			}
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
@@ -66,16 +71,21 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testSecurityMiddlewareForwardsToConfiguredLoginRoute(): void
 	{
-		$page = new class {
-			public function isSecure(): bool { return true; }
+		$page = new class () {
+			public function isSecure(): bool
+			{
+				return true;
+			}
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
 		$auth->method('hasIdentity')->willReturn(false);
 
 		$forwardResponse = new HtmlResponse('login');
-		$app = new class($forwardResponse) extends Application {
-			public function __construct(private ResponseInterface $response) {}
+		$app = new class ($forwardResponse) extends Application {
+			public function __construct(private ResponseInterface $response)
+			{
+			}
 
 			public function processForward($path, $request): ResponseInterface
 			{
@@ -96,9 +106,16 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testAuthorizationMiddlewareRequiresExplicitTrueResult(): void
 	{
-		$page = new class {
-			public function checkPermissions(): int { return 1; }
-			public function index(): JsonResponse { return new JsonResponse(['ok' => true]); }
+		$page = new class () {
+			public function checkPermissions(): int
+			{
+				return 1;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok' => true]);
+			}
 		};
 
 		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
@@ -113,7 +130,7 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testAuthorizationMiddlewarePrefersActionSpecificPermissionHook(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public int $genericChecks = 0;
 			public int $actionChecks = 0;
 
@@ -148,10 +165,10 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testAuthorizationMiddlewareInjectsRequestIntoPermissionHook(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?string $path = null;
 
-			public function checkPermissions(\Psr\Http\Message\ServerRequestInterface $request): bool
+			public function checkPermissions(ServerRequestInterface $request): bool
 			{
 				$this->path = $request->getUri()->getPath();
 
@@ -161,7 +178,7 @@ class AuthMiddlewareTest extends TestCase
 
 		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
 		$request = (new ServerRequest())
-			->withUri(new \Laminas\Diactoros\Uri('/auth-check'))
+			->withUri(new Uri('/auth-check'))
 			->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->expects($this->once())

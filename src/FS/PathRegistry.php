@@ -39,6 +39,7 @@ final class PathRegistry
 		foreach ($canonicalDefaults as $name => $default) {
 			if (array_key_exists($name, $paths)) {
 				$this->set($name, $this->resolve($paths[$name], $this->get('project')));
+
 				continue;
 			}
 
@@ -115,6 +116,7 @@ final class PathRegistry
 	private function resolve(PathInterface|string $path, DirectoryPathInterface $base): DirectoryPathInterface
 	{
 		$path = $path instanceof DirectoryPathInterface ? $path : Path::from((string) $path);
+
 		return $path->resolveAgainst($base);
 	}
 }

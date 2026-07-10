@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\MapperInterface;
 use ON\Mapper\Structural\MappingContext;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\Parser\QueryParserInterface;

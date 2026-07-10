@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
+use LogicException;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\RelationNode;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Mutation\RelationNode;
 
 abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 {
@@ -76,7 +77,7 @@ abstract class AbstractRelationMutationEvent implements HasEventNameInterface
 	public function getQueue(): MutationQueue
 	{
 		if ($this->queue === null) {
-			throw new \LogicException('Queue is only available on before relation events.');
+			throw new LogicException('Queue is only available on before relation events.');
 		}
 
 		return $this->queue;

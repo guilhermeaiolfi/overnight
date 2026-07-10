@@ -7,7 +7,6 @@ namespace ON\ORM\Select\Traits;
 use function count;
 use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\SelectQuery;
-use Cycle\ORM\Relation;
 
 /**
  * @internal
@@ -28,10 +27,10 @@ trait JoinOneTableTrait
 	{
 		$localPrefix = $this->getAlias() . '.';
 		$parentPrefix = $this->parent->getAlias() . '.';
-		$parentKeys = $this->relation->innerKeys();
+		$parentKeys = $this->relation->getInnerKeys();
 
 		$on = [];
-		foreach ($this->relation->outerKeys() as $i => $key) {
+		foreach ($this->relation->getOuterKeys() as $i => $key) {
 			$field = $localPrefix . $this->fieldAlias($key);
 			$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 		}
@@ -47,7 +46,7 @@ trait JoinOneTableTrait
 		$localPrefix = $this->getAlias() . '.';
 
 		$fields = [];
-		foreach ($this->relation->outerKeys() as $key) {
+		foreach ($this->relation->getOuterKeys() as $key) {
 			$fields[] = $localPrefix . $this->fieldAlias($key);
 		}
 

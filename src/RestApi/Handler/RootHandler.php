@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
+use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
+use LogicException;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\RestApi\Support\PrimaryKey;
 
 class RootHandler extends AbstractHandler
 {
@@ -37,7 +40,7 @@ class RootHandler extends AbstractHandler
 		return false;
 	}
 
-	public function configureParserNode(\Cycle\ORM\Parser\AbstractNode $parent): \Cycle\ORM\Parser\AbstractNode
+	public function configureParserNode(AbstractNode $parent): AbstractNode
 	{
 		return $parent;
 	}
@@ -98,7 +101,7 @@ class RootHandler extends AbstractHandler
 			return [];
 		}
 
-		if (!$this->assembled) {
+		if (! $this->assembled) {
 			$this->parseRows();
 			$this->loadChildren($this);
 			$this->assembled = true;
@@ -119,7 +122,7 @@ class RootHandler extends AbstractHandler
 	{
 		$visible = array_flip($collection->getVisibleColumns());
 		$requested = array_intersect_key(array_flip($handler->getRequestedColumns()), $visible);
-		$relationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
+		$relationKeys = array_flip(array_map(fn (HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
 		$internalColumns = $this->internalColumnsExceptRelationKeys($handler->getInternalColumns(), $relationKeys);
 
 		foreach ($rows as &$row) {
@@ -135,7 +138,7 @@ class RootHandler extends AbstractHandler
 
 				$row[$name] = $child->isSingle()
 					? $this->cleanRelationRow($child, $value)
-					: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
+					: array_map(fn (array $item) => $this->cleanRelationRow($child, $item), $value);
 			}
 
 			$relationData = array_intersect_key($row, $relationKeys);
@@ -157,8 +160,8 @@ class RootHandler extends AbstractHandler
 	private function cleanRelationRow(HandlerInterface $handler, array $row): array
 	{
 		$visible = array_flip($handler->getTargetCollection()->getVisibleColumns());
-		$nestedRelationKeys = array_flip(array_map(fn(HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
-		$syntheticKeys = array_flip(array_filter(array_keys($row), fn(string $key) => str_starts_with($key, '__on_')));
+		$nestedRelationKeys = array_flip(array_map(fn (HandlerInterface $child) => $child->getResponseName(), $handler->getChildren()));
+		$syntheticKeys = array_flip(array_filter(array_keys($row), fn (string $key) => str_starts_with($key, '__on_')));
 		$row = array_intersect_key($row, $visible + $nestedRelationKeys + $syntheticKeys);
 		$row = $this->stripInternalColumns(
 			$row,
@@ -180,7 +183,7 @@ class RootHandler extends AbstractHandler
 
 			$row[$child->getResponseName()] = $child->isSingle()
 				? $this->cleanRelationRow($child, $value)
-				: array_map(fn(array $item) => $this->cleanRelationRow($child, $item), $value);
+				: array_map(fn (array $item) => $this->cleanRelationRow($child, $item), $value);
 		}
 
 		$relationData = array_intersect_key($row, $nestedRelationKeys);
@@ -202,7 +205,7 @@ class RootHandler extends AbstractHandler
 	private function stripInternalColumns(array $row, array $internalColumns, array $requestedColumns): array
 	{
 		foreach ($internalColumns as $column) {
-			if (!in_array($column, $requestedColumns, true)) {
+			if (! in_array($column, $requestedColumns, true)) {
 				unset($row[$column]);
 			}
 		}
@@ -219,7 +222,7 @@ class RootHandler extends AbstractHandler
 	{
 		return array_values(array_filter(
 			$internalColumns,
-			static fn(string $column): bool => !isset($relationKeys[$column]),
+			static fn (string $column): bool => ! isset($relationKeys[$column]),
 		));
 	}
 
@@ -240,35 +243,36 @@ class RootHandler extends AbstractHandler
 		array $requested,
 	): array {
 		foreach ($handler->getChildren() as $child) {
-			if (!$child->isSingle()) {
+			if (! $child->isSingle()) {
 				continue;
 			}
 
 			$relationName = $child->getRelationName();
-			if ($relationName === null || !$collection->relations->has($relationName)) {
+			if ($relationName === null || ! $collection->relations->has($relationName)) {
 				continue;
 			}
 
 			$relation = $collection->relations->get($relationName);
 			$responseName = $child->getResponseName();
 
-			foreach ($relation->innerKeys() as $fieldName) {
-				if (!$collection->fields->has($fieldName)) {
+			foreach ($relation->getInnerKeys() as $fieldName) {
+				if (! $collection->fields->has($fieldName)) {
 					continue;
 				}
 
 				$column = $collection->fields->get($fieldName)->getColumn();
-				if ($column !== $responseName || !isset($requested[$column])) {
+				if ($column !== $responseName || ! isset($requested[$column])) {
 					continue;
 				}
 
 				$relationValue = $relationData[$responseName] ?? null;
-				if (!is_array($relationValue)) {
+				if (! is_array($relationValue)) {
 					$scalarRow[$column] = null;
+
 					continue;
 				}
 
-				$outerKey = $relation->outerKeys()[0] ?? null;
+				$outerKey = $relation->getOuterKeys()[0] ?? null;
 				$scalarRow[$column] = $outerKey !== null
 					? ($relationValue[$outerKey] ?? null)
 					: null;
@@ -280,14 +284,14 @@ class RootHandler extends AbstractHandler
 
 	private function getPrimaryKeyColumns(CollectionInterface $collection): array
 	{
-		return $collection->getPrimaryKey()->getColumns();
+		return PrimaryKey::of($collection)->getColumns();
 	}
 
-	private function getNodeOrNull(): ?\Cycle\ORM\Parser\AbstractNode
+	private function getNodeOrNull(): ?AbstractNode
 	{
 		try {
 			return $this->getNode();
-		} catch (\LogicException) {
+		} catch (LogicException) {
 			return null;
 		}
 	}

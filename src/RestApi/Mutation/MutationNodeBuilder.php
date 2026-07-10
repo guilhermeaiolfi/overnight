@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Representation\StorageRepresentation;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Payload\Action\CreateAction as PayloadCreateAction;
@@ -17,7 +16,9 @@ use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 final class MutationNodeBuilder
 {
@@ -42,9 +43,9 @@ final class MutationNodeBuilder
 
 		$resolvedId = $id;
 		if ($resolvedId === null && $mode !== 'create') {
-			$resolvedId = $collection->getPrimaryKey()->extractFromInput($spec->root->fields);
+			$resolvedId = PrimaryKey::of($collection)->extractFromInput($spec->root->fields);
 		}
-		$resolvedId = $resolvedId === null ? null : $collection->getPrimaryKey()->getValue($resolvedId);
+		$resolvedId = $resolvedId === null ? null : PrimaryKey::of($collection)->getValue($resolvedId);
 		$parentOperation = self::resolveOperation($items, $mode, $collection, $resolvedId);
 		if ($parentOperation === 'update' && $resolvedId !== null) {
 			foreach ($resolvedId->values() as $fieldName => $value) {
@@ -74,9 +75,9 @@ final class MutationNodeBuilder
 			: $parentState->rebindValueRefs($spec->fields);
 		$state->setData($fields);
 		if ($id === null && $mode !== 'create') {
-			$id = $collection->getPrimaryKey()->extractFromInput($spec->fields);
+			$id = PrimaryKey::of($collection)->extractFromInput($spec->fields);
 		}
-		$id = $id === null ? null : $collection->getPrimaryKey()->getValue($id);
+		$id = $id === null ? null : PrimaryKey::of($collection)->getValue($id);
 		$operation = self::resolveOperation($items, $mode, $collection, $id);
 		if ($operation === 'update' && $id === null) {
 			return null;
@@ -152,7 +153,7 @@ final class MutationNodeBuilder
 				$action->node,
 				'upsert',
 				$childState,
-				$collection->getPrimaryKey()->extractFromInput($action->node->fields),
+				PrimaryKey::of($collection)->extractFromInput($action->node->fields),
 				$path,
 				$state,
 			),
@@ -173,12 +174,12 @@ final class MutationNodeBuilder
 
 	private static function deleteChildNode(CollectionInterface $collection, array $item, array $path): ?MutationNode
 	{
-		$id = $collection->getPrimaryKey()->extractFromInput($item);
+		$id = PrimaryKey::of($collection)->extractFromInput($item);
 		if ($id === null) {
 			return null;
 		}
 
-		return new MutationNode('delete', $collection, new MutationState($collection, $collection->getPrimaryKey()->getValue($id)->values()), $path);
+		return new MutationNode('delete', $collection, new MutationState($collection, PrimaryKey::of($collection)->getValue($id)->values()), $path);
 	}
 
 	private static function resolveOperation(ItemRepositoryInterface $items, string $mode, CollectionInterface $collection, ?PrimaryKeyValue $id): string
@@ -196,19 +197,18 @@ final class MutationNodeBuilder
 			return;
 		}
 
-		$createId = $collection->getPrimaryKey()->extractFromInput($state->getData());
+		$createId = PrimaryKey::of($collection)->extractFromInput($state->getData());
 		if (
 			$createId !== null
 			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
 			&& $items->findByIdentity($collection, $createId, StorageRepresentation::class) !== null
 		) {
 			throw new RestApiError(
-				"A record with this " . implode(', ', $collection->getPrimaryKey()->getFieldNames()) . " already exists.",
+				"A record with this " . implode(', ', PrimaryKey::of($collection)->getFieldNames()) . " already exists.",
 				'DUPLICATE',
-				$collection->getPrimaryKey()->getFieldNames()[0] ?? null,
+				PrimaryKey::of($collection)->getFieldNames()[0] ?? null,
 				409
 			);
 		}
 	}
-
 }

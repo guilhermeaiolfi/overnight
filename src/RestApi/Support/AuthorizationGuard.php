@@ -4,15 +4,15 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
-use ON\RestApi\Event\AuthState;
-use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Event\AuthState;
 
 final class AuthorizationGuard
 {
 	public static function assert(object $event): void
 	{
-		if (!$event instanceof AuthorizationAwareEventInterface) {
+		if (! $event instanceof AuthorizationAwareEventInterface) {
 			return;
 		}
 

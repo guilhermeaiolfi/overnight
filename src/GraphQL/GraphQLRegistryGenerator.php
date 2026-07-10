@@ -6,22 +6,23 @@ namespace ON\GraphQL;
 
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
+use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Field\Field;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\Event\AfterMutation;
 use ON\GraphQL\Event\BeforeMutation;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\GraphQL\Type\UploadType;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Field\Field;
-use ON\ORM\Definition\Field\FieldInterface;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use RuntimeException;
 
 class GraphQLRegistryGenerator
 {
@@ -56,7 +57,7 @@ class GraphQLRegistryGenerator
 			'fields' => $queryFields,
 		]);
 
-		$mutationType = !empty($mutationFields)
+		$mutationType = ! empty($mutationFields)
 			? new ObjectType([
 				'name' => 'Mutation',
 				'description' => 'Root mutation type',
@@ -86,7 +87,7 @@ class GraphQLRegistryGenerator
 			$this->types[$typeName] = new ObjectType([
 				'name' => $typeName,
 				'description' => $collection->getDescription(),
-				'fields' => fn() => $this->buildFieldsForCollection($collection),
+				'fields' => fn () => $this->buildFieldsForCollection($collection),
 			]);
 		}
 	}
@@ -171,6 +172,7 @@ class GraphQLRegistryGenerator
 					if ($relation->getCardinality() === 'many' && is_array($value)) {
 						return $value;
 					}
+
 					return $value;
 				},
 		];
@@ -181,14 +183,14 @@ class GraphQLRegistryGenerator
 		$collection = $this->ormRegistry->getCollection($collectionName);
 		$typeName = $this->getTypeName($collectionName);
 
-		if (!$collection) {
+		if (! $collection) {
 			return new ObjectType(['name' => $typeName, 'fields' => []]);
 		}
 
 		return new ObjectType([
 			'name' => $typeName,
 			'description' => $collection->getDescription(),
-			'fields' => fn() => $this->buildFieldsForCollection($collection),
+			'fields' => fn () => $this->buildFieldsForCollection($collection),
 		]);
 	}
 
@@ -305,8 +307,9 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($findAllResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
 						}
+
 						return $this->resolver->resolveCollection($collection, $args ?? []);
 					},
 			];
@@ -319,8 +322,9 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($findByIdResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
 						}
+
 						return $this->resolver->resolveById($collection, $args['id'] ?? '');
 					},
 			];
@@ -347,7 +351,7 @@ class GraphQLRegistryGenerator
 				continue;
 			}
 			$fieldType = $this->mapOrmTypeToGraphQL($field);
-			if ($forUpdate && $fieldType instanceof \GraphQL\Type\Definition\NonNull) {
+			if ($forUpdate && $fieldType instanceof NonNull) {
 				$fieldType = $fieldType->getWrappedType();
 			}
 			$fields[$fieldName] = [
@@ -356,7 +360,7 @@ class GraphQLRegistryGenerator
 		}
 
 		// Add nested relation fields for create input types (not update)
-		if (!$forUpdate) {
+		if (! $forUpdate) {
 			foreach ($collection->relations as $relationName => $relation) {
 				$targetCollectionName = $relation->getCollectionName();
 				$targetCollection = $relation->getCollection();
@@ -412,7 +416,7 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($createResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured.');
+							throw new RuntimeException('No resolver configured.');
 						}
 						$input = $args['input'] ?? [];
 						[$scalarInput, $nestedInput] = $this->separateNestedInput($collection, $input);
@@ -450,7 +454,7 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($updateResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured.');
+							throw new RuntimeException('No resolver configured.');
 						}
 						$input = $args['input'] ?? [];
 						$this->validateInput($collection, $input);
@@ -479,7 +483,7 @@ class GraphQLRegistryGenerator
 					? $this->wrapResolver($deleteResolver, false)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
 						if ($this->resolver === null) {
-							throw new \RuntimeException('No resolver configured.');
+							throw new RuntimeException('No resolver configured.');
 						}
 
 						if ($this->eventDispatcher !== null) {
@@ -511,7 +515,7 @@ class GraphQLRegistryGenerator
 			$baseType = $this->mapOrmTypeToGraphQL($field);
 			if (is_string($baseType)) {
 				$baseType = Type::string();
-			} elseif ($baseType instanceof \GraphQL\Type\Definition\NonNull) {
+			} elseif ($baseType instanceof NonNull) {
 				$baseType = $baseType->getWrappedType();
 			}
 			$args[$name] = ['type' => $baseType];
@@ -529,10 +533,11 @@ class GraphQLRegistryGenerator
 	{
 		$fields = [];
 		foreach ($collection->fields as $name => $field) {
-			if (!$field->isPrimaryKey() && $field->isFilterable()) {
+			if (! $field->isPrimaryKey() && $field->isFilterable()) {
 				$fields[$name] = $field;
 			}
 		}
+
 		return $fields;
 	}
 
@@ -554,7 +559,7 @@ class GraphQLRegistryGenerator
 			}
 			$fieldType = $this->mapOrmTypeToGraphQL($field);
 			// All nested fields are nullable (the parent sets the FK)
-			if ($fieldType instanceof \GraphQL\Type\Definition\NonNull) {
+			if ($fieldType instanceof NonNull) {
 				$fieldType = $fieldType->getWrappedType();
 			}
 			$fields[$fieldName] = ['type' => $fieldType];

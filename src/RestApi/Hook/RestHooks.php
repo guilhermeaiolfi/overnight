@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Hook;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 final class RestHooks
 {
@@ -12,7 +12,8 @@ final class RestHooks
 
 	private function __construct(
 		private CollectionInterface $collection,
-	) {}
+	) {
+	}
 
 	public static function for(CollectionInterface $collection): self
 	{

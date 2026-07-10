@@ -2,11 +2,19 @@
 
 declare(strict_types=1);
 
-namespace ON\ORM\Definition\Collection;
+namespace ON\RestApi\Support;
 
-use ON\ORM\Definition\Field\FieldInterface;
+use InvalidArgumentException;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Field\FieldInterface;
 
-final class PrimaryKeyDefinition
+/**
+ * RestApi-local primary-key descriptor over an ON\Data collection.
+ *
+ * Translates collection PK metadata into RestApi identity parsing / URL encoding.
+ * Not a legacy ORM definition adapter.
+ */
+final class PrimaryKey
 {
 	/**
 	 * @param list<FieldInterface> $fields
@@ -15,6 +23,11 @@ final class PrimaryKeyDefinition
 		private CollectionInterface $collection,
 		private array $fields
 	) {
+	}
+
+	public static function of(CollectionInterface $collection): self
+	{
+		return new self($collection, $collection->getPrimaryKeyFields());
 	}
 
 	/**
@@ -30,7 +43,7 @@ final class PrimaryKeyDefinition
 	 */
 	public function getFieldNames(): array
 	{
-		return array_map(static fn(FieldInterface $field): string => $field->getName(), $this->fields);
+		return array_map(static fn (FieldInterface $field): string => $field->getName(), $this->fields);
 	}
 
 	/**
@@ -38,7 +51,7 @@ final class PrimaryKeyDefinition
 	 */
 	public function getColumns(): array
 	{
-		return array_map(static fn(FieldInterface $field): string => $field->getColumn(), $this->fields);
+		return array_map(static fn (FieldInterface $field): string => $field->getColumn(), $this->fields);
 	}
 
 	public function isComposite(): bool
@@ -65,7 +78,8 @@ final class PrimaryKeyDefinition
 
 		$missing = $this->getMissingFieldNames($input);
 		$fieldList = implode(', ', $missing);
-		throw new \InvalidArgumentException("{$context} requires primary key field(s): {$fieldList}.");
+
+		throw new InvalidArgumentException("{$context} requires primary key field(s): {$fieldList}.");
 	}
 
 	/**
@@ -77,8 +91,8 @@ final class PrimaryKeyDefinition
 
 		foreach ($this->fields as $field) {
 			if (
-				!array_key_exists($field->getName(), $input)
-				&& !array_key_exists($field->getColumn(), $input)
+				! array_key_exists($field->getName(), $input)
+				&& ! array_key_exists($field->getColumn(), $input)
 			) {
 				$missing[] = $field->getName();
 			}
@@ -89,7 +103,7 @@ final class PrimaryKeyDefinition
 
 	public function getValueFromUrlId(string $id): PrimaryKeyValue
 	{
-		if (!$this->isComposite()) {
+		if (! $this->isComposite()) {
 			$fieldName = $this->getFieldNames()[0] ?? 'id';
 
 			return new PrimaryKeyValue($this->collection, [$fieldName => $id]);
@@ -97,17 +111,17 @@ final class PrimaryKeyDefinition
 
 		$decoded = base64_decode(strtr($id, '-_', '+/') . str_repeat('=', (4 - strlen($id) % 4) % 4), true);
 		if ($decoded === false) {
-			throw new \InvalidArgumentException('Invalid composite primary key encoding.');
+			throw new InvalidArgumentException('Invalid composite primary key encoding.');
 		}
 
 		$data = json_decode($decoded, true);
-		if (!is_array($data)) {
-			throw new \InvalidArgumentException('Invalid composite primary key payload.');
+		if (! is_array($data)) {
+			throw new InvalidArgumentException('Invalid composite primary key payload.');
 		}
 
 		$value = $this->extract($data, false);
 		if ($value === null) {
-			throw new \InvalidArgumentException('Incomplete composite primary key payload.');
+			throw new InvalidArgumentException('Incomplete composite primary key payload.');
 		}
 
 		return $value;
@@ -129,11 +143,13 @@ final class PrimaryKeyDefinition
 			$name = $field->getName();
 			if (array_key_exists($name, $input)) {
 				$values[$name] = $input[$name];
+
 				continue;
 			}
 
 			if ($allowColumnNames && array_key_exists($field->getColumn(), $input)) {
 				$values[$name] = $input[$field->getColumn()];
+
 				continue;
 			}
 
@@ -155,11 +171,11 @@ final class PrimaryKeyDefinition
 				return $identity;
 			}
 
-			if (!$this->isComposite() && array_is_list($value) && count($value) === 1) {
+			if (! $this->isComposite() && array_is_list($value) && count($value) === 1) {
 				return new PrimaryKeyValue($this->collection, [$this->getFieldNames()[0] => $value[0]]);
 			}
 
-			throw new \InvalidArgumentException('Invalid primary key value array.');
+			throw new InvalidArgumentException('Invalid primary key value array.');
 		}
 
 		if ($this->isComposite()) {

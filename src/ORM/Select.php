@@ -22,8 +22,8 @@ use function is_array;
 use function is_string;
 use function iterator_to_array;
 use IteratorAggregate;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\QueryBuilder;
 use ON\ORM\Select\RootLoader;
@@ -85,7 +85,7 @@ class Select implements IteratorAggregate, Countable, PaginableInterface
 		private ORMInterface $orm,
 		private Registry $registry,
 		private FactoryInterface $factory,
-		private Collection $collection
+		private CollectionInterface $collection
 	) {
 		$this->heap = $orm->getHeap();
 		$this->schema = $orm->getSchema();

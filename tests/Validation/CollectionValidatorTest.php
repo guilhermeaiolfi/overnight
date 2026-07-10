@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\Validation;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
 use PHPUnit\Framework\TestCase;
@@ -107,7 +107,8 @@ final class CollectionValidatorTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)
 				->validation('required')
 				->end()
 			->field('name', 'string')->type('string')->nullable(true)

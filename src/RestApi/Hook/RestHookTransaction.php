@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Hook;
 
+use Closure;
+use InvalidArgumentException;
+
 final class RestHookTransaction
 {
 	/** @var list<RestHook> */
@@ -11,15 +14,16 @@ final class RestHookTransaction
 
 	public function __construct(
 		private RestHookDispatcher $dispatcher,
-	) {}
+	) {
+	}
 
 	/**
-	 * @param object|\Closure(): ?object $payload
+	 * @param object|Closure(): ?object $payload
 	 */
 	public function schedule(string $slot, mixed $payload, bool $assertAuthorization = false): RestHook
 	{
 		if (! is_object($payload)) {
-			throw new \InvalidArgumentException('Scheduled RestApi hook payload must be an object or Closure.');
+			throw new InvalidArgumentException('Scheduled RestApi hook payload must be an object or Closure.');
 		}
 
 		$hook = new RestHook($slot, $payload, $assertAuthorization);

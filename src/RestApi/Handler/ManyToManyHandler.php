@@ -8,8 +8,8 @@ use Cycle\Database\Injection\Expression;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\M2MRelation;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Handler\Mutation\ManyToManyApply;
 use ON\RestApi\Handler\Mutation\ManyToManyNormalize;
 use ON\RestApi\Query\Node\RelationSelection;
@@ -42,8 +42,8 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		$node = new ArrayNode(
 			$this->resultNodeColumns(),
 			$this->pivotPrimaryKeyColumns(),
-			$this->fieldNamesToColumnNames($throughCollection, $this->manyToMany->through->throughInnerKeys()),
-			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->innerKeys())
+			$this->fieldNamesToColumnNames($throughCollection, $this->manyToMany->through->getInnerKeys()),
+			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->getInnerKeys())
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -63,9 +63,9 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		$throughCollection = $through->getCollection();
 		$junctionAlias = $this->junctionAlias();
 		$targetAlias = $this->targetAlias();
-		$throughInnerKeys = $this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys());
-		$throughOuterKeys = $this->fieldNamesToColumnNames($throughCollection, $through->throughOuterKeys());
-		$targetKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys());
+		$throughInnerKeys = $this->fieldNamesToColumnNames($throughCollection, $through->getInnerKeys());
+		$throughOuterKeys = $this->fieldNamesToColumnNames($throughCollection, $through->getOuterKeys());
+		$targetKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys());
 
 		$selectColumns = $this->selectColumns($targetAlias, $junctionAlias);
 		$query = $this->items->getDatabase()->select($selectColumns)
@@ -77,7 +77,7 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		}
 		if (count($throughInnerKeys) === 1) {
 			$query->where($junctionAlias . '.' . $throughInnerKeys[0], 'IN', array_map(
-				static fn(array $set): mixed => reset($set),
+				static fn (array $set): mixed => reset($set),
 				$parentKeySets
 			));
 		} else {
@@ -120,7 +120,7 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 				$query,
 				$this->resultNodeColumns(),
 				array_map(
-					fn(string $column): string => $junctionAlias . '.' . $column,
+					fn (string $column): string => $junctionAlias . '.' . $column,
 					$throughInnerKeys
 				),
 				$this->selectionWindowOrderBy($targetAlias),
@@ -163,26 +163,24 @@ class ManyToManyHandler extends AbstractRelationHandler implements RelationMutat
 		$throughCollection = $through->getCollection();
 
 		return array_values(array_unique([
-			...$this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys()),
+			...$this->fieldNamesToColumnNames($throughCollection, $through->getInnerKeys()),
 			...$this->pivotPrimaryKeyColumns(),
 		]));
 	}
 
 	private function pivotPrimaryKeyColumns(): array
 	{
-		$columns = [];
-		foreach ($this->manyToMany->through->getCollection()->getPrimaryKey()->getFields() as $field) {
-			$columns[] = $field->getColumn();
-		}
-
 		$through = $this->manyToMany->through;
 		$throughCollection = $through->getCollection();
+		$columns = $throughCollection->hasPrimaryKey()
+			? $throughCollection->getPrimaryKeyColumns()
+			: [];
 
 		return $columns !== []
 			? $columns
 			: [
-				...$this->fieldNamesToColumnNames($throughCollection, $through->throughInnerKeys()),
-				...$this->fieldNamesToColumnNames($throughCollection, $through->throughOuterKeys()),
+				...$this->fieldNamesToColumnNames($throughCollection, $through->getInnerKeys()),
+				...$this->fieldNamesToColumnNames($throughCollection, $through->getOuterKeys()),
 			];
 	}
 

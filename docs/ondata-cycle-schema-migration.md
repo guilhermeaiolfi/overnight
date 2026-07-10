@@ -1,116 +1,111 @@
-# ON\Data → Cycle Schema Migration
+# ON\Data Definition Architecture
 
-Transitional notes for `ON\ORM\Compiler\OnDataCycleRegistryGenerator`, which compiles `ON\Data\Definition\Registry` into a Cycle schema registry.
+Overnight uses **`ON\Data\Definition\Registry`** as the sole entity-definition registry. Legacy `ON\ORM\Definition` has been removed. Cycle ORM schema, RestApi, GraphQL, Mapper, and CMS all read collection/field/relation metadata from ON\Data.
 
-The legacy `ON\ORM\Compiler\CycleRegistryGenerator` remains the production path until parity is proven and application definitions migrate.
+## Sole registry
 
-## Generators
+| Concern | Location |
+|---------|----------|
+| Definition API | `guilhermeaiolfi/overnight-data` → `ON\Data\Definition\*` |
+| Framework wiring | `ON\DataIntegration\DataExtension` |
+| Container binding | `Registry::class` → `DefinitionRegistryProvider` |
+| Cycle schema compile | `ON\ORM\Compiler\CycleRegistryGenerator` |
 
-| Generator | Input | Status |
-|-----------|--------|--------|
-| `CycleRegistryGenerator` | `ON\ORM\Definition\Registry` | Production (unchanged) |
-| `OnDataCycleRegistryGenerator` | `ON\Data\Definition\Registry` | Side-by-side / tests only |
+There is no parallel ORM definition registry and no adapter layer between ON\Data and consumers.
 
-`OnDataCycleRegistryGenerator` is container-resolvable under its own class. It is **not** wired into `CycleDatabaseFactory` in this phase.
+## Registration
 
-## Collection metadata
+Modules and extensions register collections by listening to the init event:
 
-| Legacy (`ON\ORM`) | ON\Data | Cycle write | Classification |
-|-------------------|---------|-------------|----------------|
-| `getName()` | `getName()` | `Entity::setRole()` | direct mapping |
-| `getTable()` | `getTable()` | `setTableName()` + `linkTable` | direct mapping |
-| `getDatabase()` | `getDatabase()` | `setDatabase()` + `linkTable` | direct mapping |
-| `getEntity()` | `getEntity()` | `setClass()` | direct mapping |
-| `getMapper()` default `StdMapper` | `getMapper()` default `null` | `setMapper()` | mapping with changed semantics (defaults differ; set explicitly for parity) |
-| `getRepository()` | `getRepository()` | `setRepository()` | direct mapping |
-| `getScope()` | `getScope()` | `setScope()` | direct mapping |
-| `getSource()` default `ON\ORM\Select\Source` | `getSource()` default `null` | `setSource()` | mapping with changed semantics (defaults differ) |
-| Field-level `primaryKey(true)` | Collection `primaryKey(...)` + `Field::isPrimaryKey()` | `Field::setPrimary()` | mapping with changed semantics (PK ownership moved to collection) |
-| `hidden`, `note`, `description`, `parentCollection`, metadata bag | Same keys exist | *(ignored)* | obsolete under Cycle schema (consumed elsewhere) |
-| `getInheritedCollections()` stub | `parentCollection` | *(ignored)* | requires a later decision (STI) |
+```php
+use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
+use ON\Extension\AbstractExtension;
+use ON\Init\Init;
 
-## Field metadata
+final class BlogDefinitionsExtension extends AbstractExtension
+{
+    public function register(Init $init): void
+    {
+        $init->on(DataDefinitionConfigureEvent::class, function (DataDefinitionConfigureEvent $event): void {
+            $event->registry
+                ->collection('post')
+                ->primaryKey('id')
+                ->field('id', 'int')->autoIncrement(true)->end()
+                ->field('title', 'string')->validation('required|max:255')->end()
+                ->end();
+        });
+    }
+}
+```
 
-| Legacy | ON\Data | Cycle write | Classification |
-|--------|---------|-------------|----------------|
-| Field map key / `getName()` | Field map key / `getName()` | Cycle field name | direct mapping |
-| `getColumn()` | `getColumn()` | `setColumn()` | direct mapping |
-| `getType()` + `ON\Mapper\Field\*` | `getType()` + `ON\Data\Mapper\FieldTypeInterface` via `ConversionGateway` | `setType()` | mapping with changed semantics (mapper package swapped; resolution rules preserved where possible) |
-| `isPrimaryKey()` | `isPrimaryKey()` (from collection PK) | `setPrimary()` | direct mapping |
-| `isNullable()` | `isNullable()` | `OPT_NULLABLE` / default null | direct mapping |
-| `hasDefault()` / `getDefault()` | `hasDefault()` / `getDefault()` on `Field` | `OPT_DEFAULT` | direct mapping |
-| `castDefault()` | `castDefault()` on `Field` | `OPT_CAST_DEFAULT` | direct mapping |
-| `getTypecast()` | `getTypecast()` | `setTypecast()` | direct mapping |
-| `getMaxLength()` for bare `string` | `getMaxLength()` | `string(N)` | direct mapping |
-| Serial types / any primary → `ON_INSERT` | Serial types / `isAutoIncrement()` / primary → `ON_INSERT` | `setGenerated(ON_INSERT)` | mapping with changed semantics (`auto_increment` is honored in addition to legacy rules) |
-| `unique`, `indexed`, `comment`, `hidden`, validation, display | Present on ON\Data | *(ignored)* | not represented by Cycle schema generator (same as legacy) |
-| `default_value` (SchemaTrait) | `getDefaultValue()` | *(ignored)* | requires a later decision (legacy also ignored it; runtime `default` is used) |
-| `readonlySchema` / column attributes | Absent | *(ignored)* | obsolete under ON\Data |
+- Event class: `ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent`
+- Payload: public `Registry $registry`
+- Do **not** use deleted APIs: `OrmConfigureEvent`, `ON\ORM\Container\RegistryFactory`, or `ON\ORM\Definition\*`
 
-### Storage type resolution
+Primary keys are declared at **collection** level: `->primaryKey('id')` or `->primaryKey('tenant_id', 'slug')`. Field-level `primaryKey(true)` is not part of the ON\Data API.
 
-`OnDataCycleRegistryGenerator` must **not** use `ON\Mapper\Field\FieldTypeRegistry`.
+## Cold / warm definition cache
 
-Order:
+`DefinitionRegistryProvider` resolves `ON\Data\Definition\Registry` as follows:
 
-1. If `getType()` is an `ON\Data\Mapper\FieldTypeInterface` class → `::getStorageType()`
-2. Reject unknown PHP classes that are not field handlers, `DateTimeInterface`, or enums
-3. Resolve aliases / backed enums through the configured `ConversionGateway` `MapperManager`
-4. Apply handler storage type only when the current type string is **not** already a known Cycle column type (preserves `primary`, `bigprimary`, etc.)
-5. Preserve parameterized types such as `string(32)`
-6. Expand bare `string` to `string({maxLength})`
+1. **Warm (cache hit)** — if `data-definitions.php` exists, load the exported array and construct `new Registry($definitions)`.
+2. **Cold (cache miss)** — create an empty `Registry`, emit `DataDefinitionConfigureEvent`, then write `$registry->all()` to the cache file and return a fresh `Registry` from that snapshot.
 
-`DateTimeInterface` subclasses are mapped to `datetime` for parity with the legacy registry convention. Arbitrary non-handler classes throw.
+Default cache path: `{project}/var/cache/data-definitions.php` (overridable via DataExtension options `cache_file` / `cache_path`).
 
-## Relation metadata
+CLI helpers:
 
-| Legacy | ON\Data | Cycle write | Classification |
-|--------|---------|-------------|----------------|
-| `getCollectionName()` | `getCollectionName()` | `setTarget()` | direct mapping |
-| `getLoadStrategy()` | `getLoadStrategy()` | option `load` | direct mapping |
-| `isCascade()` | `isCascade()` | option `cascade` | direct mapping |
-| `isNullable()` | `isNullable()` | option `nullable` | direct mapping |
-| `innerKeys()` / `outerKeys()` | `getInnerKeys()` / `getOuterKeys()` | `innerKey` / `outerKey` (columns) | direct mapping (API rename only) |
-| Field name → column | Field name → `getColumn()` | scalar or `string[]` | direct mapping |
-| M2M `through` collection | `M2MRelation::getThrough()` | option `through` | direct mapping |
-| `throughInnerKeys()` / `throughOuterKeys()` | `getInnerKeys()` / `getOuterKeys()` on through | `throughInnerKey` / `throughOuterKey` | direct mapping (API rename only) |
-| Composite M2M keys | Supported | arrays preserved | direct mapping (no artificial single-key restriction) |
-| `where`, `orderBy`, custom `loader` | Present | *(ignored)* | obsolete under Cycle schema (query/runtime layer) |
-| `collection_factory` | Present | *(ignored)* | not represented by Cycle schema generator |
-| Morphed / embedded relations | Absent in ON\Data | — | not represented by ON\Data |
+- `definitions:warmup` — force a cold build and write the cache
+- `definitions:clear` — delete the cache file
+- Cache clearer name `data-definitions` (via `CacheClearersConfigureEvent`)
 
-### Relation type resolution
+## Cycle schema wiring
 
-Resolved via **explicit class / interface checks**, not short-name reflection:
+```
+DataExtension binds Registry
+        ↓
+DefinitionRegistryProvider (cold/warm)
+        ↓
+CycleDatabaseFactory / CycleRegistryGeneratorFactory
+        ↓
+CycleRegistryGenerator(Registry) → Cycle\Schema\Compiler
+```
 
-| ON\Data relation | Cycle type | Classification |
-|------------------|------------|----------------|
-| `HasOneRelation` + `isExclusive()` | `hasOne` | direct mapping |
-| `HasOneRelation` / `BelongsToRelation` + nullable | `belongsTo` | direct mapping |
-| `HasOneRelation` + non-nullable + non-exclusive | `refersTo` | direct mapping |
-| `HasManyRelation` | `hasMany` | direct mapping |
-| `M2MRelation` | `manyToMany` | direct mapping |
-| `FirstOfManyRelation` | **unsupported** | requires a later decision — see below |
-| Any other relation class | **throws** | not represented by ON\Data / unsupported |
+- Generator: `ON\ORM\Compiler\CycleRegistryGenerator`
+- Factory: `ON\ORM\Container\CycleRegistryGeneratorFactory`
+- Consumes `ON\Data\Definition\Registry` and Mapper `ConversionGateway` for field-type resolution
 
-### First-of-many
+### Generated-field semantics
 
-`FirstOfManyRelation` is a has-many with single cardinality and a specialized loader. Cycle has no first-of-many relation type.
+`CycleRegistryGenerator` marks a field as Cycle `GeneratedField::ON_INSERT` only when:
 
-The legacy generator silently emitted `hasMany`, which drops single-cardinality semantics at the schema layer.
+- the field `isAutoIncrement()`, **or**
+- the resolved Cycle type is one of: `primary`, `bigprimary`, `serial`, `bigserial`, `smallserial`
 
-**Decision for this phase:** `OnDataCycleRegistryGenerator` throws `UnsupportedOnDataFeatureException` for `FirstOfManyRelation`. Do not approximate it as ordinary `hasMany`. Runtime first-of-many support remains outside Cycle schema compilation and needs a later migration plan.
+It does **not** mark every primary-key field as generated. A plain `int` (or other non-serial) PK is primary but not insert-generated unless `autoIncrement(true)` is set.
 
-## Key rules
+### FirstOfMany
 
-- Relation keys are logical **field names**; the generator resolves them to physical **columns**.
-- Single-column keys collapse to a string; composite keys remain `string[]`.
-- Inner/outer key counts must match; missing fields throw a targeted exception.
-- Collection primary keys come only from `CollectionInterface::primaryKey()` / `getPrimaryKey()`.
+`FirstOfManyRelation` is **unsupported** at the Cycle schema layer. Compiling one throws `UnsupportedDefinitionFeatureException`.
 
-## Wiring constraints (this phase)
+RestApi may still model first-of-many behavior at the **query / handler** layer (`FirstOfManyHandler`, ordering, single cardinality). That is a runtime concern outside Cycle schema compilation — do not approximate FirstOfMany as `hasMany` in the generator.
 
-- Do not replace `CycleRegistryGenerator` in `CycleDatabaseFactory`.
-- Do not emit `OrmConfigureEvent` from the new generator.
-- Do not delete `ON\ORM\Definition` or migrate RestApi / QuerySpec / GraphQL yet.
-- Consume the cached `ON\Data\Definition\Registry` from `DefinitionRegistryProvider` when resolving the new generator from the container.
+## RestApi and QuerySpec
+
+RestApi still builds and executes **`QuerySpec`** for list/get/aggregate flows. Collection, field, and relation **metadata** come from ON\Data (`Registry` / `CollectionInterface`).
+
+Primary-key helpers are RestApi-local value objects over ON\Data collections:
+
+| Class | Role |
+|-------|------|
+| `ON\RestApi\Support\PrimaryKey` | Field/column names, extract from input/row, composite detection |
+| `ON\RestApi\Support\PrimaryKeyValue` | Concrete identity values for a collection |
+| `ON\RestApi\Support\PrimaryKeyCriteria` | Apply identity to Select/`where` |
+
+These are not part of the ON\Data package.
+
+## Related docs
+
+- [ORM Entity Definition](orm-entity-definition.md) — fluent ON\Data API
+- [Query AST / QuerySpec](query-ast.md) — RestApi query model
+- [Mapper](mapper.md) — Storage / PHP / Wire conversion

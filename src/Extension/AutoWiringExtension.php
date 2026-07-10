@@ -12,6 +12,7 @@ use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Discovery\ClassFinder;
 use ON\FS\Path;
 use ON\Init\Init;
+use ON\Init\InitContext;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
@@ -40,7 +41,8 @@ class AutoWiringExtension extends AbstractExtension
 		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->getAbsolutePath();
 		$this->installDiscoveredExtensions();
 	}
-	public function start(\ON\Init\InitContext $context): void
+
+	public function start(InitContext $context): void
 	{
 	}
 

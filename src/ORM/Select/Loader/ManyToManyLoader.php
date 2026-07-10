@@ -10,9 +10,10 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
-use Cycle\ORM\Relation;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\LoaderInterface;
@@ -47,18 +48,29 @@ class ManyToManyLoader extends JoinableLoader
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		string $name,
+		CollectionInterface $collection,
 		RelationInterface $relation,
+		array $options = []
 	) {
-		parent::__construct($registry, $factory, $name, $relation);
+		parent::__construct($registry, $factory, $collection, $relation, $options);
+
+		if (! $relation instanceof M2MRelation) {
+			throw new LoaderException(sprintf(
+				'ManyToManyLoader requires %s, %s given.',
+				M2MRelation::class,
+				$relation::class
+			));
+		}
+
 		$this->pivot = new PivotLoader(
 			$registry,
 			$factory,
-			'pivot',
-			$relation
+			$relation->getThrough()->getCollection(),
+			$relation,
+			[]
 		);
-		$this->options['where'] = $relation->getWhere() ?? [];
-		$this->options['orderBy'] = $relation->getOrderBy() ?? [];
+		$this->options['where'] = $relation->getWhere();
+		$this->options['orderBy'] = $relation->getOrderBy();
 	}
 
 	/**
@@ -121,11 +133,11 @@ class ManyToManyLoader extends JoinableLoader
 
 		// Manually join pivoted table
 		if ($this->isJoined()) {
-			$parentKeys = $this->relation->innerKeys();
-			$throughOuterKeys = $this->pivot->relation->through->throughOuterKeys();
+			$parentKeys = $this->relation->getInnerKeys();
+			$throughOuterKeys = $this->pivot->relation->getThrough()->getOuterKeys();
 			$parentPrefix = $this->parent->getAlias() . '.';
 			$on = [];
-			foreach ($this->pivot->relation->through->throughInnerKeys() as $i => $key) {
+			foreach ($this->pivot->relation->getThrough()->getInnerKeys() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 			}
@@ -136,7 +148,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$on = [];
-			foreach ($this->relation->outerKeys() as $i => $key) {
+			foreach ($this->relation->getOuterKeys() as $i => $key) {
 				$field = $localPrefix . $this->fieldAlias($key);
 				$on[$field] = $pivotPrefix . $this->pivot->fieldAlias($throughOuterKeys[$i]);
 			}
@@ -150,9 +162,9 @@ class ManyToManyLoader extends JoinableLoader
 			// since underlying loader believes it's loaded)
 			$query->columns([]);
 
-			$outerKeyList = $this->relation->outerKeys();
+			$outerKeyList = $this->relation->getOuterKeys();
 			$on = [];
-			foreach ($this->pivot->relation->through->throughOuterKeys() as $i => $key) {
+			foreach ($this->pivot->relation->getThrough()->getOuterKeys() as $i => $key) {
 				$field = $pivotPrefix . $this->pivot->fieldAlias($key);
 				$on[$field] = $localPrefix . $this->fieldAlias($outerKeyList[$i]);
 			}
@@ -163,7 +175,7 @@ class ManyToManyLoader extends JoinableLoader
 			)->on($on);
 
 			$fields = [];
-			foreach ($this->pivot->relation->through->throughInnerKeys() as $key) {
+			foreach ($this->pivot->relation->getThrough()->getInnerKeys() as $key) {
 				$fields[] = $pivotPrefix . $this->pivot->fieldAlias($key);
 			}
 
@@ -184,14 +196,14 @@ class ManyToManyLoader extends JoinableLoader
 		$this->setWhere(
 			$query,
 			$this->isJoined() ? 'onWhere' : 'where',
-			$this->options['where'] ?? $this->schema[Relation::WHERE] ?? []
+			$this->options['where'] ?? $this->relation->getWhere()
 		);
 
 		// user specified ORDER_BY rules
 		$this->setOrderBy(
 			$query,
 			$this->getAlias(),
-			$this->options['orderBy'] ?? $this->schema[Relation::ORDER_BY] ?? []
+			$this->options['orderBy'] ?? $this->relation->getOrderBy()
 		);
 
 		return parent::configureQuery($this->pivot->configureQuery($query));
@@ -227,13 +239,11 @@ class ManyToManyLoader extends JoinableLoader
 
 	protected function initNode(): AbstractNode
 	{
-		$collection = $this->registry->getCollection($this->target);
-
 		return new SingularNode(
 			$this->columnNames(),
-			$collection->getPrimaryKey()->getFieldNames(),
-			$this->relation->outerKeys(),
-			$this->relation->through->throughOuterKeys()
+			$this->target->getPrimaryKey(),
+			$this->relation->getOuterKeys(),
+			$this->relation->getThrough()->getOuterKeys()
 		);
 	}
 }

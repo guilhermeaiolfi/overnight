@@ -4,17 +4,17 @@ declare(strict_types=1);
 
 namespace Tests\ON\Mapper;
 
+use DateTimeImmutable;
+use ON\Data\Definition\Registry;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Exception\ConversionException;
 use ON\Mapper\Field\FieldContext;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
-
-use function ON\Mapper\map;
 
 final class ConversionGatewayTest extends TestCase
 {
@@ -55,7 +55,7 @@ final class ConversionGatewayTest extends TestCase
 			$field,
 		);
 
-		$this->assertInstanceOf(\DateTimeImmutable::class, $value);
+		$this->assertInstanceOf(DateTimeImmutable::class, $value);
 	}
 
 	public function testPhpToWireDatetime(): void
@@ -64,14 +64,13 @@ final class ConversionGatewayTest extends TestCase
 
 		$value = $this->gateway->to(
 			PhpRepresentation::class,
-			new \DateTimeImmutable('2024-03-15T10:30:00+00:00'),
+			new DateTimeImmutable('2024-03-15T10:30:00+00:00'),
 			WireRepresentation::class,
 			$field,
 		);
 
 		$this->assertSame('2024-03-15T10:30:00+00:00', $value);
 	}
-
 }
 
 final class CollectionRowMapperTest extends TestCase
@@ -81,7 +80,7 @@ final class CollectionRowMapperTest extends TestCase
 		$collection = $this->eventCollection();
 
 		$result = map([
-			'starts_at' => new \DateTimeImmutable('2024-03-15T10:30:00+00:00'),
+			'starts_at' => new DateTimeImmutable('2024-03-15T10:30:00+00:00'),
 		])
 			->using(CollectionRowMapper::class, $collection)
 			->from(PhpRepresentation::class)
@@ -103,7 +102,7 @@ final class CollectionRowMapperTest extends TestCase
 			->as(PhpRepresentation::class)
 			->toArray();
 
-		$this->assertInstanceOf(\DateTimeImmutable::class, $result['starts_at']);
+		$this->assertInstanceOf(DateTimeImmutable::class, $result['starts_at']);
 		$this->assertSame(
 			'2024-03-15 10:30:00',
 			$result['starts_at']->format('Y-m-d H:i:s')
@@ -120,7 +119,7 @@ final class CollectionRowMapperTest extends TestCase
 		$collection = $registry->getCollection('report');
 
 		$result = map([
-			'reference_date' => new \DateTimeImmutable('2024-03-15T00:00:00Z'),
+			'reference_date' => new DateTimeImmutable('2024-03-15T00:00:00Z'),
 		])
 			->using(CollectionRowMapper::class, $collection)
 			->from(PhpRepresentation::class)

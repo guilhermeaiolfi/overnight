@@ -42,8 +42,7 @@ final class MiddlewarePriorityPipe implements IterableMiddlewarePipeInterface
 	 */
 	public function __construct(
 		private RequestStackInterface $requestStack
-	)
-	{
+	) {
 		/** @psalm-var SplPriorityQueue<MiddlewareInterface> */
 		$this->pipeline = new SplPriorityQueue();
 	}

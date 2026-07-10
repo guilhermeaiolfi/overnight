@@ -10,13 +10,14 @@ use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\EdgeConverterRegistry;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
-use ON\Mapper\Representation\RepresentationInterface;
-use ON\Mapper\Structural\MappingContext;
 use ON\Mapper\Field\FieldTypeInterface;
 use ON\Mapper\Field\FieldTypeRegistry;
 use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\RepresentationInterface;
 use ON\Mapper\Structural\MapperRegistry;
+use ON\Mapper\Structural\MappingContext;
 use Psr\Container\ContainerInterface;
+use Throwable;
 
 /**
  * Central conversion service: representations, field types, structural mappers.
@@ -261,7 +262,7 @@ final class ConversionGateway
 			}
 
 			return $container->get(self::class);
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			return null;
 		}
 	}

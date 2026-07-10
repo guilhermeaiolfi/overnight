@@ -6,6 +6,6 @@ namespace ON\ORM\Compiler\Exception;
 
 use RuntimeException;
 
-final class UnsupportedOnDataFeatureException extends RuntimeException
+final class UnsupportedDefinitionFeatureException extends RuntimeException
 {
 }

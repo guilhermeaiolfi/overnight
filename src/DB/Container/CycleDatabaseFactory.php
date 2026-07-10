@@ -4,10 +4,8 @@ declare(strict_types=1);
 
 namespace ON\DB\Container;
 
-use Cycle\Database\Database;
 use Cycle\ORM\Schema;
 use Cycle\Schema\Compiler;
-use Cycle\Schema\Definition\Entity;
 use Cycle\Schema\Generator\ForeignKeys;
 use Cycle\Schema\Generator\GenerateModifiers;
 use Cycle\Schema\Generator\GenerateRelations;
@@ -19,10 +17,10 @@ use Cycle\Schema\Generator\ValidateEntities;
 use Cycle\Schema\Registry as CycleRegistry;
 use ON\Application;
 use ON\Clockwork\CycleDatabaseLogger;
+use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
 use ON\ORM\Compiler\CycleRegistryGenerator;
-use ON\ORM\Definition\Registry;
 
 class CycleDatabaseFactory
 {
@@ -108,14 +106,13 @@ class CycleDatabaseFactory
 		$cycleRegistry = new CycleRegistry($dbal);
 		$schema = (new Compiler())->compile($cycleRegistry, [
 			new CycleRegistryGenerator($registry),
-			new GenerateRelations(), // generate entity relations
-			new GenerateModifiers(), // generate changes from schema modifiers
-			new ValidateEntities(),  // make sure all entity schemas are correct
-			new RenderTables(),      // declare table schemas
-			new RenderRelations(),   // declare relation keys and indexes
-			new RenderModifiers(),   // render all schema modifiers
-			new ForeignKeys(),             // Define foreign key constraints
-			//new Schema\Generator\SyncTables(),        // sync table changes to database
+			new GenerateRelations(),
+			new GenerateModifiers(),
+			new ValidateEntities(),
+			new RenderTables(),
+			new RenderRelations(),
+			new RenderModifiers(),
+			new ForeignKeys(),
 			new GenerateTypecast(),
 		]);
 

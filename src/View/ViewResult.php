@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ON\View;
 
-use Psr\Http\Message\RequestInterface;
+use ArrayAccess;
+use Exception;
+use LogicException;
 
 /**
  * Value object returned by action methods to indicate which view method
@@ -24,7 +26,7 @@ use Psr\Http\Message\RequestInterface;
  * Or destructure what you need (via Executor parameter injection):
  *   public function successView(array $post, string $message) { ... }
  */
-class ViewResult implements \ArrayAccess
+class ViewResult implements ArrayAccess
 {
 	protected ?string $pageClass = null;
 	protected ?string $viewName = null; // eg.: 'success', 'error'
@@ -62,10 +64,11 @@ class ViewResult implements \ArrayAccess
 	public function getTemplateName(): string
 	{
 		$targetObject = $this->getTargetObject();
-		if (!isset($targetObject)) {
-			throw new \LogicException('Target object must be set to get template name.');
+		if (! isset($targetObject)) {
+			throw new LogicException('Target object must be set to get template name.');
 		}
 		$path = explode("\\", get_class($targetObject));
+
 		return strtolower($path[0] . "::" . str_replace("Page", "", array_pop($path)) . "-" . $this->actionName . "-" . strtolower($this->viewName));
 	}
 
@@ -87,7 +90,8 @@ class ViewResult implements \ArrayAccess
 		}
 
 		$className = get_class($this->targetObject);
-		throw new \Exception("No view method found for '{$this->viewName}' in class {$className}");
+
+		throw new Exception("No view method found for '{$this->viewName}' in class {$className}");
 	}
 
 	public function setActionName(string $actionName): void
@@ -139,11 +143,11 @@ class ViewResult implements \ArrayAccess
 
 	public function offsetSet(mixed $offset, mixed $value): void
 	{
-		throw new \LogicException('ViewResult is immutable.');
+		throw new LogicException('ViewResult is immutable.');
 	}
 
 	public function offsetUnset(mixed $offset): void
 	{
-		throw new \LogicException('ViewResult is immutable.');
+		throw new LogicException('ViewResult is immutable.');
 	}
 }

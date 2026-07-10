@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\QuerySpec;
 
 class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface

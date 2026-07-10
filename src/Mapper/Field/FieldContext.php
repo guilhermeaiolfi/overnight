@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field;
 
-use ON\ORM\Definition\Field\FieldInterface;
+use ON\Data\Definition\Field\FieldInterface;
 
 /**
  * Typed identity of one field for value conversion (name, type, nullable).

@@ -44,7 +44,6 @@ abstract class AbstractExtension implements ExtensionInterface
 	{
 	}
 
-
 	public function getNamespace(): string
 	{
 		return static::NAMESPACE;

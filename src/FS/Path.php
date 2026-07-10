@@ -179,6 +179,7 @@ class Path implements DirectoryPathInterface
 			if ($segment === '..') {
 				if ($normalized !== [] && end($normalized) !== '..') {
 					array_pop($normalized);
+
 					continue;
 				}
 

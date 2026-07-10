@@ -22,7 +22,6 @@ use Fig\Http\Message\RequestMethodInterface as RequestMethod;
 use function file_exists;
 use function file_put_contents;
 use function implode;
-use InvalidArgumentException;
 use function is_array;
 use function is_dir;
 use function is_string;
@@ -634,4 +633,3 @@ class Router implements RouterInterface
 		}
 	}
 }
-

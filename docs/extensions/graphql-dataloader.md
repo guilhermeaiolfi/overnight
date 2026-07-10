@@ -53,7 +53,7 @@ use ON\GraphQL\DataLoader\GenericDataLoader;
 
 $container->define(GenericDataLoader::class, function($c) {
     return new GenericDataLoader(
-        $c->get(\ON\ORM\Definition\Registry::class),
+        $c->get(\ON\Data\Definition\Registry::class),
         maxCacheSize: 10000  // default, LRU eviction when exceeded
     );
 });
@@ -234,7 +234,8 @@ The DataLoader automatically detects primary keys from your Collection definitio
 
 ```php
 $registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field("id", "int")->end()
     ->field("name", "string")->end()
     ->end();
 
@@ -247,8 +248,7 @@ For tables with composite primary keys:
 
 ```php
 $registry->collection("user_role")
-    ->field("user_id", "int")->primaryKey(true)->end()
-    ->field("role_id", "int")->primaryKey(true)->end()
+    ->primaryKey('user_id', 'role_id')
     ->field("user_id", "int")->end()
     ->field("role_id", "int")->end()
     ->end();
@@ -328,13 +328,14 @@ $loader->clear();
 <?php
 // config/orm.php
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 $registry = new Registry();
 
 // User collection
 $registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field("id", "int")->end()
     ->field("name", "string")->end()
     ->field("email", "string")->end()
     ->hasMany("posts", "post")
@@ -372,7 +373,8 @@ $registry->collection("user")
 
 // Post collection
 $registry->collection("post")
-    ->field("id", "int")->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field("id", "int")->end()
     ->field("title", "string")->end()
     ->field("content", "text")->end()
     ->field("user_id", "int")->end()

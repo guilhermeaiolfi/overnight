@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query\Parser;
 
+use InvalidArgumentException;
 use ON\CMS\Parser\Node\FieldNode;
+use ON\CMS\Parser\Node\Node;
 use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\VirtualNode;
 use ON\CMS\Parser\QueryParser;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\QuerySpec;
@@ -31,13 +33,13 @@ final class CmsQueryParser
 	public function parseQuery(string $query): QuerySpec
 	{
 		$root = (new QueryParser($this->registry))->parse($query);
-		if (!$root instanceof RootNode || $root->collection === null) {
-			throw new \InvalidArgumentException('CMS query did not produce a root collection.');
+		if (! $root instanceof RootNode || $root->collection === null) {
+			throw new InvalidArgumentException('CMS query did not produce a root collection.');
 		}
 
 		$collection = $this->registry->getCollection($root->collection);
 		if ($collection === null) {
-			throw new \InvalidArgumentException("Collection '{$root->collection}' is not registered.");
+			throw new InvalidArgumentException("Collection '{$root->collection}' is not registered.");
 		}
 
 		return new QuerySpec(
@@ -47,7 +49,7 @@ final class CmsQueryParser
 	}
 
 	/**
-	 * @param list<\ON\CMS\Parser\Node\Node> $children
+	 * @param list<Node> $children
 	 */
 	private function selectionFromChildren(CollectionInterface $collection, array $children, bool $explicit): SelectionSet
 	{
@@ -59,7 +61,7 @@ final class CmsQueryParser
 		return new SelectionSet($nodes, $explicit);
 	}
 
-	private function selectionNode(CollectionInterface $collection, \ON\CMS\Parser\Node\Node $node): SelectionNode
+	private function selectionNode(CollectionInterface $collection, Node $node): SelectionNode
 	{
 		if ($node instanceof VirtualNode || $node->name === '*') {
 			return new WildcardSelection();
@@ -82,7 +84,7 @@ final class CmsQueryParser
 			return new FieldSelection(new FieldExpression($node->name), $node->name);
 		}
 
-		throw new \InvalidArgumentException("Field or relation '{$node->name}' is not registered on {$collection->getName()}.");
+		throw new InvalidArgumentException("Field or relation '{$node->name}' is not registered on {$collection->getName()}.");
 	}
 
 	private function loadHint(?string $modifier): ?RelationLoadHint

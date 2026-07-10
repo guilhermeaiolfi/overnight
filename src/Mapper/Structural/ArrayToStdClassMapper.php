@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use InvalidArgumentException;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Support\ArrayHelper;
 use ON\Mapper\Support\StdClassValueConverter;
+use stdClass;
 
 final class ArrayToStdClassMapper implements MapperInterface
 {
@@ -26,16 +28,16 @@ final class ArrayToStdClassMapper implements MapperInterface
 			return false;
 		}
 
-		return is_array($from) && $to === \stdClass::class;
+		return is_array($from) && $to === stdClass::class;
 	}
 
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
 		if ($context->collection) {
 			return array_map(
-				fn (mixed $item): \stdClass => is_array($item)
+				fn (mixed $item): stdClass => is_array($item)
 					? $this->mapObject($item, $context)
-					: throw new \InvalidArgumentException('Collection mapping expects a list of arrays.'),
+					: throw new InvalidArgumentException('Collection mapping expects a list of arrays.'),
 				$from
 			);
 		}
@@ -46,7 +48,7 @@ final class ArrayToStdClassMapper implements MapperInterface
 	/**
 	 * @param array<string, mixed> $data
 	 */
-	private function mapObject(array $data, MappingContext $context): \stdClass
+	private function mapObject(array $data, MappingContext $context): stdClass
 	{
 		return StdClassValueConverter::arrayToStdClass(
 			ArrayHelper::undot($data),

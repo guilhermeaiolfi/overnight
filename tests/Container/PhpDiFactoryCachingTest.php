@@ -6,9 +6,9 @@ namespace Tests\ON\Container;
 
 use DI\Container;
 use DI\ContainerBuilder;
-use PHPUnit\Framework\TestCase;
-
 use function DI\factory;
+use PHPUnit\Framework\TestCase;
+use stdClass;
 
 /**
  * Verifies that PHP-DI caches the result of factory definitions on get(),
@@ -25,7 +25,7 @@ final class PhpDiFactoryCachingTest extends TestCase
 		$builder = new ContainerBuilder();
 		$builder->addDefinitions([
 			'counter' => factory(function () {
-				return new \stdClass();
+				return new stdClass();
 			}),
 		]);
 
@@ -45,7 +45,8 @@ final class PhpDiFactoryCachingTest extends TestCase
 		$callCount = 0;
 		$container->set('widget', function () use (&$callCount) {
 			$callCount++;
-			return new \stdClass();
+
+			return new stdClass();
 		});
 
 		$first = $container->get('widget');
@@ -61,7 +62,7 @@ final class PhpDiFactoryCachingTest extends TestCase
 		$builder->useAutowiring(true);
 		$builder->addDefinitions([
 			'dep' => factory(function () {
-				return new \stdClass();
+				return new stdClass();
 			}),
 		]);
 
@@ -134,9 +135,13 @@ final class PhpDiFactoryCachingTest extends TestCase
 		$container = $builder->build();
 
 		// Simulate ViewFactory pattern: a singleton service that calls make()
-		$factory = new class($container) {
-			public function __construct(private Container $container) {}
-			public function create(): TestService {
+		$factory = new class ($container) {
+			public function __construct(private Container $container)
+			{
+			}
+
+			public function create(): TestService
+			{
 				return $this->container->make(TestService::class);
 			}
 		};
@@ -150,7 +155,9 @@ final class PhpDiFactoryCachingTest extends TestCase
 }
 
 
-interface TestServiceInterface {}
+interface TestServiceInterface
+{
+}
 
 class TestService implements TestServiceInterface
 {
@@ -166,5 +173,6 @@ class TestConsumer
 {
 	public function __construct(
 		public TestServiceInterface $service
-	) {}
+	) {
+	}
 }

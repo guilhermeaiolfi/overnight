@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Init;
 
-use BackedEnum;
-
 final class InitContext
 {
 	public function __construct(

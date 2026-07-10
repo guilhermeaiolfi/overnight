@@ -4,18 +4,20 @@ declare(strict_types=1);
 
 namespace ON\CMS;
 
-use ON\Console\Init\Event\ConsoleReadyEvent;
-use ON\Router\Init\Event\RouterSetupEvent;
 use ON\Application;
 use ON\CMS\Page\CollectionPage;
 use ON\CMS\Page\ItemsPage;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Init\InitContext;
+use ON\Router\Init\Event\RouterSetupEvent;
 use ON\Router\RouterExtension;
 
 class CMSExtension extends AbstractExtension
 {
 	public const ID = 'cms';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -32,7 +34,7 @@ class CMSExtension extends AbstractExtension
 		$init->on(RouterSetupEvent::class, [$this, 'onRouterSetup']);
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 	}
 

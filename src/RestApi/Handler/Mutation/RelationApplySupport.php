@@ -15,8 +15,8 @@ trait RelationApplySupport
 		MutationStateInterface $source,
 		MutationStateInterface $target
 	): void {
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$outerKey = $this->relation->outerKeys()[$index];
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
+			$outerKey = $this->relation->getOuterKeys()[$index];
 			$source->setValue($innerKey, ValueRef::forStateField($target, $outerKey));
 		}
 	}

@@ -160,7 +160,8 @@ src/
 ├── Logging/                     # Monolog
 ├── Maintenance/                 # Maintenance mode
 ├── Middleware/                   # PSR-15 middleware
-├── ORM/                         # Cycle ORM wrapper + definition system
+├── DataIntegration/             # ON\Data registry provider + definition cache
+├── ORM/                         # Cycle ORM wrapper (schema from ON\Data)
 ├── RateLimit/                   # Rate limiting
 ├── RequestStack.php             # Request stack
 ├── Response/                    # Response utilities
@@ -218,7 +219,7 @@ Multiple template engine support (Plates, Latte) via `RendererInterface`.
 Events system for hooking into framework lifecycle. Overnight uses typed event objects:
 
 - **Init Events**: Dispatched during `register()`/`start()`. Listened to by class name (e.g., `ConfigConfigureEvent::class`).
-- **Domain Events**: Specific extension events (e.g., `RouterSetupEvent`, `OrmConfigureEvent`).
+- **Domain Events**: Specific extension events (e.g., `RouterSetupEvent`, `DataDefinitionConfigureEvent`).
 
 ```php
 // Registering a listener during register()
@@ -346,6 +347,5 @@ config/
 ├── local.php            # Local overrides (not committed)
 ├── database/all.php     # Database module config
 ├── database/dev.php     # Database dev overrides
-├── orm.all.php          # ORM registry definitions
-└── .../
+└── .../                 # Entity definitions via DataDefinitionConfigureEvent
 ```

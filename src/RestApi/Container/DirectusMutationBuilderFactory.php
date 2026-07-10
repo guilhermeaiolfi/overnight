@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Container;
 
+use ON\Data\Definition\Registry;
 use ON\Mapper\ConversionGateway;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Payload\PayloadNormalizer;

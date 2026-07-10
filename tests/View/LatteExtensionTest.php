@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace Tests\ON\View;
 
 use ON\Application;
-use ON\Container\ContainerConfig;
-use ON\Container\Init\Event\ContainerConfigureEvent;
-use ON\Container\ContainerExtension;
-use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\ConfigExtension;
-use ON\Init\Init;
+use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Container\ContainerConfig;
+use ON\Container\ContainerExtension;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\FS\PathRegistry;
+use ON\Init\Init;
 use ON\View\Latte\LatteExtension;
 use ON\View\Latte\LatteRenderer;
 use ON\View\Latte\LatteRendererFactory;
 use ON\View\ViewConfig;
 use PHPUnit\Framework\TestCase;
+use RuntimeException;
 
 final class LatteExtensionTest extends TestCase
 {
@@ -33,12 +34,12 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-        $app = $this->createApplication($containerConfig, $viewConfig);
+		$app = $this->createApplication($containerConfig, $viewConfig);
 		$extension = new LatteExtension($app);
-        
-        $configExt = new ConfigExtension($app);
-        $configExt->set(ViewConfig::class, $viewConfig);
-        $configExt->set(ContainerConfig::class, $containerConfig);
+
+		$configExt = new ConfigExtension($app);
+		$configExt->set(ViewConfig::class, $viewConfig);
+		$configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
 		$extension->register($init);
@@ -61,12 +62,12 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-        $app = $this->createApplication($containerConfig, $viewConfig);
+		$app = $this->createApplication($containerConfig, $viewConfig);
 		$extension = new LatteExtension($app);
 
-        $configExt = new ConfigExtension($app);
-        $configExt->set(ViewConfig::class, $viewConfig);
-        $configExt->set(ContainerConfig::class, $containerConfig);
+		$configExt = new ConfigExtension($app);
+		$configExt->set(ViewConfig::class, $viewConfig);
+		$configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
 		$extension->register($init);
@@ -77,7 +78,7 @@ final class LatteExtensionTest extends TestCase
 
 	private function createApplication(ContainerConfig $containerConfig, ViewConfig $viewConfig): Application
 	{
-		$config = new class($containerConfig, $viewConfig) {
+		$config = new class ($containerConfig, $viewConfig) {
 			public function __construct(
 				private ContainerConfig $containerConfig,
 				private ViewConfig $viewConfig
@@ -94,11 +95,11 @@ final class LatteExtensionTest extends TestCase
 					return $this->viewConfig;
 				}
 
-				throw new \RuntimeException("Unexpected config {$className}");
+				throw new RuntimeException("Unexpected config {$className}");
 			}
 		};
 
-		return new class($config) extends Application {
+		return new class ($config) extends Application {
 			public object $config;
 
 			public function __construct(object $config)

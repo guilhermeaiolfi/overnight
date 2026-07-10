@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Resolver;
 
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Relation\RelationInterface;
 
 interface GraphQLResolverInterface
 {

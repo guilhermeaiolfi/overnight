@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace ON\RestApi\Addon;
 
 use Laminas\Diactoros\Response\JsonResponse;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Throwable;
 
 /**
  * Exposes collection schema as REST endpoints.
@@ -39,7 +40,7 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 		$path = $request->getUri()->getPath();
 		$schemaPath = $this->basePath . '/_schema';
 
-		if (!str_starts_with($path, $schemaPath)) {
+		if (! str_starts_with($path, $schemaPath)) {
 			return $handler->handle($request);
 		}
 
@@ -118,12 +119,12 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 
 			try {
 				$entry['type'] = $field->getType();
-			} catch (\Throwable) {
+			} catch (Throwable) {
 			}
 
 			try {
 				$entry['description'] = $field->getDescription();
-			} catch (\Throwable) {
+			} catch (Throwable) {
 			}
 
 			$validation = $field->getValidation();
@@ -148,6 +149,7 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 
 			$fields[] = $entry;
 		}
+
 		return $fields;
 	}
 
@@ -160,10 +162,11 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 				'collection' => $relation->getCollectionName(),
 				'cardinality' => $relation->getCardinality(),
 				'junction' => $relation->isJunction(),
-				'innerKey' => count($relation->innerKeys()) === 1 ? $relation->getInnerKey() : $relation->innerKeys(),
-				'outerKey' => count($relation->outerKeys()) === 1 ? $relation->getOuterKey() : $relation->outerKeys(),
+				'innerKey' => count($relation->getInnerKeys()) === 1 ? $relation->getInnerKey() : $relation->getInnerKeys(),
+				'outerKey' => count($relation->getOuterKeys()) === 1 ? $relation->getOuterKey() : $relation->getOuterKeys(),
 			];
 		}
+
 		return $relations;
 	}
 }

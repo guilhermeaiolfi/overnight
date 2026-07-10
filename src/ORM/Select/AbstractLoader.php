@@ -11,8 +11,8 @@ use Cycle\ORM\Exception\SchemaException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Relation;
 use Generator;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Loader\ParentLoader;
 use ON\ORM\Select\Loader\SubclassLoader;
@@ -89,7 +89,7 @@ abstract class AbstractLoader implements LoaderInterface
 	public function __construct(
 		protected Registry $registry,
 		protected FactoryInterface $factory,
-		protected Collection $target,
+		protected CollectionInterface $target,
 		array $options
 	) {
 		$this->children = $registry->getInheritedCollections($target->getName());
@@ -403,10 +403,9 @@ abstract class AbstractLoader implements LoaderInterface
 		}
 	}
 
-	protected function generateEagerRelationLoaders(Collection $target): Generator
+	protected function generateEagerRelationLoaders(CollectionInterface $target): Generator
 	{
-		$relations = $target->relations ?? [];
-		foreach ($relations as $relation_name => $relation) {
+		foreach ($target->getRelations() as $relation) {
 			if (($relation->getLoadStrategy() ?? null) === Relation::LOAD_EAGER) {
 				yield $relation;
 			}

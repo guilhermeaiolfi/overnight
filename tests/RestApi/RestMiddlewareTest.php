@@ -4,14 +4,19 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use BadMethodCallException;
+use Cycle\Database\DatabaseInterface;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
-use ON\ORM\Definition\Registry;
+use Laminas\Diactoros\Stream;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\RestApi\Action\RestActionRouter;
+use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Hook\RestHooks;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Repository\ItemRepository;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -20,6 +25,7 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use RuntimeException;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -43,7 +49,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$response = $middleware->process(
 			new ServerRequest(uri: '/items/user?fields=id,name', method: 'GET'),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -63,13 +69,15 @@ final class RestMiddlewareTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
@@ -93,10 +101,10 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = new class ($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			public function __construct(Registry $registry, DatabaseInterface $database)
 			{
 				parent::__construct(
 					$registry,
@@ -104,7 +112,7 @@ final class RestMiddlewareTest extends TestCase
 				);
 			}
 
-			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
+			public function create(CollectionInterface $collection, array $input): ?array
 			{
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),
@@ -140,10 +148,10 @@ final class RestMiddlewareTest extends TestCase
 			])
 			->withUploadedFiles([
 				'attachments' => [
-					['file_id' => new class implements UploadedFileInterface {
+					['file_id' => new class () implements UploadedFileInterface {
 						public function getStream(): StreamInterface
 						{
-							throw new \BadMethodCallException('Not needed for this test.');
+							throw new BadMethodCallException('Not needed for this test.');
 						}
 
 						public function moveTo($targetPath): void
@@ -175,7 +183,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -195,13 +203,15 @@ final class RestMiddlewareTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();
@@ -240,7 +250,7 @@ final class RestMiddlewareTest extends TestCase
 						['title' => 'Attachment one'],
 					],
 				])),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -259,13 +269,15 @@ final class RestMiddlewareTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file_id', 'upload')->type('upload')->nullable(false)->end()
@@ -293,10 +305,10 @@ final class RestMiddlewareTest extends TestCase
 				],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = new class ($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			public function __construct(Registry $registry, DatabaseInterface $database)
 			{
 				parent::__construct(
 					$registry,
@@ -304,7 +316,7 @@ final class RestMiddlewareTest extends TestCase
 				);
 			}
 
-			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
+			public function create(CollectionInterface $collection, array $input): ?array
 			{
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),
@@ -341,10 +353,10 @@ final class RestMiddlewareTest extends TestCase
 			])
 			->withUploadedFiles([
 				'attachments' => [
-					1 => ['file_id' => new class implements UploadedFileInterface {
+					1 => ['file_id' => new class () implements UploadedFileInterface {
 						public function getStream(): StreamInterface
 						{
-							throw new \BadMethodCallException('Not needed for this test.');
+							throw new BadMethodCallException('Not needed for this test.');
 						}
 
 						public function moveTo($targetPath): void
@@ -376,7 +388,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -397,7 +409,8 @@ final class RestMiddlewareTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('directus_files')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file', 'upload')->type('upload')->nullable(false)->end()
 			->end();
@@ -412,15 +425,15 @@ final class RestMiddlewareTest extends TestCase
 				'rows' => [],
 			],
 		]);
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = new class ($registry, $db->database()) extends ItemRepository {
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			public function __construct(Registry $registry, DatabaseInterface $database)
 			{
 				parent::__construct($registry, $database);
 			}
 
-			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
+			public function create(CollectionInterface $collection, array $input): ?array
 			{
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),
@@ -442,7 +455,7 @@ final class RestMiddlewareTest extends TestCase
 				$event->setStoredValue(501);
 			});
 
-		$dispatcher = new class {
+		$dispatcher = new class () {
 			public array $uploads = [];
 		};
 		$middleware = $this->createRestMiddleware(
@@ -466,7 +479,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -493,7 +506,8 @@ final class RestMiddlewareTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();
 
@@ -509,7 +523,7 @@ final class RestMiddlewareTest extends TestCase
 		$resolver = new ItemRepository($registry, $db->database());
 
 		RestHooks::for($registry->getCollection('asset'))
-			->on('create.before', static fn (ItemCreating $event) => $event->forbid(\ON\RestApi\Error\RestApiError::forbidden(
+			->on('create.before', static fn (ItemCreating $event) => $event->forbid(RestApiError::forbidden(
 				'Missing permission "create" on resource "module:news".',
 				['resource' => 'module:news', 'action' => 'create'],
 			)), 100);
@@ -524,7 +538,7 @@ final class RestMiddlewareTest extends TestCase
 		$response = $middleware->process(
 			(new ServerRequest(uri: '/items/asset', method: 'POST'))
 				->withBody($this->streamFromJson(['title' => 'Blocked asset'])),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -543,19 +557,19 @@ final class RestMiddlewareTest extends TestCase
 
 	public function testUnexpectedExceptionsReturnTheOriginalMessage(): void
 	{
-		$middleware = new \ON\RestApi\Middleware\RestMiddleware(
-			new \ON\RestApi\Action\RestActionRouter([
+		$middleware = new RestMiddleware(
+			new RestActionRouter([
 				['name' => 'boom', 'methods' => ['POST'], 'path' => 'asset', 'action' => 'boom'],
 			]),
 			static function (): never {
-				throw new \RuntimeException('Boom failure');
+				throw new RuntimeException('Boom failure');
 			},
 			['endpointUri' => '/items']
 		);
 
 		$response = $middleware->process(
 			new ServerRequest(uri: '/items/asset', method: 'POST'),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -575,8 +589,8 @@ final class RestMiddlewareTest extends TestCase
 	public function testActivationCallbackRunsBeforeMatchedRestRequest(): void
 	{
 		$activations = 0;
-		$middleware = new \ON\RestApi\Middleware\RestMiddleware(
-			new \ON\RestApi\Action\RestActionRouter([
+		$middleware = new RestMiddleware(
+			new RestActionRouter([
 				['name' => 'ok', 'methods' => ['GET'], 'path' => 'asset', 'action' => 'ok'],
 			]),
 			static function (): array {
@@ -591,7 +605,7 @@ final class RestMiddlewareTest extends TestCase
 
 		$response = $middleware->process(
 			new ServerRequest(uri: '/items/asset', method: 'GET'),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -607,25 +621,25 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertSame(1, $activations);
 	}
 
-	private function streamFromJson(array $payload): \Laminas\Diactoros\Stream
+	private function streamFromJson(array $payload): Stream
 	{
 		$stream = fopen('php://temp', 'r+');
 		fwrite($stream, json_encode($payload, JSON_THROW_ON_ERROR));
 		rewind($stream);
 
-		return new \Laminas\Diactoros\Stream($stream);
+		return new Stream($stream);
 	}
 
 	private function createUploadedFile(string $filename): UploadedFileInterface
 	{
-		return new class($filename) implements UploadedFileInterface {
+		return new class ($filename) implements UploadedFileInterface {
 			public function __construct(private string $filename)
 			{
 			}
 
 			public function getStream(): StreamInterface
 			{
-				throw new \BadMethodCallException('Not needed for this test.');
+				throw new BadMethodCallException('Not needed for this test.');
 			}
 
 			public function moveTo($targetPath): void

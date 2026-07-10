@@ -4,14 +4,14 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
-use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;

@@ -62,7 +62,7 @@ class InMemoryRateLimiter implements RateLimiterInterface
 
 		$cutoff = time() - $windowSeconds;
 		$this->attempts[$key] = array_values(
-			array_filter($this->attempts[$key], fn(int $time) => $time > $cutoff)
+			array_filter($this->attempts[$key], fn (int $time) => $time > $cutoff)
 		);
 	}
 }

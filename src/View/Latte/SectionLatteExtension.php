@@ -13,7 +13,7 @@ class SectionLatteExtension extends Extension
 	public function getTags(): array
 	{
 		return [
-			'section' => fn(Tag $tag, TemplateParser $parser) => SectionNode::create($tag),
+			'section' => fn (Tag $tag, TemplateParser $parser) => SectionNode::create($tag),
 		];
 	}
 }

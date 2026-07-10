@@ -27,8 +27,8 @@ use Traversable;
  * @template TKey of array-key
  * @template TValue mixed
  *
- * @implements \ArrayAccess<TKey, TValue>
- * @implements \IteratorAggregate<TKey, TValue>
+ * @implements ArrayAccess<TKey, TValue>
+ * @implements IteratorAggregate<TKey, TValue>
  */
 class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 {

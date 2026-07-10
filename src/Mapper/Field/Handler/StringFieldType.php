@@ -10,6 +10,7 @@ use ON\Mapper\Field\FieldTypeInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
+use Stringable;
 
 final class StringFieldType implements FieldTypeInterface
 {
@@ -29,7 +30,7 @@ final class StringFieldType implements FieldTypeInterface
 		}
 
 		return match ($from) {
-			PhpRepresentation::class, StorageRepresentation::class, WireRepresentation::class => is_scalar($value) || $value instanceof \Stringable
+			PhpRepresentation::class, StorageRepresentation::class, WireRepresentation::class => is_scalar($value) || $value instanceof Stringable
 				? (string) $value
 				: $value,
 			default => throw UnsupportedConversionException::forRepresentation($from),
@@ -47,7 +48,7 @@ final class StringFieldType implements FieldTypeInterface
 		}
 
 		return match ($to) {
-			PhpRepresentation::class, StorageRepresentation::class, WireRepresentation::class => is_scalar($value) || $value instanceof \Stringable
+			PhpRepresentation::class, StorageRepresentation::class, WireRepresentation::class => is_scalar($value) || $value instanceof Stringable
 				? (string) $value
 				: $value,
 			default => throw UnsupportedConversionException::forRepresentation($to),

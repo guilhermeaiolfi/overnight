@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Tests\ON\Mapper;
 
 use DateTimeImmutable;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Attribute\MapField;
 use ON\Mapper\Blueprint\MappingBlueprint;
-use ON\Mapper\Representation\WireRepresentation;
-use ON\ORM\Definition\Registry;
-use PHPUnit\Framework\TestCase;
-
 use function ON\Mapper\map;
+use ON\Mapper\Representation\WireRepresentation;
+use PHPUnit\Framework\TestCase;
+use stdClass;
 
 final class StdClassMapperTest extends TestCase
 {
@@ -24,21 +24,21 @@ final class StdClassMapperTest extends TestCase
 				[],
 				[],
 			],
-		])->to(\stdClass::class);
+		])->to(stdClass::class);
 
 		$this->assertSame('bar', $object->name);
 		$this->assertIsArray($object->arr);
 		$this->assertCount(3, $object->arr);
-		$this->assertContainsOnlyInstancesOf(\stdClass::class, $object->arr);
+		$this->assertContainsOnlyInstancesOf(stdClass::class, $object->arr);
 	}
 
 	public function testMapsAssociativeNestedArrayToStdClass(): void
 	{
 		$object = map([
 			'author' => ['name' => 'Jane'],
-		])->to(\stdClass::class);
+		])->to(stdClass::class);
 
-		$this->assertInstanceOf(\stdClass::class, $object->author);
+		$this->assertInstanceOf(stdClass::class, $object->author);
 		$this->assertFalse(is_array($object->author));
 		$this->assertSame('Jane', $object->author->name);
 	}
@@ -49,7 +49,7 @@ final class StdClassMapperTest extends TestCase
 			'author.name' => 'Jane',
 			'items.0.id' => 'a',
 			'items.1.id' => 'b',
-		])->to(\stdClass::class);
+		])->to(stdClass::class);
 
 		$this->assertSame('Jane', $object->author->name);
 		$this->assertIsArray($object->items);
@@ -63,7 +63,7 @@ final class StdClassMapperTest extends TestCase
 		$source = map([
 			'name' => 'bar',
 			'arr' => [[], []],
-		])->to(\stdClass::class);
+		])->to(stdClass::class);
 
 		$array = map($source)->toArray();
 
@@ -86,9 +86,9 @@ final class StdClassMapperTest extends TestCase
 			'meta' => ['created_at' => '2024-03-15T10:30:00+00:00'],
 		], WireRepresentation::class)
 			->args($blueprint)
-			->to(\stdClass::class);
+			->to(stdClass::class);
 
-		$this->assertInstanceOf(\stdClass::class, $object->meta);
+		$this->assertInstanceOf(stdClass::class, $object->meta);
 		$this->assertInstanceOf(DateTimeImmutable::class, $object->meta->created_at);
 	}
 
@@ -100,8 +100,8 @@ final class StdClassMapperTest extends TestCase
 			],
 		]);
 
-		$object = new \stdClass();
-		$object->meta = new \stdClass();
+		$object = new stdClass();
+		$object->meta = new stdClass();
 		$object->meta->created_at = new DateTimeImmutable('2024-03-15T10:30:00+00:00');
 
 		$array = map($object)
@@ -116,7 +116,7 @@ final class StdClassMapperTest extends TestCase
 	{
 		$object = map([
 			'meta' => ['created_at' => '2024-03-15T10:30:00+00:00'],
-		], WireRepresentation::class)->to(\stdClass::class);
+		], WireRepresentation::class)->to(stdClass::class);
 
 		$this->assertIsString($object->meta->created_at);
 	}
@@ -134,7 +134,7 @@ final class StdClassMapperTest extends TestCase
 			],
 		])
 			->args($blueprint)
-			->to(\stdClass::class);
+			->to(stdClass::class);
 
 		$this->assertIsArray($object->children);
 		$this->assertContainsOnlyInstancesOf(StdClassNestedChildDto::class, $object->children);
@@ -148,7 +148,7 @@ final class StdClassMapperTest extends TestCase
 			'meta' => ['created_at' => '2024-03-15T10:30:00+00:00'],
 		], WireRepresentation::class)
 			->args($blueprint)
-			->to(\stdClass::class);
+			->to(stdClass::class);
 
 		$this->assertInstanceOf(DateTimeImmutable::class, $object->meta->created_at);
 	}
@@ -161,7 +161,7 @@ final class StdClassMapperTest extends TestCase
 				['name' => 'One'],
 				['name' => 'Two'],
 			],
-		])->to(\stdClass::class);
+		])->to(stdClass::class);
 
 		$array = map($source)->toArray();
 
@@ -190,7 +190,7 @@ final class StdClassMapperTest extends TestCase
 			],
 		], WireRepresentation::class)
 			->args($blueprint)
-			->to(\stdClass::class);
+			->to(stdClass::class);
 
 		$this->assertInstanceOf(DateTimeImmutable::class, $object->published_at);
 		$this->assertInstanceOf(DateTimeImmutable::class, $object->comments[0]->posted_at);

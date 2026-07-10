@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Support\MutationInput;
 use Psr\Http\Message\UploadedFileInterface;
 
@@ -76,6 +76,7 @@ final class MutationInputMerger
 
 			if (is_array($relationInput) && MutationInput::isAssociativeArray($relationInput)) {
 				$input[$relationName] = $this->mergeFiles($targetCollection, $relationInput, $relationFiles);
+
 				continue;
 			}
 
@@ -193,6 +194,7 @@ final class MutationInputMerger
 
 			if (! str_contains($name, '[')) {
 				$expanded[$name] = $value;
+
 				continue;
 			}
 
@@ -218,6 +220,7 @@ final class MutationInputMerger
 		foreach ($keys as $index => $key) {
 			if ($index === count($keys) - 1) {
 				$current[$key] = $value;
+
 				break;
 			}
 

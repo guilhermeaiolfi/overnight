@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use BackedEnum;
+use DateTimeInterface;
 use ON\Mapper\Attribute\Hidden;
 use ON\Mapper\Attribute\MapTo;
 use ON\Mapper\Conversion\ConversionDirection;
@@ -40,7 +42,7 @@ final class ObjectToArrayMapper implements MapperInterface
 			return false;
 		}
 
-		if ($from instanceof \DateTimeInterface || $from instanceof \BackedEnum) {
+		if ($from instanceof DateTimeInterface || $from instanceof BackedEnum) {
 			return false;
 		}
 
@@ -62,8 +64,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		object $object,
 		MappingContext $context,
 		FieldConversionCoordinator $conversion,
-	): array
-	{
+	): array {
 		$reflection = new ReflectionClass($object);
 		$result = [];
 
@@ -99,8 +100,7 @@ final class ObjectToArrayMapper implements MapperInterface
 		ReflectionProperty $property,
 		MappingContext $context,
 		FieldConversionCoordinator $conversion,
-	): mixed
-	{
+	): mixed {
 		if ($value === null) {
 			return null;
 		}
@@ -199,7 +199,7 @@ final class ObjectToArrayMapper implements MapperInterface
 	}
 
 	/**
-	 * @param class-string<\BackedEnum> $enumClass
+	 * @param class-string<BackedEnum> $enumClass
 	 * @param class-string $readRepresentation
 	 */
 	private function mapEnumListOutbound(

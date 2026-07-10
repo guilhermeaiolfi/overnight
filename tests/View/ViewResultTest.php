@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\View;
 
+use LogicException;
 use ON\View\ViewResult;
 use PHPUnit\Framework\TestCase;
 
@@ -65,7 +66,7 @@ final class ViewResultTest extends TestCase
 	{
 		$result = new ViewResult('success');
 
-		$this->expectException(\LogicException::class);
+		$this->expectException(LogicException::class);
 		$result['key'] = 'value';
 	}
 
@@ -73,7 +74,7 @@ final class ViewResultTest extends TestCase
 	{
 		$result = new ViewResult('success', ['key' => 'value']);
 
-		$this->expectException(\LogicException::class);
+		$this->expectException(LogicException::class);
 		unset($result['key']);
 	}
 }

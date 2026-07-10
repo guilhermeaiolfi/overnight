@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Support\MutationInput;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;

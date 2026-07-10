@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\ON\Init;
 
+use ON\Extension\ExtensionProfiler;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Init\InitException;
-use ON\Extension\ExtensionProfiler;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
 use stdClass;

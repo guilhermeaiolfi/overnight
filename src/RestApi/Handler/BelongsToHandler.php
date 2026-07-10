@@ -9,6 +9,7 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
 use ON\RestApi\Handler\Mutation\BelongsToApply;
 use ON\RestApi\Handler\Mutation\BelongsToNormalize;
+use ON\RestApi\Support\PrimaryKey;
 
 class BelongsToHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
 {
@@ -20,9 +21,9 @@ class BelongsToHandler extends AbstractRelationHandler implements RelationMutati
 	{
 		$node = new SingularNode(
 			$this->getSelectColumns(),
-			$this->getTargetCollection()->getPrimaryKey()->getColumns(),
-			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys()),
-			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->innerKeys())
+			PrimaryKey::of($this->getTargetCollection())->getColumns(),
+			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys()),
+			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->getInnerKeys())
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -39,13 +40,13 @@ class BelongsToHandler extends AbstractRelationHandler implements RelationMutati
 		}
 
 		$columns = $this->getSelectColumns();
-		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys());
+		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys());
 		$query = $this->items->getDatabase()->select($columns)
 			->from($this->getTargetCollection()->getTable());
 
 		if (count($outerKeyColumns) === 1) {
 			$query->where($outerKeyColumns[0], 'IN', array_map(
-				static fn(array $set): mixed => reset($set),
+				static fn (array $set): mixed => reset($set),
 				$parentKeySets
 			));
 		} else {
@@ -83,7 +84,7 @@ class BelongsToHandler extends AbstractRelationHandler implements RelationMutati
 				$query,
 				$columns,
 				array_map(
-					fn(string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
+					fn (string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
 					$outerKeyColumns
 				),
 				$this->selectionWindowOrderBy(),

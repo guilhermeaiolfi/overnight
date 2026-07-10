@@ -64,8 +64,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		string $class,
 		MappingContext $context,
 		FieldConversionCoordinator $conversion,
-	): object
-	{
+	): object {
 		$data = ArrayHelper::undot($data);
 		$reflection = new ReflectionClass($class);
 		$instance = $reflection->newInstanceWithoutConstructor();
@@ -100,8 +99,7 @@ final class ArrayToObjectMapper implements MapperInterface
 		ReflectionProperty $property,
 		MappingContext $context,
 		FieldConversionCoordinator $conversion,
-	): mixed
-	{
+	): mixed {
 		if ($value === null) {
 			return null;
 		}

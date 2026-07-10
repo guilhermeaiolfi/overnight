@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field\Handler;
 
+use DateTimeImmutable;
+use DateTimeInterface;
 use ON\Mapper\Exception\ConversionException;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
@@ -11,6 +13,7 @@ use ON\Mapper\Field\FieldTypeInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
+use Throwable;
 
 final class DateTimeFieldType implements FieldTypeInterface
 {
@@ -44,17 +47,17 @@ final class DateTimeFieldType implements FieldTypeInterface
 		return match ($to) {
 			PhpRepresentation::class => $dateTime,
 			StorageRepresentation::class => $dateTime->format('Y-m-d H:i:s'),
-			WireRepresentation::class => $dateTime->format(\DateTimeInterface::ATOM),
+			WireRepresentation::class => $dateTime->format(DateTimeInterface::ATOM),
 			default => throw UnsupportedConversionException::forRepresentation($to),
 		};
 	}
 
-	private static function parseStorage(mixed $value, FieldContext $field): \DateTimeImmutable
+	private static function parseStorage(mixed $value, FieldContext $field): DateTimeImmutable
 	{
-		if ($value instanceof \DateTimeInterface) {
-			return $value instanceof \DateTimeImmutable
+		if ($value instanceof DateTimeInterface) {
+			return $value instanceof DateTimeImmutable
 				? $value
-				: \DateTimeImmutable::createFromInterface($value);
+				: DateTimeImmutable::createFromInterface($value);
 		}
 
 		if (! is_string($value) || self::isEmpty($value)) {
@@ -62,18 +65,18 @@ final class DateTimeFieldType implements FieldTypeInterface
 		}
 
 		try {
-			return new \DateTimeImmutable((string) $value);
-		} catch (\Throwable $e) {
+			return new DateTimeImmutable((string) $value);
+		} catch (Throwable $e) {
 			throw new ConversionException('Invalid datetime value.', $field->getName(), $e);
 		}
 	}
 
-	private static function parseWire(mixed $value, FieldContext $field): \DateTimeImmutable
+	private static function parseWire(mixed $value, FieldContext $field): DateTimeImmutable
 	{
-		if ($value instanceof \DateTimeInterface) {
-			return $value instanceof \DateTimeImmutable
+		if ($value instanceof DateTimeInterface) {
+			return $value instanceof DateTimeImmutable
 				? $value
-				: \DateTimeImmutable::createFromInterface($value);
+				: DateTimeImmutable::createFromInterface($value);
 		}
 
 		if (! is_string($value) || self::isEmpty($value)) {
@@ -81,20 +84,20 @@ final class DateTimeFieldType implements FieldTypeInterface
 		}
 
 		try {
-			return new \DateTimeImmutable((string) $value);
-		} catch (\Throwable $e) {
+			return new DateTimeImmutable((string) $value);
+		} catch (Throwable $e) {
 			throw new ConversionException('Invalid datetime value.', $field->getName(), $e);
 		}
 	}
 
-	private static function ensureDateTimeImmutable(mixed $value, FieldContext $field): \DateTimeImmutable
+	private static function ensureDateTimeImmutable(mixed $value, FieldContext $field): DateTimeImmutable
 	{
-		if ($value instanceof \DateTimeImmutable) {
+		if ($value instanceof DateTimeImmutable) {
 			return $value;
 		}
 
-		if ($value instanceof \DateTimeInterface) {
-			return \DateTimeImmutable::createFromInterface($value);
+		if ($value instanceof DateTimeInterface) {
+			return DateTimeImmutable::createFromInterface($value);
 		}
 
 		throw new ConversionException('Expected datetime instance.', $field->getName());

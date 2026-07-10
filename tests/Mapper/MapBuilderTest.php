@@ -5,16 +5,16 @@ declare(strict_types=1);
 namespace Tests\ON\Mapper;
 
 use DateTimeImmutable;
+use InvalidArgumentException;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Attribute\MapFrom;
 use ON\Mapper\Attribute\MapTo;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
-
-use function ON\Mapper\map;
 
 final class MapBuilderTest extends TestCase
 {
@@ -159,7 +159,7 @@ final class MapBuilderTest extends TestCase
 
 	public function testToRejectsRepresentationHints(): void
 	{
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 		$this->expectExceptionMessage('Use as(');
 
 		map(['starts_at' => '2024-03-15 10:30:00'])->to(PhpRepresentation::class);

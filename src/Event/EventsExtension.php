@@ -4,15 +4,13 @@ declare(strict_types=1);
 
 namespace ON\Event;
 
-use ON\Config\Init\Event\ConfigConfigureEvent;
-
 use Exception;
 use League\Event\ListenerPriority;
 use ON\Application;
 use ON\Config\AppConfig;
-
-
+use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Event\Attribute\EventHandlerAttributeProcessor;
 use ON\Event\Container\EventDispatcherFactory;
@@ -20,7 +18,6 @@ use ON\Event\Event\ReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
-use ON\Container\Init\Event\ContainerReadyEvent;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -45,6 +42,7 @@ class EventsExtension extends AbstractExtension
 	) {
 		$this->eventDispatcher = new EventDispatcher();
 	}
+
 	public function register(Init $init): void
 	{
 		if ($this->app->hasExtension('container')) {

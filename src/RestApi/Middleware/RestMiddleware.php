@@ -7,15 +7,16 @@ namespace ON\RestApi\Middleware;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\Http\MultipartFormDataParser;
+use ON\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
-use ON\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Event\RequestComplete;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use Throwable;
 
 class RestMiddleware implements MiddlewareInterface
 {
@@ -33,7 +34,7 @@ class RestMiddleware implements MiddlewareInterface
 		$basePath = $this->options['endpointUri'] ?? '/items';
 		$path = $request->getUri()->getPath();
 
-		if (!$this->matchesBasePath($path, $basePath)) {
+		if (! $this->matchesBasePath($path, $basePath)) {
 			return $handler->handle($request);
 		}
 
@@ -67,7 +68,7 @@ class RestMiddleware implements MiddlewareInterface
 			$response = $this->toResponse($result);
 		} catch (RestApiError $e) {
 			$response = $this->errorResponse($e);
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			$debug = $this->options['debug'] ?? false;
 			$internal = RestApiError::internal($e, (bool) $debug);
 			$response = $this->errorResponse($internal);
@@ -99,7 +100,7 @@ class RestMiddleware implements MiddlewareInterface
 			$data = [];
 			if (isset($parsedBody['data'])) {
 				$data = json_decode($parsedBody['data'], true);
-				if (!is_array($data)) {
+				if (! is_array($data)) {
 					throw RestApiError::invalidJson();
 				}
 			}
@@ -113,7 +114,7 @@ class RestMiddleware implements MiddlewareInterface
 		}
 
 		$decoded = json_decode($raw, true);
-		if (!is_array($decoded)) {
+		if (! is_array($decoded)) {
 			throw RestApiError::invalidJson();
 		}
 

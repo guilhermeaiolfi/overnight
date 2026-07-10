@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\View;
 
+use Exception;
 use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
+use LogicException;
 use ON\Container\Executor\ExecutorInterface;
 use ON\RequestStack;
 use ON\Router\RouterInterface;
@@ -22,12 +24,13 @@ final class ViewBuilderTraitTest extends TestCase
 {
 	public function testViewResultCallsViewMethodWithResult(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?ViewResult $receivedResult = null;
 
 			public function successView(ViewResult $result)
 			{
 				$this->receivedResult = $result;
+
 				return new HtmlResponse('<h1>Success</h1>');
 			}
 		};
@@ -40,7 +43,7 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testViewResultDataAccessibleViaGet(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function successView(ViewResult $result)
 			{
 				return new HtmlResponse('post id: ' . $result->get('post')['id']);
@@ -54,7 +57,7 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testViewResultDifferentViews(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function successView(ViewResult $result)
 			{
 				return new HtmlResponse('success: ' . $result->get('message'));
@@ -75,12 +78,13 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testStringReturnCreatesEmptyViewResult(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?ViewResult $receivedResult = null;
 
 			public function successView(ViewResult $result)
 			{
 				$this->receivedResult = $result;
+
 				return new HtmlResponse('ok');
 			}
 		};
@@ -95,20 +99,20 @@ final class ViewBuilderTraitTest extends TestCase
 	{
 		$jsonResponse = new JsonResponse(['status' => 'ok']);
 
-		$response = $this->runView(new class {}, 'index', $jsonResponse);
+		$response = $this->runView(new class () {}, 'index', $jsonResponse);
 
 		$this->assertSame($jsonResponse, $response);
 	}
 
 	public function testDefaultUrlHelperIsResolvedFromViewConfig(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function successView(): HtmlResponse
 			{
 				return new HtmlResponse('ok');
 			}
 		};
-		$executor = new class implements ExecutorInterface {
+		$executor = new class () implements ExecutorInterface {
 			public array $args = [];
 
 			public function execute($callableOrMethodStr, array $args = [])
@@ -146,10 +150,10 @@ final class ViewBuilderTraitTest extends TestCase
 
 	public function testThrowsWhenViewMethodNotFound(): void
 	{
-		$this->expectException(\Exception::class);
+		$this->expectException(Exception::class);
 		$this->expectExceptionMessage('No view method found');
 
-		$this->runView(new class {}, 'index', new ViewResult('nonexistent', []));
+		$this->runView(new class () {}, 'index', new ViewResult('nonexistent', []));
 	}
 
 	public function testViewResultArrayAccess(): void
@@ -167,7 +171,7 @@ final class ViewBuilderTraitTest extends TestCase
 	{
 		$result = new ViewResult('success', ['key' => 'value']);
 
-		$this->expectException(\LogicException::class);
+		$this->expectException(LogicException::class);
 		$result['key'] = 'new';
 	}
 
@@ -205,16 +209,16 @@ final class ViewBuilderTraitTest extends TestCase
 		$router = $this->createMock(RouterInterface::class);
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
-			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+			->willReturnCallback(fn (string $class): bool => $class === RouterInterface::class);
 		$container->method('get')
-			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
+			->willReturnCallback(fn (string $class): mixed => $class === RouterInterface::class ? $router : null);
 
 		return new ViewManager(new ViewConfig(), $container, new RequestStack());
 	}
 
 	private function createExecutor(): ExecutorInterface
 	{
-		return new class implements ExecutorInterface {
+		return new class () implements ExecutorInterface {
 			public function execute($callableOrMethodStr, array $args = [])
 			{
 				return $callableOrMethodStr($args[ViewResult::class]);

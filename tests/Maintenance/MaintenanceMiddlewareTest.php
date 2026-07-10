@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\Maintenance;
 
+use Invoker\ParameterResolver\AssociativeArrayResolver;
+use Invoker\ParameterResolver\DefaultValueResolver;
+use Invoker\ParameterResolver\NumericArrayResolver;
+use Invoker\ParameterResolver\ResolverChain;
+use Invoker\ParameterResolver\TypeHintResolver;
 use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Config\AppConfig;
 use ON\Container\Executor\Executor;
@@ -13,7 +18,6 @@ use ON\Maintenance\MaintenanceModeInterface;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tests\ON\Fixtures\MaintenanceHandler;
@@ -50,14 +54,15 @@ final class MaintenanceMiddlewareTest extends TestCase
 				if ($class === MaintenanceHandler::class) {
 					return $this->handler;
 				}
+
 				return null;
 			});
 
-		$parameterResolver = new \Invoker\ParameterResolver\ResolverChain([
-			new \Invoker\ParameterResolver\TypeHintResolver(),
-			new \Invoker\ParameterResolver\NumericArrayResolver(),
-			new \Invoker\ParameterResolver\AssociativeArrayResolver(),
-			new \Invoker\ParameterResolver\DefaultValueResolver(),
+		$parameterResolver = new ResolverChain([
+			new TypeHintResolver(),
+			new NumericArrayResolver(),
+			new AssociativeArrayResolver(),
+			new DefaultValueResolver(),
 			new TypeHintContainerResolver($this->container),
 		]);
 		$this->executor = new Executor($parameterResolver, $this->container);
@@ -85,6 +90,7 @@ final class MaintenanceMiddlewareTest extends TestCase
 
 		$request = $this->createMock(ServerRequestInterface::class);
 		$request->method('getServerParams')->willReturn($serverParams);
+
 		return $request;
 	}
 

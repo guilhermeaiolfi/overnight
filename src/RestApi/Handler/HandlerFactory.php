@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -68,7 +68,7 @@ class HandlerFactory
 		AliasRegistry $aliases
 	): ?HandlerInterface {
 		$relationName = $selection->relationName;
-		if (!$source->relations->has($relationName)) {
+		if (! $source->relations->has($relationName)) {
 			return null;
 		}
 
@@ -85,7 +85,7 @@ class HandlerFactory
 
 	public function mutation(CollectionInterface $source, string $relationName): ?RelationMutationHandlerInterface
 	{
-		if (!$source->relations->has($relationName)) {
+		if (! $source->relations->has($relationName)) {
 			return null;
 		}
 
@@ -131,7 +131,7 @@ class HandlerFactory
 	): void {
 		$parentNode = $parent instanceof RootHandler ? $parent->rootNode() : $parent->getNode();
 		foreach ($relations as $selection) {
-			if (!$selection instanceof RelationSelection) {
+			if (! $selection instanceof RelationSelection) {
 				continue;
 			}
 

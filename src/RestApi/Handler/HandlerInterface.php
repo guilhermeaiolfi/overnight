@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 interface HandlerInterface
 {

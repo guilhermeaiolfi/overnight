@@ -5,13 +5,22 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Application;
-use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Executor\ExecutorInterface;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Mapper\ConversionGateway;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
+use ON\RestApi\Action\Directus\BatchDeleteAction;
+use ON\RestApi\Action\Directus\BatchUpdateAction;
+use ON\RestApi\Action\Directus\CreateAction;
+use ON\RestApi\Action\Directus\DeleteAction;
+use ON\RestApi\Action\Directus\FilesAction;
+use ON\RestApi\Action\Directus\GetAction;
+use ON\RestApi\Action\Directus\ListAction;
+use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
@@ -22,19 +31,10 @@ use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\RestHookDispatcherFactory;
 use ON\RestApi\Container\SqlQuerySpecCompilerFactory;
-use ON\RestApi\Action\Directus\BatchDeleteAction;
-use ON\RestApi\Action\Directus\BatchUpdateAction;
-use ON\RestApi\Action\Directus\CreateAction;
-use ON\RestApi\Action\Directus\DeleteAction;
-use ON\RestApi\Action\Directus\FilesAction;
-use ON\RestApi\Action\Directus\GetAction;
-use ON\RestApi\Action\Directus\ListAction;
-use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Event\RestApiActivatedEvent;
+use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\Mapper\ConversionGateway;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Query\DirectusQueryBuilder;
@@ -42,7 +42,9 @@ use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use Psr\Container\ContainerInterface;
+use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Server\MiddlewareInterface;
+use RuntimeException;
 
 class RestApiExtension extends AbstractExtension
 {
@@ -105,7 +107,7 @@ class RestApiExtension extends AbstractExtension
 				'validationLang' => $config->get('validationLang', 'en'),
 				'debug' => $debug,
 			],
-			$container->get(\Psr\EventDispatcher\EventDispatcherInterface::class),
+			$container->get(EventDispatcherInterface::class),
 			[$this, 'ensureActivated'],
 		);
 
@@ -132,7 +134,7 @@ class RestApiExtension extends AbstractExtension
 	public function execute(string|RestActionInterface $action, array $params = [], mixed $payload = null, ?array $options = null): mixed
 	{
 		if ($this->container === null) {
-			throw new \RuntimeException('REST API extension cannot execute actions before the container is ready.');
+			throw new RuntimeException('REST API extension cannot execute actions before the container is ready.');
 		}
 
 		$this->ensureActivated();
@@ -156,7 +158,7 @@ class RestApiExtension extends AbstractExtension
 
 		$this->activated = true;
 		$config = $this->config ?? $this->container->get(RestApiConfig::class);
-		$dispatcher = $this->container->get(\Psr\EventDispatcher\EventDispatcherInterface::class);
+		$dispatcher = $this->container->get(EventDispatcherInterface::class);
 
 		$dispatcher->dispatch(new RestApiActivatedEvent(
 			$this->container,

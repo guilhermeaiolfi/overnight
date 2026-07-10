@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL\Support;
 
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use PHPUnit\Framework\TestCase;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\HasManyRelation;
 
 trait GraphQLTestFixtures
 {
 	protected function createUserCollection(Registry $registry): void
 	{
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)->end()
 			->field('email', 'string')->type('string')->nullable(true)->end()
 			->end();
@@ -22,7 +22,8 @@ trait GraphQLTestFixtures
 	protected function createPostCollection(Registry $registry): void
 	{
 		$registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('user_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();
@@ -33,7 +34,8 @@ trait GraphQLTestFixtures
 		$this->createPostCollection($registry);
 
 		$userCollection = $registry->collection('user');
-		$userCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$userCollection->primaryKey('id');
+		$userCollection->field('id', 'int')->type('int')->nullable(false)->end();
 		$userCollection->field('name', 'string')->type('string')->nullable(true)->end();
 		$userCollection->relation('posts', HasManyRelation::class)
 			->collection('post')
@@ -45,14 +47,16 @@ trait GraphQLTestFixtures
 	protected function createFullSchema(Registry $registry): void
 	{
 		$registry->collection('comment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('post_id', 'int')->type('int')->nullable(false)->end()
 			->field('body', 'string')->type('string')->nullable(true)->end()
 			->field('author', 'string')->type('string')->nullable(true)->end()
 			->end();
 
 		$postCollection = $registry->collection('post');
-		$postCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$postCollection->primaryKey('id');
+		$postCollection->field('id', 'int')->type('int')->nullable(false)->end();
 		$postCollection->field('user_id', 'int')->type('int')->nullable(false)->end();
 		$postCollection->field('title', 'string')->type('string')->nullable(true)->end();
 		$postCollection->field('status', 'string')->type('string')->nullable(true)->end();
@@ -63,7 +67,8 @@ trait GraphQLTestFixtures
 			->end();
 
 		$userCollection = $registry->collection('user');
-		$userCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$userCollection->primaryKey('id');
+		$userCollection->field('id', 'int')->type('int')->nullable(false)->end();
 		$userCollection->field('name', 'string')->type('string')->nullable(true)->end();
 		$userCollection->field('email', 'string')->type('string')->nullable(true)->end();
 		$userCollection->relation('posts', HasManyRelation::class)

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field;
 
+use DateTimeInterface;
 use ON\Mapper\Field\Handler\BackedEnumFieldType;
 use ON\Mapper\Field\Handler\BoolFieldType;
 use ON\Mapper\Field\Handler\ClassFieldType;
@@ -75,7 +76,7 @@ final class FieldTypeRegistry
 			return $this->handlers[$lower];
 		}
 
-		if (class_exists($type) && is_subclass_of($type, \DateTimeInterface::class)) {
+		if (class_exists($type) && is_subclass_of($type, DateTimeInterface::class)) {
 			return DateTimeFieldType::class;
 		}
 

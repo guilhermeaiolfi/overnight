@@ -24,6 +24,7 @@ trait RelationPayloadNormalizeEntry
 		foreach ($payload->actions as $action) {
 			if ($action instanceof BasicRelationAction) {
 				array_push($resolved, ...$this->coerceBasicActions($context, $action));
+
 				continue;
 			}
 

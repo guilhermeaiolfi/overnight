@@ -59,7 +59,7 @@ class CycleSqliteTestDatabase
 
 		$colNames = array_keys($columns);
 		$placeholders = implode(', ', array_fill(0, count($colNames), '?'));
-		$quotedCols = implode(', ', array_map(fn(string $c) => "`{$c}`", $colNames));
+		$quotedCols = implode(', ', array_map(fn (string $c) => "`{$c}`", $colNames));
 		$sql = "INSERT INTO `{$name}` ({$quotedCols}) VALUES ({$placeholders})";
 
 		foreach ($rows as $row) {

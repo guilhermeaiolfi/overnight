@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHookTransaction;
 use ON\RestApi\Query\Node\FilterNode;

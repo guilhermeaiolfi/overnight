@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Relation\M2MRelation;
+use LogicException;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\ConnectAction;
@@ -16,6 +16,8 @@ use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
+use ON\RestApi\Support\PrimaryKey;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 trait ManyToManyNormalize
 {
@@ -30,17 +32,17 @@ trait ManyToManyNormalize
 		$targetCollection = $this->getTargetCollection();
 		$targetName = $targetCollection->getName();
 		$throughName = $throughCollection->getName();
-		$throughPrimaryKey = $throughCollection->getPrimaryKey()->getFieldNames()[0] ?? 'id';
+		$throughPrimaryKey = PrimaryKey::of($throughCollection)->getFieldNames()[0] ?? 'id';
 		$currentRows = $context->parentOperation === 'create' ? [] : $this->currentPivotRows($context->source);
 		$currentByPivotId = [];
 		$currentByTargetId = [];
 
 		foreach ($currentRows as $row) {
-			if (!is_array($row)) {
+			if (! is_array($row)) {
 				continue;
 			}
 
-			$pivotId = $throughCollection->getPrimaryKey()->extractFromInput($row);
+			$pivotId = PrimaryKey::of($throughCollection)->extractFromInput($row);
 			$targetId = $this->extractThroughTargetIdentity($row);
 			if ($pivotId !== null) {
 				$currentByPivotId[$pivotId->toUrlId()] = $row;
@@ -50,16 +52,17 @@ trait ManyToManyNormalize
 			}
 		}
 
-		if (!is_array($input)) {
+		if (! is_array($input)) {
 			return [new ConnectAction(collection: $targetName, target: $input)];
 		}
 
 		$seenPivot = [];
 		$seenTarget = [];
 		foreach ($input as $index => $item) {
-			if (!is_array($item)) {
+			if (! is_array($item)) {
 				$actions[] = new ConnectAction(collection: $targetName, target: $item, index: $index);
 				$seenTarget[(string) $item] = true;
+
 				continue;
 			}
 
@@ -68,18 +71,21 @@ trait ManyToManyNormalize
 					$actions,
 					$this->coerceThroughItem($context, $item, $index, $throughName, $throughPrimaryKey, $currentByPivotId, $currentByTargetId, $seenPivot, $seenTarget)
 				);
+
 				continue;
 			}
 
-			$targetId = $targetCollection->getPrimaryKey()->extractFromInput($item);
+			$targetId = PrimaryKey::of($targetCollection)->extractFromInput($item);
 			if ($targetId === null) {
 				$actions[] = new CreateAction(collection: $targetName, data: $item, index: $index);
+
 				continue;
 			}
 
 			$seenTarget[$targetId->toUrlId()] = true;
 			if (isset($currentByTargetId[$targetId->toUrlId()])) {
 				$actions[] = new UpdateAction(collection: $targetName, data: $item, index: $index);
+
 				continue;
 			}
 
@@ -90,11 +96,11 @@ trait ManyToManyNormalize
 		}
 
 		foreach ($currentRows as $row) {
-			if (!is_array($row)) {
+			if (! is_array($row)) {
 				continue;
 			}
 
-			$pivotId = $throughCollection->getPrimaryKey()->extractFromInput($row);
+			$pivotId = PrimaryKey::of($throughCollection)->extractFromInput($row);
 			$targetId = $this->extractThroughTargetIdentity($row);
 			if ($pivotId !== null && isset($seenPivot[$pivotId->toUrlId()])) {
 				continue;
@@ -131,8 +137,8 @@ trait ManyToManyNormalize
 
 	protected function getManyToManyRelation(): M2MRelation
 	{
-		if (!$this->relation instanceof M2MRelation) {
-			throw new \LogicException('Expected M2M relation.');
+		if (! $this->relation instanceof M2MRelation) {
+			throw new LogicException('Expected M2M relation.');
 		}
 
 		return $this->relation;
@@ -195,7 +201,7 @@ trait ManyToManyNormalize
 
 		if ($targetId !== null && isset($currentByTargetId[$targetId->toUrlId()])) {
 			$existing = $currentByTargetId[$targetId->toUrlId()];
-			$existingPivotId = $manyToMany->through->getCollection()->getPrimaryKey()->extractFromInput($existing);
+			$existingPivotId = PrimaryKey::of($manyToMany->through->getCollection())->extractFromInput($existing);
 			if ($existingPivotId !== null) {
 				$seenPivot[$existingPivotId->toUrlId()] = true;
 				foreach ($existingPivotId->values() as $fieldName => $value) {
@@ -223,11 +229,11 @@ trait ManyToManyNormalize
 		$target = $this->getTargetCollection();
 
 		foreach (array_keys($item) as $key) {
-			if (in_array((string) $key, $manyToMany->through->throughOuterKeys(), true)) {
+			if (in_array((string) $key, $manyToMany->through->getOuterKeys(), true)) {
 				return true;
 			}
 
-			if ($through->fields->has((string) $key) && !$target->fields->has((string) $key)) {
+			if ($through->fields->has((string) $key) && ! $target->fields->has((string) $key)) {
 				return true;
 			}
 		}
@@ -238,8 +244,8 @@ trait ManyToManyNormalize
 	private function normalizeThroughPayload(MutationStateInterface $source, array $item): array
 	{
 		$manyToMany = $this->getManyToManyRelation();
-		foreach ($manyToMany->through->throughInnerKeys() as $index => $throughInnerKey) {
-			$item[$throughInnerKey] = $source->getValue($this->relation->innerKeys()[$index]);
+		foreach ($manyToMany->through->getInnerKeys() as $index => $throughInnerKey) {
+			$item[$throughInnerKey] = $source->getValue($this->relation->getInnerKeys()[$index]);
 		}
 
 		return $item;
@@ -249,8 +255,8 @@ trait ManyToManyNormalize
 	{
 		$through = $this->getManyToManyRelation()->through;
 		$fieldValueMap = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$fieldValueMap[$through->throughInnerKeys()[$index]] = $source->resolveValue($source->getValue($innerKey));
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
+			$fieldValueMap[$through->getInnerKeys()[$index]] = $source->resolveValue($source->getValue($innerKey));
 		}
 
 		return $this->fetchRowsByFields($through->getCollection(), $fieldValueMap);
@@ -260,12 +266,12 @@ trait ManyToManyNormalize
 	{
 		$manyToMany = $this->getManyToManyRelation();
 		$values = [];
-		foreach ($manyToMany->through->throughOuterKeys() as $index => $throughOuterKey) {
-			if (!array_key_exists($throughOuterKey, $row)) {
+		foreach ($manyToMany->through->getOuterKeys() as $index => $throughOuterKey) {
+			if (! array_key_exists($throughOuterKey, $row)) {
 				return null;
 			}
 
-			$values[$this->relation->outerKeys()[$index]] = $row[$throughOuterKey];
+			$values[$this->relation->getOuterKeys()[$index]] = $row[$throughOuterKey];
 		}
 
 		return new PrimaryKeyValue($this->getTargetCollection(), $values);

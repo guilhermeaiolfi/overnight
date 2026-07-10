@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\RelationSelection;
 
@@ -13,7 +13,9 @@ trait RegistrySupportTrait
 {
 	protected function getCollectionOrThrow(Registry $registry, string|CollectionInterface $collectionName): CollectionInterface
 	{
-		$collection = $registry->getCollection($collectionName);
+		$collection = $collectionName instanceof CollectionInterface
+			? $collectionName
+			: $registry->getCollection($collectionName);
 
 		if ($collection === null || $collection->isHidden()) {
 			throw RestApiError::collectionNotFound(is_string($collectionName) ? $collectionName : $collectionName->getName());
@@ -38,7 +40,7 @@ trait RegistrySupportTrait
 		$columnNames = [];
 		foreach ($fieldNames as $fieldName) {
 			$fieldName = (string) $fieldName;
-			if (!$collection->fields->has($fieldName)) {
+			if (! $collection->fields->has($fieldName)) {
 				throw RestApiError::invalidField($fieldName);
 			}
 
@@ -63,7 +65,7 @@ trait RegistrySupportTrait
 		$columnNames = [];
 		foreach ($relations as $relation) {
 			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				foreach ($collection->relations->get($relation->relationName)->innerKeys() as $fieldName) {
+				foreach ($collection->relations->get($relation->relationName)->getInnerKeys() as $fieldName) {
 					$columnNames[] = $collection->fields->get($fieldName)->getColumn();
 				}
 			}

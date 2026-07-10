@@ -7,8 +7,8 @@ namespace ON\ORM;
 use Cycle\Database\DatabaseProviderInterface;
 use Cycle\ORM\MapperInterface;
 use Cycle\ORM\ORMInterface;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\ORM\Select\LoaderInterface;
 use ON\ORM\Select\SourceInterface;
 use Spiral\Core\FactoryInterface as CoreFactory;
@@ -26,7 +26,7 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 */
 	public function loader(
 		Registry $registry,
-		Collection $collection,
+		CollectionInterface $collection,
 		string $relation,
 		array $options
 	): LoaderInterface;
@@ -36,11 +36,11 @@ interface FactoryInterface extends DatabaseProviderInterface, CoreFactory
 	 */
 	public function source(
 		Registry $registry,
-		Collection $collection
+		CollectionInterface $collection
 	): SourceInterface;
 
 	public function mapper(
 		ORMInterface $orm,
-		Collection $collection
+		CollectionInterface $collection
 	): MapperInterface;
 }

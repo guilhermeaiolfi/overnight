@@ -6,7 +6,7 @@ namespace ON\CMS\Parser\Normalizer;
 
 use ON\CMS\Parser\Node\FieldNode;
 use ON\CMS\Parser\Node\RelationNode;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 /**
  * For example in the query into the 'book' collection: { id, name, chapters: { id }}

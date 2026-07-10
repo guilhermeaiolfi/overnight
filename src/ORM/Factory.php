@@ -16,8 +16,8 @@ use Cycle\ORM\ORMInterface;
 use Cycle\ORM\SchemaInterface;
 use function is_object;
 use function is_subclass_of;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\ORM\Select\Loader\ParentLoader;
 use ON\ORM\Select\Loader\SubclassLoader;
 use ON\ORM\Select\LoaderInterface;
@@ -73,7 +73,7 @@ final class Factory implements FactoryInterface
 		return $this->factory->make($alias, $parameters);
 	}
 
-	public function mapper(ORMInterface $orm, Collection $collection): MapperInterface
+	public function mapper(ORMInterface $orm, CollectionInterface $collection): MapperInterface
 	{
 		$schema = $orm->getSchema();
 		$class = $collection->getMapper();
@@ -99,7 +99,7 @@ final class Factory implements FactoryInterface
 
 	public function loader(
 		Registry $registry,
-		Collection $collection,
+		CollectionInterface $collection,
 		string $relation,
 		array $options
 	): LoaderInterface {
@@ -116,7 +116,7 @@ final class Factory implements FactoryInterface
 
 			return new SubclassLoader($registry, $schema, $this, $parent, $role);
 		}*/
-		$relation = $collection->relations->get($relation);
+		$relation = $collection->getRelations()->get($relation);
 
 		/*[
 			'ormSchema' => $schema,
@@ -139,7 +139,7 @@ final class Factory implements FactoryInterface
 
 	public function source(
 		Registry $registry,
-		Collection $collection
+		CollectionInterface $collection
 	): SourceInterface {
 
 		/** @var class-string<SourceInterface> $source */

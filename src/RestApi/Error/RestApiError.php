@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Error;
 
-class RestApiError extends \RuntimeException
+use RuntimeException;
+use Throwable;
+
+class RestApiError extends RuntimeException
 {
 	protected array $validationErrors = [];
 	protected array $extensions = [];
@@ -14,7 +17,7 @@ class RestApiError extends \RuntimeException
 		protected string $errorCode = 'INTERNAL_ERROR',
 		protected ?string $field = null,
 		protected int $httpStatus = 500,
-		?\Throwable $previous = null,
+		?Throwable $previous = null,
 		array $extensions = [],
 	) {
 		parent::__construct($message, 0, $previous);
@@ -26,6 +29,7 @@ class RestApiError extends \RuntimeException
 		$firstMessage = '';
 		foreach ($fieldErrors as $field => $messages) {
 			$firstMessage = is_array($messages) ? $messages[0] : $messages;
+
 			break;
 		}
 
@@ -100,7 +104,7 @@ class RestApiError extends \RuntimeException
 		return new self($message, 'UNAUTHENTICATED', null, 401, null, $extensions);
 	}
 
-	public static function internal(\Throwable $previous, bool $debug = false): self
+	public static function internal(Throwable $previous, bool $debug = false): self
 	{
 		$message = trim($previous->getMessage());
 		if ($message === '') {
@@ -151,7 +155,7 @@ class RestApiError extends \RuntimeException
 			$error['extensions'] = array_merge($error['extensions'], $this->extensions);
 		}
 
-		if (!empty($this->validationErrors)) {
+		if (! empty($this->validationErrors)) {
 			$error['extensions']['validationErrors'] = $this->validationErrors;
 		}
 

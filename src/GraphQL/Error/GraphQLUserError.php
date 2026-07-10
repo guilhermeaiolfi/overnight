@@ -7,6 +7,7 @@ namespace ON\GraphQL\Error;
 use GraphQL\Error\ClientAware;
 use GraphQL\Error\ProvidesExtensions;
 use RuntimeException;
+use Throwable;
 
 class GraphQLUserError extends RuntimeException implements ClientAware, ProvidesExtensions
 {
@@ -16,7 +17,7 @@ class GraphQLUserError extends RuntimeException implements ClientAware, Provides
 		string $message,
 		protected string $errorCode = 'INTERNAL_ERROR',
 		protected ?string $field = null,
-		?\Throwable $previous = null
+		?Throwable $previous = null
 	) {
 		parent::__construct($message, 0, $previous);
 	}
@@ -50,7 +51,7 @@ class GraphQLUserError extends RuntimeException implements ClientAware, Provides
 			$extensions['field'] = $this->field;
 		}
 
-		if (!empty($this->validationErrors)) {
+		if (! empty($this->validationErrors)) {
 			$extensions['validationErrors'] = $this->validationErrors;
 		}
 

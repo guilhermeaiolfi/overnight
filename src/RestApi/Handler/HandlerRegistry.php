@@ -4,13 +4,15 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\BelongsToRelation;
-use ON\ORM\Definition\Relation\FirstOfManyRelation;
-use ON\ORM\Definition\Relation\HasManyRelation;
-use ON\ORM\Definition\Relation\HasOneRelation;
-use ON\ORM\Definition\Relation\M2MRelation;
-use ON\ORM\Definition\Relation\RelationInterface;
+use LogicException;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\BelongsToRelation;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
+use ON\Data\Definition\Relation\HasManyRelation;
+use ON\Data\Definition\Relation\HasOneRelation;
+use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Definition\Relation\RelationInterface;
+use RuntimeException;
 
 class HandlerRegistry
 {
@@ -37,7 +39,7 @@ class HandlerRegistry
 	{
 		$key = $this->relationKey($collectionName, $relationName);
 		if (isset($this->relations[$key])) {
-			throw new \LogicException("Handler already registered for relation {$key}.");
+			throw new LogicException("Handler already registered for relation {$key}.");
 		}
 
 		$this->relations[$key] = $handlerClass;
@@ -61,7 +63,7 @@ class HandlerRegistry
 	public function default(string $kind, string $handlerClass): self
 	{
 		if (isset($this->defaults[$kind])) {
-			throw new \LogicException("Default handler already registered for {$kind}.");
+			throw new LogicException("Default handler already registered for {$kind}.");
 		}
 
 		$this->defaults[$kind] = $handlerClass;
@@ -84,7 +86,7 @@ class HandlerRegistry
 			return $this->defaults[$kind];
 		}
 
-		throw new \RuntimeException("No REST SQL handler configured for {$key} ({$kind}).");
+		throw new RuntimeException("No REST SQL handler configured for {$key} ({$kind}).");
 	}
 
 	private function relationKey(string $collectionName, string $relationName): string

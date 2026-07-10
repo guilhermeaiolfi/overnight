@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
+use GraphQL\Error\DebugFlag;
 use GraphQL\GraphQL;
+use ON\Data\Definition\Registry;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\SqlResolver;
-use ON\ORM\Definition\Registry;
+use ON\Validation\CollectionValidator;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\GraphQL\Support\GraphQLTestFixtures;
+use Tests\ON\GraphQL\Support\SqliteTestDatabase;
 
 #[RequiresPhpExtension('pdo_sqlite')]
 final class GraphQLSQLResolverTest extends TestCase
@@ -277,11 +280,12 @@ final class GraphQLSQLResolverTest extends TestCase
 	{
 		// Create a collection with a unique constraint
 		$this->registry->collection('category')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(false)->end()
 			->end();
 
-		$database = new \Tests\ON\GraphQL\Support\SqliteTestDatabase([
+		$database = new SqliteTestDatabase([
 			'category' => [
 				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'name' => 'TEXT NOT NULL UNIQUE'],
 				'rows' => [
@@ -303,7 +307,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		}';
 
 		$result = GraphQL::executeQuery($schema, $query);
-		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+		$data = $result->toArray(DebugFlag::INCLUDE_DEBUG_MESSAGE);
 
 		$this->assertArrayHasKey('errors', $data);
 		$this->assertNotEmpty($data['errors']);
@@ -316,7 +320,8 @@ final class GraphQLSQLResolverTest extends TestCase
 	public function testValidationRejectsInvalidInput(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3')
 				->end()
@@ -340,7 +345,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		}';
 
 		$result = GraphQL::executeQuery($schema, $query);
-		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+		$data = $result->toArray(DebugFlag::INCLUDE_DEBUG_MESSAGE);
 
 		$this->assertArrayHasKey('errors', $data);
 		$this->assertNotEmpty($data['errors']);
@@ -360,7 +365,8 @@ final class GraphQLSQLResolverTest extends TestCase
 	public function testValidationUsesFieldMessages(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3', [
 					'min' => 'Name must be at least :min characters.',
@@ -374,7 +380,7 @@ final class GraphQLSQLResolverTest extends TestCase
 			$this->registry,
 			$resolver,
 			null,
-			new \ON\Validation\CollectionValidator([
+			new CollectionValidator([
 				'rule.required' => 'The :attribute field is required.',
 			]),
 		);
@@ -389,7 +395,7 @@ final class GraphQLSQLResolverTest extends TestCase
 		}';
 
 		$result = GraphQL::executeQuery($schema, $query);
-		$data = $result->toArray(\GraphQL\Error\DebugFlag::INCLUDE_DEBUG_MESSAGE);
+		$data = $result->toArray(DebugFlag::INCLUDE_DEBUG_MESSAGE);
 
 		$this->assertArrayHasKey('errors', $data);
 		$this->assertSame(
@@ -401,7 +407,8 @@ final class GraphQLSQLResolverTest extends TestCase
 	public function testValidationPassesWithValidInput(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3')
 				->end()

@@ -16,6 +16,7 @@ use ON\View\ViewInterface;
 use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use stdClass;
 
 final class ViewTest extends TestCase
 {
@@ -40,7 +41,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class implements RendererInterface {
+		$mockRenderer = new class () implements RendererInterface {
 			public ?array $lastLayoutConfig = null;
 			public ?string $lastTemplateName = null;
 			public ?array $lastData = null;
@@ -50,6 +51,7 @@ final class ViewTest extends TestCase
 				$this->lastLayoutConfig = $layoutConfig;
 				$this->lastTemplateName = $templateName;
 				$this->lastData = $data;
+
 				return '<html>rendered</html>';
 			}
 		};
@@ -60,6 +62,7 @@ final class ViewTest extends TestCase
 				if ($class === 'TestRenderer') {
 					return $mockRenderer;
 				}
+
 				return null;
 			});
 
@@ -77,11 +80,13 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class implements RendererInterface {
+		$mockRenderer = new class () implements RendererInterface {
 			public ?string $lastTemplateName = null;
+
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				$this->lastTemplateName = $templateName;
+
 				return 'ok';
 			}
 		};
@@ -111,7 +116,7 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig();
 
-		$mockRenderer = new class implements RendererInterface {
+		$mockRenderer = new class () implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				return 'ok';
@@ -143,22 +148,29 @@ final class ViewTest extends TestCase
 	{
 		$config = $this->createViewConfig(inject: ['imageManager' => 'ImageManagerClass']);
 
-		$mockRenderer = new class implements RendererInterface {
+		$mockRenderer = new class () implements RendererInterface {
 			public ?array $lastData = null;
+
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				$this->lastData = $data;
+
 				return 'ok';
 			}
 		};
 
-		$fakeImageManager = new \stdClass();
+		$fakeImageManager = new stdClass();
 
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
 			->willReturnCallback(function ($class) use ($mockRenderer, $fakeImageManager) {
-				if ($class === 'TestRenderer') return $mockRenderer;
-				if ($class === 'ImageManagerClass') return $fakeImageManager;
+				if ($class === 'TestRenderer') {
+					return $mockRenderer;
+				}
+				if ($class === 'ImageManagerClass') {
+					return $fakeImageManager;
+				}
+
 				return null;
 			});
 
@@ -183,7 +195,7 @@ final class ViewTest extends TestCase
 
 	public function testRenderInfersRendererFromTemplateExtension(): void
 	{
-		$contentRenderer = new class implements RendererInterface {
+		$contentRenderer = new class () implements RendererInterface {
 			public array $calls = [];
 
 			public function render($layoutConfig, $templateName, $data, $params = [])
@@ -194,7 +206,7 @@ final class ViewTest extends TestCase
 			}
 		};
 
-		$outerRenderer = new class implements RendererInterface {
+		$outerRenderer = new class () implements RendererInterface {
 			public ?array $lastParams = null;
 
 			public function render($layoutConfig, $templateName, $data, $params = [])
@@ -253,14 +265,14 @@ final class ViewTest extends TestCase
 
 	public function testExplicitSectionRendererOverrideBeatsTemplateExtension(): void
 	{
-		$overrideRenderer = new class implements RendererInterface {
+		$overrideRenderer = new class () implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				return 'OVERRIDE:' . $templateName;
 			}
 		};
 
-		$outerRenderer = new class implements RendererInterface {
+		$outerRenderer = new class () implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				if (($params['mode'] ?? 'layout') === 'fragment') {
@@ -318,14 +330,14 @@ final class ViewTest extends TestCase
 
 	public function testRouteSectionsStillRenderThroughApplication(): void
 	{
-		$app = new class {
+		$app = new class () {
 			public function processForward(): HtmlResponse
 			{
 				return new HtmlResponse('ROUTE');
 			}
 		};
 
-		$outerRenderer = new class implements RendererInterface {
+		$outerRenderer = new class () implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
 			{
 				if (($params['mode'] ?? 'layout') === 'fragment') {
@@ -374,7 +386,6 @@ final class ViewTest extends TestCase
 		$this->assertSame('PLATES:pages::show|ROUTE', $result);
 	}
 
-
 	protected function createViewConfig(array $inject = []): ViewConfig
 	{
 		$config = new ViewConfig();
@@ -395,6 +406,7 @@ final class ViewTest extends TestCase
 				],
 			],
 		]);
+
 		return $config;
 	}
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query\Parser;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\QuerySpec;
 
 interface QueryParserInterface

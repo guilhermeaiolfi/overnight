@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Conversion;
 
+use InvalidArgumentException;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Structural\MappingContext;
@@ -35,7 +36,7 @@ final class FieldConversionCoordinator
 		foreach ($mapping->resolverDefinitions as $definition) {
 			$class = $definition->class;
 			if (! is_subclass_of($class, FieldResolverInterface::class)) {
-				throw new \InvalidArgumentException(sprintf(
+				throw new InvalidArgumentException(sprintf(
 					'Resolver %s must implement %s.',
 					$class,
 					FieldResolverInterface::class,
@@ -74,5 +75,4 @@ final class FieldConversionCoordinator
 	): mixed {
 		return $this->gateway->convertScalar($value, $field, $mapping, $direction);
 	}
-
 }

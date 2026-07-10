@@ -10,6 +10,7 @@ use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\OutputTypeMiddleware;
 use ON\View\Plates\PlatesEngineFactory;
@@ -48,7 +49,7 @@ class ViewExtension extends AbstractExtension
 		});
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 	}
 

@@ -41,7 +41,7 @@ class GraphQLMiddleware implements MiddlewareInterface
 			|| ($method === 'POST' && str_contains($contentType, 'application/json'))
 			|| ($method === 'POST' && str_contains($contentType, 'multipart/form-data'));
 
-		if (!$isGraphQL) {
+		if (! $isGraphQL) {
 			return $handler->handle($request);
 		}
 
@@ -124,7 +124,7 @@ class GraphQLMiddleware implements MiddlewareInterface
 		mixed $variables,
 		?string $operationName
 	): array {
-		if (!$query) {
+		if (! $query) {
 			return ['errors' => [['message' => 'No query provided']]];
 		}
 
@@ -133,7 +133,7 @@ class GraphQLMiddleware implements MiddlewareInterface
 		// Always build custom validation rules for security
 		$validationRules = DocumentValidator::defaultRules();
 
-		if (!$this->allowIntrospection) {
+		if (! $this->allowIntrospection) {
 			$validationRules[] = new DisableIntrospection(DisableIntrospection::ENABLED);
 		}
 
@@ -185,7 +185,7 @@ class GraphQLMiddleware implements MiddlewareInterface
 			if ($i === count($keys) - 1) {
 				$current[$key] = $file;
 			} else {
-				if (!isset($current[$key]) || !is_array($current[$key])) {
+				if (! isset($current[$key]) || ! is_array($current[$key])) {
 					$current[$key] = [];
 				}
 				$current = &$current[$key];

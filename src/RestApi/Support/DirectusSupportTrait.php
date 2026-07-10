@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace ON\RestApi\Support;
 
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Query\Node\AggregateSpec;
 use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\GroupBySpec;
 use ON\RestApi\Query\Node\RelationAggregateSelection;
 use ON\RestApi\Query\Node\RelationSelection;
 use ON\RestApi\Query\Node\SelectionSet;
@@ -26,14 +28,16 @@ trait DirectusSupportTrait
 
 			if ($node instanceof FieldSelection) {
 				$fields[] = $node->field->field;
-				if (!$node->internal) {
+				if (! $node->internal) {
 					$requestedFields[] = $node->field->field;
 				}
+
 				continue;
 			}
 
 			if ($node instanceof RelationSelection) {
 				$relations[] = $node;
+
 				continue;
 			}
 
@@ -65,7 +69,7 @@ trait DirectusSupportTrait
 		foreach ($rows as $row) {
 			$entry = [];
 			foreach ($groupBy as $group) {
-				if (!$group instanceof \ON\RestApi\Query\Node\GroupBySpec) {
+				if (! $group instanceof GroupBySpec) {
 					continue;
 				}
 
@@ -77,7 +81,7 @@ trait DirectusSupportTrait
 			}
 
 			foreach ($aggregates as $aggregate) {
-				if (!$aggregate instanceof \ON\RestApi\Query\Node\AggregateSpec) {
+				if (! $aggregate instanceof AggregateSpec) {
 					continue;
 				}
 

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;

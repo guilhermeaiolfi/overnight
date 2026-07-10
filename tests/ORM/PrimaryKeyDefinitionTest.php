@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Tests\ON\ORM;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
+use ON\RestApi\Support\PrimaryKey;
 use PHPUnit\Framework\TestCase;
 
 final class PrimaryKeyDefinitionTest extends TestCase
@@ -13,12 +14,13 @@ final class PrimaryKeyDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$collection = $registry->collection('article')
-			->field('id', 'int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->end()
 			->field('title', 'string')->end()
 			->end()
 			->getCollection('article');
 
-		$identity = $collection->getPrimaryKey()->extractFromInput(['id' => 123]);
+		$identity = PrimaryKey::of($collection)->extractFromInput(['id' => 123]);
 
 		$this->assertNotNull($identity);
 		$this->assertSame(['id' => 123], $identity->values());
@@ -29,13 +31,14 @@ final class PrimaryKeyDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$collection = $registry->collection('page')
-			->field('tenant_id', 'int')->column('tenant_id')->primaryKey(true)->end()
-			->field('slug', 'string')->column('slug')->primaryKey(true)->end()
+			->primaryKey('tenant_id', 'slug')
+			->field('tenant_id', 'int')->column('tenant_id')->end()
+			->field('slug', 'string')->column('slug')->end()
 			->field('title', 'string')->end()
 			->end()
 			->getCollection('page');
 
-		$primaryKey = $collection->getPrimaryKey();
+		$primaryKey = PrimaryKey::of($collection);
 		$identity = $primaryKey->extractFromInput(['tenant_id' => 10, 'slug' => 'home']);
 
 		$this->assertNotNull($identity);
@@ -51,20 +54,21 @@ final class PrimaryKeyDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$collection = $registry->collection('page')
-			->field('tenantId', 'int')->column('tenant_id')->primaryKey(true)->end()
-			->field('slug', 'string')->column('page_slug')->primaryKey(true)->end()
+			->primaryKey('tenantId', 'slug')
+			->field('tenantId', 'int')->column('tenant_id')->end()
+			->field('slug', 'string')->column('page_slug')->end()
 			->field('title', 'string')->end()
 			->end()
 			->getCollection('page');
 
-		$identity = $collection->getPrimaryKey()->extractFromRow([
+		$identity = PrimaryKey::of($collection)->extractFromRow([
 			'tenant_id' => 7,
 			'page_slug' => 'about',
 		]);
 
 		$this->assertNotNull($identity);
 		$this->assertSame(['tenantId' => 7, 'slug' => 'about'], $identity->values());
-		$this->assertSame([], $collection->getPrimaryKey()->getMissingFieldNames([
+		$this->assertSame([], PrimaryKey::of($collection)->getMissingFieldNames([
 			'tenant_id' => 7,
 			'page_slug' => 'about',
 		]));

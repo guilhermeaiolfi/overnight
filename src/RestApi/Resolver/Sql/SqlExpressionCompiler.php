@@ -9,7 +9,7 @@ use Cycle\Database\Injection\Expression;
 use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Injection\FragmentInterface;
 use Cycle\Database\Query\QueryParameters;
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\AggregateExpression;
 use ON\RestApi\Query\Node\AggregateFunction;
 use ON\RestApi\Query\Node\ExpressionNode;
@@ -59,7 +59,7 @@ class SqlExpressionCompiler
 	): ?FragmentInterface {
 		$function = $aggregate->function->value;
 
-		if ($aggregate->argument instanceof WildcardExpression && $aggregate->function === AggregateFunction::Count && !$aggregate->distinct) {
+		if ($aggregate->argument instanceof WildcardExpression && $aggregate->function === AggregateFunction::Count && ! $aggregate->distinct) {
 			return new Expression('COUNT(*) AS ' . $alias);
 		}
 
@@ -92,7 +92,7 @@ class SqlExpressionCompiler
 
 		if ($expression instanceof FunctionExpression) {
 			return $this->safeAlias($expression->name . '_' . implode('_', array_map(
-				fn(ExpressionNode|ValueNode $argument) => $argument instanceof ExpressionNode
+				fn (ExpressionNode|ValueNode $argument) => $argument instanceof ExpressionNode
 					? $this->alias($argument)
 					: (string) $argument->value(),
 				$expression->arguments
@@ -122,7 +122,7 @@ class SqlExpressionCompiler
 
 	protected function fieldExpression(CollectionInterface $collection, string $field, string $tableAlias): ?Expression
 	{
-		if (!$collection->fields->has($field)) {
+		if (! $collection->fields->has($field)) {
 			return null;
 		}
 
@@ -132,12 +132,12 @@ class SqlExpressionCompiler
 	protected function functionExpression(CollectionInterface $collection, FunctionExpression $expression, string $tableAlias): ?FragmentInterface
 	{
 		$function = strtolower($expression->name);
-		if (!in_array($function, self::FUNCTIONS, true)) {
+		if (! in_array($function, self::FUNCTIONS, true)) {
 			return null;
 		}
 
 		$argument = $expression->arguments[0] ?? null;
-		if (!$argument instanceof FieldExpression) {
+		if (! $argument instanceof FieldExpression) {
 			return null;
 		}
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\Auth;
 
+use Exception;
 use ON\Auth\AuthenticationService;
 use ON\Auth\AuthenticatorInterface;
 use ON\Auth\Event\AuthenticationFailedEvent;
@@ -20,7 +21,7 @@ class AuthenticationServiceTest extends TestCase
 {
 	private function createLifecycleAwareStorageFake(): object
 	{
-		return new class implements StorageInterface, AuthLifecycleStorageInterface {
+		return new class () implements StorageInterface, AuthLifecycleStorageInterface {
 			public bool $empty = true;
 			public array $writes = [];
 			public int $clearCalls = 0;
@@ -63,7 +64,7 @@ class AuthenticationServiceTest extends TestCase
 
 	private function createCollectingDispatcher(array &$events): EventDispatcherInterface
 	{
-		return new class($events) implements EventDispatcherInterface {
+		return new class ($events) implements EventDispatcherInterface {
 			public function __construct(private array &$events)
 			{
 			}
@@ -81,7 +82,7 @@ class AuthenticationServiceTest extends TestCase
 	{
 		$service = new AuthenticationService($this->createMock(StorageInterface::class));
 
-		$this->expectException(\Exception::class);
+		$this->expectException(Exception::class);
 		$this->expectExceptionMessage('An authenticator must be set or passed prior to calling authenticate()');
 
 		$service->authenticate();
@@ -150,7 +151,7 @@ class AuthenticationServiceTest extends TestCase
 		$storage->empty = false;
 		$events = [];
 
-		$storageWithIdentity = new class($storage) implements StorageInterface, AuthLifecycleStorageInterface {
+		$storageWithIdentity = new class ($storage) implements StorageInterface, AuthLifecycleStorageInterface {
 			public function __construct(private object $inner)
 			{
 			}

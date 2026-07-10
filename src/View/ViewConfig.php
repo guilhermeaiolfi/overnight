@@ -35,7 +35,7 @@ class ViewConfig extends Config
 	{
 		$layoutConfig = $this->get("formats.html.layouts.{$layoutName}");
 		if (! is_array($layoutConfig)) {
-			return NULL;
+			return null;
 		}
 
 		$layoutConfig['name'] = $layoutName;

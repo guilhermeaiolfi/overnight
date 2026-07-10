@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Conversion\Resolver;
 
+use DateTimeInterface;
 use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldResolverInterface;
@@ -37,7 +38,7 @@ final class BlueprintFieldResolver implements FieldResolverInterface
 
 		if (class_exists($entry->type)
 			&& ! enum_exists($entry->type)
-			&& ! is_subclass_of($entry->type, \DateTimeInterface::class)
+			&& ! is_subclass_of($entry->type, DateTimeInterface::class)
 		) {
 			return null;
 		}
@@ -60,6 +61,7 @@ final class BlueprintFieldResolver implements FieldResolverInterface
 			foreach ($mapping->args as $index => $arg) {
 				if ($arg instanceof MappingBlueprint) {
 					$this->blueprintArgIndex = $index;
+
 					break;
 				}
 			}

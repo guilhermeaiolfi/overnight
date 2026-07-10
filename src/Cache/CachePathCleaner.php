@@ -18,6 +18,7 @@ final class CachePathCleaner
 
 		if ($fast) {
 			self::clearDirectoryContentsFast($directory);
+
 			return;
 		}
 
@@ -40,6 +41,7 @@ final class CachePathCleaner
 
 		if (! @rename($realDirectory, $tombstone)) {
 			self::removeDirectoryContents($realDirectory);
+
 			return;
 		}
 
@@ -69,6 +71,7 @@ final class CachePathCleaner
 		foreach ($items as $item) {
 			if ($item->isDir()) {
 				rmdir($item->getPathname());
+
 				continue;
 			}
 

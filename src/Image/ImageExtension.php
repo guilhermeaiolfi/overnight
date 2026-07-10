@@ -12,15 +12,17 @@ use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
 use ON\FS\Path;
 use ON\Image\Container\ImageManagerFactory;
 use ON\Image\Container\InterventionImageManagerFactory;
+use ON\Init\Init;
+use ON\Init\InitContext;
 use ON\Router\RouterConfig;
 
 class ImageExtension extends AbstractExtension
 {
 	public const ID = 'image';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -36,7 +38,7 @@ class ImageExtension extends AbstractExtension
 		}
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 	}
 

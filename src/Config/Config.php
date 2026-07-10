@@ -9,6 +9,8 @@ declare(strict_types=1);
 
 namespace ON\Config;
 
+use ArrayAccess;
+use IteratorAggregate;
 use Laminas\Stdlib\ArrayUtils;
 
 /**
@@ -19,8 +21,8 @@ use Laminas\Stdlib\ArrayUtils;
  * @template TKey of array-key
  * @template TValue mixed
  *
- * @implements \ArrayAccess<TKey, TValue>
- * @implements \IteratorAggregate<TKey, TValue>
+ * @implements ArrayAccess<TKey, TValue>
+ * @implements IteratorAggregate<TKey, TValue>
  */
 class Config extends Dot
 {
@@ -28,7 +30,7 @@ class Config extends Dot
 	{
 		// 1. Get defaults from public properties of the child class
 		$defaults = get_class_vars(static::class);
-		
+
 		// 2. Clean up properties that are internal to Dot or Config
 		unset($defaults['items'], $defaults['delimiter'], $defaults['instances']);
 
@@ -55,7 +57,7 @@ class Config extends Dot
 		$this->items = ArrayUtils::merge($this->items, $values);
 	}
 
-	public function & __get(string $name): mixed
+	public function &__get(string $name): mixed
 	{
 		if (! isset($this->items[$name])) {
 			$this->items[$name] = null;

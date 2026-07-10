@@ -16,6 +16,6 @@ final class ListValue implements ValueNode
 
 	public function value(): array
 	{
-		return array_map(fn(ValueNode $value) => $value->value(), $this->values);
+		return array_map(fn (ValueNode $value) => $value->value(), $this->values);
 	}
 }

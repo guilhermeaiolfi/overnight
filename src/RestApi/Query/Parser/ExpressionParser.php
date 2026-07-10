@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query\Parser;
 
+use InvalidArgumentException;
 use ON\RestApi\Query\Node\AggregateExpression;
 use ON\RestApi\Query\Node\AggregateFunction;
 use ON\RestApi\Query\Node\DynamicVariableValue;
@@ -47,7 +48,7 @@ final class ExpressionParser
 
 		$aggregateFunction = AggregateFunction::tryFrom(strtolower($normalized));
 		if ($aggregateFunction === null) {
-			throw new \InvalidArgumentException("Unsupported aggregate function '{$function}'.");
+			throw new InvalidArgumentException("Unsupported aggregate function '{$function}'.");
 		}
 
 		return new AggregateExpression(

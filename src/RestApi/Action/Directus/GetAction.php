@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\RepresentationInterface;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\RestApi\Support\RegistrySupportTrait;
-use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Action\RestActionInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemGet;
 use ON\RestApi\Handler\AliasRegistry;
@@ -22,9 +21,11 @@ use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
+use ON\RestApi\Support\DirectusSupportTrait;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
-
-use function ON\Mapper\map;
+use ON\RestApi\Support\PrimaryKeyValue;
+use ON\RestApi\Support\RegistrySupportTrait;
 
 final class GetAction implements RestActionInterface
 {
@@ -39,7 +40,8 @@ final class GetAction implements RestActionInterface
 		private HandlerFactory $relationHandlers,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hooks,
-	) {}
+	) {
+	}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
@@ -49,12 +51,12 @@ final class GetAction implements RestActionInterface
 			'output' => PhpRepresentation::class,
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$identity = $collection->getPrimaryKey()->getValue((string) ($params['id'] ?? ''));
+		$identity = PrimaryKey::of($collection)->getValue((string) ($params['id'] ?? ''));
 		$querySpec = map($payload['query'] ?? [])
 			->using(DirectusQueryBuilder::class, $collection)
 			->to(QuerySpec::class);
 
-		if (!$options['dispatchEvents']) {
+		if (! $options['dispatchEvents']) {
 			$item = $this->mapRowOutput(
 				$collection,
 				$this->get($collection, $identity, $querySpec),
@@ -120,7 +122,7 @@ final class GetAction implements RestActionInterface
 		$items = $this->fetchData(
 			$collection,
 			[$row],
-			$requestedColumnNames === [] && !$querySpec->selection->explicit
+			$requestedColumnNames === [] && ! $querySpec->selection->explicit
 				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
 				: $requestedColumnNames,
 			$internalRelationKeyColumnNames,
@@ -139,8 +141,8 @@ final class GetAction implements RestActionInterface
 	}
 
 	/**
-	 * @param class-string<\ON\Mapper\Representation\RepresentationInterface> $from
-	 * @param class-string<\ON\Mapper\Representation\RepresentationInterface> $to
+	 * @param class-string<RepresentationInterface> $from
+	 * @param class-string<RepresentationInterface> $to
 	 */
 	private function mapRowOutput(
 		CollectionInterface $collection,
@@ -183,5 +185,4 @@ final class GetAction implements RestActionInterface
 
 		return $root->fetchData();
 	}
-
 }

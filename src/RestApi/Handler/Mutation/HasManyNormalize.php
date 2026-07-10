@@ -14,6 +14,7 @@ use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Support\MutationInput;
+use ON\RestApi\Support\PrimaryKey;
 
 trait HasManyNormalize
 {
@@ -26,18 +27,18 @@ trait HasManyNormalize
 		$targetCollection = $this->getTargetCollection();
 		$targetName = $targetCollection->getName();
 
-		if (!is_array($input)) {
+		if (! is_array($input)) {
 			return [new ConnectAction(collection: $targetName, target: $input)];
 		}
 
 		$currentRows = $context->parentOperation === 'create' ? [] : $this->getCurrentRelationRows($context->source);
 		$currentById = [];
 		foreach ($currentRows as $row) {
-			if (!is_array($row)) {
+			if (! is_array($row)) {
 				continue;
 			}
 
-			$id = $targetCollection->getPrimaryKey()->extractFromInput($row);
+			$id = PrimaryKey::of($targetCollection)->extractFromInput($row);
 			if ($id !== null) {
 				$currentById[$id->toUrlId()] = $row;
 			}
@@ -45,17 +46,19 @@ trait HasManyNormalize
 
 		$seen = [];
 		foreach (MutationInput::normalizeRelationItems($input) as $index => $item) {
-			if (!is_array($item)) {
+			if (! is_array($item)) {
 				$actions[] = new ConnectAction(collection: $targetName, target: $item, index: $index);
 				$seen[(string) $item] = true;
+
 				continue;
 			}
 
-			$id = $targetCollection->getPrimaryKey()->extractFromInput($item);
+			$id = PrimaryKey::of($targetCollection)->extractFromInput($item);
 			if ($id === null) {
 				$itemCopy = $item;
 				$this->applySourceValuesToTargetInput($itemCopy, $context->source);
 				$actions[] = new CreateAction(collection: $targetName, data: $itemCopy, index: $index);
+
 				continue;
 			}
 
@@ -66,12 +69,14 @@ trait HasManyNormalize
 
 			if (isset($currentById[$key])) {
 				$actions[] = new UpdateAction(collection: $targetName, data: $itemCopy, index: $index);
+
 				continue;
 			}
 
 			if (count($itemCopy) > 1) {
 				$actions[] = new ConnectAction(collection: $targetName, target: $id, index: $index);
 				$actions[] = new UpdateAction(collection: $targetName, data: $itemCopy, index: $index);
+
 				continue;
 			}
 

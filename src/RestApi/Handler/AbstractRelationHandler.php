@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
-use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\PaginationSpec;
@@ -119,9 +118,9 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		$orders = [];
 		foreach ($this->selection->query->sort as $sort) {
 			if (
-				!$sort instanceof SortSpec
-				|| !$sort->expression instanceof FieldExpression
-				|| !$this->targetCollection->fields->has($sort->expression->field)
+				! $sort instanceof SortSpec
+				|| ! $sort->expression instanceof FieldExpression
+				|| ! $this->targetCollection->fields->has($sort->expression->field)
 			) {
 				continue;
 			}
@@ -149,7 +148,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 	{
 		$fieldNames = $this->selectedFieldNames();
 		$requestedFieldNames = $this->requestedFieldNames();
-		$requiredKeys = $this->fieldNamesToColumnNames($this->targetCollection, $this->relation->outerKeys());
+		$requiredKeys = $this->fieldNamesToColumnNames($this->targetCollection, $this->relation->getOuterKeys());
 
 		if ($fieldNames !== []) {
 			$selected = [];
@@ -168,12 +167,12 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 			$internal = $requiredKeys;
 			foreach ($this->getRelationKeyColumnNames($this->targetCollection, $this->getNestedRelations()) as $nestedKey) {
-				if (!in_array($nestedKey, $internal, true)) {
+				if (! in_array($nestedKey, $internal, true)) {
 					$internal[] = $nestedKey;
 				}
 			}
 			foreach ($internal as $column) {
-				if (!in_array($column, $selected, true)) {
+				if (! in_array($column, $selected, true)) {
 					$selected[] = $column;
 				}
 			}
@@ -188,7 +187,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 		$visible = $this->targetCollection->getVisibleColumns();
 		$selected = $visible;
 		foreach ($requiredKeys as $requiredKey) {
-			if (!in_array($requiredKey, $selected, true)) {
+			if (! in_array($requiredKey, $selected, true)) {
 				$selected[] = $requiredKey;
 			}
 		}
@@ -204,7 +203,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 	{
 		if (
 			$this->selection === null
-			|| !$this->selection->query->selection->explicit
+			|| ! $this->selection->query->selection->explicit
 			|| $this->hasWildcardSelection()
 		) {
 			return [];
@@ -224,7 +223,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 	{
 		if (
 			$this->selection === null
-			|| !$this->selection->query->selection->explicit
+			|| ! $this->selection->query->selection->explicit
 			|| $this->hasWildcardSelection()
 		) {
 			return [];
@@ -232,7 +231,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 		$fields = [];
 		foreach ($this->selection->query->selection->nodes as $node) {
-			if ($node instanceof FieldSelection && !$node->internal) {
+			if ($node instanceof FieldSelection && ! $node->internal) {
 				$fields[] = $node->field->field;
 			}
 		}

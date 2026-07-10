@@ -64,6 +64,7 @@ class CompressionMiddleware implements MiddlewareInterface
 			$compressed = gzencode($body, $this->level);
 			if ($compressed !== false && strlen($compressed) < strlen($body)) {
 				$factory = new StreamFactory();
+
 				return $response
 					->withBody($factory->createStream($compressed))
 					->withHeader('Content-Encoding', 'gzip')
@@ -74,6 +75,7 @@ class CompressionMiddleware implements MiddlewareInterface
 			$compressed = gzdeflate($body, $this->level);
 			if ($compressed !== false && strlen($compressed) < strlen($body)) {
 				$factory = new StreamFactory();
+
 				return $response
 					->withBody($factory->createStream($compressed))
 					->withHeader('Content-Encoding', 'deflate')

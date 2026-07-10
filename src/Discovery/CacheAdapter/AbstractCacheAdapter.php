@@ -10,18 +10,18 @@ use ON\Discovery\DiscoverInterface;
 use ON\Discovery\DiscoveryLocation;
 use ON\FS\Path;
 
-abstract class AbstractCacheAdapter implements CacheAdapterInterface {
-
-    public function __construct (
+abstract class AbstractCacheAdapter implements CacheAdapterInterface
+{
+	public function __construct(
 		protected AppConfig $appCfg,
 		protected Application $app
-    ) {
+	) {
 
-    }
-    abstract public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface;
+	}
 
+	abstract public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface;
 
-    public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
+	public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
 	{
 		if ($discover === null || $location === null) {
 			// Cannot determine cache file without both discover and location
@@ -56,5 +56,4 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface {
 
 		return $filename;
 	}
-    
 }

@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Event\AuthState;
-use ON\RestApi\Event\AuthorizationAwareEventInterface;
-use ON\RestApi\Error\RestApiError;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 final class MutationInput
 {
@@ -22,6 +19,7 @@ final class MutationInput
 		foreach ($input as $key => $value) {
 			if ($collection->relations->has((string) $key)) {
 				$relations[(string) $key] = $value;
+
 				continue;
 			}
 
@@ -42,7 +40,7 @@ final class MutationInput
 
 	public static function normalizeRelationItems(mixed $value): array
 	{
-		if (!is_array($value)) {
+		if (! is_array($value)) {
 			return [];
 		}
 

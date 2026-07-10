@@ -7,7 +7,6 @@ namespace ON\ORM\Select\Loader;
 use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
-use Cycle\ORM\Relation;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\Traits\JoinOneTableTrait;
 use ON\ORM\Select\Traits\WhereTrait;
@@ -53,7 +52,7 @@ class HasOneLoader extends JoinableLoader
 		$this->setWhere(
 			$query,
 			$this->isJoined() ? 'onWhere' : 'where',
-			$this->options['where'] ?? $this->schema[Relation::WHERE] ?? []
+			$this->options['where'] ?? $this->relation->getWhere()
 		);
 
 		return parent::configureQuery($query);
@@ -63,9 +62,9 @@ class HasOneLoader extends JoinableLoader
 	{
 		return new SingularNode(
 			$this->columnNames(),
-			$this->target->getPrimaryKey()->getFieldNames(),
-			$this->relation->outerKeys(),
-			$this->relation->innerKeys()
+			$this->target->getPrimaryKey(),
+			$this->relation->getOuterKeys(),
+			$this->relation->getInnerKeys()
 		);
 	}
 }

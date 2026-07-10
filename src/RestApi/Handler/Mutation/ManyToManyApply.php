@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Relation\M2MRelation;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
@@ -20,6 +19,7 @@ use ON\RestApi\Query\Node\LiteralValue;
 use ON\RestApi\Query\Node\LogicalFilter;
 use ON\RestApi\Query\Node\LogicalOperator;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 /**
  * @property M2MRelation $manyToMany
@@ -48,7 +48,7 @@ trait ManyToManyApply
 
 		$targetCollection = $this->relation->getCollection();
 		foreach ($children['create'] ?? [] as $child) {
-			if (!$child instanceof MutationNode || $child->state->getCollection() !== $targetCollection) {
+			if (! $child instanceof MutationNode || $child->state->getCollection() !== $targetCollection) {
 				continue;
 			}
 
@@ -72,11 +72,11 @@ trait ManyToManyApply
 			? $targetId
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
 		$payload = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$payload[$through->throughInnerKeys()[$index]] = $parentId->value($innerKey);
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
+			$payload[$through->getInnerKeys()[$index]] = $parentId->value($innerKey);
 		}
-		foreach ($this->relation->outerKeys() as $index => $outerKey) {
-			$payload[$through->throughOuterKeys()[$index]] = $targetIdentity->value($outerKey);
+		foreach ($this->relation->getOuterKeys() as $index => $outerKey) {
+			$payload[$through->getOuterKeys()[$index]] = $targetIdentity->value($outerKey);
 		}
 
 		$queue->queueInsert(new MutationState($through->getCollection(), $payload), true);
@@ -89,16 +89,16 @@ trait ManyToManyApply
 			? $targetId
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
 		$filters = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
 			$filters[] = new ComparisonFilter(
-				new FieldExpression($through->throughInnerKeys()[$index]),
+				new FieldExpression($through->getInnerKeys()[$index]),
 				ComparisonOperator::Eq,
 				new LiteralValue($parentId->value($innerKey))
 			);
 		}
-		foreach ($this->relation->outerKeys() as $index => $outerKey) {
+		foreach ($this->relation->getOuterKeys() as $index => $outerKey) {
 			$filters[] = new ComparisonFilter(
-				new FieldExpression($through->throughOuterKeys()[$index]),
+				new FieldExpression($through->getOuterKeys()[$index]),
 				ComparisonOperator::Eq,
 				new LiteralValue($targetIdentity->value($outerKey))
 			);
@@ -110,7 +110,7 @@ trait ManyToManyApply
 	private function getParentIdentityFromSource(MutationStateInterface $source): PrimaryKeyValue
 	{
 		$values = [];
-		foreach ($this->relation->innerKeys() as $key) {
+		foreach ($this->relation->getInnerKeys() as $key) {
 			$values[$key] = $source->getValue($key);
 		}
 

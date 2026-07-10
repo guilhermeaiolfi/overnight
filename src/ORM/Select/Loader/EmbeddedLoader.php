@@ -9,7 +9,7 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\EmbeddedNode;
 use Cycle\ORM\SchemaInterface;
 use function in_array;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\ORM\Select\JoinableInterface;
 use ON\ORM\Select\LoaderInterface;
 use ON\ORM\Select\Traits\ColumnsTrait;

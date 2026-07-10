@@ -54,12 +54,13 @@ $app->install(GraphQLExtension::class, [
 ```php
 // config/orm.php
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 $registry = new Registry();
 
 $registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field("id", "int")->end()
     ->field("name", "string")->end()
     ->field("email", "string")->validation('required|email|max:255')->end()
     ->hasMany("posts", "post")
@@ -67,7 +68,8 @@ $registry->collection("user")
     ->end();
 
 $registry->collection("post")
-    ->field("id", "int")->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field("id", "int")->end()
     ->field("title", "string")->validation('required|max:255')->end()
     ->field("content", "text")->end()
     ->field("user_id", "int")->end()
@@ -180,8 +182,8 @@ Implement `GraphQLResolverInterface` for full control:
 
 ```php
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Relation\RelationInterface;
 
 class MyResolver implements GraphQLResolverInterface
 {
@@ -378,13 +380,15 @@ Use the `file`, `image`, or `upload` type on a field. These map to the custom `U
 
 ```php
 $registry->collection('document')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('name', 'string')->end()
     ->field('attachment', 'file')->end()
     ->end();
 
 $registry->collection('user')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('name', 'string')->end()
     ->field('avatar', 'image')->end()
     ->end();

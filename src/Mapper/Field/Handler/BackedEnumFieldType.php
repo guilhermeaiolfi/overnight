@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field\Handler;
 
+use BackedEnum;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Field\FieldTypeInterface;
@@ -24,7 +25,7 @@ final class BackedEnumFieldType implements FieldTypeInterface
 			return null;
 		}
 
-		/** @var class-string<\BackedEnum> $enum */
+		/** @var class-string<BackedEnum> $enum */
 		$enum = $field->getType();
 
 		return match ($from) {
@@ -40,7 +41,7 @@ final class BackedEnumFieldType implements FieldTypeInterface
 			return null;
 		}
 
-		/** @var \BackedEnum $value */
+		/** @var BackedEnum $value */
 		return match ($to) {
 			PhpRepresentation::class => $value,
 			StorageRepresentation::class, WireRepresentation::class => $value->value,

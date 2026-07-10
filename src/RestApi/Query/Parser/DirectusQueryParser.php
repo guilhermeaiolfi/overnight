@@ -4,13 +4,14 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query\Parser;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Node\AggregateSpec;
 use ON\RestApi\Query\Node\BetweenFilter;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\EmptyFilter;
+use ON\RestApi\Query\Node\ExpressionNode;
 use ON\RestApi\Query\Node\FieldExpression;
 use ON\RestApi\Query\Node\FieldSelection;
 use ON\RestApi\Query\Node\FilterNode;
@@ -83,14 +84,16 @@ final class DirectusQueryParser implements QueryParserInterface
 			[$first, $rest] = array_pad(explode('.', $path, 2), 2, null);
 			if ($rest === null) {
 				if ($collection->fields->has($first)) {
-					if (!$collection->fields->get($first)->isHidden()) {
+					if (! $collection->fields->get($first)->isHidden()) {
 						$fieldNodes[] = new FieldSelection(new FieldExpression($first), $first);
 					}
+
 					continue;
 				}
 
 				if ($this->relationName($collection, $first, $aliases, $scope) !== null) {
 					$relationPaths[$first][] = '*';
+
 					continue;
 				}
 
@@ -173,7 +176,7 @@ final class DirectusQueryParser implements QueryParserInterface
 
 	private function parseFilter(CollectionInterface $collection, mixed $filters, array $aliases, string $scope): ?FilterNode
 	{
-		if (!is_array($filters) || $filters === []) {
+		if (! is_array($filters) || $filters === []) {
 			return null;
 		}
 
@@ -186,7 +189,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			}
 
 			if ($key === '_and' || $key === '_or') {
-				if (!is_array($value)) {
+				if (! is_array($value)) {
 					continue;
 				}
 
@@ -201,15 +204,16 @@ final class DirectusQueryParser implements QueryParserInterface
 				if ($children !== []) {
 					$nodes[] = new LogicalFilter($key === '_and' ? LogicalOperator::And : LogicalOperator::Or, $children);
 				}
+
 				continue;
 			}
 
-			if (!is_string($key) || !is_array($value)) {
+			if (! is_string($key) || ! is_array($value)) {
 				continue;
 			}
 
 			$relationName = $this->relationName($collection, $key, $aliases, $scope);
-			if ($relationName !== null && !$this->isOperatorArray($value)) {
+			if ($relationName !== null && ! $this->isOperatorArray($value)) {
 				$relation = $collection->relations->get($relationName);
 				$targetCollection = $relation->getCollection();
 				if ($targetCollection === null) {
@@ -220,11 +224,12 @@ final class DirectusQueryParser implements QueryParserInterface
 				if ($child !== null) {
 					$nodes[] = new RelationExistsFilter($key, $relationName, $targetCollection->getName(), $child);
 				}
+
 				continue;
 			}
 
 			foreach ($value as $operator => $operand) {
-				if (!is_string($operator)) {
+				if (! is_string($operator)) {
 					continue;
 				}
 				$node = $this->parseOperator($key, $operator, $operand);
@@ -268,7 +273,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		};
 	}
 
-	private function parseBetween(\ON\RestApi\Query\Node\ExpressionNode $left, mixed $operand, bool $negated): ?BetweenFilter
+	private function parseBetween(ExpressionNode $left, mixed $operand, bool $negated): ?BetweenFilter
 	{
 		$values = $this->parseArrayValue($operand);
 		if (count($values) !== 2) {
@@ -306,7 +311,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		$offsetKey = $prefix . 'offset';
 		$pageKey = $prefix . 'page';
 
-		if (!isset($input[$limitKey]) && !isset($input[$offsetKey]) && !isset($input[$pageKey])) {
+		if (! isset($input[$limitKey]) && ! isset($input[$offsetKey]) && ! isset($input[$pageKey])) {
 			return null;
 		}
 
@@ -322,7 +327,7 @@ final class DirectusQueryParser implements QueryParserInterface
 
 	private function parseAggregates(mixed $aggregates): array
 	{
-		if (!is_array($aggregates)) {
+		if (! is_array($aggregates)) {
 			return [];
 		}
 
@@ -372,10 +377,11 @@ final class DirectusQueryParser implements QueryParserInterface
 
 		if (is_array($fields)) {
 			$paths = array_values(array_map('strval', $fields));
+
 			return $paths === ['*'] ? null : $paths;
 		}
 
-		return array_values(array_filter(array_map('trim', explode(',', (string) $fields)), fn(string $field) => $field !== ''));
+		return array_values(array_filter(array_map('trim', explode(',', (string) $fields)), fn (string $field) => $field !== ''));
 	}
 
 	private function parseArrayValue(mixed $value): array
@@ -388,12 +394,12 @@ final class DirectusQueryParser implements QueryParserInterface
 			return array_values($value);
 		}
 
-		return array_values(array_filter(array_map('trim', explode(',', (string) $value)), fn(string $item) => $item !== ''));
+		return array_values(array_filter(array_map('trim', explode(',', (string) $value)), fn (string $item) => $item !== ''));
 	}
 
 	private function parseValueList(mixed $value): array
 	{
-		return array_map(fn(mixed $item) => $this->expressions->parseValue($item), $this->parseArrayValue($value));
+		return array_map(fn (mixed $item) => $this->expressions->parseValue($item), $this->parseArrayValue($value));
 	}
 
 	private function isOperatorArray(array $value): bool
@@ -403,7 +409,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		foreach (array_keys($value) as $key) {
-			if (!is_string($key) || !str_starts_with($key, '_')) {
+			if (! is_string($key) || ! str_starts_with($key, '_')) {
 				return false;
 			}
 		}
@@ -413,13 +419,13 @@ final class DirectusQueryParser implements QueryParserInterface
 
 	private function normalizeAliases(mixed $aliases): array
 	{
-		if (!is_array($aliases)) {
+		if (! is_array($aliases)) {
 			return [];
 		}
 
 		$normalized = [];
 		foreach ($aliases as $alias => $target) {
-			if (!is_string($alias) || !is_string($target)) {
+			if (! is_string($alias) || ! is_string($target)) {
 				continue;
 			}
 			$normalized[$alias] = $target;

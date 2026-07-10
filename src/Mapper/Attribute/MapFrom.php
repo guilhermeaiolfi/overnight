@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Attribute;
 
-#[\Attribute(\Attribute::TARGET_PROPERTY)]
+use Attribute;
+
+#[Attribute(Attribute::TARGET_PROPERTY)]
 final class MapFrom
 {
 	public function __construct(

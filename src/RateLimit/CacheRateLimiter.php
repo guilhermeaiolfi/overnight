@@ -5,9 +5,8 @@ declare(strict_types=1);
 namespace ON\RateLimit;
 
 use DateTimeImmutable;
-use ON\Cache\CacheInterface;
-
 use function max;
+use ON\Cache\CacheInterface;
 use function time;
 
 class CacheRateLimiter implements RateLimiterInterface

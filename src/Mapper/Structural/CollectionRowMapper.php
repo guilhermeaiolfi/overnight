@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use InvalidArgumentException;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
 use ON\Mapper\Conversion\Resolver\CollectionFieldResolver;
@@ -11,7 +13,6 @@ use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use RuntimeException;
 
 final class CollectionRowMapper implements MapperInterface
@@ -65,7 +66,7 @@ final class CollectionRowMapper implements MapperInterface
 			$result = [];
 			foreach ($from as $item) {
 				if (! is_array($item)) {
-					throw new \InvalidArgumentException('Collection mapping expects a list of arrays.');
+					throw new InvalidArgumentException('Collection mapping expects a list of arrays.');
 				}
 				$result[] = $this->convertRow($item, $collection, $context, $conversion, $direction);
 			}

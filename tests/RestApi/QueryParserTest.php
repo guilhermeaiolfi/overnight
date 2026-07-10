@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Query\Node\AggregateFunction;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
@@ -187,7 +187,7 @@ final class QueryParserTest extends TestCase
 	private function firstPublicField(array $nodes): FieldSelection
 	{
 		foreach ($nodes as $node) {
-			if ($node instanceof FieldSelection && !$node->internal) {
+			if ($node instanceof FieldSelection && ! $node->internal) {
 				return $node;
 			}
 		}

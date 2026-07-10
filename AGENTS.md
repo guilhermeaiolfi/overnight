@@ -65,13 +65,16 @@ Fluent builder pattern with `->end()` to navigate back up:
 
 ```php
 $registry->collection('user')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->autoIncrement(true)->end()
     ->field('name', 'string')->validation('required|max:255')->end()
     ->field('password', 'string')->hidden(true)->end()
     ->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
     ->belongsTo('role', 'role')->innerKey('role_id')->outerKey('id')->end()
     ->end();
 ```
+
+Register collections via `DataDefinitionConfigureEvent` (`ON\DataIntegration\Init\Event`). Sole registry: `ON\Data\Definition\Registry`.
 
 Key rules:
 - `innerKey` = key on the **source** entity (the one defining the relation); `outerKey` = key on the **target** entity (Cycle ORM convention)

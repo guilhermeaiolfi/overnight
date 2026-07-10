@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Structural;
 
+use DateTimeInterface;
 use ReflectionNamedType;
 use ReflectionProperty;
 
@@ -83,6 +84,6 @@ final class PropertyTypeResolver
 
 	public static function isStructuralClass(string $class): bool
 	{
-		return ! is_subclass_of($class, \DateTimeInterface::class) && ! enum_exists($class);
+		return ! is_subclass_of($class, DateTimeInterface::class) && ! enum_exists($class);
 	}
 }

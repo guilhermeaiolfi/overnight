@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;
@@ -15,7 +14,9 @@ use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Support\MutationInput;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 trait BelongsToNormalize
 {
@@ -31,7 +32,7 @@ trait BelongsToNormalize
 		$currentId = is_array($currentParent) ? $this->getTargetIdentityFromSourceRow($currentParent) : null;
 
 		if (is_array($input) && MutationInput::isAssociativeArray($input)) {
-			$id = $targetCollection->getPrimaryKey()->extractFromInput($input);
+			$id = PrimaryKey::of($targetCollection)->extractFromInput($input);
 			if ($id === null && $currentId !== null) {
 				$input += $currentId->values();
 				$id = $currentId;
@@ -63,7 +64,7 @@ trait BelongsToNormalize
 			return $actions;
 		}
 
-		if (!is_array($input)) {
+		if (! is_array($input)) {
 			if ($currentId !== null && $currentId !== $input) {
 				$actions[] = new DisconnectAction(collection: $targetName, target: $currentId);
 			}
@@ -131,12 +132,12 @@ trait BelongsToNormalize
 			return;
 		}
 
-		if (!is_array($action->data)) {
+		if (! is_array($action->data)) {
 			return;
 		}
 
 		$collection = $context->source->getCollection()->getRegistry()->getCollection($targetCollection);
-		$id = $collection->getPrimaryKey()->extractFromInput($action->data);
+		$id = PrimaryKey::of($collection)->extractFromInput($action->data);
 		if ($id !== null) {
 			$action->target = $id;
 		}

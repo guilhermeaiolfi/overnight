@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {

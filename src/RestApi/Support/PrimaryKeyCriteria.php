@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use InvalidArgumentException;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
 use ON\RestApi\Query\Node\FieldExpression;
@@ -23,23 +23,23 @@ final class PrimaryKeyCriteria
 		}
 
 		if (is_array($value)) {
-			$identity = $collection->getPrimaryKey()->extractFromInput($value);
+			$identity = PrimaryKey::of($collection)->extractFromInput($value);
 			if ($identity !== null) {
 				return $identity;
 			}
 
-			if (!$collection->getPrimaryKey()->isComposite() && array_is_list($value) && count($value) === 1) {
-				return new PrimaryKeyValue($collection, [$collection->getPrimaryKey()->getFieldNames()[0] => $value[0]]);
+			if (! PrimaryKey::of($collection)->isComposite() && array_is_list($value) && count($value) === 1) {
+				return new PrimaryKeyValue($collection, [PrimaryKey::of($collection)->getFieldNames()[0] => $value[0]]);
 			}
 
-			throw new \InvalidArgumentException('Invalid primary key value array.');
+			throw new InvalidArgumentException('Invalid primary key value array.');
 		}
 
-		if ($collection->getPrimaryKey()->isComposite()) {
-			return $collection->getPrimaryKey()->getValueFromUrlId((string) $value);
+		if (PrimaryKey::of($collection)->isComposite()) {
+			return PrimaryKey::of($collection)->getValueFromUrlId((string) $value);
 		}
 
-		return new PrimaryKeyValue($collection, [$collection->getPrimaryKey()->getFieldNames()[0] => $value]);
+		return new PrimaryKeyValue($collection, [PrimaryKey::of($collection)->getFieldNames()[0] => $value]);
 	}
 
 	public static function build(CollectionInterface $collection, PrimaryKeyValue|array|string|int|float $value): FilterNode
@@ -47,7 +47,7 @@ final class PrimaryKeyCriteria
 		$identity = self::normalize($collection, $value);
 		$filters = [];
 
-		foreach ($collection->getPrimaryKey()->getFields() as $field) {
+		foreach (PrimaryKey::of($collection)->getFields() as $field) {
 			$filters[] = new ComparisonFilter(
 				new FieldExpression($field->getName()),
 				ComparisonOperator::Eq,
@@ -64,7 +64,7 @@ final class PrimaryKeyCriteria
 	{
 		$identity = self::normalize($collection, $value);
 
-		foreach ($collection->getPrimaryKey()->getFields() as $field) {
+		foreach (PrimaryKey::of($collection)->getFields() as $field) {
 			$query->where($field->getColumn(), $identity->value($field->getName()));
 		}
 	}

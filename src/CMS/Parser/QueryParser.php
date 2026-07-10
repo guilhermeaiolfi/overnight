@@ -11,7 +11,7 @@ use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\RootNode;
 use ON\CMS\Parser\Node\ShallowRelationNode;
 use ON\CMS\Parser\Node\VirtualNode;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 class QueryParser
 {

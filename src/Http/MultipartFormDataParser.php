@@ -54,6 +54,7 @@ final class MultipartFormDataParser
 						$headers['content-type'] ?? 'application/octet-stream',
 					),
 				);
+
 				continue;
 			}
 
@@ -83,6 +84,7 @@ final class MultipartFormDataParser
 		foreach ($files as $key => $value) {
 			if ($value instanceof UploadedFileInterface) {
 				$normalized[$key] = $value;
+
 				continue;
 			}
 
@@ -92,11 +94,13 @@ final class MultipartFormDataParser
 
 			if (isset($value['tmp_name']) && is_array($value['tmp_name'])) {
 				$normalized[$key] = $this->normalizeNestedParsedUploadedFiles($value);
+
 				continue;
 			}
 
 			if (isset($value['tmp_name'])) {
 				$normalized[$key] = $this->createStreamUploadedFile($value);
+
 				continue;
 			}
 
@@ -155,6 +159,7 @@ final class MultipartFormDataParser
 					is_array($nameTree[$key] ?? null) ? $nameTree[$key] : null,
 					is_array($typeTree[$key] ?? null) ? $typeTree[$key] : null,
 				);
+
 				continue;
 			}
 
@@ -194,11 +199,13 @@ final class MultipartFormDataParser
 			$content = file_get_contents($tmpPath);
 			if ($content === false) {
 				fclose($stream);
+
 				throw new InvalidMultipartFormDataException('Unable to read a temporary uploaded part.');
 			}
 
 			if ($content !== '' && fwrite($stream, $content) === false) {
 				fclose($stream);
+
 				throw new InvalidMultipartFormDataException('Unable to buffer an uploaded part.');
 			}
 
@@ -330,6 +337,7 @@ final class MultipartFormDataParser
 				} else {
 					$current[$key] = $value;
 				}
+
 				break;
 			}
 
@@ -368,6 +376,7 @@ final class MultipartFormDataParser
 
 		if ($content !== '' && file_put_contents($tmpPath, $content) === false) {
 			@unlink($tmpPath);
+
 			throw new InvalidMultipartFormDataException('Unable to write an uploaded file to disk.');
 		}
 
@@ -402,6 +411,7 @@ final class MultipartFormDataParser
 		foreach ($spec as $property => $value) {
 			if ($concreteKeys === []) {
 				$files[$rootKey][$property] = $value;
+
 				continue;
 			}
 
@@ -413,6 +423,7 @@ final class MultipartFormDataParser
 			foreach ($concreteKeys as $index => $key) {
 				if ($index === count($concreteKeys) - 1) {
 					$current[$key] = $value;
+
 					break;
 				}
 

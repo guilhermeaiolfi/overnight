@@ -8,9 +8,8 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\RootNode;
-use function is_array;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Traits\ColumnsTrait;
 use ON\ORM\Select\Traits\ScopeTrait;
@@ -46,14 +45,14 @@ final class RootLoader extends AbstractLoader
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		Collection $target,
+		CollectionInterface $target,
 		array $options = []
 	) {
 		parent::__construct($registry, $factory, $target, $options);
 		$this->query = $this->source->getDatabase()->select()->from(
 			sprintf('%s AS %s', $this->source->getTable(), $this->getAlias())
 		);
-		$this->columns = $options["columns"] ?? $this->normalizeColumns((array) $target->fields->getColumnNames());
+		$this->columns = $options["columns"] ?? $this->normalizeColumns((array) $target->getFields()->getColumnNames());
 
 		if ($this->options["loadRelations"]) {
 			foreach ($this->getEagerLoaders() as $relation) {
@@ -83,17 +82,17 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPK(): array|string
 	{
-		$pk = $this->target->getPrimaryKeyFields();
-		if (is_array($pk)) {
+		$pk = $this->target->getPrimaryKey();
+		if (count($pk) > 1) {
 			$result = [];
 			foreach ($pk as $field) {
-				$result[] = $this->target . '.' . $field->getAlias();
+				$result[] = $this->getAlias() . '.' . $this->fieldAlias($field);
 			}
 
 			return $result;
 		}
 
-		return $this->target . '.' . $pk->getAlias();
+		return $this->getAlias() . '.' . $this->fieldAlias($pk[0]);
 	}
 
 	/**
@@ -103,7 +102,7 @@ final class RootLoader extends AbstractLoader
 	 */
 	public function getPrimaryFields(): array
 	{
-		return $this->target->getPrimaryKey()->getFieldNames();
+		return $this->target->getPrimaryKey();
 	}
 
 	/**
@@ -155,6 +154,6 @@ final class RootLoader extends AbstractLoader
 
 	protected function initNode(): RootNode
 	{
-		return new RootNode($this->columnNames(), $this->target->getPrimaryKey()->getFieldNames());
+		return new RootNode($this->columnNames(), $this->target->getPrimaryKey());
 	}
 }

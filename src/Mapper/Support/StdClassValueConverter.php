@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Support;
 
+use DateTimeInterface;
 use ON\Mapper\Blueprint\FieldBlueprintEntry;
 use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldConversionCoordinator;
-use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Conversion\Resolver\BlueprintFieldResolver;
 use ON\Mapper\ConversionGateway;
+use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Structural\MappingContext;
+use stdClass;
 
 final class StdClassValueConverter
 {
@@ -24,11 +26,11 @@ final class StdClassValueConverter
 		MappingContext $context,
 		string $pathPrefix = '',
 		?FieldConversionCoordinator $conversion = null,
-	): \stdClass {
+	): stdClass {
 		$conversion ??= (new FieldConversionCoordinator($gateway))
 			->register(new BlueprintFieldResolver())
 			->registerConfiguredResolvers($context);
-		$object = new \stdClass();
+		$object = new stdClass();
 
 		foreach ($data as $key => $value) {
 			if (! is_string($key) || $key === '') {
@@ -46,7 +48,7 @@ final class StdClassValueConverter
 	 * @return array<string, mixed>
 	 */
 	public static function stdClassToArray(
-		\stdClass $object,
+		stdClass $object,
 		ConversionGateway $gateway,
 		MappingContext $context,
 		string $pathPrefix = '',
@@ -101,7 +103,7 @@ final class StdClassValueConverter
 		MappingContext $context,
 		FieldConversionCoordinator $conversion,
 	): mixed {
-		if ($value instanceof \stdClass) {
+		if ($value instanceof stdClass) {
 			return self::stdClassToArray($value, $gateway, $context, $path, $conversion);
 		}
 
@@ -186,12 +188,12 @@ final class StdClassValueConverter
 
 		return array_map(
 			static fn (mixed $item, int|string $index): mixed => self::toArrayValue(
-					$item,
-					self::path($path, (string) $index),
-					$gateway,
-					$context,
-					$conversion,
-				),
+				$item,
+				self::path($path, (string) $index),
+				$gateway,
+				$context,
+				$conversion,
+			),
 			$value,
 			array_keys($value),
 		);
@@ -235,14 +237,14 @@ final class StdClassValueConverter
 		$entry = $blueprint?->resolve($path);
 
 		if ($entry !== null && self::isStructuralClassType($entry->type)) {
-			return new \stdClass();
+			return new stdClass();
 		}
 
 		if ($entry !== null) {
 			return [];
 		}
 
-		return new \stdClass();
+		return new stdClass();
 	}
 
 	private static function convertInboundScalar(
@@ -291,6 +293,7 @@ final class StdClassValueConverter
 		FieldConversionCoordinator $conversion,
 	): ?FieldContext {
 		$fieldName = self::fieldName($path);
+
 		return $conversion->resolveField($context, $path, $fieldName, $value, $direction);
 	}
 
@@ -328,6 +331,6 @@ final class StdClassValueConverter
 	{
 		return class_exists($type)
 			&& ! enum_exists($type)
-			&& ! is_subclass_of($type, \DateTimeInterface::class);
+			&& ! is_subclass_of($type, DateTimeInterface::class);
 	}
 }

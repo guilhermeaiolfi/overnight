@@ -6,12 +6,12 @@ namespace ON\RestApi\Repository;
 
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Query\SelectQuery;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 interface ItemRepositoryInterface
 {

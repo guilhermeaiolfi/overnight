@@ -9,7 +9,7 @@ use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SubclassMergeNode;
 use Cycle\ORM\Relation;
 use Cycle\ORM\SchemaInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\LoaderInterface;

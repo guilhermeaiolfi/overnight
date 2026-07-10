@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\ON\ORM;
 
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\M2MRelation;
+use InvalidArgumentException;
+use LogicException;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\M2MRelation;
 use PHPUnit\Framework\TestCase;
 
 final class RelationDefinitionTest extends TestCase
@@ -14,17 +16,19 @@ final class RelationDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('user')
-			->field('id', 'int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->end()
 			->end();
 
 		$relation = $registry->collection('post')
-			->field('id', 'int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->end()
 			->field('user_id', 'int')->end()
 			->belongsTo('author', 'user')->innerKey('user_id')->outerKey('id')->end()
 			->relations->get('author');
 
-		$this->assertSame(['user_id'], $relation->innerKeys());
-		$this->assertSame(['id'], $relation->outerKeys());
+		$this->assertSame(['user_id'], $relation->getInnerKeys());
+		$this->assertSame(['id'], $relation->getOuterKeys());
 		$this->assertSame('user_id', $relation->getInnerField()->getName());
 		$this->assertSame('id', $relation->getOuterField()->getName());
 	}
@@ -33,8 +37,9 @@ final class RelationDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('page')
-			->field('tenant_id', 'int')->primaryKey(true)->end()
-			->field('slug', 'string')->primaryKey(true)->end()
+			->primaryKey('tenant_id', 'slug')
+			->field('tenant_id', 'int')->end()
+			->field('slug', 'string')->end()
 			->end();
 
 		$relation = $registry->collection('article')
@@ -46,10 +51,10 @@ final class RelationDefinitionTest extends TestCase
 			->end()
 			->relations->get('page');
 
-		$this->assertSame(['tenant_id', 'page_slug'], $relation->innerKeys());
-		$this->assertSame(['tenant_id', 'slug'], $relation->outerKeys());
+		$this->assertSame(['tenant_id', 'page_slug'], $relation->getInnerKeys());
+		$this->assertSame(['tenant_id', 'slug'], $relation->getOuterKeys());
 
-		$this->expectException(\LogicException::class);
+		$this->expectException(LogicException::class);
 		$this->expectExceptionMessage('getInnerField() is only available for single-key relations');
 		$relation->getInnerField();
 	}
@@ -58,11 +63,12 @@ final class RelationDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('page')
-			->field('tenant_id', 'int')->primaryKey(true)->end()
-			->field('slug', 'string')->primaryKey(true)->end()
+			->primaryKey('tenant_id', 'slug')
+			->field('tenant_id', 'int')->end()
+			->field('slug', 'string')->end()
 			->end();
 
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 		$this->expectExceptionMessage('key count mismatch');
 
 		$registry->collection('article')
@@ -77,12 +83,14 @@ final class RelationDefinitionTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('article')
-			->field('tenant_id', 'int')->primaryKey(true)->end()
-			->field('slug', 'string')->primaryKey(true)->end()
+			->primaryKey('tenant_id', 'slug')
+			->field('tenant_id', 'int')->end()
+			->field('slug', 'string')->end()
 			->end();
 		$registry->collection('tag')
-			->field('tenant_id', 'int')->primaryKey(true)->end()
-			->field('slug', 'string')->primaryKey(true)->end()
+			->primaryKey('tenant_id', 'slug')
+			->field('tenant_id', 'int')->end()
+			->field('slug', 'string')->end()
 			->end();
 		$registry->collection('article_tag')
 			->field('article_tenant_id', 'int')->end()
@@ -101,9 +109,9 @@ final class RelationDefinitionTest extends TestCase
 				->outerKey(['tag_tenant_id', 'tag_slug'])
 				->end();
 
-		$this->assertSame(['tenant_id', 'slug'], $relation->innerKeys());
-		$this->assertSame(['tenant_id', 'slug'], $relation->outerKeys());
-		$this->assertSame(['article_tenant_id', 'article_slug'], $relation->through->throughInnerKeys());
-		$this->assertSame(['tag_tenant_id', 'tag_slug'], $relation->through->throughOuterKeys());
+		$this->assertSame(['tenant_id', 'slug'], $relation->getInnerKeys());
+		$this->assertSame(['tenant_id', 'slug'], $relation->getOuterKeys());
+		$this->assertSame(['article_tenant_id', 'article_slug'], $relation->through->getInnerKeys());
+		$this->assertSame(['tag_tenant_id', 'tag_slug'], $relation->through->getOuterKeys());
 	}
 }

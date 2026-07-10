@@ -25,6 +25,7 @@ class TranslationExtension extends AbstractExtension
 		$this->options = $options;
 		$this->app = $app;
 	}
+
 	public function register(Init $init): void
 	{
 		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
@@ -33,5 +34,4 @@ class TranslationExtension extends AbstractExtension
 			]);
 		});
 	}
-
 }

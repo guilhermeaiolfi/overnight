@@ -18,7 +18,6 @@ use ON\Auth\Middleware\AuthorizationMiddleware;
 use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Config\AppConfig;
 use ON\Container\Executor\Executor;
-use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
 use ON\Middleware\ValidationMiddleware;
@@ -63,7 +62,7 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageReturnsJsonResponse(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function index(): JsonResponse
 			{
 				return new JsonResponse(['status' => 'ok']);
@@ -83,7 +82,7 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageWithViewResult(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function index(): ViewResult
 			{
 				return new ViewResult('success', ['message' => 'Hello']);
@@ -108,12 +107,13 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageWithRouteParams(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?int $receivedId = null;
 
 			public function show(int $id): JsonResponse
 			{
 				$this->receivedId = $id;
+
 				return new JsonResponse(['id' => $id]);
 			}
 		};
@@ -130,11 +130,12 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageWithValidation(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function createValidate(ServerRequestInterface $request): bool
 			{
 				$body = $request->getParsedBody();
-				return !empty($body['title']);
+
+				return ! empty($body['title']);
 			}
 
 			public function create(ServerRequestInterface $request): JsonResponse
@@ -162,7 +163,7 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageValidationFailsWithoutErrorHandler(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function createValidate(ServerRequestInterface $request): bool
 			{
 				return false; // always fails
@@ -192,7 +193,7 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testPlainPageWithStringReturn(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function index(): string
 			{
 				return 'Success';
@@ -219,8 +220,10 @@ final class PlainPageIntegrationTest extends TestCase
 		$mockView = $this->createMock(ViewInterface::class);
 		$mockView->method('render')->willReturn('<html>rendered</html>');
 
-		$page = new class($mockView) {
-			public function __construct(public ViewInterface $view) {}
+		$page = new class ($mockView) {
+			public function __construct(public ViewInterface $view)
+			{
+			}
 
 			public function index(): ViewResult
 			{
@@ -249,6 +252,7 @@ final class PlainPageIntegrationTest extends TestCase
 		$routeResult = RouteResult::fromRoute($route, $params);
 		$routeResult->setTargetInstance($page);
 		$routeResult->setMethod($method);
+
 		return $routeResult;
 	}
 
@@ -280,12 +284,12 @@ final class PlainPageIntegrationTest extends TestCase
 
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
-			->willReturnCallback(fn(string $class): bool => $page !== null && $class === get_class($page));
+			->willReturnCallback(fn (string $class): bool => $page !== null && $class === get_class($page));
 		$container->method('get')
-			->willReturnCallback(fn(string $class): mixed => $page !== null && $class === get_class($page) ? $page : null);
+			->willReturnCallback(fn (string $class): mixed => $page !== null && $class === get_class($page) ? $page : null);
 
 		$middleware = new RouteMiddleware($router, $app, $container);
-		$capture = new class implements RequestHandlerInterface {
+		$capture = new class () implements RequestHandlerInterface {
 			public ?ServerRequestInterface $request = null;
 
 			public function handle(ServerRequestInterface $request): ResponseInterface
@@ -306,9 +310,9 @@ final class PlainPageIntegrationTest extends TestCase
 		$router = $this->createMock(RouterInterface::class);
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
-			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+			->willReturnCallback(fn (string $class): bool => $class === RouterInterface::class);
 		$container->method('get')
-			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
+			->willReturnCallback(fn (string $class): mixed => $class === RouterInterface::class ? $router : null);
 
 		return new ViewManager(new ViewConfig(), $container, new RequestStack());
 	}
@@ -317,19 +321,32 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testSecurePageBlocksUnauthenticatedUser(): void
 	{
-		$page = new class {
-			public function isSecure(): bool { return true; }
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function isSecure(): bool
+			{
+				return true;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
 		$auth->method('hasIdentity')->willReturn(false);
 
 		$forwardResponse = new HtmlResponse('login page');
-		$app = new class($forwardResponse) extends Application {
+		$app = new class ($forwardResponse) extends Application {
 			private ResponseInterface $forwardResponse;
-			public function __construct(ResponseInterface $r) { $this->forwardResponse = $r; }
-			public function processForward($path, $request): ResponseInterface {
+
+			public function __construct(ResponseInterface $r)
+			{
+				$this->forwardResponse = $r;
+			}
+
+			public function processForward($path, $request): ResponseInterface
+			{
 				return $this->forwardResponse;
 			}
 		};
@@ -351,9 +368,16 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testSecurePageAllowsAuthenticatedUser(): void
 	{
-		$page = new class {
-			public function isSecure(): bool { return true; }
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function isSecure(): bool
+			{
+				return true;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
@@ -378,8 +402,11 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testNonSecurePagePassesThrough(): void
 	{
-		$page = new class {
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
@@ -404,9 +431,16 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testCheckPermissionsBlocksDeniedUser(): void
 	{
-		$page = new class {
-			public function checkPermissions(): bool { return false; }
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function checkPermissions(): bool
+			{
+				return false;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$app = $this->createMock(Application::class);
@@ -426,9 +460,16 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testCheckPermissionsAllowsAuthorizedUser(): void
 	{
-		$page = new class {
-			public function checkPermissions(): bool { return true; }
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function checkPermissions(): bool
+			{
+				return true;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$app = $this->createMock(Application::class);
@@ -450,10 +491,21 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testActionSpecificCheckPermissions(): void
 	{
-		$page = new class {
-			public function checkCreatePermissions(): bool { return false; }
-			public function checkPermissions(): bool { return true; } // should NOT be called
-			public function create(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function checkCreatePermissions(): bool
+			{
+				return false;
+			}
+
+			public function checkPermissions(): bool
+			{
+				return true;
+			} // should NOT be called
+
+			public function create(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$app = $this->createMock(Application::class);
@@ -472,8 +524,11 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testNoCheckPermissionsPassesThrough(): void
 	{
-		$page = new class {
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$app = $this->createMock(Application::class);
@@ -497,9 +552,16 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testValidatePassesOnPlainPage(): void
 	{
-		$page = new class {
-			public function validate(): bool { return true; }
-			public function index(): JsonResponse { return new JsonResponse(['ok']); }
+		$page = new class () {
+			public function validate(): bool
+			{
+				return true;
+			}
+
+			public function index(): JsonResponse
+			{
+				return new JsonResponse(['ok']);
+			}
 		};
 
 		$middleware = $this->createValidationMiddleware();
@@ -518,10 +580,19 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testValidateFailsWithErrorHandlerOnPlainPage(): void
 	{
-		$page = new class {
-			public function validate(): bool { return false; }
-			public function handleError(): ViewResult { return new ViewResult('error', ['msg' => 'bad']); }
-			public function errorView(ViewResult $result): HtmlResponse {
+		$page = new class () {
+			public function validate(): bool
+			{
+				return false;
+			}
+
+			public function handleError(): ViewResult
+			{
+				return new ViewResult('error', ['msg' => 'bad']);
+			}
+
+			public function errorView(ViewResult $result): HtmlResponse
+			{
 				return new HtmlResponse('Error: ' . $result->get('msg'));
 			}
 		};
@@ -539,10 +610,21 @@ final class PlainPageIntegrationTest extends TestCase
 
 	public function testActionSpecificValidateOnPlainPage(): void
 	{
-		$page = new class {
-			public function createValidate(): bool { return true; }
-			public function validate(): bool { return false; } // should NOT be called
-			public function create(): JsonResponse { return new JsonResponse(['created']); }
+		$page = new class () {
+			public function createValidate(): bool
+			{
+				return true;
+			}
+
+			public function validate(): bool
+			{
+				return false;
+			} // should NOT be called
+
+			public function create(): JsonResponse
+			{
+				return new JsonResponse(['created']);
+			}
 		};
 
 		$middleware = $this->createValidationMiddleware();

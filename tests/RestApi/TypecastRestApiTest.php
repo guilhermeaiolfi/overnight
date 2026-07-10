@@ -4,7 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Registry;
+use DateTimeImmutable;
+use DateTimeInterface;
+use ON\Data\Definition\Registry;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Representation\WireRepresentation;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
@@ -24,7 +28,7 @@ final class TypecastRestApiTest extends TestCase
 
 		$item = $service->get('post', '1');
 
-		$this->assertInstanceOf(\DateTimeImmutable::class, $item['created_at']);
+		$this->assertInstanceOf(DateTimeImmutable::class, $item['created_at']);
 		$this->assertSame('2025-01-10 10:00:00', $item['created_at']->format('Y-m-d H:i:s'));
 	}
 
@@ -36,7 +40,7 @@ final class TypecastRestApiTest extends TestCase
 		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1', null, [
-			'output' => \ON\Mapper\Representation\StorageRepresentation::class,
+			'output' => StorageRepresentation::class,
 		]);
 
 		$this->assertSame('2025-01-10 10:00:00', $item['created_at']);
@@ -50,11 +54,11 @@ final class TypecastRestApiTest extends TestCase
 		$service = $this->createDirectusOperations($registry, $this->createItems($registry, $db));
 
 		$item = $service->get('post', '1', null, [
-			'output' => \ON\Mapper\Representation\WireRepresentation::class,
+			'output' => WireRepresentation::class,
 		]);
 
 		$this->assertSame(
-			(new \DateTimeImmutable('2025-01-10 10:00:00'))->format(\DateTimeInterface::ATOM),
+			(new DateTimeImmutable('2025-01-10 10:00:00'))->format(DateTimeInterface::ATOM),
 			$item['created_at']
 		);
 	}
@@ -71,7 +75,7 @@ final class TypecastRestApiTest extends TestCase
 
 		$this->assertIsArray($wire);
 		$this->assertSame(
-			(new \DateTimeImmutable('2025-01-10 10:00:00'))->format(\DateTimeInterface::ATOM),
+			(new DateTimeImmutable('2025-01-10 10:00:00'))->format(DateTimeInterface::ATOM),
 			$wire['created_at']
 		);
 	}
@@ -99,10 +103,10 @@ final class TypecastRestApiTest extends TestCase
 		$created = $service->create('post', $this->m($registry, $resolver, 'post', [
 			'user_id' => 1,
 			'title' => 'Typed post',
-			'created_at' => new \DateTimeImmutable('2024-06-01T15:00:00+00:00'),
+			'created_at' => new DateTimeImmutable('2024-06-01T15:00:00+00:00'),
 		]), ['dispatchEvents' => false]);
 
-		$this->assertInstanceOf(\DateTimeImmutable::class, $created['created_at']);
+		$this->assertInstanceOf(DateTimeImmutable::class, $created['created_at']);
 		$this->assertSame('2024-06-01 15:00:00', $created['created_at']->format('Y-m-d H:i:s'));
 
 		$rows = $db->database()->getDriver()->query('SELECT created_at FROM post')->fetchAll();
@@ -120,6 +124,6 @@ final class TypecastRestApiTest extends TestCase
 			'created_at' => '2024-06-01T15:00:00+00:00',
 		]);
 
-		$this->assertInstanceOf(\DateTimeImmutable::class, $row['created_at']);
+		$this->assertInstanceOf(DateTimeImmutable::class, $row['created_at']);
 	}
 }

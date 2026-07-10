@@ -11,7 +11,7 @@ use function explode;
 use function implode;
 use function is_int;
 use JetBrains\PhpStorm\Pure;
-use ON\ORM\Definition\Collection\Collection;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 /**
  * Provides ability to add aliased columns into SelectQuery.
@@ -111,10 +111,10 @@ trait ColumnsTrait
 		return $result;
 	}
 
-	public function getMandatoryColumns(Collection $collection): array
+	public function getMandatoryColumns(CollectionInterface $collection): array
 	{
 		$columns = [];
-		foreach ($collection->fields as $field) {
+		foreach ($collection->getFields() as $field) {
 			if ($field->isPrimaryKey() || $field->getGeneratedFromRelation()) {
 				$columns[$field->getName()] = $field->getColumn();
 			}
@@ -131,7 +131,7 @@ trait ColumnsTrait
 	/**
 	 * if $columnsFilter is null, it should return all columns
 	 */
-	public function resolveColumns(Collection $collection, ?array $columnsFilter): array
+	public function resolveColumns(CollectionInterface $collection, ?array $columnsFilter): array
 	{
 		$columns = [];
 
@@ -148,13 +148,13 @@ trait ColumnsTrait
 
 
 		if ($this->isStarFilter($columnsFilter)) {
-			$columns = (array) $collection->fields->getColumnNames();
+			$columns = (array) $collection->getFields()->getColumnNames();
 
 			return $this->normalizeColumns($columns);
 		}
 
 		if (! $this->hasIncludeColumn($columnsFilter)) {
-			$columns = (array) $collection->fields->getColumnNames();
+			$columns = (array) $collection->getFields()->getColumnNames();
 			$columns = $this->normalizeColumns($columns);
 		}
 

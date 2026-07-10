@@ -52,11 +52,12 @@ class FileSystem implements ImageCacheInterface
 		$extension = $dotPos !== false ? substr($filepath, $dotPos + 1) : 'jpg';
 
 		$basePath = $this->config->getPublicImagesDir()->getAbsolutePath();
-		
+
 		$cachedFile = substr($token, 0, 4) . "/" . substr($token, 4, strlen($token)) . "." . $extension;
 		$publicPath = $basePath . "/" . $cachedFile;
 
 		$uri = $this->config->getPublicImagesUri() . '/' . $cachedFile;
+
 		return new PublicAsset($uri, $this->cacheFile($publicPath));
 	}
 

@@ -162,11 +162,13 @@ class DebugStatement
 		foreach ($this->parameters as $name => $param) {
 			if (is_string($param)) {
 				$params[$name] = htmlentities($param, ENT_QUOTES, 'UTF-8', false);
+
 				continue;
 			}
 
 			if (is_scalar($param) || $param === null) {
 				$params[$name] = $param;
+
 				continue;
 			}
 

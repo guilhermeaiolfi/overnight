@@ -29,19 +29,20 @@ This approach uses the GraphQL extension for the backend API and a JavaScript fr
 
 ## Step 1: Define Your Entities
 
-Create your ORM definitions. This is the only backend code you need — the GraphQL extension generates everything else.
+Create your ON\Data definitions (via `DataDefinitionConfigureEvent`). This is the only backend code you need — the GraphQL extension generates everything else.
 
 ```php
-// config/orm.php
+// In a DataDefinitionConfigureEvent listener
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 $registry = new Registry();
 
 // Categories
 $registry->collection('category')
     ->description('Blog post categories')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('name', 'string')
         ->description('Category name')
         ->validation('required|max:100')
@@ -55,7 +56,8 @@ $registry->collection('category')
 // Posts
 $registry->collection('post')
     ->description('Blog posts')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('title', 'string')
         ->description('Post title')
         ->validation('required|max:255')
@@ -87,7 +89,8 @@ $registry->collection('post')
 // Comments
 $registry->collection('comment')
     ->description('Post comments')
-    ->field('id', 'int')->primaryKey(true)->end()
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('post_id', 'int')->end()
     ->field('author', 'string')
         ->validation('required|max:100')
@@ -639,7 +642,7 @@ if (result.error) {
 
 | Layer | What You Write | What's Auto-Generated |
 |-------|---------------|----------------------|
-| Backend entities | `config/orm.php` — field definitions, validation, relations | GraphQL schema, queries, mutations, input types, enums |
+| Backend entities | `DataDefinitionConfigureEvent` — field definitions, validation, relations | GraphQL schema, queries, mutations, input types, enums |
 | Backend events | `BlogModule.php` — timestamps, file uploads (optional) | Event dispatching in mutation lifecycle |
 | Frontend client | urql setup in `main.js` / `main.jsx` | Loading states, caching, error objects |
 | Frontend views | Vue/React components with `useQuery` / `useMutation` | — |
@@ -667,10 +670,10 @@ This approach uses the REST API extension for the backend. The same entity defin
 
 ## Step 1: Define Your Entities
 
-Same entity definitions as the GraphQL approach — the ORM registry is shared:
+Same entity definitions as the GraphQL approach — the ON\Data registry is shared:
 
 ```php
-// config/orm.php (identical to GraphQL approach)
+// DataDefinitionConfigureEvent listener (identical to GraphQL approach)
 // See Step 1 in the GraphQL section above
 ```
 

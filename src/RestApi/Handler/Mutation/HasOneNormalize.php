@@ -13,6 +13,7 @@ use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
+use ON\RestApi\Support\PrimaryKey;
 
 trait HasOneNormalize
 {
@@ -36,9 +37,9 @@ trait HasOneNormalize
 			return $actions;
 		}
 
-		if (!is_array($input)) {
+		if (! is_array($input)) {
 			$current = $context->parentOperation === 'create' ? null : ($this->getCurrentRelationRows($context->source)[0] ?? null);
-			$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extractFromInput($current) : null;
+			$currentId = is_array($current) ? PrimaryKey::of($targetCollection)->extractFromInput($current) : null;
 			if ($currentId !== null && $currentId->toUrlId() !== (string) $input) {
 				$actions = array_merge($actions, $this->omittedChildActions($current, $targetName));
 			}
@@ -50,9 +51,9 @@ trait HasOneNormalize
 		}
 
 		$current = $context->parentOperation === 'create' ? null : ($this->getCurrentRelationRows($context->source)[0] ?? null);
-		$currentId = is_array($current) ? $targetCollection->getPrimaryKey()->extractFromInput($current) : null;
+		$currentId = is_array($current) ? PrimaryKey::of($targetCollection)->extractFromInput($current) : null;
 		$desired = $input;
-		$desiredId = $targetCollection->getPrimaryKey()->extractFromInput($desired);
+		$desiredId = PrimaryKey::of($targetCollection)->extractFromInput($desired);
 
 		if ($desiredId === null && $currentId !== null) {
 			foreach ($currentId->values() as $fieldName => $value) {
@@ -71,7 +72,7 @@ trait HasOneNormalize
 		}
 
 		$this->applySourceValuesToTargetInput($desired, $context->source);
-		if ($targetCollection->getPrimaryKey()->extractFromInput($desired) === null) {
+		if (PrimaryKey::of($targetCollection)->extractFromInput($desired) === null) {
 			$actions[] = new CreateAction(collection: $targetName, data: $desired);
 		} else {
 			$actions[] = new UpdateAction(collection: $targetName, data: $desired);

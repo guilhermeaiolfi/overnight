@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;

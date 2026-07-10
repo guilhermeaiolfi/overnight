@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RateLimit\Middleware;
 
+use Closure;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\RateLimit\RateLimiterInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -17,7 +18,7 @@ class RateLimitMiddleware implements MiddlewareInterface
 		protected RateLimiterInterface $limiter,
 		protected int $maxAttempts = 60,
 		protected int $windowSeconds = 60,
-		protected ?\Closure $keyResolver = null
+		protected ?Closure $keyResolver = null
 	) {
 	}
 

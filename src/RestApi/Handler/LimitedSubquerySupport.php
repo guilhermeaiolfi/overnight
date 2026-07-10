@@ -49,5 +49,4 @@ trait LimitedSubquerySupport
 	{
 		return $orders === [] ? '' : ' ORDER BY ' . implode(', ', $orders);
 	}
-
 }

@@ -4,16 +4,15 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
+use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-
-use ON\Application;
 use ON\Extension\AbstractExtension;
+use ON\FS\Path;
 use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\FS\Path;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;
@@ -29,6 +28,7 @@ class FileRoutingExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
+
 	public function register(Init $init): void
 	{
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
@@ -47,7 +47,7 @@ class FileRoutingExtension extends AbstractExtension
 		$view_cfg = $this->app->config->get(ViewConfig::class);
 		$template_namespace = $fileroutingCfg->get('template.namespace', 'filerouting');
 		$configuredCachePath = $fileroutingCfg->get('cachePath');
-		
+
 		$cache_path = $this->app->paths->get('cache')->append('filerouting')->getAbsolutePath();
 		if ($configuredCachePath !== null && trim($configuredCachePath) !== '') {
 			$cache_path = Path::from($configuredCachePath, $this->app->paths->get('project'))

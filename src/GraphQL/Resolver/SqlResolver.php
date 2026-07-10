@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Resolver;
 
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Field\FieldInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\DB\DatabaseInterface;
 use ON\GraphQL\DataLoader\GenericDataLoader;
 use ON\GraphQL\Error\GraphQLUserError;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Field\FieldInterface;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
 use PDO;
+use PDOException;
 
 class SqlResolver implements GraphQLResolverInterface
 {
@@ -75,7 +76,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$table = $collection->getTable();
 
 			$columns = array_keys($input);
-			$quotedColumns = array_map(fn(string $col) => $this->quoteIdentifier($col), $columns);
+			$quotedColumns = array_map(fn (string $col) => $this->quoteIdentifier($col), $columns);
 			$placeholders = array_fill(0, count($columns), '?');
 
 			$quotedTable = $this->quoteIdentifier($table);
@@ -92,7 +93,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$lastId = $this->database->getConnection()->lastInsertId();
 
 			return $this->resolveById($collection, (string) $lastId);
-		} catch (\PDOException $e) {
+		} catch (PDOException $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -124,7 +125,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$stmt->execute($values);
 
 			return $this->resolveById($collection, $id);
-		} catch (\PDOException $e) {
+		} catch (PDOException $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -150,7 +151,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$stmt->execute([$id]);
 
 			return $stmt->rowCount() > 0 ? $object : null;
-		} catch (\PDOException $e) {
+		} catch (PDOException $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -167,6 +168,7 @@ class SqlResolver implements GraphQLResolverInterface
 
 			if ($parent === null) {
 				$connection->rollBack();
+
 				return null;
 			}
 
@@ -175,7 +177,7 @@ class SqlResolver implements GraphQLResolverInterface
 
 			// Process nested relations
 			foreach ($nestedInput as $relationName => $relationData) {
-				if (!$collection->relations->has($relationName)) {
+				if (! $collection->relations->has($relationName)) {
 					continue;
 				}
 
@@ -202,10 +204,11 @@ class SqlResolver implements GraphQLResolverInterface
 
 			// Re-fetch the parent to get fresh data
 			return $this->resolveById($collection, (string) $parentId);
-		} catch (\PDOException $e) {
+		} catch (PDOException $e) {
 			if ($connection->inTransaction()) {
 				$connection->rollBack();
 			}
+
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -276,6 +279,7 @@ class SqlResolver implements GraphQLResolverInterface
 	protected function quoteIdentifier(string $identifier): string
 	{
 		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
+
 		return "`{$sanitized}`";
 	}
 
@@ -283,10 +287,11 @@ class SqlResolver implements GraphQLResolverInterface
 	{
 		$fields = [];
 		foreach ($collection->fields as $name => $field) {
-			if (!$field->isPrimaryKey() && $field->isFilterable()) {
+			if (! $field->isPrimaryKey() && $field->isFilterable()) {
 				$fields[$name] = $field;
 			}
 		}
+
 		return $fields;
 	}
 
@@ -324,7 +329,7 @@ class SqlResolver implements GraphQLResolverInterface
 			$validFields[$name] = $field->getColumn();
 		}
 
-		if (!isset($validFields[$sort])) {
+		if (! isset($validFields[$sort])) {
 			return '';
 		}
 
@@ -343,6 +348,7 @@ class SqlResolver implements GraphQLResolverInterface
 				$values[] = $value;
 			}
 		}
+
 		return $values;
 	}
 
@@ -361,7 +367,7 @@ class SqlResolver implements GraphQLResolverInterface
 		return 'id';
 	}
 
-	protected function convertDatabaseError(\PDOException $e, Collection $collection): GraphQLUserError
+	protected function convertDatabaseError(PDOException $e, Collection $collection): GraphQLUserError
 	{
 		$message = $e->getMessage();
 		$code = $e->getCode();
@@ -376,6 +382,7 @@ class SqlResolver implements GraphQLResolverInterface
 					$matches[1]
 				);
 			}
+
 			return new GraphQLUserError('A record with these values already exists.', 'DUPLICATE');
 		}
 
@@ -387,6 +394,7 @@ class SqlResolver implements GraphQLResolverInterface
 					$matches[1]
 				);
 			}
+
 			return new GraphQLUserError('A required field is missing.', 'REQUIRED_FIELD');
 		}
 

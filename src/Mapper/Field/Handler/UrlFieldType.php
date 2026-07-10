@@ -11,6 +11,7 @@ use ON\Mapper\Field\FieldTypeInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
+use Stringable;
 
 final class UrlFieldType implements FieldTypeInterface
 {
@@ -45,7 +46,7 @@ final class UrlFieldType implements FieldTypeInterface
 
 	private static function normalize(mixed $value, FieldContext $field): ?string
 	{
-		if (! is_scalar($value) && ! $value instanceof \Stringable) {
+		if (! is_scalar($value) && ! $value instanceof Stringable) {
 			throw new ConversionException('URL value must be scalar.', $field->getName());
 		}
 

@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload\Parser;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 interface PayloadParserInterface
 {

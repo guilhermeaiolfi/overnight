@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
@@ -29,7 +30,7 @@ interface RelationMutationHandlerInterface
 		array $children
 	): void;
 
-	public function getTargetCollection(): \ON\ORM\Definition\Collection\CollectionInterface;
+	public function getTargetCollection(): CollectionInterface;
 
 	public function getRelationName(): ?string;
 }

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Event;
 
+use ON\Data\Definition\Collection\Collection;
 use ON\Event\HasEventNameInterface;
-use ON\ORM\Definition\Collection\Collection;
 
 class AfterMutation implements HasEventNameInterface
 {

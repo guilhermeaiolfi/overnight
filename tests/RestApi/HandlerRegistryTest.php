@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Registry;
-use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
+use LogicException;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Handler\HasManyHandler;
 use ON\RestApi\Handler\ManyToManyHandler;
+use ON\RestApi\Query\Node\FieldSelection;
+use ON\RestApi\Query\Node\RelationSelection;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -43,7 +44,7 @@ final class HandlerRegistryTest extends TestCase
 		$loaders = HandlerRegistry::defaults();
 		$loaders->relation('post', 'tags', ManyToManyHandler::class);
 
-		$this->expectException(\LogicException::class);
+		$this->expectException(LogicException::class);
 		$loaders->relation('post', 'tags', ManyToManyHandler::class);
 	}
 

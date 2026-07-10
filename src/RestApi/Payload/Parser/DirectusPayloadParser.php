@@ -4,8 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload\Parser;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Payload\Action\BasicRelationAction;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;
@@ -18,6 +17,7 @@ use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Support\MutationInput;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 final class DirectusPayloadParser implements PayloadParserInterface
 {
@@ -69,7 +69,7 @@ final class DirectusPayloadParser implements PayloadParserInterface
 		$parsed = [];
 
 		foreach ($relations as $relationName => $rawInput) {
-			if (!$collection->relations->has((string) $relationName)) {
+			if (! $collection->relations->has((string) $relationName)) {
 				continue;
 			}
 
@@ -97,7 +97,7 @@ final class DirectusPayloadParser implements PayloadParserInterface
 			return [new BasicRelationAction(item: $rawInput)];
 		}
 
-		if (!is_array($rawInput)) {
+		if (! is_array($rawInput)) {
 			return [new BasicRelationAction(items: [$rawInput])];
 		}
 

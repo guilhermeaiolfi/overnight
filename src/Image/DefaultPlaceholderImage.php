@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Image;
 
-use ON\Image\Cache\ImageCacheInterface;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\StreamFactory;
+use ON\Image\Cache\ImageCacheInterface;
 use Psr\Http\Message\ResponseInterface;
 
 final class DefaultPlaceholderImage implements PlaceholderImageInterface

@@ -8,20 +8,20 @@ use FilesystemIterator;
 use ON\Application;
 use ON\Clockwork\ClockworkExtension;
 use ON\Config\ConfigExtension;
-
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
-
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryExtension;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Init\InitContext;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use stdClass;
 
 final class ExtensionInitTest extends TestCase
 {
@@ -113,7 +113,7 @@ final class ExtensionInitTest extends TestCase
 			InitRegisterProbeExtension::class => [],
 		]);
 
-		$app->init()->emit('probe.init', new \stdClass());
+		$app->init()->emit('probe.init', new stdClass());
 
 		$this->assertSame([
 			'register',
@@ -312,7 +312,7 @@ final class InitRegisterProbeExtension extends AbstractExtension
 		});
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 		self::$events[] = 'start';
 	}
@@ -381,7 +381,7 @@ final class MethodConsumerExtension extends AbstractExtension
 		});
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 		$context->emit(new MethodProviderReadyEvent());
 	}

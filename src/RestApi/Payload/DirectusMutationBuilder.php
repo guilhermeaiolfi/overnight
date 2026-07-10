@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\Mapper\ConversionGateway;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
 use ON\Mapper\Representation\StorageRepresentation;
@@ -12,9 +15,6 @@ use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\Mapper\Structural\MapperInterface;
 use ON\Mapper\Structural\MappingContext;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Mutation\ValueRef;
 use ON\RestApi\Payload\Action\CreateAction;
@@ -26,11 +26,11 @@ use ON\RestApi\Payload\Node\RelationPayload;
 use ON\RestApi\Payload\Parser\DirectusPayloadParser;
 use ON\RestApi\Payload\Parser\PayloadParserInterface;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\PrimaryKeyValue;
 use Psr\Http\Message\UploadedFileInterface;
 use RuntimeException;
-
-use function ON\Mapper\map;
 
 /**
  * Directus wire body → MutationSpec.
@@ -152,7 +152,7 @@ final class DirectusMutationBuilder implements MapperInterface
 			return $mode;
 		}
 
-		$resolvedId = $id ?? $collection->getPrimaryKey()->extractFromInput($spec->root->fields);
+		$resolvedId = $id ?? PrimaryKey::of($collection)->extractFromInput($spec->root->fields);
 		if ($resolvedId === null) {
 			return 'create';
 		}

@@ -6,9 +6,10 @@ namespace ON\RestApi\Resolver\Sql;
 
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Injection\FragmentInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Query\Node\AggregateSpec;
+use ON\RestApi\Query\Node\ExpressionNode;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Query\Node\GroupBySpec;
 use ON\RestApi\Query\Node\PaginationSpec;
@@ -18,6 +19,7 @@ use ON\RestApi\Query\Node\RelationQuerySpec;
 use ON\RestApi\Query\Node\SearchField;
 use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\SortSpec;
+use Throwable;
 
 class SqlQuerySpecCompiler
 {
@@ -105,7 +107,7 @@ class SqlQuerySpecCompiler
 		?string $tableAlias = null
 	): void {
 		foreach ($groupBy as $group) {
-			if (!$group instanceof GroupBySpec) {
+			if (! $group instanceof GroupBySpec) {
 				continue;
 			}
 
@@ -143,7 +145,7 @@ class SqlQuerySpecCompiler
 	): array {
 		$orders = [];
 		foreach ($sort as $item) {
-			if (!$item instanceof SortSpec) {
+			if (! $item instanceof SortSpec) {
 				continue;
 			}
 
@@ -172,7 +174,7 @@ class SqlQuerySpecCompiler
 	): array {
 		$selectExpressions = [];
 		foreach ($groupBy as $group) {
-			if (!$group instanceof GroupBySpec) {
+			if (! $group instanceof GroupBySpec) {
 				continue;
 			}
 
@@ -202,7 +204,7 @@ class SqlQuerySpecCompiler
 	): array {
 		$selectExpressions = [];
 		foreach ($aggregates as $aggregate) {
-			if (!$aggregate instanceof AggregateSpec) {
+			if (! $aggregate instanceof AggregateSpec) {
 				continue;
 			}
 
@@ -223,7 +225,7 @@ class SqlQuerySpecCompiler
 		return $selectExpressions;
 	}
 
-	public function alias(\ON\RestApi\Query\Node\ExpressionNode $expression): string
+	public function alias(ExpressionNode $expression): string
 	{
 		return $this->expressions->alias($expression);
 	}
@@ -246,7 +248,7 @@ class SqlQuerySpecCompiler
 				if (in_array(strtolower($field->getType()), $stringTypes, true)) {
 					$fields[] = $name;
 				}
-			} catch (\Throwable) {
+			} catch (Throwable) {
 			}
 		}
 
@@ -255,7 +257,7 @@ class SqlQuerySpecCompiler
 
 	protected function defaultAggregateAliasResolver(): callable
 	{
-		return static fn(string $function, string $field): string => preg_replace(
+		return static fn (string $function, string $field): string => preg_replace(
 			'/[^a-zA-Z0-9_]/',
 			'_',
 			$function . '_' . $field

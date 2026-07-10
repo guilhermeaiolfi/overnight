@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Action\RestActionInterface;
-use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNodeBuilder;
@@ -22,8 +23,7 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
-
-use function ON\Mapper\map;
+use Throwable;
 
 final class FilesAction implements RestActionInterface
 {
@@ -39,7 +39,8 @@ final class FilesAction implements RestActionInterface
 		private FileUploadEventEmitter $fileUploadEventEmitter,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hookDispatcher,
-	) {}
+	) {
+	}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
@@ -78,8 +79,9 @@ final class FilesAction implements RestActionInterface
 		try {
 			$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 			$afterHooksTx->flush();
-		} catch (\Throwable $throwable) {
+		} catch (Throwable $throwable) {
 			$afterHooksTx->rollback();
+
 			throw $throwable;
 		}
 

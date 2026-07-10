@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\ON\Auth\Storage;
 
-use ON\Auth\Result;
 use ON\Auth\Storage\SessionStorage;
 use ON\Session\SessionInterface;
 use PHPUnit\Framework\TestCase;

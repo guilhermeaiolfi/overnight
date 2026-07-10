@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use InvalidArgumentException;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 final class MutationNode
 {
@@ -21,7 +22,7 @@ final class MutationNode
 	public function setOperation(string $operation): void
 	{
 		if (! in_array($operation, ['create', 'update', 'delete'], true)) {
-			throw new \InvalidArgumentException(
+			throw new InvalidArgumentException(
 				sprintf('Mutation operation must be create, update or delete. Got "%s".', $operation)
 			);
 		}

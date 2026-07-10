@@ -13,7 +13,7 @@ final class ColumnTraitTest extends TestCase
 
 	protected function setUp(): void
 	{
-		$this->registry = new UserPartsRegistry();
+		$this->registry = UserPartsRegistry::create();
 		$this->dummyLoader = new DummyLoader($this->registry);
 	}
 
@@ -34,6 +34,7 @@ final class ColumnTraitTest extends TestCase
 
 		$this->assertSame([
 			"name" => "name",
+			"id" => "id",
 		], $columns);
 
 		$columns = $this->dummyLoader->resolveColumns($this->registry->getCollection('users'), [
@@ -71,8 +72,10 @@ final class ColumnTraitTest extends TestCase
 			"id" => false,
 		]);
 
+		// Primary-key columns remain mandatory even when explicitly excluded.
 		$this->assertSame([
 			"name" => "name",
+			"id" => "id",
 		], $columns);
 	}
 

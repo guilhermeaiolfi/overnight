@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Container;
 
-use ON\DB\DatabaseManager;
+use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
-use ON\ORM\Definition\Registry;
+use ON\DB\DatabaseManager;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\RestApiConfig;
@@ -19,13 +19,13 @@ class ItemRepositoryFactory
 		$config = $container->get(RestApiConfig::class);
 		$registry = $container->get(Registry::class);
 
-		if (!$container->has(DatabaseManager::class)) {
+		if (! $container->has(DatabaseManager::class)) {
 			throw RestApiError::serviceUnavailable();
 		}
 
 		$manager = $container->get(DatabaseManager::class);
 		$cycle = $manager->getDatabase($config->get('database', 'cycle'));
-		if (!$cycle instanceof CycleDatabase) {
+		if (! $cycle instanceof CycleDatabase) {
 			throw RestApiError::serviceUnavailable();
 		}
 

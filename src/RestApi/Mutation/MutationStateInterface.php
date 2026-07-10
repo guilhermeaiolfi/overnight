@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 interface MutationStateInterface
 {

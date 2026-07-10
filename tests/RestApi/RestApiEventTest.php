@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use ON\Data\Definition\Registry;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
-use ON\ORM\Definition\Registry;
 
 final class RestApiEventTest extends TestCase
 {

@@ -8,10 +8,9 @@ use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\ArrayNode;
-use Cycle\ORM\Relation;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use ON\ORM\Select\Traits\JoinOneTableTrait;
@@ -45,13 +44,13 @@ class HasManyLoader extends JoinableLoader
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		Collection $collection,
-		protected RelationInterface $relation,
+		CollectionInterface $collection,
+		RelationInterface $relation,
 		array $options
 	) {
 		parent::__construct($registry, $factory, $collection, $relation, $options);
-		$this->options['where'] = $schema[Relation::WHERE] ?? [];
-		$this->options['orderBy'] = $schema[Relation::ORDER_BY] ?? [];
+		$this->options['where'] = $relation->getWhere();
+		$this->options['orderBy'] = $relation->getOrderBy();
 	}
 
 	public function configureQuery(SelectQuery $query, array $outerKeys = []): SelectQuery
@@ -71,14 +70,14 @@ class HasManyLoader extends JoinableLoader
 		$this->setWhere(
 			$query,
 			$this->isJoined() ? 'onWhere' : 'where',
-			$this->options['where'] ?? $this->schema[Relation::WHERE] ?? []
+			$this->options['where'] ?? $this->relation->getWhere()
 		);
 
 		// user specified ORDER_BY rules
 		$this->setOrderBy(
 			$query,
 			$this->getAlias(),
-			$this->options['orderBy'] ?? $this->schema[Relation::ORDER_BY] ?? []
+			$this->options['orderBy'] ?? $this->relation->getOrderBy()
 		);
 
 		return parent::configureQuery($query);
@@ -89,9 +88,9 @@ class HasManyLoader extends JoinableLoader
 
 		return new ArrayNode(
 			$this->columnNames(),
-			$this->target->getPrimaryKey()->getFieldNames(),
-			$this->relation->outerKeys(),
-			$this->relation->innerKeys()
+			$this->target->getPrimaryKey(),
+			$this->relation->getOuterKeys(),
+			$this->relation->getInnerKeys()
 		);
 	}
 }

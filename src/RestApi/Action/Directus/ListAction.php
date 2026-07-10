@@ -4,14 +4,13 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\RestApi\Support\RegistrySupportTrait;
-use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Action\RestActionInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerFactory;
@@ -19,10 +18,10 @@ use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\RestApiConfig;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
-
-use function ON\Mapper\map;
+use ON\RestApi\RestApiConfig;
+use ON\RestApi\Support\DirectusSupportTrait;
+use ON\RestApi\Support\RegistrySupportTrait;
 
 final class ListAction implements RestActionInterface
 {
@@ -38,7 +37,8 @@ final class ListAction implements RestActionInterface
 		private SqlQuerySpecCompiler $querySpecCompiler,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hooks,
-	) {}
+	) {
+	}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
 	{
@@ -55,7 +55,7 @@ final class ListAction implements RestActionInterface
 
 		// Aggregate query
 		if ($querySpec->aggregate !== []) {
-			if (!$options['dispatchEvents']) {
+			if (! $options['dispatchEvents']) {
 				return ['data' => $this->aggregate($collection, $querySpec)];
 			}
 
@@ -157,7 +157,7 @@ final class ListAction implements RestActionInterface
 		$items = $this->fetchData(
 			$collection,
 			$rows,
-			$requestedColumnNames === [] && !$querySpec->selection->explicit
+			$requestedColumnNames === [] && ! $querySpec->selection->explicit
 				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
 				: $requestedColumnNames,
 			$internalRelationKeyColumnNames,
@@ -189,7 +189,7 @@ final class ListAction implements RestActionInterface
 				$collection,
 				$querySpec->aggregate,
 				null,
-				fn(string $function, string $field): string => $this->aggregateAlias($function, $field)
+				fn (string $function, string $field): string => $this->aggregateAlias($function, $field)
 			)
 		);
 
@@ -230,5 +230,4 @@ final class ListAction implements RestActionInterface
 
 		return $root->fetchData();
 	}
-
 }

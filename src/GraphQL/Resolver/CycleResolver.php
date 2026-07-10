@@ -6,10 +6,11 @@ namespace ON\GraphQL\Resolver;
 
 use Cycle\ORM\EntityManager;
 use Cycle\ORM\ORMInterface;
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
+use Throwable;
 
 class CycleResolver implements GraphQLResolverInterface
 {
@@ -64,7 +65,7 @@ class CycleResolver implements GraphQLResolverInterface
 			$em->run();
 
 			return $entity;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw new GraphQLUserError('Failed to create record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
 	}
@@ -87,7 +88,7 @@ class CycleResolver implements GraphQLResolverInterface
 			$em->run();
 
 			return $entity;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw new GraphQLUserError('Failed to update record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
 	}
@@ -106,7 +107,7 @@ class CycleResolver implements GraphQLResolverInterface
 			$em->run();
 
 			return $entity;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw new GraphQLUserError('Failed to delete record: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
 	}
@@ -127,7 +128,7 @@ class CycleResolver implements GraphQLResolverInterface
 
 			// Process nested relations
 			foreach ($nestedInput as $relationName => $relationData) {
-				if (!$collection->relations->has($relationName)) {
+				if (! $collection->relations->has($relationName)) {
 					continue;
 				}
 
@@ -164,7 +165,7 @@ class CycleResolver implements GraphQLResolverInterface
 			}
 
 			return $entity;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw new GraphQLUserError('Failed to create record with relations: ' . $e->getMessage(), 'DATABASE_ERROR', null, $e);
 		}
 	}
@@ -224,11 +225,11 @@ class CycleResolver implements GraphQLResolverInterface
 		$scope = [];
 
 		foreach ($collection->fields as $name => $field) {
-			if ($field->isPrimaryKey() || !$field->isFilterable()) {
+			if ($field->isPrimaryKey() || ! $field->isFilterable()) {
 				continue;
 			}
 
-			if (!isset($args[$name])) {
+			if (! isset($args[$name])) {
 				continue;
 			}
 

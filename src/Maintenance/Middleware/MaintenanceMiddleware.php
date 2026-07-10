@@ -135,6 +135,7 @@ class MaintenanceMiddleware implements MiddlewareInterface
 				}
 			}
 			$pattern = '/^' . implode('\.', $patternParts) . '$/';
+
 			return (bool) preg_match($pattern, $ip);
 		}
 

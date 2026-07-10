@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\Middleware;
 
+use InvalidArgumentException;
 use Invoker\ParameterResolver\AssociativeArrayResolver;
 use Invoker\ParameterResolver\DefaultValueResolver;
 use Invoker\ParameterResolver\NumericArrayResolver;
@@ -32,6 +33,7 @@ use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use stdClass;
 use Tests\ON\Fixtures\TestPage;
 
 final class ExecutionInvocationPayload
@@ -56,7 +58,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$urlHelperFactory = new UrlHelperFactory();
 
 		$this->container->method('has')
-			->willReturnCallback(fn(string $class): bool => in_array($class, [
+			->willReturnCallback(fn (string $class): bool => in_array($class, [
 				UrlHelper::class,
 				RouterInterface::class,
 				RequestStackInterface::class,
@@ -240,7 +242,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$route = new Route('/logout', 'Page::index');
 		$routeResult = RouteResult::fromRoute($route);
 
-		$page = new class {
+		$page = new class () {
 			public ?UrlHelper $url = null;
 
 			public function index(UrlHelper $url): TextResponse
@@ -291,7 +293,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 		$dto = new ExecutionInvocationPayload('typed');
 
-		$page = new class {
+		$page = new class () {
 			public ?string $token = null;
 			public ?ExecutionInvocationPayload $dto = null;
 
@@ -328,9 +330,9 @@ final class ExecutionMiddlewareTest extends TestCase
 	{
 		foreach (['request', 'handler', 'delegate'] as $key) {
 			try {
-				InvocationContext::empty()->with($key, new \stdClass());
+				InvocationContext::empty()->with($key, new stdClass());
 				$this->fail(sprintf('Expected reserved key "%s" to be rejected.', $key));
-			} catch (\InvalidArgumentException $e) {
+			} catch (InvalidArgumentException $e) {
 				$this->assertStringContainsString($key, $e->getMessage());
 			}
 		}
@@ -338,7 +340,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 	public function testInvocationContextRejectsReservedTypedRequestObjects(): void
 	{
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 		$this->expectExceptionMessage(ServerRequestInterface::class);
 
 		InvocationContext::empty()->withTyped(new ServerRequest());
@@ -346,7 +348,7 @@ final class ExecutionMiddlewareTest extends TestCase
 
 	public function testInvocationContextRejectsReservedTypedHandlerObjects(): void
 	{
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 		$this->expectExceptionMessage(RequestHandlerInterface::class);
 
 		$handler = $this->createMock(RequestHandlerInterface::class);
@@ -356,6 +358,7 @@ final class ExecutionMiddlewareTest extends TestCase
 	protected function createRouteResult(string $method, array $params): RouteResult
 	{
 		$route = new Route('/test', TestPage::class . '::' . $method);
+
 		return RouteResult::fromRoute($route, $params);
 	}
 
@@ -366,7 +369,7 @@ final class ExecutionMiddlewareTest extends TestCase
 		$router->method('match')->willReturn($routeResult);
 
 		$middleware = new RouteMiddleware($router, $app, $this->container);
-		$capture = new class implements RequestHandlerInterface {
+		$capture = new class () implements RequestHandlerInterface {
 			public ?ServerRequestInterface $request = null;
 
 			public function handle(ServerRequestInterface $request): ResponseInterface

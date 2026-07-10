@@ -6,21 +6,18 @@ namespace Tests\ON\ORM\Container;
 
 use FilesystemIterator;
 use ON\Application;
-use ON\Benchmark;
-use ON\Config\AppConfig;
 use ON\Config\ConfigExtension;
-use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
+use ON\Data\Definition\Registry;
+use ON\DataIntegration\DataExtension;
+use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Init\Event\OrmConfigureEvent;
-use ON\ORM\ORMExtension;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 
-final class RegistryFactoryBenchmarkTest extends TestCase
+final class DefinitionRegistryProviderBenchmarkTest extends TestCase
 {
 	private string $previousCwd;
 	private string $projectDir;
@@ -29,39 +26,29 @@ final class RegistryFactoryBenchmarkTest extends TestCase
 	{
 		$this->previousCwd = getcwd();
 		$this->projectDir = $this->createProjectDir();
-		Benchmark::$benchmarks = [];
 	}
 
 	protected function tearDown(): void
 	{
 		chdir($this->previousCwd);
 		Application::$instance = null;
-		Benchmark::$benchmarks = [];
 		$this->removeDirectory($this->projectDir);
 	}
 
-	public function testRegistryResolutionRecordsBenchmarkTimings(): void
+	public function testRegistryResolutionAppliesDataDefinitionConfigureListeners(): void
 	{
 		$app = $this->createApplication([
 			ConfigExtension::class => [],
 			ContainerExtension::class => [],
-			ORMExtension::class => [],
-			RegistryProbeExtension::class => [],
+			DataExtension::class => [],
+			DefinitionProbeExtension::class => [],
 		]);
 
 		$registry = $app->ext('container')->getContainer()->get(Registry::class);
 
 		$this->assertInstanceOf(Registry::class, $registry);
 		$this->assertNotNull($registry->getCollection('bench_probe'));
-		$this->assertTrue(Benchmark::has('orm.registry.base'));
-		$this->assertTrue(Benchmark::has('orm.registry.configure'));
-		$this->assertTrue(Benchmark::has('orm.registry.total'));
-		$this->assertGreaterThanOrEqual(0.0, Benchmark::ms('orm.registry.base'));
-		$this->assertGreaterThanOrEqual(0.0, Benchmark::ms('orm.registry.configure'));
-		$this->assertGreaterThanOrEqual(
-			Benchmark::ms('orm.registry.base') + Benchmark::ms('orm.registry.configure'),
-			Benchmark::ms('orm.registry.total')
-		);
+		$this->assertSame(['id'], $registry->getCollection('bench_probe')->getPrimaryKey());
 	}
 
 	/**
@@ -118,7 +105,7 @@ PHP
 
 	private function createProjectDir(): string
 	{
-		$dir = sys_get_temp_dir() . '/overnight-registry-benchmark-test-' . bin2hex(random_bytes(8));
+		$dir = sys_get_temp_dir() . '/overnight-definition-registry-provider-test-' . bin2hex(random_bytes(8));
 		mkdir($dir, 0777, true);
 
 		return $dir;
@@ -147,14 +134,15 @@ PHP
 	}
 }
 
-final class RegistryProbeExtension extends AbstractExtension
+final class DefinitionProbeExtension extends AbstractExtension
 {
 	public function register(Init $init): void
 	{
-		$init->on(OrmConfigureEvent::class, function (OrmConfigureEvent $event): void {
+		$init->on(DataDefinitionConfigureEvent::class, function (DataDefinitionConfigureEvent $event): void {
 			$event->registry
 				->collection('bench_probe')
-				->field('id', 'int')->primaryKey(true)->end()
+				->primaryKey('id')
+				->field('id', 'int')->end()
 				->end();
 		});
 	}

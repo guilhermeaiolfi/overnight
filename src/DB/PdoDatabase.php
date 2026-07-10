@@ -14,10 +14,9 @@ class PdoDatabase implements DatabaseInterface
 	protected $connection;
 
 	public function __construct(
-		protected string $name, 
+		protected string $name,
 		protected DatabaseConfig $config
-	)
-	{
+	) {
 		$parameters = $config->get("databases.{$name}");
 
 		$dsn = ! empty($parameters["dsn"]) ? $parameters["dsn"] : null;
@@ -26,19 +25,19 @@ class PdoDatabase implements DatabaseInterface
 		$options = ! empty($parameters["options"]) ? $parameters["options"] : [];
 
 		// Persistent connections
-		if (!empty($parameters["persistent"])) {
-			$options[\PDO::ATTR_PERSISTENT] = true;
+		if (! empty($parameters["persistent"])) {
+			$options[PDO::ATTR_PERSISTENT] = true;
 		}
 
 		try {
 			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
 
-			if (!empty($parameters["wrapper_class"]) && class_exists($parameters["wrapper_class"])) {
+			if (! empty($parameters["wrapper_class"]) && class_exists($parameters["wrapper_class"])) {
 				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
 			}
 
 			// If no PDO wrapper is active, use a logging statement class for prepare/execute.
-			if (!empty($parameters["debug"]) && ! $this->connection instanceof DebugPDO) {
+			if (! empty($parameters["debug"]) && ! $this->connection instanceof DebugPDO) {
 				$this->connection->setAttribute(
 					PDO::ATTR_STATEMENT_CLASS,
 					[DebugPDO\LoggingPDOStatement::class, []]

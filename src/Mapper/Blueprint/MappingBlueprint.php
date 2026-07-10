@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Blueprint;
 
+use DateTimeInterface;
+use InvalidArgumentException;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Attribute\MapField;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ReflectionClass;
 use ReflectionNamedType;
 use ReflectionProperty;
@@ -64,7 +66,7 @@ final class MappingBlueprint
 	public static function fromCollection(CollectionInterface $collection, int $depth = 0): self
 	{
 		if ($depth < 0) {
-			throw new \InvalidArgumentException('Collection blueprint depth cannot be negative.');
+			throw new InvalidArgumentException('Collection blueprint depth cannot be negative.');
 		}
 
 		$blueprint = new self();
@@ -158,7 +160,7 @@ final class MappingBlueprint
 
 		$typeName = $type->getName();
 
-		if (enum_exists($typeName) || is_subclass_of($typeName, \DateTimeInterface::class)) {
+		if (enum_exists($typeName) || is_subclass_of($typeName, DateTimeInterface::class)) {
 			return new FieldBlueprintEntry($typeName);
 		}
 
@@ -182,6 +184,6 @@ final class MappingBlueprint
 	{
 		return class_exists($type)
 			&& ! enum_exists($type)
-			&& ! is_subclass_of($type, \DateTimeInterface::class);
+			&& ! is_subclass_of($type, DateTimeInterface::class);
 	}
 }

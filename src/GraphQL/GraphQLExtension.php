@@ -5,26 +5,25 @@ declare(strict_types=1);
 namespace ON\GraphQL;
 
 use ON\Application;
+use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
-use ON\DB\PdoDatabase;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\GraphQL\Resolver\SqlResolver;
+use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\ORM\Definition\Registry;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\Validation\CollectionValidator;
-
 use Psr\Container\ContainerInterface;
 
 class GraphQLExtension extends AbstractExtension
 {
 	public const ID = 'graphql';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -35,7 +34,7 @@ class GraphQLExtension extends AbstractExtension
 	{
 		$enabled = $this->options['enabled'] ?? true;
 
-		if (!$enabled) {
+		if (! $enabled) {
 			return;
 		}
 
@@ -112,7 +111,7 @@ class GraphQLExtension extends AbstractExtension
 
 		$registry = $container->get(Registry::class);
 
-		if (!$container->has(DatabaseManager::class)) {
+		if (! $container->has(DatabaseManager::class)) {
 			return null;
 		}
 
@@ -129,16 +128,17 @@ class GraphQLExtension extends AbstractExtension
 
 		if ($resolverType === 'cycle') {
 			$orm = $database->getResource();
+
 			return new CycleResolver($orm, $registry);
 		}
 
 		// Auto-detect based on database class
 		if ($database instanceof CycleDatabase) {
 			$orm = $database->getResource();
+
 			return new CycleResolver($orm, $registry);
 		}
 
 		return new SqlResolver($registry, $database);
 	}
-
 }

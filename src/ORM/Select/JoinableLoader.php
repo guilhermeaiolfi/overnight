@@ -11,9 +11,9 @@ use Cycle\ORM\Exception\LoaderException;
 use Cycle\ORM\Parser\AbstractNode;
 use function is_callable;
 use function is_string;
-use ON\ORM\Definition\Collection\Collection;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\RelationInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\Loader\SubQueryLoader;
 use ON\ORM\Select\Traits\ColumnsTrait;
@@ -71,7 +71,7 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	public function __construct(
 		Registry $registry,
 		FactoryInterface $factory,
-		Collection $collection,
+		CollectionInterface $collection,
 		protected RelationInterface $relation,
 		array $options
 	) {
@@ -286,27 +286,30 @@ abstract class JoinableLoader extends AbstractLoader implements JoinableInterfac
 	}
 
 	/**
-	 * Generate sql identifier using loader alias and value from relation definition. Key name to be
-	 * fetched from schema.
+	 * Generate sql identifier using loader alias and relation key field name(s).
 	 *
-	 * Example:
-	 * $this->getKey(Relation::OUTER_KEY);
+	 * @param list<string>|string $keys
 	 */
-	protected function localKey(string|int $key): ?string
+	protected function localKey(array|string $keys): ?string
 	{
-		if (empty($this->schema[$key])) {
+		$keys = (array) $keys;
+		if ($keys === []) {
 			return null;
 		}
 
-		return $this->getAlias() . '.' . $this->fieldAlias($this->schema[$key]);
+		return $this->getAlias() . '.' . $this->fieldAlias($keys[0]);
 	}
 
 	/**
-	 * Get parent identifier based on relation configuration key.
+	 * Get parent identifier based on relation key field name(s).
+	 *
+	 * @param list<string>|string $keys
 	 */
-	protected function parentKey(string|int $key): string
+	protected function parentKey(array|string $keys): string
 	{
-		return $this->parent->getAlias() . '.' . $this->parent->fieldAlias($this->schema[$key]);
+		$keys = (array) $keys;
+
+		return $this->parent->getAlias() . '.' . $this->parent->fieldAlias($keys[0]);
 	}
 
 	protected function getJoinMethod(): string

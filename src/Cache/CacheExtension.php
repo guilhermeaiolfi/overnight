@@ -87,5 +87,4 @@ class CacheExtension extends AbstractExtension
 	{
 		return $this->clearers;
 	}
-
 }

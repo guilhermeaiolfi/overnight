@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\RestApi\Support\PrimaryKey;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 final class MutationState implements MutationStateInterface
 {
@@ -114,14 +115,15 @@ final class MutationState implements MutationStateInterface
 	{
 		$values = [];
 
-		foreach ($this->collection->getPrimaryKey()->getFieldNames() as $fieldName) {
+		foreach (PrimaryKey::of($this->collection)->getFieldNames() as $fieldName) {
 			$value = $this->getValue($fieldName);
 			if ($value instanceof ValueRef) {
-				if (!$value->isReady() && $requireReady) {
+				if (! $value->isReady() && $requireReady) {
 					return null;
 				}
 
 				$values[$fieldName] = $requireReady ? $value->resolve() : $value;
+
 				continue;
 			}
 
@@ -129,7 +131,7 @@ final class MutationState implements MutationStateInterface
 				$value = $this->resolveValue($value);
 			}
 
-			if ($value === null && !$this->isValueReady($fieldName)) {
+			if ($value === null && ! $this->isValueReady($fieldName)) {
 				return null;
 			}
 

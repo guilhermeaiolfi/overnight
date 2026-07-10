@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace Tests\ON\Mapper;
 
 use DateTimeImmutable;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Attribute\MapFrom;
 use ON\Mapper\Conversion\ConversionDirection;
 use ON\Mapper\Conversion\FieldResolverInterface;
 use ON\Mapper\Field\FieldContext;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
-use ON\Mapper\Structural\MappingContext;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Registry;
+use ON\Mapper\Structural\MappingContext;
 use PHPUnit\Framework\TestCase;
-
-use function ON\Mapper\map;
 
 final class FieldContextResolverTest extends TestCase
 {

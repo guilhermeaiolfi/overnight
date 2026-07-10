@@ -6,14 +6,14 @@ namespace Tests\ON\Middleware;
 
 use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
+use Laminas\Stratigility\MiddlewarePipeInterface;
 use ON\Application;
 use ON\Middleware\PipelineExtension;
 use ON\Middleware\RequestPreparerInterface;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
-use Laminas\Stratigility\MiddlewarePipeInterface;
+use ReflectionProperty;
 
 final class PipelineExtensionTest extends TestCase
 {
@@ -32,7 +32,7 @@ final class PipelineExtensionTest extends TestCase
 
 		$this->setProtectedProperty($extension, 'pipeline', $pipeline);
 
-		$extension->addRequestPreparer(new class implements RequestPreparerInterface {
+		$extension->addRequestPreparer(new class () implements RequestPreparerInterface {
 			public function prepare(ServerRequestInterface $request): ServerRequestInterface
 			{
 				$order = $request->getAttribute('order', []);
@@ -42,7 +42,7 @@ final class PipelineExtensionTest extends TestCase
 			}
 		}, 10);
 
-		$extension->addRequestPreparer(new class implements RequestPreparerInterface {
+		$extension->addRequestPreparer(new class () implements RequestPreparerInterface {
 			public function prepare(ServerRequestInterface $request): ServerRequestInterface
 			{
 				$order = $request->getAttribute('order', []);
@@ -66,14 +66,14 @@ final class PipelineExtensionTest extends TestCase
 		$pipeline->expects($this->once())
 			->method('process')
 			->with(
-				$this->callback(fn(ServerRequestInterface $request): bool => $request->getAttribute('prepared') === true),
+				$this->callback(fn (ServerRequestInterface $request): bool => $request->getAttribute('prepared') === true),
 				$this->isInstanceOf(RequestHandlerInterface::class)
 			)
 			->willReturn(new TextResponse('processed'));
 
 		$this->setProtectedProperty($extension, 'pipeline', $pipeline);
 
-		$extension->addRequestPreparer(new class implements RequestPreparerInterface {
+		$extension->addRequestPreparer(new class () implements RequestPreparerInterface {
 			public function prepare(ServerRequestInterface $request): ServerRequestInterface
 			{
 				return $request->withAttribute('prepared', true);
@@ -91,7 +91,7 @@ final class PipelineExtensionTest extends TestCase
 	 */
 	private function setProtectedProperty(object $target, string $property, mixed $value): void
 	{
-		$reflection = new \ReflectionProperty($target, $property);
+		$reflection = new ReflectionProperty($target, $property);
 		$reflection->setValue($target, $value);
 	}
 }

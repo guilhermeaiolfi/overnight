@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemUpdating extends ItemCreating
 {

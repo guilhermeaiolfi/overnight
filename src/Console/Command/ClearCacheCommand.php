@@ -15,6 +15,7 @@ use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Console\Question\ChoiceQuestion;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Throwable;
 
 class ClearCacheCommand extends Command
 {
@@ -61,7 +62,7 @@ class ClearCacheCommand extends Command
 
 		try {
 			$selected = $this->resolveSelectedClearers($input, $output, $definitions);
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			$output->writeln($formatter->formatSection('ERROR', $e->getMessage()));
 
 			return Command::FAILURE;
@@ -77,7 +78,7 @@ class ClearCacheCommand extends Command
 			try {
 				$definition->clear($this->container, $output);
 				$output->writeln($formatter->formatSection('OK', $definition->label . ' cleared!'));
-			} catch (\Throwable $e) {
+			} catch (Throwable $e) {
 				$output->writeln($formatter->formatSection('ERROR', sprintf(
 					'Failed clearing %s: %s',
 					$definition->name,

@@ -6,7 +6,7 @@ namespace Tests\ON\RestApi;
 
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Addon\SchemaAddon;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
@@ -22,7 +22,8 @@ final class SchemaAddonTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)
 				->validation('required|min:3', [
 					'min' => 'Name must be at least :min characters.',
@@ -35,7 +36,7 @@ final class SchemaAddonTest extends TestCase
 
 		$response = $addon->process(
 			new ServerRequest(uri: '/items/_schema/user', method: 'GET'),
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -50,6 +51,7 @@ final class SchemaAddonTest extends TestCase
 		foreach ($body['data']['fields'] as $field) {
 			if ($field['name'] === 'name') {
 				$nameField = $field;
+
 				break;
 			}
 		}

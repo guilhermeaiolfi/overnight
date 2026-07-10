@@ -18,9 +18,9 @@ use Cycle\Schema\Generator\ValidateEntities;
 use Cycle\Schema\Registry as CycleRegistry;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\CMS\DataHandler;
+use ON\Data\Definition\Registry;
 use ON\DB\DatabaseManager;
 use ON\ORM\Compiler\CycleRegistryGenerator;
-use ON\ORM\Definition\Registry;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 

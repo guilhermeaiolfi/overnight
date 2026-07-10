@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use Psr\Container\ContainerInterface;
-
 interface DatabaseInterface
 {
 	public function getConnection(): mixed;

@@ -4,10 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
+use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Schema;
+use ON\Data\Definition\Collection\Collection;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\RelationInterface;
+use ON\GraphQL\Event\BeforeMutation;
 use ON\GraphQL\GraphQLRegistryGenerator;
-use ON\ORM\Definition\Registry;
+use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\EventDispatcher\EventDispatcherInterface;
+use RuntimeException;
+use stdClass;
 
 final class GraphQLRegistryGeneratorTest extends TestCase
 {
@@ -35,7 +43,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testGenerateSchemaWithCollection(): void
 	{
 		$collection = $this->registry->collection('user');
-		$collection->field('id', 'int')->type('int')->primaryKey(true)->end();
+		$collection->primaryKey('id');
+		$collection->field('id', 'int')->type('int')->end();
 		$collection->field('name', 'string')->type('string')->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -49,12 +58,14 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testGenerateSchemaWithMultipleCollections(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
 		$this->registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('title', 'string')->type('string')->end()
 			->end();
 
@@ -67,11 +78,13 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testHiddenCollectionIsNotIncluded(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$this->registry->collection('hidden')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->hidden(true)
 			->end();
 
@@ -84,7 +97,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testCollectionWithMetadataResolver(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->metadata('gql::resolver::findAll', fn ($args, $container) => [])
 			->end();
 
@@ -111,7 +125,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testFindAllResolverNotDefinedThrowsException(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -120,7 +135,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$queryType = $schema->getQueryType();
 		$userField = $queryType->getField('user');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(RuntimeException::class);
 		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
@@ -130,7 +145,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testFindByIdResolverNotDefinedThrowsException(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -139,7 +155,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$queryType = $schema->getQueryType();
 		$userField = $queryType->getField('user_by_id');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(RuntimeException::class);
 		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
@@ -149,7 +165,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testMutationTypeExistsWithDefaultResolvers(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -161,7 +178,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testMutationTypeCreatedWithAnyResolver(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->metadata('gql::resolver::update', fn () => null)
 			->end();
 
@@ -177,7 +195,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$customResolver = fn () => null;
 
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->metadata('gql::resolver::create', $customResolver)
 			->end();
 
@@ -197,11 +216,13 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$called = false;
 		$customResolver = function ($args, $container) use (&$called) {
 			$called = true;
+
 			return [];
 		};
 
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->metadata('gql::resolver::findAll', $customResolver)
 			->end();
 
@@ -222,11 +243,13 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$called = false;
 		$customResolver = function ($args, $container) use (&$called) {
 			$called = true;
-			return new \stdClass();
+
+			return new stdClass();
 		};
 
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->metadata('gql::resolver::create', $customResolver)
 			->end();
 
@@ -245,7 +268,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testResolveCollectionWithoutDatabaseThrowsException(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
@@ -255,7 +279,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$queryType = $schema->getQueryType();
 		$userField = $queryType->getField('user');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(RuntimeException::class);
 		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
@@ -265,7 +289,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testResolveByIdWithoutDatabaseThrowsException(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
@@ -275,7 +300,7 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$queryType = $schema->getQueryType();
 		$userField = $queryType->getField('user_by_id');
 
-		$this->expectException(\RuntimeException::class);
+		$this->expectException(RuntimeException::class);
 		$this->expectExceptionMessage('No resolver configured');
 
 		$resolver = $userField->resolveFn;
@@ -285,9 +310,10 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testResolveCreateWithoutDatabaseWithCustomResolver(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
-			->metadata('gql::resolver::create', fn() => null)
+			->metadata('gql::resolver::create', fn () => null)
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -305,9 +331,10 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testResolveUpdateWithoutDatabaseWithCustomResolver(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
-			->metadata('gql::resolver::update', fn() => null)
+			->metadata('gql::resolver::update', fn () => null)
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -325,9 +352,10 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testResolveDeleteWithoutDatabaseWithCustomResolver(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
-			->metadata('gql::resolver::delete', fn() => null)
+			->metadata('gql::resolver::delete', fn () => null)
 			->end();
 
 		$generator = new GraphQLRegistryGenerator($this->registry);
@@ -345,7 +373,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testFilterableFieldsAreAddedAsQueryArgs(): void
 	{
 		$this->registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('title', 'string')->type('string')->end()
 			->field('status', 'string')->type('string')->end()
 			->end();
@@ -369,7 +398,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testHiddenFieldIsNotInSchema(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->field('password', 'string')->type('string')->hidden(true)->end()
 			->end();
@@ -389,7 +419,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testPrimaryKeyNotFilterable(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
@@ -399,38 +430,84 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$idField = $fieldsArray['id'];
 		$nameField = $fieldsArray['name'];
 
-		$this->assertFalse($idField->isFilterable());
+		// ON\Data keeps filterable=true by default; GraphQL excludes PKs via isPrimaryKey().
+		$this->assertTrue($idField->isPrimaryKey());
+		$this->assertTrue($idField->isFilterable());
+		$this->assertFalse($nameField->isPrimaryKey());
 		$this->assertTrue($nameField->isFilterable());
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$queryType = $schema->getQueryType();
+		$userArgs = $queryType->getField('user')->args;
+		$argNames = array_map(static fn ($arg) => $arg->name, $userArgs);
+		$this->assertNotContains('id', $argNames);
+		$this->assertContains('name', $argNames);
 	}
 
 	public function testBeforeMutationEventIsDispatched(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
 		$eventDispatched = false;
-		$dispatcher = new class($eventDispatched) implements \Psr\EventDispatcher\EventDispatcherInterface {
-			public function __construct(private bool &$dispatched) {}
-			public function dispatch(object $event): object {
-				if ($event instanceof \ON\GraphQL\Event\BeforeMutation) {
+		$dispatcher = new class ($eventDispatched) implements EventDispatcherInterface {
+			public function __construct(private bool &$dispatched)
+			{
+			}
+
+			public function dispatch(object $event): object
+			{
+				if ($event instanceof BeforeMutation) {
 					$this->dispatched = true;
 				}
+
 				return $event;
 			}
 		};
 
 		// Create a mock resolver that returns a stdClass
-		$mockResolver = new class implements \ON\GraphQL\Resolver\GraphQLResolverInterface {
-			public function resolveCollection(\ON\ORM\Definition\Collection\Collection $c, array $a = []): array { return ['items' => [], 'totalCount' => 0]; }
-			public function resolveById(\ON\ORM\Definition\Collection\Collection $c, string $id): ?object { return null; }
-			public function resolveCreate(\ON\ORM\Definition\Collection\Collection $c, array $input): ?object { return (object) $input; }
-			public function resolveUpdate(\ON\ORM\Definition\Collection\Collection $c, string $id, array $input): ?object { return null; }
-			public function resolveDelete(\ON\ORM\Definition\Collection\Collection $c, string $id): ?object { return null; }
-			public function resolveNestedCreate(\ON\ORM\Definition\Collection\Collection $c, array $input, array $nested): ?object { return null; }
-			public function resolveRelation(mixed $source, \ON\ORM\Definition\Relation\RelationInterface $r): mixed { return null; }
-			public function clearCache(): void {}
+		$mockResolver = new class () implements GraphQLResolverInterface {
+			public function resolveCollection(Collection $c, array $a = []): array
+			{
+				return ['items' => [], 'totalCount' => 0];
+			}
+
+			public function resolveById(Collection $c, string $id): ?object
+			{
+				return null;
+			}
+
+			public function resolveCreate(Collection $c, array $input): ?object
+			{
+				return (object) $input;
+			}
+
+			public function resolveUpdate(Collection $c, string $id, array $input): ?object
+			{
+				return null;
+			}
+
+			public function resolveDelete(Collection $c, string $id): ?object
+			{
+				return null;
+			}
+
+			public function resolveNestedCreate(Collection $c, array $input, array $nested): ?object
+			{
+				return null;
+			}
+
+			public function resolveRelation(mixed $source, RelationInterface $r): mixed
+			{
+				return null;
+			}
+
+			public function clearCache(): void
+			{
+			}
 		};
 
 		$generator = new GraphQLRegistryGenerator($this->registry, $mockResolver, $dispatcher);
@@ -447,7 +524,8 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 	public function testEnumFieldGeneratesEnumType(): void
 	{
 		$this->registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('status', 'string')->type('string')->nullable(true)
 				->metadata('enum', ['draft', 'published', 'archived'])
 				->end()
@@ -464,10 +542,10 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$statusType = $statusField->getType();
 
 		// Should be an EnumType, not String
-		$this->assertInstanceOf(\GraphQL\Type\Definition\EnumType::class, $statusType);
+		$this->assertInstanceOf(EnumType::class, $statusType);
 		$this->assertSame('StatusEnum', $statusType->name);
 
-		$enumValues = array_map(fn($v) => $v->value, $statusType->getValues());
+		$enumValues = array_map(fn ($v) => $v->value, $statusType->getValues());
 		$this->assertContains('draft', $enumValues);
 		$this->assertContains('published', $enumValues);
 		$this->assertContains('archived', $enumValues);

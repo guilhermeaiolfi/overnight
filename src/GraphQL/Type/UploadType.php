@@ -25,7 +25,7 @@ class UploadType extends ScalarType
 
 	public function parseValue(mixed $value): UploadedFileInterface
 	{
-		if (!$value instanceof UploadedFileInterface) {
+		if (! $value instanceof UploadedFileInterface) {
 			throw new Error('Upload scalar expects a PSR-7 UploadedFileInterface.');
 		}
 

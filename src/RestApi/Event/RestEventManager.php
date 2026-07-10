@@ -14,7 +14,8 @@ final class RestEventManager
 
 	public function __construct(
 		private EventDispatcherInterface $eventDispatcher,
-	) {}
+	) {
+	}
 
 	public function dispatch(object $event, bool $inheritNestedAuthorization = false): object
 	{

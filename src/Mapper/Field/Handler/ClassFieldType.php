@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field\Handler;
 
+use JsonSerializable;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Field\FieldTypeInterface;
@@ -97,7 +98,7 @@ final class ClassFieldType implements FieldTypeInterface
 			return (string) $value;
 		}
 
-		if ($value instanceof \JsonSerializable) {
+		if ($value instanceof JsonSerializable) {
 			return $value->jsonSerialize();
 		}
 
@@ -109,7 +110,7 @@ final class ClassFieldType implements FieldTypeInterface
 	 */
 	private static function toWire(string $class, mixed $value): mixed
 	{
-		if ($value instanceof \JsonSerializable) {
+		if ($value instanceof JsonSerializable) {
 			return $value->jsonSerialize();
 		}
 

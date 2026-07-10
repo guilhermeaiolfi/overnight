@@ -246,7 +246,7 @@ class PipelineExtension extends AbstractExtension
 
 		usort(
 			$this->requestPreparers,
-			static fn(array $left, array $right): int => $right['priority'] <=> $left['priority']
+			static fn (array $left, array $right): int => $right['priority'] <=> $left['priority']
 		);
 	}
 
@@ -263,8 +263,7 @@ class PipelineExtension extends AbstractExtension
 		string $path,
 		?ServerRequestInterface $request = null,
 		?string $method = null
-	): ServerRequestInterface
-	{
+	): ServerRequestInterface {
 		if (! $request) {
 			$request = ServerRequestFactory::fromGlobals();
 		}
@@ -293,8 +292,7 @@ class PipelineExtension extends AbstractExtension
 		string $path,
 		ServerRequestInterface $request,
 		?string $method = null
-	): ResponseInterface
-	{
+	): ResponseInterface {
 		// Forwarding stays transport-level here: the caller provides the target
 		// URI/path and routing middleware prepares the next execution state.
 		return $this->handle($this->createForwardRequest($path, $request, $method));

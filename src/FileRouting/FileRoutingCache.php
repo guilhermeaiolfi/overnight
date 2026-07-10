@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\FileRouting;
 
 use ON\View\ViewConfig;
+use RuntimeException;
 
 class FileRoutingCache
 {
@@ -161,7 +162,7 @@ class FileRoutingCache
 
 		$decoded = json_decode(trim($matches[1]), true);
 		if (! is_array($decoded)) {
-			throw new \RuntimeException('Invalid file routing page metadata JSON.');
+			throw new RuntimeException('Invalid file routing page metadata JSON.');
 		}
 
 		$php_code = trim(str_replace($matches[0], '', $php_code));

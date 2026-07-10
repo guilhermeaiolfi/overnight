@@ -6,7 +6,7 @@ namespace ON\CMS\Parser\Normalizer;
 
 use Cycle\ORM\Select\AbstractLoader;
 use ON\CMS\Parser\Node\RelationNode;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 class UpdateRelationNormalizer
 {

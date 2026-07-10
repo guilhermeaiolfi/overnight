@@ -71,7 +71,7 @@ class ViewManager
 	): mixed {
 		if ($response instanceof ResponseInterface) {
 			return $response;
-		} else if (is_string($response)) {
+		} elseif (is_string($response)) {
 			$response = ViewResult::for($response);
 		}
 
@@ -380,5 +380,4 @@ class ViewManager
 
 		return $this->container->get($class);
 	}
-
 }

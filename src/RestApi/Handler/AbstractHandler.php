@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi\Handler;
 
 use Cycle\ORM\Parser\AbstractNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use LogicException;
+use ON\Data\Definition\Collection\CollectionInterface;
 
 abstract class AbstractHandler implements HandlerInterface
 {
@@ -77,7 +77,7 @@ abstract class AbstractHandler implements HandlerInterface
 	public function getNode(): AbstractNode
 	{
 		if ($this->node === null) {
-			throw new \LogicException('Handler parser node has not been configured.');
+			throw new LogicException('Handler parser node has not been configured.');
 		}
 
 		return $this->node;
@@ -87,5 +87,4 @@ abstract class AbstractHandler implements HandlerInterface
 	{
 		$this->node = $node;
 	}
-
 }

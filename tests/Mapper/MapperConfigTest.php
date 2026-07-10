@@ -4,16 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\ON\Mapper;
 
+use InvalidArgumentException;
+use ON\Data\Definition\Registry;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Field\FieldTypeInterface;
+use function ON\Mapper\map;
 use ON\Mapper\MapperConfig;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
 use PHPUnit\Framework\TestCase;
-
-use function ON\Mapper\map;
 
 final class MapperConfigTest extends TestCase
 {
@@ -28,7 +30,7 @@ final class MapperConfigTest extends TestCase
 			(new MapperConfig())->register('token', TokenFieldType::class)
 		);
 
-		$registry = new \ON\ORM\Definition\Registry();
+		$registry = new Registry();
 		$registry->collection('session')
 			->field('token', 'string')->type('token')->nullable(false)->end()
 			->end();
@@ -36,7 +38,7 @@ final class MapperConfigTest extends TestCase
 		$collection = $registry->getCollection('session');
 
 		$row = map(['token' => 'wire-value'])
-			->using(\ON\Mapper\Structural\CollectionRowMapper::class, $collection)
+			->using(CollectionRowMapper::class, $collection)
 			->from(StorageRepresentation::class)
 			->as(PhpRepresentation::class)
 			->toArray();
@@ -88,7 +90,7 @@ final class MapperConfigTest extends TestCase
 
 	public function testFieldTypeHandlerRequiresExplicitTypeKey(): void
 	{
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 		$this->expectExceptionMessage('storageType()');
 
 		(new MapperConfig())->register(TokenFieldType::class);

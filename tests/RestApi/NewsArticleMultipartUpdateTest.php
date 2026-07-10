@@ -4,13 +4,18 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use BadMethodCallException;
+use Cycle\Database\DatabaseInterface;
+use DateTimeImmutable;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHooks;
+use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Repository\ItemRepository;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -55,7 +60,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -108,7 +113,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -155,7 +160,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$response = $middleware->process(
 			$request,
-			new class implements RequestHandlerInterface {
+			new class () implements RequestHandlerInterface {
 				public function handle(ServerRequestInterface $request): ResponseInterface
 				{
 					return new JsonResponse(['miss' => true]);
@@ -174,14 +179,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 	private function createUploadedFile(string $filename): UploadedFileInterface
 	{
-		return new class($filename) implements UploadedFileInterface {
+		return new class ($filename) implements UploadedFileInterface {
 			public function __construct(private string $filename)
 			{
 			}
 
 			public function getStream(): StreamInterface
 			{
-				throw new \BadMethodCallException('Not needed for this test.');
+				throw new BadMethodCallException('Not needed for this test.');
 			}
 
 			public function moveTo($targetPath): void
@@ -211,13 +216,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 	}
 
 	/**
-	 * @return array{0: Registry, 1: ItemRepository, 2: \ON\RestApi\Middleware\RestMiddleware}
+	 * @return array{0: Registry, 1: ItemRepository, 2: RestMiddleware}
 	 */
 	private function createNewsArticleFixture(): array
 	{
 		$registry = new Registry();
 		$registry->collection('news_article')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(false)->end()
 			->field('slug', 'string')->type('string')->nullable(false)->end()
 			->field('status', 'string')->type('string')->nullable(false)->end()
@@ -226,7 +232,8 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			->end();
 
 		$registry->collection('news_article_file')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('news_id', 'int')->type('int')->nullable(false)->end()
 			->field('file_id', 'int')->type('int')->nullable(false)->end()
 			->field('role', 'string')->type('string')->nullable(true)->end()
@@ -266,16 +273,16 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			],
 		]);
 
-		$resolver = new class($registry, $db->database()) extends ItemRepository {
+		$resolver = new class ($registry, $db->database()) extends ItemRepository {
 			/** @var list<array{collection: string, input: array<string, mixed>}> */
 			public array $createCalls = [];
 
-			public function __construct(Registry $registry, \Cycle\Database\DatabaseInterface $database)
+			public function __construct(Registry $registry, DatabaseInterface $database)
 			{
 				parent::__construct($registry, $database);
 			}
 
-			public function create(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $input): ?array
+			public function create(CollectionInterface $collection, array $input): ?array
 			{
 				$this->createCalls[] = [
 					'collection' => $collection->getName(),
@@ -291,13 +298,13 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			->on('create.before', static function (ItemCreating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
-				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$data['createdon'] = $data['createdon'] ?? new DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			})
 			->on('update.before', static function (ItemUpdating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
-				$data['createdon'] = $data['createdon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$data['createdon'] = $data['createdon'] ?? new DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			});
 
@@ -305,13 +312,13 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			->on('create.before', static function (ItemCreating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
-				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$data['modifiedon'] = $data['modifiedon'] ?? new DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			})
 			->on('update.before', static function (ItemUpdating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
-				$data['modifiedon'] = $data['modifiedon'] ?? new \DateTimeImmutable('2026-05-29 12:00:00');
+				$data['modifiedon'] = $data['modifiedon'] ?? new DateTimeImmutable('2026-05-29 12:00:00');
 				$state->setData($data);
 			});
 

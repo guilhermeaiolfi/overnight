@@ -10,10 +10,10 @@ use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\OvernightCommand;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
-use ON\Container\Init\Event\ContainerReadyEvent;
-use ON\Container\Executor\ExecutorInterface;
-use ON\Extension\AbstractExtension;
 use ON\Console\Init\Event\ConsoleReadyEvent;
+use ON\Container\Executor\ExecutorInterface;
+use ON\Container\Init\Event\ContainerReadyEvent;
+use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use Psr\Container\ContainerInterface;
@@ -32,6 +32,7 @@ class ConsoleExtension extends AbstractExtension
 		RoutesCommand::class,
 		ServeCommand::class,
 	];
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []

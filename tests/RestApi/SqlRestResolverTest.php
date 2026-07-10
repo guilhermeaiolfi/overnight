@@ -4,26 +4,27 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\FirstOfManyRelation;
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Relation\M2MRelation;
-use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\DirectusQueryBuilder;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\QueryNormalizer;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\RestApi\Action\Directus\ListAction;
+use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\HandlerRegistry;
+use ON\RestApi\Query\DirectusQueryBuilder;
+use ON\RestApi\Query\Node\FilterNode;
+use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepository;
-use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\RestApiConfig;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
+use Throwable;
 
 #[RequiresPhpExtension('pdo_sqlite')]
 final class SqlRestResolverTest extends TestCase
@@ -71,7 +72,8 @@ final class SqlRestResolverTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('node')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('parent_id', 'int')->type('int')->nullable(true)->end()
 			->field('label', 'string')->type('string')->nullable(false)->end()
 			->hasMany('child.node', 'node')->innerKey('id')->outerKey('parent_id')->end()
@@ -199,7 +201,7 @@ final class SqlRestResolverTest extends TestCase
 			$items,
 			new HandlerFactory(HandlerRegistry::defaults(), $items, $compiler),
 			$compiler,
-			new \ON\RestApi\RestApiConfig(),
+			new RestApiConfig(),
 			$this->noopHookDispatcher($registry),
 		);
 
@@ -277,6 +279,7 @@ final class SqlRestResolverTest extends TestCase
 		foreach ($result['data'] as $item) {
 			if ($item['title'] === 'PHP Tips') {
 				$phpTips = $item;
+
 				break;
 			}
 		}
@@ -302,6 +305,7 @@ final class SqlRestResolverTest extends TestCase
 		foreach ($result['data'] as $item) {
 			if ($item['name'] === 'John') {
 				$john = $item;
+
 				break;
 			}
 		}
@@ -419,8 +423,9 @@ final class SqlRestResolverTest extends TestCase
 	{
 		$registry = new Registry();
 		$product = $registry->collection('product');
-		$product->field('region_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
-		$product->field('sku', 'string')->type('string')->primaryKey(true)->nullable(false)->end();
+		$product->primaryKey('region_id', 'sku');
+		$product->field('region_id', 'int')->type('int')->nullable(false)->end();
+		$product->field('sku', 'string')->type('string')->nullable(false)->end();
 		$product->field('name', 'string')->type('string')->nullable(false)->end();
 		$product->hasMany('prices', 'price')
 			->innerKey(['region_id', 'sku'])
@@ -428,7 +433,8 @@ final class SqlRestResolverTest extends TestCase
 			->end();
 
 		$price = $registry->collection('price');
-		$price->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$price->primaryKey('id');
+		$price->field('id', 'int')->type('int')->nullable(false)->end();
 		$price->field('region_id', 'int')->type('int')->nullable(false)->end();
 		$price->field('sku', 'string')->type('string')->nullable(false)->end();
 		$price->field('amount', 'int')->type('int')->nullable(false)->end();
@@ -522,6 +528,7 @@ final class SqlRestResolverTest extends TestCase
 		foreach ($result['data'] as $item) {
 			if ($item['title'] === 'PHP Tips') {
 				$phpTips = $item;
+
 				break;
 			}
 		}
@@ -703,7 +710,7 @@ final class SqlRestResolverTest extends TestCase
 		$db = $this->createProfileDatabase();
 		$resolver = $this->createItems($registry, $db);
 
-		$this->expectException(\ON\RestApi\Error\RestApiError::class);
+		$this->expectException(RestApiError::class);
 		$this->expectExceptionMessage("Invalid field 'display_name'.");
 
 		$resolver->create($registry->getCollection('profile'), [
@@ -993,13 +1000,15 @@ final class SqlRestResolverTest extends TestCase
 	{
 		$registry = new Registry();
 		$registry->collection('asset')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file_id', 'int')->type('int')->nullable(false)->end()
@@ -1061,7 +1070,8 @@ final class SqlRestResolverTest extends TestCase
 		$this->createUserCollection($registry);
 
 		$registry->collection('article')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(false)->end()
 			->field('writtenby', 'int')->type('int')->nullable(true)->end()
 			->field('createdby_id', 'int')->type('int')->column('createdby')->nullable(false)->end()
@@ -1334,18 +1344,21 @@ final class SqlRestResolverTest extends TestCase
 		$registry = new Registry();
 
 		$registry->collection('tag')
-			->field('id', 'string')->type('string')->primaryKey(true)->nullable(false)->maxLength(255)->end()
+			->primaryKey('id')
+			->field('id', 'string')->type('string')->nullable(false)->maxLength(255)->end()
 			->field('label', 'string')->type('string')->nullable(false)->maxLength(255)->end()
 			->field('active', 'bool')->type('bool')->nullable(false)->end()
 			->end();
 
 		$registry->collection('report_tags')
-			->field('report_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
-			->field('tag_id', 'string')->type('string')->primaryKey(true)->nullable(false)->maxLength(255)->end()
+			->primaryKey('report_id', 'tag_id')
+			->field('report_id', 'int')->type('int')->nullable(false)->end()
+			->field('tag_id', 'string')->type('string')->nullable(false)->maxLength(255)->end()
 			->end();
 
 		$reportCollection = $registry->collection('report');
-		$reportCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->autoIncrement(true)->end();
+		$reportCollection->primaryKey('id');
+		$reportCollection->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end();
 		$reportCollection->field('title', 'string')->type('string')->nullable(false)->end();
 		$reportCollection->relation('tags', M2MRelation::class)
 			->collection('tag')
@@ -1424,7 +1437,8 @@ final class SqlRestResolverTest extends TestCase
 		$this->createFullSchema($registry);
 
 		$registry->collection('post_attachment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('post_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();
@@ -1529,7 +1543,7 @@ final class SqlRestResolverTest extends TestCase
 
 			// If we get here, the nested create succeeded — we need a different approach
 			// to trigger a failure. Let's directly test the rollback mechanism.
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			// Expected
 		}
 
@@ -1555,7 +1569,7 @@ final class SqlRestResolverTest extends TestCase
 			);
 			// If the duplicate author was created first and succeeded, the post would also succeed
 			// In that case, the test still validates the transaction path works
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			// Expected: UNIQUE constraint violation should roll back the transaction
 		}
 
@@ -1589,6 +1603,7 @@ final class SqlRestResolverTest extends TestCase
 		$stmt = $db->database()->query("SELECT COUNT(*) FROM `{$table}`");
 		$count = (int) $stmt->fetchColumn();
 		$stmt->close();
+
 		return $count;
 	}
 }

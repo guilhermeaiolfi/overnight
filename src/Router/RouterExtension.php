@@ -20,11 +20,11 @@ use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Attribute\RouteAttributeProcessor;
 use ON\Router\Container\RouteMiddlewareFactory;
-use ON\Router\Middleware\RouteMiddleware;
 use ON\Router\Container\RouterFactory;
 use ON\Router\Container\UrlHelperFactory;
 use ON\Router\Init\Event\RouterReadyEvent;
 use ON\Router\Init\Event\RouterSetupEvent;
+use ON\Router\Middleware\RouteMiddleware;
 use Psr\Container\ContainerInterface;
 
 class RouterExtension extends AbstractExtension
@@ -46,6 +46,7 @@ class RouterExtension extends AbstractExtension
 		protected array $options = []
 	) {
 	}
+
 	public function register(Init $init): void
 	{
 		$this->app->registerMethod("get", [$this, 'get']);

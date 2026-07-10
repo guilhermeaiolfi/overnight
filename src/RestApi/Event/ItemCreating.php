@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;

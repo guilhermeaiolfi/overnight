@@ -4,14 +4,15 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Addon;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\DB\DatabaseManager;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use Throwable;
 
 /**
  * Tracks create/update/delete operations in a revisions table.
@@ -60,7 +61,7 @@ class RevisionAddon implements RestApiAddonInterface
 		$collectionName = $event->getCollection()->getName();
 		$state = $event->getState();
 
-		if ($state === null || !$this->shouldTrack($collectionName)) {
+		if ($state === null || ! $this->shouldTrack($collectionName)) {
 			return;
 		}
 
@@ -73,7 +74,7 @@ class RevisionAddon implements RestApiAddonInterface
 		$identity = $event->getPrimaryKeyValue();
 		$state = $event->getState();
 
-		if ($identity === null || $state === null || !$this->shouldTrack($collectionName)) {
+		if ($identity === null || $state === null || ! $this->shouldTrack($collectionName)) {
 			return;
 		}
 
@@ -90,7 +91,7 @@ class RevisionAddon implements RestApiAddonInterface
 		$collectionName = $event->getCollection()->getName();
 		$identity = $event->getPrimaryKeyValue();
 
-		if ($identity === null || !$this->shouldTrack($collectionName)) {
+		if ($identity === null || ! $this->shouldTrack($collectionName)) {
 			return;
 		}
 
@@ -147,7 +148,7 @@ class RevisionAddon implements RestApiAddonInterface
 				$delta !== null ? json_encode($delta) : null,
 				date('Y-m-d H:i:s'),
 			]);
-		} catch (\Throwable) {
+		} catch (Throwable) {
 			// Silently fail — revision tracking should not break the main operation
 		}
 	}

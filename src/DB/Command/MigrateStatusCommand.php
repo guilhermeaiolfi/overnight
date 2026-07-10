@@ -62,6 +62,7 @@ class MigrateStatusCommand extends Command
 
 			if ($state->getStatus() === State::STATUS_EXECUTED) {
 				$executed[] = $row;
+
 				continue;
 			}
 

@@ -6,6 +6,6 @@ namespace ON\ORM\Compiler\Exception;
 
 use RuntimeException;
 
-final class OnDataCycleSchemaException extends RuntimeException
+final class CycleSchemaException extends RuntimeException
 {
 }

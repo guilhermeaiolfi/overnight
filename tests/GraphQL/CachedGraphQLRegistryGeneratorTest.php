@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Tests\ON\GraphQL;
 
 use GraphQL\Type\Schema;
+use ON\Data\Definition\Registry;
 use ON\GraphQL\CachedGraphQLRegistryGenerator;
 use ON\GraphQL\GraphQLRegistryGenerator;
-use ON\ORM\Definition\Registry;
 use PHPUnit\Framework\TestCase;
 
 final class CachedGraphQLRegistryGeneratorTest extends TestCase
@@ -22,7 +22,8 @@ final class CachedGraphQLRegistryGeneratorTest extends TestCase
 	public function testReturnsSameSchemaOnMultipleCalls(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('name', 'string')->type('string')->end()
 			->end();
 
@@ -44,7 +45,8 @@ final class CachedGraphQLRegistryGeneratorTest extends TestCase
 	public function testIsCachedReturnsTrueAfterGenerate(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$generator = new CachedGraphQLRegistryGenerator($this->registry);
@@ -56,7 +58,8 @@ final class CachedGraphQLRegistryGeneratorTest extends TestCase
 	public function testInvalidateClearsCache(): void
 	{
 		$this->registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->end();
 
 		$generator = new CachedGraphQLRegistryGenerator($this->registry);
@@ -84,7 +87,8 @@ final class CachedGraphQLRegistryGeneratorTest extends TestCase
 	public function testGeneratedSchemaIsValid(): void
 	{
 		$this->registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->end()
 			->field('title', 'string')->type('string')->end()
 			->end();
 

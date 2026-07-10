@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Cache;
 
+use InvalidArgumentException;
 use ON\Cache\Exception\DuplicateCacheClearerException;
 
 final class CacheClearerRegistry
@@ -31,7 +32,7 @@ final class CacheClearerRegistry
 	public function get(string $name): CacheClearerDefinition
 	{
 		if (! $this->has($name)) {
-			throw new \InvalidArgumentException(sprintf(
+			throw new InvalidArgumentException(sprintf(
 				'Cache clearer "%s" is not registered.',
 				$name
 			));

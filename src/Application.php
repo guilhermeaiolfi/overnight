@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON;
 
 use Exception;
-use ON\Extension\ExtensionProfiler;
 use ON\Extension\ExtensionInterface;
+use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
 use ON\Init\NonLifecycleOrderingEventInterface;
@@ -189,6 +189,7 @@ class Application
 				'lifecycle',
 				[$instance, 'register']
 			);
+
 			try {
 				$instance->register($this->init);
 			} finally {
@@ -217,6 +218,7 @@ class Application
 					'lifecycle',
 					[$ext_instance, 'start']
 				);
+
 				try {
 					$ext_instance->start($this->init->context());
 				} finally {
@@ -232,7 +234,7 @@ class Application
 		$hash = md5(serialize($subscriptionMap));
 		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
 
-		if (!$this->debug && file_exists($cacheFile)) {
+		if (! $this->debug && file_exists($cacheFile)) {
 			$cache = require $cacheFile;
 			if ($cache['hash'] === $hash) {
 				return $cache['order'];
@@ -242,8 +244,8 @@ class Application
 		// Cache miss or debug mode: Heavy Lifting
 		$order = $this->rebuildLifecycleOrder($subscriptionMap);
 
-		if (!$this->debug) {
-			if (!is_dir(dirname($cacheFile))) {
+		if (! $this->debug) {
+			if (! is_dir(dirname($cacheFile))) {
 				mkdir(dirname($cacheFile), 0777, true);
 			}
 			$content = "<?php\n\nreturn " . var_export(['hash' => $hash, 'order' => $order], true) . ";\n";
@@ -258,6 +260,7 @@ class Application
 		foreach ($this->unresolvedMethods as $name => $registrations) {
 			if (count($registrations) > 1) {
 				$owners = implode(', ', array_keys($registrations));
+
 				throw new Exception("Conflict detected: The method '{$name}' was registered by multiple extensions: [{$owners}]. Only one extension can define a specific method.");
 			}
 
@@ -321,6 +324,7 @@ class Application
 				return $extensionNamespaces[$ns];
 			}
 		}
+
 		return null;
 	}
 
@@ -387,6 +391,7 @@ class Application
 			'lifecycle',
 			[$extension_class, '__construct']
 		);
+
 		try {
 			$instance = new $extension_class($this, $extension_options);
 		} finally {

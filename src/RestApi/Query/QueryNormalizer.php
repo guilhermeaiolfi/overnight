@@ -49,7 +49,7 @@ final class QueryNormalizer
 	private function selection(SelectionSet $selection): SelectionSet
 	{
 		return new SelectionSet(
-			array_map(fn(SelectionNode $node) => $this->selectionNode($node), $selection->nodes),
+			array_map(fn (SelectionNode $node) => $this->selectionNode($node), $selection->nodes),
 			$selection->explicit
 		);
 	}
@@ -100,7 +100,7 @@ final class QueryNormalizer
 			return new SetFilter(
 				$filter->left,
 				$filter->operator,
-				array_map(fn(ValueNode $value) => $this->value($value), $filter->values)
+				array_map(fn (ValueNode $value) => $this->value($value), $filter->values)
 			);
 		}
 
@@ -116,7 +116,7 @@ final class QueryNormalizer
 		if ($filter instanceof LogicalFilter) {
 			return new LogicalFilter(
 				$filter->operator,
-				array_map(fn(FilterNode $child) => $this->filter($child), $filter->children),
+				array_map(fn (FilterNode $child) => $this->filter($child), $filter->children),
 				$filter->negated
 			);
 		}
@@ -144,7 +144,7 @@ final class QueryNormalizer
 		}
 
 		if ($value instanceof ListValue) {
-			return new ListValue(array_map(fn(ValueNode $item) => $this->value($item), $value->values));
+			return new ListValue(array_map(fn (ValueNode $item) => $this->value($item), $value->values));
 		}
 
 		return $value;

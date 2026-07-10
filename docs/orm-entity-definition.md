@@ -1,6 +1,6 @@
 # ORM Entity Definition
 
-This document describes how to define entities (collections) in the Overnight framework using the fluent builder pattern.
+This document describes how to define entities (collections) in the Overnight framework using the ON\Data fluent builder. The sole registry is `ON\Data\Definition\Registry` (package `guilhermeaiolfi/overnight-data`).
 
 ## Table of Contents
 
@@ -16,45 +16,55 @@ This document describes how to define entities (collections) in the Overnight fr
 
 ---
 
-The `Registry` class is the main entry point for defining collections (entities). While you can instantiate it manually, the framework is designed to load a pre-configured `Registry` from your application configuration.
+## Registry - Entry Point
 
-### Configuration-Based Initialization (Recommended)
+The `Registry` class is the main entry point for defining collections (entities). In a running application, resolve it from the container (`Registry::class`). It is provided by `DefinitionRegistryProvider`, which emits `DataDefinitionConfigureEvent` on a cold cache miss and otherwise loads `data-definitions.php`.
 
-In your application's `config` folder, create a file named `orm.all.php`. Return a new `Registry` instance from this file:
+### Event-Based Registration (Recommended)
+
+Listen to `DataDefinitionConfigureEvent` from an extension's `register()` method:
 
 ```php
 <?php
-// config/orm.all.php
 
-use ON\ORM\Definition\Registry;
+use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
+use ON\Extension\AbstractExtension;
+use ON\Init\Init;
 
-$registry = new Registry();
-
-$registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()
-    ->end();
-
-return $registry;
+final class AppDefinitionsExtension extends AbstractExtension
+{
+    public function register(Init $init): void
+    {
+        $init->on(DataDefinitionConfigureEvent::class, function (DataDefinitionConfigureEvent $event): void {
+            $event->registry
+                ->collection('user')
+                ->primaryKey('id')
+                ->field('id', 'int')->autoIncrement(true)->end()
+                ->field('name', 'string')->end()
+                ->end();
+        });
+    }
+}
 ```
 
-The framework's `RegistryFactory` will automatically detect this object. Even if you provide a registry via configuration, other modules can still attach collections to it by listening to the `OrmInitEvents::CONFIGURE` event.
+See [ON\Data Definition Architecture](ondata-cycle-schema-migration.md) for cold/warm cache details.
 
 ### Manual Initialization
 
 If you are using the Registry in a standalone script or test:
 
 ```php
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
 $registry = new Registry();
-$collection = $registry->collection("user");
+$collection = $registry->collection('user');
 ```
 
 ### Getting a Collection
 
 ```php
 // Returns ?CollectionInterface (null if not found)
-$collection = $registry->getCollection("user");
+$collection = $registry->getCollection('user');
 ```
 
 ---
@@ -64,13 +74,14 @@ $collection = $registry->getCollection("user");
 A Collection represents a database table/entity:
 
 ```php
-$registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()
-    ->field("name", "string")->end()
-    ->field("email", "string")->end()
-    ->table("users")                    // custom table name (optional)
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->autoIncrement(true)->end()
+    ->field('name', 'string')->end()
+    ->field('email', 'string')->end()
+    ->table('users')                    // custom table name (optional)
     ->entity(EntityClass::class)        // entity class (optional)
-    ->database("default")               // database name (optional)
+    ->database('default')               // database name (optional)
     ->hidden(false)                     // hide from schema generation
     ->end();
 ```
@@ -80,12 +91,23 @@ $registry->collection("user")
 | Method | Description | Default |
 |--------|-------------|---------|
 | `name(string)` | Collection name (used as role) | Required |
+| `primaryKey(string ...$fields)` | Declare primary key field name(s) | Required for most consumers |
 | `table(string)` | Database table name | Same as name |
 | `entity(string)` | Entity class name | `stdClass` |
 | `database(string)` | Database name | `"default"` |
 | `mapper(string)` | Mapper class | `Cycle\ORM\Mapper\StdMapper` |
 | `source(string)` | Source class | `ON\ORM\Select\Source` |
 | `hidden(bool)` | Hide from schema generation | `false` |
+
+Composite keys:
+
+```php
+$registry->collection('user_role')
+    ->primaryKey('user_id', 'role_id')
+    ->field('user_id', 'int')->end()
+    ->field('role_id', 'int')->end()
+    ->end();
+```
 
 Primitive properties are protected with getters/setters. The `fields` and `relations` maps are public:
 
@@ -98,21 +120,21 @@ $collection->relations; // RelationMap (public)
 
 ## Field Definition
 
-A Field represents a database column:
+A Field represents a database column. Primary-key membership is declared on the **collection** via `primaryKey(...)`, not on the field.
 
 ```php
-$registry->collection("user")
-    ->field("id", "int")
-        ->primaryKey(true)
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')
         ->autoIncrement(true)
         ->end()
-    ->field("name", "string")
+    ->field('name', 'string')
         ->maxLength(255)
         ->nullable(false)
-        ->default("john")
+        ->default('john')
         ->unique(false)
         ->indexed(false)
-        ->type("varchar")
+        ->type('varchar')
         ->comment("User's full name")
         ->hidden(false)
         ->end();
@@ -122,8 +144,7 @@ $registry->collection("user")
 
 | Method | Description |
 |--------|-------------|
-| `primaryKey(bool)` | Mark as primary key |
-| `autoIncrement(bool)` | Enable auto-increment |
+| `autoIncrement(bool)` | Enable auto-increment (also marks Cycle ON_INSERT generated) |
 | `nullable(bool)` | Allow NULL values |
 | `default(mixed)` | Set default value |
 | `castDefault(bool)` | Typecast default value |
@@ -138,15 +159,19 @@ $registry->collection("user")
 | `typecast(string\|callable)` | Set typecast handler |
 | `validation(string)` | Set validation rules (pipe syntax) |
 
+`isPrimaryKey()` on a field reflects whether that field is listed in the collection's `primaryKey(...)`.
+
 ### Field Validation
 
 Fields support validation rules using `somnambulist/validation` pipe syntax:
 
 ```php
-$registry->collection("user")
-    ->field("name", "string")->validation('required|max:255')->end()
-    ->field("email", "string")->validation('required|email|max:255')->end()
-    ->field("age", "int")->validation('min:0|max:150')->end()
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->field('name', 'string')->validation('required|max:255')->end()
+    ->field('email', 'string')->validation('required|email|max:255')->end()
+    ->field('age', 'int')->validation('min:0|max:150')->end()
     ->end();
 ```
 
@@ -176,7 +201,8 @@ ORM field `->type()` serves two roles:
 Most fields use Cycle-compatible string types directly:
 
 ```php
-->field('id', 'int')->type('int')->primaryKey(true)->end()
+->primaryKey('id')
+->field('id', 'int')->type('int')->end()
 ->field('name', 'string')->type('string')->maxLength(128)->end()
 ->field('created_at', 'datetime')->type('datetime')->end()
 ->field('payload', 'json')->type('json')->end()
@@ -186,6 +212,10 @@ Most fields use Cycle-compatible string types directly:
 
 For `string` fields without an explicit length (`string(32)`), the generator applies `maxLength()` and emits `string(N)`.
 
+### Generated on insert
+
+A field is marked Cycle `GeneratedField::ON_INSERT` only when `autoIncrement(true)` is set, or when the Cycle type is `primary` / `bigprimary` / `serial` / `bigserial` / `smallserial`. Ordinary primary-key fields (for example `int` without auto-increment) are **not** treated as generated.
+
 ### Field type handler classes
 
 You can set `->type()` to a class implementing `FieldTypeInterface`. The generator reads `storageType()` for the Cycle column type:
@@ -194,6 +224,8 @@ You can set `->type()` to a class implementing `FieldTypeInterface`. The generat
 use ON\Mapper\Field\Handler\DateTimeFieldType;
 
 $registry->collection('event')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
     ->field('starts_at', 'datetime')->type(DateTimeFieldType::class)->end()
     ->end();
 // Cycle column type: datetime
@@ -264,13 +296,17 @@ Think of it from the perspective of the entity you're writing the definition on:
 The `Collection` class provides shorthand methods for defining relations without importing relation classes:
 
 ```php
-$registry->collection("user")
-    ->hasMany("posts", "post")       // HasManyRelation
-    ->hasOne("profile", "profile")   // HasOneRelation
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->hasMany('posts', 'post')       // HasManyRelation
+    ->hasOne('profile', 'profile')   // HasOneRelation
     ->end();
 
-$registry->collection("post")
-    ->belongsTo("author", "user")    // BelongsToRelation
+$registry->collection('post')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->belongsTo('author', 'user')    // BelongsToRelation
     ->end();
 ```
 
@@ -281,8 +317,10 @@ Each method takes the relation name and target collection name, and returns the 
 A user has many posts. The FK (`user_id`) lives on the **target** (post), so it's the `outerKey`:
 
 ```php
-$registry->collection("user")
-    ->hasMany("posts", "post")
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->hasMany('posts', 'post')
         ->load('eager')           // load strategy: 'lazy' or 'eager'
         ->cascade(true)           // cascade operations
         ->innerKey('id')          // source key: user.id
@@ -295,8 +333,10 @@ $registry->collection("user")
 A user has one profile. The FK (`user_id`) lives on the **target** (profile), so it's the `outerKey`:
 
 ```php
-$registry->collection("user")
-    ->hasOne("profile", "profile")
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->hasOne('profile', 'profile')
         ->nullable(true)
         ->cascade(true)
         ->innerKey('id')          // source key: user.id
@@ -309,8 +349,11 @@ $registry->collection("user")
 A post belongs to a user. The FK (`user_id`) lives on the **source** (post), so it's the `innerKey`:
 
 ```php
-$registry->collection("post")
-    ->belongsTo("author", "user")
+$registry->collection('post')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->field('user_id', 'int')->end()
+    ->belongsTo('author', 'user')
         ->nullable(true)
         ->innerKey('user_id')     // source key: post.user_id
         ->outerKey('id')          // target key: user.id
@@ -322,16 +365,22 @@ $registry->collection("post")
 A post has many tags through a pivot table. The `through()` defines the junction table with its own inner/outer keys:
 
 ```php
-$registry->collection("post")
-    ->manyToMany("tags", "tag")
+$registry->collection('post')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->manyToMany('tags', 'tag')
         ->innerKey('id')              // source key: post.id
         ->outerKey('id')              // target key: tag.id
-        ->through("post_tags")        // pivot table
+        ->through('post_tags')        // pivot table
             ->innerKey('post_id')     // pivot FK to source: post_tags.post_id
             ->outerKey('tag_id')      // pivot FK to target: post_tags.tag_id
             ->end()
         ->end();
 ```
+
+### FirstOfMany
+
+`FirstOfManyRelation` is not supported by `CycleRegistryGenerator` (throws `UnsupportedDefinitionFeatureException`). RestApi may still use first-of-many semantics at the query layer. See [ON\Data Definition Architecture](ondata-cycle-schema-migration.md#firstofmany).
 
 ### Relation Methods
 
@@ -360,16 +409,18 @@ The fluent builder follows this pattern:
 
 ```php
 // CORRECT - use ->end() to navigate back
-$registry->collection("user")
-    ->field("id", "int")->primaryKey(true)->end()   // returns to Collection
-    ->field("name", "string")->end()                // returns to Collection
-    ->hasMany("posts", "post")                      // returns to Relation
-        ->cascade(true)->end()                       // returns to Relation
-        ->end();                                     // returns to Collection
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()                     // returns to Collection
+    ->field('name', 'string')->end()                // returns to Collection
+    ->hasMany('posts', 'post')                      // returns to Relation
+        ->cascade(true)->end()                       // returns to Collection
+    ->end();                                         // returns to Registry
 
 // WRONG - missing ->end() leaves you in wrong context
-$registry->collection("user")
-    ->field("id", "int")->primaryKey(true)  // stuck in Field!
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')  // stuck in Field!
 ```
 
 ### ->end() Return Chain
@@ -382,7 +433,7 @@ $registry->collection("user")
 
 ## Metadata System
 
-The Metadata system allows storing custom data on Collection, Field, or Relation objects. This is useful for adding framework-specific information (like GraphQL resolvers) without modifying the core ORM classes.
+The Metadata system allows storing custom data on Collection, Field, or Relation objects. This is useful for adding framework-specific information (like GraphQL resolvers) without modifying the core definition classes.
 
 ### API
 
@@ -403,30 +454,36 @@ $value = $object->metadata('key') ?? 'default_value';
 
 ```php
 // Set metadata on Collection
-$registry->collection("user")
-    ->metadata('gql::resolver::findAll', function($args, $container) {
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->metadata('gql::resolver::findAll', function ($args, $container) {
         $orm = $container->get(\Cycle\ORM\ORMInterface::class);
         return $orm->getRepository(\App\Models\User::class)->findAll();
     })->end()
-    ->metadata('gql::resolver::findById', function($args, $container) {
+    ->metadata('gql::resolver::findById', function ($args, $container) {
         $orm = $container->get(\Cycle\ORM\ORMInterface::class);
         return $orm->getRepository(\App\Models\User::class)->findByPK($args['id']);
     })->end();
 
 // Set metadata on Field (e.g., type override)
-$registry->collection("user")
-    ->field("email", "string")
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->field('email', 'string')
         ->metadata('gql::type', 'EmailType!')->end()
-        ->metadata('gql::resolver', function($source, $args, $container) {
+        ->metadata('gql::resolver', function ($source, $args, $container) {
             $currentUser = $container->get('current_user');
             return $currentUser->isAdmin() ? $source->email : null;
         })->end()
         ->end();
 
 // Set metadata on Relation
-$registry->collection("user")
-    ->hasMany("posts", "post")
-        ->metadata('gql::resolver', function($user, $args, $container) {
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->end()
+    ->hasMany('posts', 'post')
+        ->metadata('gql::resolver', function ($user, $args, $container) {
             return $container->get(\Cycle\ORM\ORMInterface::class)
                 ->getRepository(\App\Models\Post::class)
                 ->findOne(['user_id' => $user->id]);
@@ -462,47 +519,41 @@ function(mixed $source, array $args, Psr\Container\ContainerInterface $container
 
 ## Complete Example
 
-This example shows how a typical `config/orm.all.php` file might look:
+Register definitions from an extension listener (or build a `Registry` manually in tests):
 
 ```php
 <?php
-// config/orm.all.php
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
+use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
 
-$registry = new Registry();
+// Inside DataDefinitionConfigureEvent listener:
+$registry = $event->registry; // or: new Registry() in tests
 
-$registry->collection("user")
-    // Fields
-    ->field("id", "int")->primaryKey(true)->autoIncrement(true)->end()
-    ->field("name", "string")->maxLength(255)->validation('required|max:255')->end()
-    ->field("email", "string")->maxLength(255)->unique(true)->validation('required|email|max:255')->end()
-    ->field("password", "string")->hidden(true)->end()
-    ->field("created_at", "datetime")->end()
-    
-    // Relations
-    ->hasMany("posts", "post")
+$registry->collection('user')
+    ->primaryKey('id')
+    ->field('id', 'int')->autoIncrement(true)->end()
+    ->field('name', 'string')->maxLength(255)->validation('required|max:255')->end()
+    ->field('email', 'string')->maxLength(255)->unique(true)->validation('required|email|max:255')->end()
+    ->field('password', 'string')->hidden(true)->end()
+    ->field('created_at', 'datetime')->end()
+    ->hasMany('posts', 'post')
         ->innerKey('id')->outerKey('user_id')
         ->cascade(true)->load('lazy')->end()
-        ->end()
-    ->hasOne("profile", "profile")
+    ->hasOne('profile', 'profile')
         ->innerKey('id')->outerKey('user_id')
         ->nullable(true)->cascade(true)->end()
-        ->end()
-    
     ->end();
 
-$registry->collection("post")
-    ->field("id", "int")->primaryKey(true)->autoIncrement(true)->end()
-    ->field("title", "string")->maxLength(255)->validation('required|max:255')->end()
-    ->field("content", "text")->end()
-    ->field("user_id", "int")->end()
-    ->field("created_at", "datetime")->end()
-    
-    ->belongsTo("author", "user")
+$registry->collection('post')
+    ->primaryKey('id')
+    ->field('id', 'int')->autoIncrement(true)->end()
+    ->field('title', 'string')->maxLength(255)->validation('required|max:255')->end()
+    ->field('content', 'text')->end()
+    ->field('user_id', 'int')->end()
+    ->field('created_at', 'datetime')->end()
+    ->belongsTo('author', 'user')
         ->innerKey('user_id')->outerKey('id')->end()
-        ->end()
-    
     ->end();
 ```
 
@@ -518,8 +569,7 @@ use Cycle\Schema\Registry as CycleRegistry;
 use ON\ORM\Compiler\CycleRegistryGenerator;
 
 $cycleRegistry = new CycleRegistry($dbal);
-$generator = new CycleRegistryGenerator($ormRegistry);
-$schema = (new \Cycle\ORM\Compiler())->compile($cycleRegistry, [
+$schema = (new \Cycle\ORM\Schema\Compiler())->compile($cycleRegistry, [
     new CycleRegistryGenerator($registry),
     // ... other generators
 ]);
@@ -528,8 +578,8 @@ $schema = (new \Cycle\ORM\Compiler())->compile($cycleRegistry, [
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\SqlResolver;
 
-$resolver = new SqlResolver($ormRegistry, $database);
-$graphqlGenerator = new GraphQLRegistryGenerator($ormRegistry, $resolver);
+$resolver = new SqlResolver($registry, $database);
+$graphqlGenerator = new GraphQLRegistryGenerator($registry, $resolver);
 $graphqlSchema = $graphqlGenerator->generate();
 ```
 
@@ -538,8 +588,8 @@ $graphqlSchema = $graphqlGenerator->generate();
 To create a new generator (e.g., for REST, JSON:API), follow this pattern:
 
 ```php
-use ON\ORM\Definition\Registry;
-use ON\ORM\Definition\Collection\Collection;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Collection\Collection;
 
 class MySchemaGenerator
 {
@@ -551,18 +601,18 @@ class MySchemaGenerator
     public function generate(): mixed
     {
         $schema = [];
-        
+
         foreach ($this->registry->getCollections() as $collection) {
-            $schema[$collection->name] = $this->convertCollection($collection);
+            $schema[$collection->getName()] = $this->convertCollection($collection);
         }
-        
+
         return $schema;
     }
 
     protected function convertCollection(Collection $collection): array
     {
         return [
-            'name' => $collection->name,
+            'name' => $collection->getName(),
             'table' => $collection->getTable(),
             'fields' => $this->convertFields($collection),
             'relations' => $this->convertRelations($collection),
@@ -576,6 +626,7 @@ class MySchemaGenerator
 
 ## See Also
 
+- [ON\Data Definition Architecture](ondata-cycle-schema-migration.md)
 - [GraphQL Extension Documentation](extensions/graphql.md)
 - [Testing Guide](./testing.md)
 - [Cycle ORM Documentation](https://cycle-orm.dev/)

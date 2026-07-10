@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\View\Latte;
 
+use Generator;
 use Latte\Compiler\Nodes\Php\ExpressionNode;
 use Latte\Compiler\Nodes\StatementNode;
 use Latte\Compiler\PrintContext;
@@ -43,7 +44,7 @@ class SectionNode extends StatementNode
 		);
 	}
 
-	public function &getIterator(): \Generator
+	public function &getIterator(): Generator
 	{
 		yield $this->name;
 	}

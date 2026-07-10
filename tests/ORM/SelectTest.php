@@ -17,13 +17,13 @@ final class SelectTest extends TestCase
 	{
 		$this->markTestSkipped('Select class requires ORM dependencies - needs refactoring');
 
-		$this->registry = new UserPartsRegistry();
+		$this->registry = UserPartsRegistry::create();
 		$this->dummyLoader = new DummyLoader($this->registry);
 		// $this->select = new Select(
 		//     $this->createMock(\Cycle\ORM\ORMInterface::class),
 		//     $this->registry,
 		//     $this->createMock(\ON\ORM\FactoryInterface::class),
-		//     $this->createMock(\ON\ORM\Definition\Collection\Collection::class)
+		//     $this->createMock(\ON\Data\Definition\Collection\Collection::class)
 		// );
 	}
 

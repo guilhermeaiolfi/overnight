@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 

@@ -33,8 +33,7 @@ final class NextPriority implements RequestHandlerInterface
 		SplPriorityQueue $queue,
 		RequestHandlerInterface $fallbackHandler,
 		private RequestStackInterface $requestStack
-	)
-	{
+	) {
 		$this->queue = clone $queue;
 		$this->fallbackHandler = $fallbackHandler;
 	}

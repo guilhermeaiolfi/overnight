@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Container;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use Psr\Container\ContainerInterface;

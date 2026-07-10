@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
-
-use ON\Application;
 use ON\Container\Init\Event\ContainerConfigureEvent;
-use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateAllCommand;
+use ON\DB\Command\MigrateCommand;
 use ON\DB\Command\MigrateDownCommand;
 use ON\DB\Command\MigrateStatusCommand;
 use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
 use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
-use ON\DB\DatabaseManager;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Init\InitContext;
 
 class DatabaseExtension extends AbstractExtension
 {
 	public const ID = 'db';
+
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
@@ -54,7 +54,7 @@ class DatabaseExtension extends AbstractExtension
 		});
 	}
 
-	public function start(\ON\Init\InitContext $context): void
+	public function start(InitContext $context): void
 	{
 	}
 

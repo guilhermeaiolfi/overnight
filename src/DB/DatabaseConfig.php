@@ -8,7 +8,6 @@ use On\Config\Config;
 
 class DatabaseConfig extends Config
 {
-
 	public function addDatabase(
 		string $name,
 		?string $dsn = null,
@@ -71,5 +70,4 @@ class DatabaseConfig extends Config
 	{
 		return $this->get('default');
 	}
-
 }

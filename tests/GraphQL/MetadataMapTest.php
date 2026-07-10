@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
-use ON\ORM\Definition\Metadata\MetadataMap;
+use ON\Data\Definition\Metadata\MetadataMap;
 use PHPUnit\Framework\TestCase;
 
 final class MetadataMapTest extends TestCase

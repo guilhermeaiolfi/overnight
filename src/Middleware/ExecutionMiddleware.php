@@ -6,8 +6,8 @@ namespace ON\Middleware;
 
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\InvocationContext;
-use ON\Router\RouterInterface;
 use ON\Router\RouteResult;
+use ON\Router\RouterInterface;
 use ON\View\ViewManager;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;

@@ -4,45 +4,53 @@ declare(strict_types=1);
 
 namespace Tests\ON\Fixtures;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 
-class UserPartsRegistry extends Registry
+final class UserPartsRegistry
 {
-	public function __construct()
+	public static function create(): Registry
 	{
-		$this->collection("users")
-			->field("id")->end()
-			->field("name")->end()
-			->relation("parts")
+		$registry = new Registry();
+
+		$registry->collection('users')
+			->primaryKey('id')
+			->field('id')->end()
+			->field('name')->end()
+			->relation('parts')
 				->collection('parts')
 			->end()
-			->relation("user")
-				->collection("users")
+			->relation('user')
+				->collection('users')
 			->end()
-			->relation("foo")
-				->collection("foos")
-			->end()
-		->end()
-		->collection("foos")
-			->field("id")->end()
-			->field("name")->end()
-			->relation("bar")
-				->collection("bars")
+			->relation('foo')
+				->collection('foos')
 			->end()
 		->end()
-		->collection("bars")
-			->field("id")->end()
-			->field("name")->end()
+		->collection('foos')
+			->primaryKey('id')
+			->field('id')->end()
+			->field('name')->end()
+			->relation('bar')
+				->collection('bars')
+			->end()
+		->end()
+		->collection('bars')
+			->primaryKey('id')
+			->field('id')->end()
+			->field('name')->end()
 			->relation('user')
 				->collection('users')
 			->end()
 		->end()
-		->collection("parts")
-			->field("id")->end()
-			->field("name")->end()
+		->collection('parts')
+			->primaryKey('id')
+			->field('id')->end()
+			->field('name')->end()
 			->relation('user')
 				->collection('users')
 			->end()
 		->end();
+
+		return $registry;
 	}
 }

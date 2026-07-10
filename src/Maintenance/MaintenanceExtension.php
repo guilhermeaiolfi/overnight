@@ -8,13 +8,13 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Maintenance\Container\MaintenanceModeFactory;
-use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
-use ON\Console\Init\Event\ConsoleReadyEvent;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -31,6 +31,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 		protected array $options = []
 	) {
 	}
+
 	public function register(Init $init): void
 	{
 		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);

@@ -4,21 +4,22 @@ declare(strict_types=1);
 
 namespace Tests\ON\Mapper;
 
+use ON\Data\Definition\Registry;
+use ON\Mapper\ConversionGateway;
 use ON\Mapper\Exception\ConversionException;
 use ON\Mapper\Field\FieldContext;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
-use ON\ORM\Definition\Registry;
+use ON\Mapper\Structural\CollectionRowMapper;
 use PHPUnit\Framework\TestCase;
-
-use function ON\Mapper\map;
 
 final class UrlFieldTypeTest extends TestCase
 {
 	public function testRelativeFilePathBecomesSiteAbsolutePath(): void
 	{
 		$result = map(['url' => ' files/docs/report.pdf '])
-			->using(\ON\Mapper\Structural\CollectionRowMapper::class, $this->collection())
+			->using(CollectionRowMapper::class, $this->collection())
 			->from(PhpRepresentation::class)
 			->as(StorageRepresentation::class)
 			->toArray();
@@ -29,7 +30,7 @@ final class UrlFieldTypeTest extends TestCase
 	public function testAbsoluteHttpsUrlRemainsUnchanged(): void
 	{
 		$result = map(['url' => 'https://example.com/report.pdf'])
-			->using(\ON\Mapper\Structural\CollectionRowMapper::class, $this->collection())
+			->using(CollectionRowMapper::class, $this->collection())
 			->from(PhpRepresentation::class)
 			->as(StorageRepresentation::class)
 			->toArray();
@@ -42,7 +43,7 @@ final class UrlFieldTypeTest extends TestCase
 		$this->expectException(ConversionException::class);
 
 		map(['url' => 'javascript:alert(1)'])
-			->using(\ON\Mapper\Structural\CollectionRowMapper::class, $this->collection())
+			->using(CollectionRowMapper::class, $this->collection())
 			->from(PhpRepresentation::class)
 			->as(StorageRepresentation::class)
 			->toArray();
@@ -50,7 +51,7 @@ final class UrlFieldTypeTest extends TestCase
 
 	public function testEmptyNullableValueBecomesNull(): void
 	{
-		$value = \ON\Mapper\ConversionGateway::createDefault()->to(
+		$value = ConversionGateway::createDefault()->to(
 			PhpRepresentation::class,
 			' ',
 			StorageRepresentation::class,

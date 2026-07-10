@@ -24,6 +24,7 @@ use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 final class ValidationInvocationErrorBag
@@ -62,7 +63,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$middleware = $this->createValidationMiddleware($executor);
 
-		$route = new Route('/test', $this->createMock(\Psr\Http\Server\MiddlewareInterface::class));
+		$route = new Route('/test', $this->createMock(MiddlewareInterface::class));
 		$routeResult = RouteResult::fromRoute($route);
 
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -77,7 +78,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testPassesThroughWhenNoValidateMethod(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function index(): string
 			{
 				return 'Success';
@@ -102,7 +103,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testCallsActionSpecificValidateMethod(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function createValidate(): bool
 			{
 				return true;
@@ -119,7 +120,7 @@ final class ValidationMiddlewareTest extends TestCase
 			->method('execute')
 			->with(
 				[$page, 'createValidate'],
-				$this->callback(fn($args) => isset($args[ServerRequestInterface::class]))
+				$this->callback(fn ($args) => isset($args[ServerRequestInterface::class]))
 			)
 			->willReturn(true);
 
@@ -138,7 +139,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testFallsBackToGenericValidateMethod(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function validate(): bool
 			{
 				return true;
@@ -168,7 +169,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testFallsBackToDefaultValidateMethod(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function defaultValidate(): bool
 			{
 				return true;
@@ -198,7 +199,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testCallsErrorHandlerOnValidationFailure(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function validate(): bool
 			{
 				return false;
@@ -228,6 +229,7 @@ final class ValidationMiddlewareTest extends TestCase
 				if ($callable[1] === 'errorView') {
 					return new HtmlResponse('validation error');
 				}
+
 				return null;
 			});
 
@@ -245,7 +247,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testPassesThroughWhenValidationFailsButNoErrorHandler(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function validate(): bool
 			{
 				return false;
@@ -277,7 +279,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testPrefersActionSpecificOverGenericValidate(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function createValidate(): bool
 			{
 				return true;
@@ -314,7 +316,7 @@ final class ValidationMiddlewareTest extends TestCase
 	{
 		$errorBag = new ValidationInvocationErrorBag(['email' => 'Invalid email']);
 
-		$page = new class($errorBag) {
+		$page = new class ($errorBag) {
 			public ?string $token = null;
 			public ?ValidationInvocationErrorBag $errors = null;
 
@@ -359,6 +361,7 @@ final class ValidationMiddlewareTest extends TestCase
 				if ($callable[1] === 'errorView') {
 					return new HtmlResponse('validation error');
 				}
+
 				return null;
 			});
 
@@ -378,7 +381,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testUpdatedRequestCarriesInvocationContextToNextMiddleware(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public function validate(ServerRequestInterface $request): ValidationResult
 			{
 				$context = InvocationContext::fromRequest($request)->with('token', 'abc123');
@@ -391,7 +394,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 		$executor->expects($this->once())
 			->method('execute')
-			->willReturnCallback(fn($callable, $args) => $page->validate($args[ServerRequestInterface::class]));
+			->willReturnCallback(fn ($callable, $args) => $page->validate($args[ServerRequestInterface::class]));
 
 		$middleware = $this->createValidationMiddleware($executor);
 		$routeResult = $this->createRouteResult($page, 'index');
@@ -414,7 +417,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testValidationResultFailurePassesUpdatedRequestToErrorHandler(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?string $token = null;
 
 			public function validate(ServerRequestInterface $request): ValidationResult
@@ -451,6 +454,7 @@ final class ValidationMiddlewareTest extends TestCase
 				if ($callable[1] === 'errorView') {
 					return new HtmlResponse('validation error');
 				}
+
 				return null;
 			});
 
@@ -468,7 +472,7 @@ final class ValidationMiddlewareTest extends TestCase
 
 	public function testPreparedRouteParamsAreAvailableToValidateMethod(): void
 	{
-		$page = new class {
+		$page = new class () {
 			public ?int $id = null;
 
 			public function index(): string
@@ -508,6 +512,7 @@ final class ValidationMiddlewareTest extends TestCase
 	{
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->method('handle')->willReturn($response);
+
 		return $handler;
 	}
 
@@ -517,6 +522,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$routeResult = RouteResult::fromRoute($route);
 		$routeResult->setTargetInstance($page);
 		$routeResult->setMethod($method);
+
 		return $routeResult;
 	}
 
@@ -533,9 +539,9 @@ final class ValidationMiddlewareTest extends TestCase
 		$router = $this->createMock(RouterInterface::class);
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
-			->willReturnCallback(fn(string $class): bool => $class === RouterInterface::class);
+			->willReturnCallback(fn (string $class): bool => $class === RouterInterface::class);
 		$container->method('get')
-			->willReturnCallback(fn(string $class): mixed => $class === RouterInterface::class ? $router : null);
+			->willReturnCallback(fn (string $class): mixed => $class === RouterInterface::class ? $router : null);
 
 		return $container;
 	}
@@ -547,15 +553,15 @@ final class ValidationMiddlewareTest extends TestCase
 	{
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('has')
-			->willReturnCallback(fn(string $class): bool => array_key_exists($class, $services));
+			->willReturnCallback(fn (string $class): bool => array_key_exists($class, $services));
 		$container->method('get')
-			->willReturnCallback(fn(string $class): mixed => $services[$class] ?? null);
+			->willReturnCallback(fn (string $class): mixed => $services[$class] ?? null);
 
 		$app = $this->getMockBuilder(Application::class)->disableOriginalConstructor()->getMock();
 		$router = $this->createMock(RouterInterface::class);
 		$router->method('match')->willReturn($routeResult);
 		$middleware = new RouteMiddleware($router, $app, $container);
-		$capture = new class implements RequestHandlerInterface {
+		$capture = new class () implements RequestHandlerInterface {
 			public ?ServerRequestInterface $request = null;
 
 			public function handle(ServerRequestInterface $request): ResponseInterface

@@ -6,6 +6,7 @@ namespace Tests\ON\Middleware;
 
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
+use Laminas\Diactoros\UploadedFile;
 use ON\Middleware\BodyParams\MultipartFormDataStrategy;
 use PHPUnit\Framework\TestCase;
 
@@ -43,7 +44,7 @@ final class MultipartFormDataStrategyTest extends TestCase
 	{
 		$request = (new ServerRequest(method: 'POST'))
 			->withParsedBody(['data' => '{"title":"Existing"}'])
-			->withUploadedFiles(['file_id' => new \Laminas\Diactoros\UploadedFile(
+			->withUploadedFiles(['file_id' => new UploadedFile(
 				fopen('php://temp', 'wb+'),
 				0,
 				UPLOAD_ERR_OK,

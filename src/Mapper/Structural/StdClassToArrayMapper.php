@@ -6,6 +6,7 @@ namespace ON\Mapper\Structural;
 
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Support\StdClassValueConverter;
+use stdClass;
 
 final class StdClassToArrayMapper implements MapperInterface
 {
@@ -25,12 +26,12 @@ final class StdClassToArrayMapper implements MapperInterface
 			return false;
 		}
 
-		return $from instanceof \stdClass && $to === 'array';
+		return $from instanceof stdClass && $to === 'array';
 	}
 
 	public function map(mixed $from, mixed $to, MappingContext $context): mixed
 	{
-		/** @var \stdClass $from */
+		/** @var stdClass $from */
 		return StdClassValueConverter::stdClassToArray($from, $this->gateway, $context);
 	}
 }

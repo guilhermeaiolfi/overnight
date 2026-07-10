@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Logging;
 
-use ON\Console\Init\Event\ConsoleReadyEvent;
-
 use ON\Application;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
@@ -31,6 +30,7 @@ class LoggingExtension extends AbstractExtension
 		$this->options = $options;
 		$this->app = $app;
 	}
+
 	public function register(Init $init): void
 	{
 		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
@@ -55,5 +55,4 @@ class LoggingExtension extends AbstractExtension
 			});
 		}
 	}
-
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Field\Handler;
 
-use ON\Mapper\Exception\ConversionException;
 use ON\Mapper\Exception\UnsupportedConversionException;
 use ON\Mapper\Field\FieldContext;
 use ON\Mapper\Field\FieldTypeInterface;

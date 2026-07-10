@@ -5,19 +5,18 @@ declare(strict_types=1);
 namespace ON\Config;
 
 use Closure;
-use Exception;
+use Laminas\Stdlib\ArrayUtils;
 use Laminas\Stdlib\Glob;
 use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
-use ON\Extension\AbstractExtension;
-use ON\Init\InitContext;
-use ON\Init\Init;
-use ON\FS\Path;
-use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
-use Laminas\Stdlib\ArrayUtils;
+use ON\Config\Init\Event\ConfigReadyEvent;
+use ON\Extension\AbstractExtension;
+use ON\FS\Path;
+use ON\Init\Init;
+use ON\Init\InitContext;
 use ReflectionFunction;
 
 class ConfigExtension extends AbstractExtension
@@ -83,6 +82,7 @@ class ConfigExtension extends AbstractExtension
 		if (! isset($this->instances[$className])) {
 			if (isset($this->data[$className]) && is_object($this->data[$className])) {
 				$this->instances[$className] = $this->data[$className];
+
 				return $this->instances[$className];
 			}
 
@@ -140,6 +140,7 @@ class ConfigExtension extends AbstractExtension
 				$this->processFile($file);
 			}
 			$context->emit(new ConfigReadyEvent($this));
+
 			return;
 		}
 
@@ -182,12 +183,14 @@ class ConfigExtension extends AbstractExtension
 
 		if (is_array($obj)) {
 			$this->data = ArrayUtils::merge($this->data, $obj);
+
 			return;
 		}
 
 		if ($obj instanceof Config) {
 			$className = get_class($obj);
 			$this->get($className)->mergeConfig($obj);
+
 			return;
 		}
 
@@ -210,6 +213,7 @@ class ConfigExtension extends AbstractExtension
 				if (is_array($cache) && isset($cache['data'])) {
 					$this->data = $cache['data'];
 					$this->cacheExceptions = $cache['cacheExceptions'] ?? [];
+
 					return true;
 				}
 			}

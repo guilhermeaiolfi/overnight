@@ -6,14 +6,14 @@ namespace ON\ORM\Container;
 
 use ON\Data\Definition\Registry;
 use ON\Data\Mapper\ConversionGateway;
-use ON\ORM\Compiler\OnDataCycleRegistryGenerator;
+use ON\ORM\Compiler\CycleRegistryGenerator;
 use Psr\Container\ContainerInterface;
 
-final class OnDataCycleRegistryGeneratorFactory
+final class CycleRegistryGeneratorFactory
 {
-	public function __invoke(ContainerInterface $container): OnDataCycleRegistryGenerator
+	public function __invoke(ContainerInterface $container): CycleRegistryGenerator
 	{
-		return new OnDataCycleRegistryGenerator(
+		return new CycleRegistryGenerator(
 			$container->get(Registry::class),
 			$container->get(ConversionGateway::class),
 		);

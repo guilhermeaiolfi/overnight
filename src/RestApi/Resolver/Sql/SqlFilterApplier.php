@@ -7,11 +7,11 @@ namespace ON\RestApi\Resolver\Sql;
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Injection\Expression;
 use Cycle\Database\Injection\Fragment;
-use Cycle\Database\Injection\FragmentInterface;
 use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\QueryParameters;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Relation\M2MRelation;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\M2MRelation;
+use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Query\Node\BetweenFilter;
 use ON\RestApi\Query\Node\ComparisonFilter;
 use ON\RestApi\Query\Node\ComparisonOperator;
@@ -25,7 +25,6 @@ use ON\RestApi\Query\Node\SetFilter;
 use ON\RestApi\Query\Node\SetOperator;
 use ON\RestApi\Query\Node\ValueNode;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Handler\AliasRegistry;
 
 class SqlFilterApplier
 {
@@ -41,8 +40,7 @@ class SqlFilterApplier
 		?FilterNode $filter,
 		?string $tableAlias = null,
 		?AliasRegistry $aliases = null
-	): void
-	{
+	): void {
 		if ($filter === null) {
 			return;
 		}
@@ -56,20 +54,22 @@ class SqlFilterApplier
 		FilterNode $filter,
 		string $tableAlias,
 		AliasRegistry $aliases
-	): void
-	{
+	): void {
 		if ($filter instanceof LogicalFilter) {
 			$this->applyLogicalFilter($query, $collection, $filter, $tableAlias, $aliases);
+
 			return;
 		}
 
 		if ($filter instanceof RelationExistsFilter) {
 			$this->applyRelationFilterNode($query, $collection, $filter, $tableAlias, $aliases);
+
 			return;
 		}
 
 		if ($filter instanceof ComparisonFilter) {
 			$this->applyComparisonFilter($query, $collection, $tableAlias, $filter);
+
 			return;
 		}
 
@@ -79,9 +79,10 @@ class SqlFilterApplier
 				$query->where(
 					$expression,
 					$filter->operator === SetOperator::In ? 'IN' : 'NOT IN',
-					new Parameter(array_map(fn(ValueNode $value) => $value->value(), $filter->values))
+					new Parameter(array_map(fn (ValueNode $value) => $value->value(), $filter->values))
 				);
 			}
+
 			return;
 		}
 
@@ -90,6 +91,7 @@ class SqlFilterApplier
 			if ($expression !== null) {
 				$query->where($expression, $filter->negated ? 'NOT BETWEEN' : 'BETWEEN', $filter->from->value(), $filter->to->value());
 			}
+
 			return;
 		}
 
@@ -98,6 +100,7 @@ class SqlFilterApplier
 			if ($expression !== null) {
 				$query->where($expression, $filter->negated ? '!=' : '=', null);
 			}
+
 			return;
 		}
 
@@ -110,6 +113,7 @@ class SqlFilterApplier
 				if ($filter->negated) {
 					$nested->where($expression, '!=', null);
 					$nested->where($expression, '!=', '');
+
 					return;
 				}
 
@@ -125,12 +129,11 @@ class SqlFilterApplier
 		LogicalFilter $filter,
 		string $tableAlias,
 		AliasRegistry $aliases
-	): void
-	{
+	): void {
 		$query->where(function ($nested) use ($collection, $filter, $tableAlias, $aliases) {
 			foreach ($filter->children as $index => $child) {
 				$method = $filter->operator === LogicalOperator::Or && $index > 0 ? 'orWhere' : 'where';
-				$nested->{$method}(fn($inner) => $this->applyFilterNode($inner, $collection, $child, $tableAlias, $aliases));
+				$nested->{$method}(fn ($inner) => $this->applyFilterNode($inner, $collection, $child, $tableAlias, $aliases));
 			}
 		});
 	}
@@ -163,10 +166,9 @@ class SqlFilterApplier
 		RelationExistsFilter $filter,
 		string $tableAlias,
 		AliasRegistry $aliases
-	): void
-	{
+	): void {
 		$relationName = $filter->relationName;
-		if (!$collection->relations->has($relationName)) {
+		if (! $collection->relations->has($relationName)) {
 			return;
 		}
 
@@ -181,28 +183,28 @@ class SqlFilterApplier
 			$junctionAlias = $aliases->alias($targetAlias . '__junction');
 			$subQuery->from($through->getCollection()->getTable() . ' AS ' . $junctionAlias)
 				->innerJoin($targetCollection->getTable(), $targetAlias);
-			foreach ($through->throughOuterKeys() as $index => $throughOuterKey) {
+			foreach ($through->getOuterKeys() as $index => $throughOuterKey) {
 				$method = $index === 0 ? 'on' : 'andOn';
 				$subQuery->{$method}(
 					$junctionAlias . '.' . $through->getCollection()->fields->get($throughOuterKey)->getColumn(),
 					'=',
-					$targetAlias . '.' . $targetCollection->fields->get($relation->outerKeys()[$index])->getColumn()
+					$targetAlias . '.' . $targetCollection->fields->get($relation->getOuterKeys()[$index])->getColumn()
 				);
 			}
-			foreach ($through->throughInnerKeys() as $index => $throughInnerKey) {
+			foreach ($through->getInnerKeys() as $index => $throughInnerKey) {
 				$subQuery->where(
 					new Expression($junctionAlias . '.' . $through->getCollection()->fields->get($throughInnerKey)->getColumn()),
 					'=',
-					new Expression($tableAlias . '.' . $collection->fields->get($relation->innerKeys()[$index])->getColumn())
+					new Expression($tableAlias . '.' . $collection->fields->get($relation->getInnerKeys()[$index])->getColumn())
 				);
 			}
 		} else {
 			$subQuery->from($targetCollection->getTable() . ' AS ' . $targetAlias);
-			foreach ($relation->outerKeys() as $index => $outerKey) {
+			foreach ($relation->getOuterKeys() as $index => $outerKey) {
 				$subQuery->where(
 					new Expression($targetAlias . '.' . $targetCollection->fields->get($outerKey)->getColumn()),
 					'=',
-					new Expression($tableAlias . '.' . $collection->fields->get($relation->innerKeys()[$index])->getColumn())
+					new Expression($tableAlias . '.' . $collection->fields->get($relation->getInnerKeys()[$index])->getColumn())
 				);
 			}
 		}
@@ -227,8 +229,7 @@ class SqlFilterApplier
 		array $where,
 		string $tableAlias,
 		AliasRegistry $aliases
-	): void
-	{
+	): void {
 		if ($where === []) {
 			return;
 		}
@@ -246,5 +247,4 @@ class SqlFilterApplier
 
 		return $primary->getColumn();
 	}
-
 }

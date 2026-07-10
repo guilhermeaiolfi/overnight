@@ -4,10 +4,12 @@ declare(strict_types=1);
 
 namespace Tests\ON\Mapper;
 
+use InvalidArgumentException;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Attribute\MapField;
 use ON\Mapper\Blueprint\FieldBlueprintEntry;
 use ON\Mapper\Blueprint\MappingBlueprint;
-use ON\ORM\Definition\Registry;
+use ON\Mapper\Structural\ArrayToObjectMapper;
 use PHPUnit\Framework\TestCase;
 
 final class MappingBlueprintTest extends TestCase
@@ -32,12 +34,12 @@ final class MappingBlueprintTest extends TestCase
 		$blueprint = MappingBlueprint::fromArray([
 			'payload' => new FieldBlueprintEntry(
 				StdClassNestedChildDto::class,
-				\ON\Mapper\Structural\ArrayToObjectMapper::class,
+				ArrayToObjectMapper::class,
 			),
 		]);
 
 		$this->assertSame(
-			\ON\Mapper\Structural\ArrayToObjectMapper::class,
+			ArrayToObjectMapper::class,
 			$blueprint->resolve('payload')?->mapperClass,
 		);
 	}
@@ -59,7 +61,8 @@ final class MappingBlueprintTest extends TestCase
 			->hasMany('comments', 'comment')->innerKey('id')->outerKey('post_id')->end()
 			->end();
 		$registry->collection('user')
-			->field('id', 'int')->primaryKey(true)->end()
+			->primaryKey('id')
+			->field('id', 'int')->end()
 			->field('joined_at', 'datetime')->end()
 			->end();
 		$registry->collection('comment')
@@ -100,7 +103,7 @@ final class MappingBlueprintTest extends TestCase
 		$registry = new Registry();
 		$registry->collection('post')->field('id', 'int')->end()->end();
 
-		$this->expectException(\InvalidArgumentException::class);
+		$this->expectException(InvalidArgumentException::class);
 
 		MappingBlueprint::fromCollection($registry->getCollection('post'), -1);
 	}

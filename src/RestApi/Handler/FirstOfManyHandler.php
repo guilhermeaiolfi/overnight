@@ -7,6 +7,7 @@ namespace ON\RestApi\Handler;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
 use Cycle\ORM\Parser\AbstractNode;
 use Cycle\ORM\Parser\SingularNode;
+use ON\RestApi\Support\PrimaryKey;
 
 class FirstOfManyHandler extends AbstractRelationHandler
 {
@@ -16,9 +17,9 @@ class FirstOfManyHandler extends AbstractRelationHandler
 	{
 		$node = new SingularNode(
 			$this->getSelectColumns(),
-			$this->getTargetCollection()->getPrimaryKey()->getColumns(),
-			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys()),
-			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->innerKeys())
+			PrimaryKey::of($this->getTargetCollection())->getColumns(),
+			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys()),
+			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->getInnerKeys())
 		);
 		$parent->linkNode($this->getResponseName(), $node);
 		$this->setNode($node);
@@ -35,13 +36,13 @@ class FirstOfManyHandler extends AbstractRelationHandler
 		}
 
 		$columns = $this->getSelectColumns();
-		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->outerKeys());
+		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys());
 		$query = $this->items->getDatabase()->select($columns)
 			->from($this->getTargetCollection()->getTable());
 
 		if (count($outerKeyColumns) === 1) {
 			$query->where($outerKeyColumns[0], 'IN', array_map(
-				static fn(array $set): mixed => reset($set),
+				static fn (array $set): mixed => reset($set),
 				$parentKeySets
 			));
 		} else {
@@ -71,7 +72,7 @@ class FirstOfManyHandler extends AbstractRelationHandler
 			$query,
 			$columns,
 			array_map(
-				fn(string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
+				fn (string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
 				$outerKeyColumns
 			),
 			$this->orderBy(),
@@ -99,7 +100,7 @@ class FirstOfManyHandler extends AbstractRelationHandler
 		$table = $this->getTargetCollection()->getTable();
 		$orders = [];
 		foreach ($this->relation->getOrderBy() as $fieldName => $direction) {
-			if (!$this->getTargetCollection()->fields->has((string) $fieldName)) {
+			if (! $this->getTargetCollection()->fields->has((string) $fieldName)) {
 				continue;
 			}
 

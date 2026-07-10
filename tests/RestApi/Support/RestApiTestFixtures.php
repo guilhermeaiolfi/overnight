@@ -4,17 +4,19 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi\Support;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Relation\M2MRelation;
-use ON\ORM\Definition\Registry;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Handler\HandlerRegistry;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\PayloadNormalizer;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Action\RestActionRouter;
+use ON\Container\Executor\ExecutorInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\M2MRelation;
+use ON\Mapper\ConversionGateway;
+use ON\Mapper\Exception\ConversionException;
+use function ON\Mapper\map;
+use ON\Mapper\MapperConfig;
+use ON\Mapper\Representation\PhpRepresentation;
+use ON\Mapper\Representation\StorageRepresentation;
+use ON\Mapper\Representation\WireRepresentation;
+use ON\Mapper\Structural\CollectionRowMapper;
+use ON\Mapper\Structural\MapperInterface;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
@@ -23,25 +25,24 @@ use ON\RestApi\Action\Directus\FilesAction;
 use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Action\Directus\ListAction;
 use ON\RestApi\Action\Directus\UpdateAction;
-use ON\Mapper\Exception\ConversionException;
-use ON\Mapper\ConversionGateway;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
-use ON\Mapper\Representation\WireRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
-use ON\Container\Executor\ExecutorInterface;
-use ON\RestApi\Support\RegistrySupportTrait;
+use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Event\AuthState;
+use ON\RestApi\Handler\HandlerFactory;
+use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Middleware\RestMiddleware;
+use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationDeleteTaskInterface;
 use ON\RestApi\Mutation\MutationNode;
 use ON\RestApi\Mutation\MutationNodeBuilder;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Payload\DirectusMutationBuilder;
+use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
@@ -49,10 +50,14 @@ use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\RestApiConfig;
+use ON\RestApi\Support\PrimaryKey;
+use ON\RestApi\Support\PrimaryKeyValue;
+use ON\RestApi\Support\RegistrySupportTrait;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
-
-use function ON\Mapper\map;
+use RuntimeException;
+use Throwable;
 
 trait RestApiTestFixtures
 {
@@ -61,10 +66,10 @@ trait RestApiTestFixtures
 
 	private function noopEventDispatcher(): EventDispatcherInterface
 	{
-		return new class implements EventDispatcherInterface {
+		return new class () implements EventDispatcherInterface {
 			public function dispatch(object $event): object
 			{
-				if ($event instanceof \ON\RestApi\Event\AuthorizationAwareEventInterface) {
+				if ($event instanceof AuthorizationAwareEventInterface) {
 					$event->allow();
 				}
 
@@ -84,10 +89,10 @@ trait RestApiTestFixtures
 				->on('delete.before', static fn (AuthorizationAwareEventInterface $event) => $event->getAuthState() === AuthState::Pending ? $event->allow(true) : null);
 		}
 
-		$container = new class implements ContainerInterface {
+		$container = new class () implements ContainerInterface {
 			public function get(string $id): mixed
 			{
-				throw new \RuntimeException("Unknown service {$id}.");
+				throw new RuntimeException("Unknown service {$id}.");
 			}
 
 			public function has(string $id): bool
@@ -96,7 +101,7 @@ trait RestApiTestFixtures
 			}
 		};
 
-		$executor = new class($container) implements ExecutorInterface {
+		$executor = new class ($container) implements ExecutorInterface {
 			public function __construct(private ContainerInterface $container)
 			{
 			}
@@ -118,7 +123,8 @@ trait RestApiTestFixtures
 	protected function createUserCollection(Registry $registry): void
 	{
 		$registry->collection('user')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)->end()
 			->field('email', 'string')->type('string')->nullable(true)->end()
 			->field('password', 'string')->type('string')->hidden(true)->nullable(true)->end()
@@ -128,7 +134,8 @@ trait RestApiTestFixtures
 	protected function createPostCollection(Registry $registry): void
 	{
 		$registry->collection('post')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('user_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('content', 'text')->type('text')->nullable(true)->end()
@@ -140,7 +147,8 @@ trait RestApiTestFixtures
 	protected function createCommentCollection(Registry $registry): void
 	{
 		$registry->collection('comment')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('post_id', 'int')->type('int')->nullable(false)->end()
 			->field('body', 'string')->type('string')->nullable(true)->end()
 			->field('author', 'string')->type('string')->nullable(true)->end()
@@ -150,7 +158,8 @@ trait RestApiTestFixtures
 	protected function createTagCollection(Registry $registry): void
 	{
 		$registry->collection('tag')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('name', 'string')->type('string')->nullable(true)->end()
 			->end();
 	}
@@ -158,7 +167,8 @@ trait RestApiTestFixtures
 	protected function createProfileCollection(Registry $registry): void
 	{
 		$registry->collection('profile')
-			->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->end()
 			->field('displayName', 'string')->type('string')->column('display_name')->nullable(true)->end()
 			->end();
 	}
@@ -169,8 +179,9 @@ trait RestApiTestFixtures
 		$this->createTagCollection($registry);
 
 		$registry->collection('post_tag')
-			->field('post_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
-			->field('tag_id', 'int')->type('int')->primaryKey(true)->nullable(false)->end()
+			->primaryKey('post_id', 'tag_id')
+			->field('post_id', 'int')->type('int')->nullable(false)->end()
+			->field('tag_id', 'int')->type('int')->nullable(false)->end()
 			->end();
 
 		// Create comment collection (no relations of its own)
@@ -178,7 +189,8 @@ trait RestApiTestFixtures
 
 		// Create post collection with relations
 		$postCollection = $registry->collection('post');
-		$postCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$postCollection->primaryKey('id');
+		$postCollection->field('id', 'int')->type('int')->nullable(false)->end();
 		$postCollection->field('user_id', 'int')->type('int')->nullable(false)->end();
 		$postCollection->field('title', 'string')->type('string')->nullable(true)->end();
 		$postCollection->field('content', 'text')->type('text')->nullable(true)->end();
@@ -209,7 +221,8 @@ trait RestApiTestFixtures
 
 		// Create user collection with hasMany posts
 		$userCollection = $registry->collection('user');
-		$userCollection->field('id', 'int')->type('int')->primaryKey(true)->nullable(false)->end();
+		$userCollection->primaryKey('id');
+		$userCollection->field('id', 'int')->type('int')->nullable(false)->end();
 		$userCollection->field('name', 'string')->type('string')->nullable(true)->end();
 		$userCollection->field('email', 'string')->type('string')->nullable(true)->end();
 		$userCollection->field('password', 'string')->type('string')->hidden(true)->nullable(true)->end();
@@ -361,21 +374,21 @@ trait RestApiTestFixtures
 	{
 		$items = $this->createItems($registry, $db);
 		$handlers = $this->createHandlerFactory($items);
-		$config = new \ON\RestApi\RestApiConfig();
+		$config = new RestApiConfig();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
 			new QueryNormalizer(),
 			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
 		));
 
-		return new class($registry, $items, $handlers, $config, $hookDispatcher) {
+		return new class ($registry, $items, $handlers, $config, $hookDispatcher) {
 			private SqlQuerySpecCompiler $querySpecCompiler;
 
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
 				private HandlerFactory $handlers,
-				private \ON\RestApi\RestApiConfig $config,
+				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
 			) {
 				$this->querySpecCompiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
@@ -395,12 +408,12 @@ trait RestApiTestFixtures
 				PrimaryKeyValue|string $identity,
 				?QuerySpec $querySpec = null,
 			): ?array {
-					try {
-						$response = $this->getAction()(
-							['collection' => $collection->getName(), 'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity],
-							['query' => $querySpec],
-							['dispatchEvents' => false]
-						);
+				try {
+					$response = $this->getAction()(
+						['collection' => $collection->getName(), 'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity],
+						['query' => $querySpec],
+						['dispatchEvents' => false]
+					);
 				} catch (RestApiError $error) {
 					if ($error->getHttpStatus() === 404) {
 						return null;
@@ -495,7 +508,7 @@ trait RestApiTestFixtures
 		$this->mapperServices[$class] = $service;
 		$services = &$this->mapperServices;
 
-		$container = new class($services) implements ContainerInterface {
+		$container = new class ($services) implements ContainerInterface {
 			public ?ConversionGateway $gateway = null;
 
 			/**
@@ -511,21 +524,21 @@ trait RestApiTestFixtures
 					return $this->services[$id];
 				}
 
-				if ($this->gateway !== null && is_subclass_of($id, \ON\Mapper\Structural\MapperInterface::class)) {
+				if ($this->gateway !== null && is_subclass_of($id, MapperInterface::class)) {
 					return new $id($this->gateway);
 				}
 
-				throw new \RuntimeException("Unknown service {$id}.");
+				throw new RuntimeException("Unknown service {$id}.");
 			}
 
 			public function has(string $id): bool
 			{
 				return isset($this->services[$id])
-					|| is_subclass_of($id, \ON\Mapper\Structural\MapperInterface::class);
+					|| is_subclass_of($id, MapperInterface::class);
 			}
 		};
 
-		$gateway = ConversionGateway::create(new \ON\Mapper\MapperConfig(), $container);
+		$gateway = ConversionGateway::create(new MapperConfig(), $container);
 		$container->gateway = $gateway;
 		foreach (array_keys($this->mapperServices) as $mapperClass) {
 			$gateway->getMappers()->replace($mapperClass);
@@ -542,12 +555,12 @@ trait RestApiTestFixtures
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$this->createQueryBuilder();
 
-		return new class(
+		return new class (
 			$registry,
 			$items,
 			$this->createHandlerFactory($items),
 			$this->createMutationBuilder($registry, $items, $eventDispatcher),
-			new \ON\RestApi\RestApiConfig(),
+			new RestApiConfig(),
 			$hookDispatcher,
 		) {
 			use RegistrySupportTrait;
@@ -560,11 +573,12 @@ trait RestApiTestFixtures
 				private ItemRepositoryInterface $items,
 				private HandlerFactory $relationHandlers,
 				private DirectusMutationBuilder $mutationBuilder,
-				private \ON\RestApi\RestApiConfig $config,
+				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
-			) {}
+			) {
+			}
 
-			public function getCollection(string|\ON\ORM\Definition\Collection\CollectionInterface $collectionName): \ON\ORM\Definition\Collection\CollectionInterface
+			public function getCollection(string|CollectionInterface $collectionName): CollectionInterface
 			{
 				return $this->getCollectionOrThrow($this->registry, $collectionName);
 			}
@@ -574,7 +588,7 @@ trait RestApiTestFixtures
 				return $this->registry->getCollections();
 			}
 
-			public function list(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $querySpec, array $options = []): array
+			public function list(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
@@ -590,13 +604,13 @@ trait RestApiTestFixtures
 			}
 
 			public function get(
-				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
-				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
-				?\ON\RestApi\Query\Node\QuerySpec $querySpec = null,
+				string|CollectionInterface $collection,
+				PrimaryKeyValue|string $identity,
+				?QuerySpec $querySpec = null,
 				array $options = []
 			): ?array {
 				$collection = $this->getCollection($collection);
-				$identity = $collection->getPrimaryKey()->getValue($identity);
+				$identity = PrimaryKey::of($collection)->getValue($identity);
 				$options = $options + [
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
@@ -622,7 +636,7 @@ trait RestApiTestFixtures
 				return $response['data'] ?? null;
 			}
 
-			public function aggregate(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Query\Node\QuerySpec $querySpec, array $options = []): array
+			public function aggregate(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
@@ -638,7 +652,7 @@ trait RestApiTestFixtures
 				return $response['data'] ?? [];
 			}
 
-			public function create(string|\ON\ORM\Definition\Collection\CollectionInterface $collection, \ON\RestApi\Payload\Node\MutationSpec $spec, array $options = []): array
+			public function create(string|CollectionInterface $collection, MutationSpec $spec, array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
@@ -658,8 +672,9 @@ trait RestApiTestFixtures
 				try {
 					$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
 					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
+				} catch (Throwable $throwable) {
 					$afterHooksTx->rollback();
+
 					throw $throwable;
 				}
 
@@ -671,13 +686,13 @@ trait RestApiTestFixtures
 			}
 
 			public function update(
-				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
-				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
-				\ON\RestApi\Payload\Node\MutationSpec $spec,
+				string|CollectionInterface $collection,
+				PrimaryKeyValue|string $identity,
+				MutationSpec $spec,
 				array $options = []
 			): ?array {
 				$collection = $this->getCollection($collection);
-				$identity = $collection->getPrimaryKey()->getValue($identity);
+				$identity = PrimaryKey::of($collection)->getValue($identity);
 				$options = $options + [
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
@@ -695,8 +710,9 @@ trait RestApiTestFixtures
 				try {
 					$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
 					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
+				} catch (Throwable $throwable) {
 					$afterHooksTx->rollback();
+
 					throw $throwable;
 				}
 
@@ -710,12 +726,12 @@ trait RestApiTestFixtures
 			}
 
 			public function delete(
-				string|\ON\ORM\Definition\Collection\CollectionInterface $collection,
-				\ON\ORM\Definition\Collection\PrimaryKeyValue|string $identity,
+				string|CollectionInterface $collection,
+				PrimaryKeyValue|string $identity,
 				array $options = []
 			): bool {
 				$collection = $this->getCollection($collection);
-				$identity = $collection->getPrimaryKey()->getValue($identity);
+				$identity = PrimaryKey::of($collection)->getValue($identity);
 				$options = $options + ['dispatchEvents' => true];
 				$queue = new MutationQueue();
 				$afterHooksTx = $this->hookDispatcher->start();
@@ -730,15 +746,16 @@ trait RestApiTestFixtures
 				try {
 					$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
 					$afterHooksTx->flush();
-				} catch (\Throwable $throwable) {
+				} catch (Throwable $throwable) {
 					$afterHooksTx->rollback();
+
 					throw $throwable;
 				}
 
 				return $result;
 			}
 
-			public function serialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, array $phpRow): array
+			public function serialize(CollectionInterface $collection, array $phpRow): array
 			{
 				return map($phpRow)
 					->using(CollectionRowMapper::class, $collection)
@@ -783,7 +800,7 @@ trait RestApiTestFixtures
 				);
 			}
 
-			public function unserialize(\ON\ORM\Definition\Collection\CollectionInterface $collection, string|array $payload): array
+			public function unserialize(CollectionInterface $collection, string|array $payload): array
 			{
 				if (is_string($payload)) {
 					if ($payload === '') {
@@ -818,7 +835,7 @@ trait RestApiTestFixtures
 		array $options = ['endpointUri' => '/items'],
 		?EventDispatcherInterface $eventDispatcher = null,
 	): RestMiddleware {
-		$config = new \ON\RestApi\RestApiConfig($options);
+		$config = new RestApiConfig($options);
 		$config
 			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
 			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
@@ -838,14 +855,14 @@ trait RestApiTestFixtures
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 
-		$container = new class($registry, $items, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
+		$container = new class ($registry, $items, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
 
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
 				private DirectusMutationBuilder $mutationBuilder,
-				private \ON\RestApi\RestApiConfig $config,
+				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
 				private ?EventDispatcherInterface $eventDispatcher = null,
 			) {
@@ -864,7 +881,7 @@ trait RestApiTestFixtures
 					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
 					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
 					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
-					default => throw new \RuntimeException("Unknown service {$id}."),
+					default => throw new RuntimeException("Unknown service {$id}."),
 				};
 			}
 

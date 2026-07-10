@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use LogicException;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\RestApi\Event\AuthState;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
+use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemCreated;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -19,10 +19,10 @@ use ON\RestApi\Event\RelationConnecting;
 use ON\RestApi\Event\RelationDisconnected;
 use ON\RestApi\Event\RelationDisconnecting;
 use ON\RestApi\Handler\RelationMutationHandlerInterface;
-use ON\RestApi\Payload\Action\ConnectAction;
-use ON\RestApi\Payload\Action\DisconnectAction;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHookTransaction;
+use ON\RestApi\Payload\Action\ConnectAction;
+use ON\RestApi\Payload\Action\DisconnectAction;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKeyCriteria;
@@ -248,7 +248,6 @@ final class MutationQueue implements MutationQueueInterface
 			default => null,
 		};
 	}
-
 
 	public function execute(ItemRepositoryInterface $repository): void
 	{

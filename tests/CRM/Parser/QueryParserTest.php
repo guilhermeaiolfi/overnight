@@ -12,7 +12,7 @@ final class QueryParserTest extends TestCase
 
 	protected function setUp(): void
 	{
-		$this->registry = new UserPartsRegistry();
+		$this->registry = UserPartsRegistry::create();
 	}
 
 	public function testSimpleFields(): void

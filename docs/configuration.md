@@ -113,14 +113,15 @@ This allows you to maintain the performance of a cached configuration while stil
 
 ```php
 <?php
-// config/orm.all.php
+// Example: a non-serializable service object returned from config
 
-use ON\ORM\Definition\Registry;
+use App\Services\LegacyConnection;
 
-// This Registry object will be re-loaded on every request
-// even if the config is cached.
-return new Registry();
+// This object will be re-loaded on every request even if the config is cached.
+return new LegacyConnection();
 ```
+
+Entity definitions are **not** returned from config files. Register them via `DataDefinitionConfigureEvent`; the framework caches them separately as `data-definitions.php`. See [ON\Data Definition Architecture](ondata-cycle-schema-migration.md).
 
 ## Config Class
 

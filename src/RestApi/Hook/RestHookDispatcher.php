@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\RestApi\Hook;
 
 use ON\Container\Executor\ExecutorInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
-use ON\ORM\Definition\Collection\CollectionInterface;
 use ON\RestApi\Support\AuthorizationGuard;
 use Psr\Container\ContainerInterface;
 
@@ -15,7 +15,8 @@ final class RestHookDispatcher
 	public function __construct(
 		private ContainerInterface $container,
 		private ExecutorInterface $executor,
-	) {}
+	) {
+	}
 
 	public function start(): RestHookTransaction
 	{
@@ -40,7 +41,6 @@ final class RestHookDispatcher
 
 		return $payload;
 	}
-
 
 	/**
 	 * @return list<array{handler: mixed, priority: int}>

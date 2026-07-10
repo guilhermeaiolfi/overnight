@@ -31,8 +31,7 @@ class Init
 
 	public function __construct(
 		private ?ExtensionProfiler $profiler = null
-	)
-	{
+	) {
 		$this->context = new InitContext($this);
 	}
 
@@ -78,7 +77,7 @@ class Init
 
 		$this->eventHistory[] = [
 			'event' => $name,
-			'payload' => $payload
+			'payload' => $payload,
 		];
 
 		$this->eventStack[] = $name;
@@ -110,7 +109,7 @@ class Init
 
 		$this->listeners[$event][] = [
 			'owner' => $owner,
-			'callback' => $listener
+			'callback' => $listener,
 		];
 	}
 
@@ -124,7 +123,7 @@ class Init
 
 		$this->doneListeners[$event][] = [
 			'owner' => $owner,
-			'callback' => $listener
+			'callback' => $listener,
 		];
 	}
 
@@ -140,6 +139,7 @@ class Init
 		$sortFn = function (array $a, array $b) use ($orderMap, $defaultOrder) {
 			$orderA = $orderMap[$a['owner']] ?? $defaultOrder;
 			$orderB = $orderMap[$b['owner']] ?? $defaultOrder;
+
 			return $orderA <=> $orderB;
 		};
 
@@ -202,6 +202,7 @@ class Init
 				$stage,
 				$listener
 			);
+
 			try {
 				return $listener($payload, $this->context);
 			} finally {

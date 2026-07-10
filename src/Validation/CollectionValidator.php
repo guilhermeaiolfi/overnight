@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Validation;
 
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use Somnambulist\Components\Validation\ErrorBag;
 use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
@@ -41,7 +41,7 @@ final class CollectionValidator
 				continue;
 			}
 
-			if ($partial && !array_key_exists($name, $input)) {
+			if ($partial && ! array_key_exists($name, $input)) {
 				continue;
 			}
 
@@ -104,11 +104,13 @@ final class CollectionValidator
 		foreach ($fieldMessages as $key => $message) {
 			if (str_contains($key, ':') || str_starts_with($key, 'rule.')) {
 				$expanded[$key] = $message;
+
 				continue;
 			}
 
 			if ($key === $fieldName) {
 				$expanded[$key] = $message;
+
 				continue;
 			}
 

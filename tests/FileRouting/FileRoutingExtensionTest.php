@@ -5,18 +5,19 @@ declare(strict_types=1);
 namespace Tests\ON\FileRouting;
 
 use FilesystemIterator;
-use League\Plates\Engine;
 use Laminas\Diactoros\ServerRequest;
+use League\Plates\Engine;
+use ON\Application;
 use ON\FileRouting\Addon\BreadcrumbsAddon;
-use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRouter;
+use ON\FileRouting\FileRoutingCache;
 use ON\FileRouting\FileRoutingConfig;
 use ON\FileRouting\Page\MainPage;
 use ON\RequestStack;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
-use ON\View\RendererInterface;
 use ON\View\Plates\PlatesRenderer;
+use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use ON\View\ViewManager;
 use ON\View\ViewResult;
@@ -59,7 +60,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
 				if ($class === PlatesRenderer::class) {
-					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+					return new PlatesRenderer($viewConfig, $engine, $this->createMock(Application::class));
 				}
 
 				if ($class === TestLatteRenderer::class) {
@@ -112,7 +113,7 @@ final class FileRoutingExtensionTest extends TestCase
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine, $cachePath) {
 				if ($class === PlatesRenderer::class) {
-					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+					return new PlatesRenderer($viewConfig, $engine, $this->createMock(Application::class));
 				}
 
 				if ($class === TestLatteRenderer::class) {
@@ -269,7 +270,7 @@ PHP
 		$container->method('get')
 			->willReturnCallback(function (string $class) use ($viewConfig, $engine) {
 				if ($class === PlatesRenderer::class) {
-					return new PlatesRenderer($viewConfig, $engine, $this->createMock(\ON\Application::class));
+					return new PlatesRenderer($viewConfig, $engine, $this->createMock(Application::class));
 				}
 
 				return null;

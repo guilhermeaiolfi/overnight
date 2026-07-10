@@ -4,24 +4,29 @@ declare(strict_types=1);
 
 namespace Tests\ON\Image;
 
+use FilesystemIterator;
 use Intervention\Image\Interfaces\ModifierInterface;
 use Laminas\Diactoros\ServerRequest;
+use ON\FS\DirectoryPathInterface;
+use ON\FS\FilePathInterface;
+use ON\FS\PathFile;
+use ON\FS\PathRegistry;
+use ON\FS\PublicAsset;
+use ON\FS\PublicAssetInterface;
 use ON\Image\Cache\ImageCacheInterface;
 use ON\Image\DefaultPlaceholderImage;
 use ON\Image\Encrypter\EncrypterInterface;
 use ON\Image\ImageConfig;
 use ON\Image\ImageManager;
-use ON\FS\DirectoryPathInterface;
-use ON\FS\PathFile;
-use ON\FS\PathRegistry;
-use ON\FS\PublicAsset;
-use ON\FS\PublicAssetInterface;
 use ON\Image\ImageRequest;
 use ON\Image\UserFilePlaceholderImage;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use RecursiveDirectoryIterator;
+use RecursiveIteratorIterator;
+use ReflectionMethod;
 use RuntimeException;
 
 final class ImageManagerTest extends TestCase
@@ -281,7 +286,7 @@ final class ImageManagerTest extends TestCase
 
 	private function callGetImagePath(ImageManager $manager, string $filename): mixed
 	{
-		$method = new \ReflectionMethod($manager, 'getConcreteImagePath');
+		$method = new ReflectionMethod($manager, 'getConcreteImagePath');
 		$method->setAccessible(true);
 
 		return $method->invoke($manager, $filename);
@@ -304,14 +309,15 @@ final class ImageManagerTest extends TestCase
 			return;
 		}
 
-		$items = new \RecursiveIteratorIterator(
-			new \RecursiveDirectoryIterator($dir, \FilesystemIterator::SKIP_DOTS),
-			\RecursiveIteratorIterator::CHILD_FIRST
+		$items = new RecursiveIteratorIterator(
+			new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+			RecursiveIteratorIterator::CHILD_FIRST
 		);
 
 		foreach ($items as $item) {
 			if ($item->isDir()) {
 				rmdir($item->getPathname());
+
 				continue;
 			}
 
@@ -337,7 +343,7 @@ final class RecordingImageCache implements ImageCacheInterface
 	) {
 	}
 
-	public function create(string $url, callable|ModifierInterface $template, string|\ON\FS\FilePathInterface $path): PublicAssetInterface
+	public function create(string $url, callable|ModifierInterface $template, string|FilePathInterface $path): PublicAssetInterface
 	{
 		$this->lastGetToken = $url;
 		$this->lastGetTemplate = $template;
@@ -353,7 +359,7 @@ final class RecordingImageCache implements ImageCacheInterface
 		return $asset;
 	}
 
-	public function get(string|\ON\FS\FilePathInterface $path, string $token): PublicAssetInterface
+	public function get(string|FilePathInterface $path, string $token): PublicAssetInterface
 	{
 		$this->lastFilenamePath = $path;
 		$this->lastFilenameToken = $token;

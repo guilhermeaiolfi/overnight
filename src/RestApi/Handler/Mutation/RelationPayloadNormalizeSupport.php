@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
+use InvalidArgumentException;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\CreateAction;
 use ON\RestApi\Payload\Action\DeleteAction;
@@ -13,6 +13,8 @@ use ON\RestApi\Payload\Action\RelationAction;
 use ON\RestApi\Payload\Action\UpdateAction;
 use ON\RestApi\Payload\MutationContext;
 use ON\RestApi\Payload\PayloadNormalizer;
+use ON\RestApi\Support\PrimaryKey;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 trait RelationPayloadNormalizeSupport
 {
@@ -42,12 +44,12 @@ trait RelationPayloadNormalizeSupport
 	{
 		$action->collection ??= $targetCollection;
 
-		if ($action->target !== null || !is_array($action->data)) {
+		if ($action->target !== null || ! is_array($action->data)) {
 			return;
 		}
 
 		$collection = $context->source->getCollection()->getRegistry()->getCollection($targetCollection);
-		$id = $collection->getPrimaryKey()->extractFromInput($action->data);
+		$id = PrimaryKey::of($collection)->extractFromInput($action->data);
 		if ($id !== null) {
 			$action->target = $id;
 		}
@@ -69,12 +71,12 @@ trait RelationPayloadNormalizeSupport
 	protected function omittedChildActions(array $row, string $targetCollection): array
 	{
 		$actions = [];
-		$id = $this->getTargetCollection()->getPrimaryKey()->extractFromInput($row);
+		$id = PrimaryKey::of($this->getTargetCollection())->extractFromInput($row);
 		if ($id === null) {
 			return $actions;
 		}
 
-		if ($this->relation->isCascade() || !$this->relation->isNullable()) {
+		if ($this->relation->isCascade() || ! $this->relation->isNullable()) {
 			$actions[] = new DeleteAction(collection: $targetCollection, data: $id->values());
 
 			return $actions;
@@ -88,7 +90,7 @@ trait RelationPayloadNormalizeSupport
 	protected static function linkTarget(PrimaryKeyValue|int|string|null $target): PrimaryKeyValue|int|string
 	{
 		if ($target === null) {
-			throw new \InvalidArgumentException('Link target is required.');
+			throw new InvalidArgumentException('Link target is required.');
 		}
 
 		return $target;

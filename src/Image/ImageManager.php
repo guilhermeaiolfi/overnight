@@ -8,15 +8,15 @@ use Intervention\Image\Interfaces\ModifierInterface;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
-use ON\Image\Cache\FileSystem;
-use ON\Image\Cache\ImageCacheInterface;
-use ON\Image\Encrypter\EncrypterInterface;
-use ON\Image\Encrypter\OpenSSL;
 use ON\FS\DirectoryPathInterface;
 use ON\FS\FilePathInterface;
 use ON\FS\Path;
 use ON\FS\PathFile;
 use ON\FS\PathRegistry;
+use ON\Image\Cache\FileSystem;
+use ON\Image\Cache\ImageCacheInterface;
+use ON\Image\Encrypter\EncrypterInterface;
+use ON\Image\Encrypter\OpenSSL;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -279,6 +279,7 @@ class ImageManager implements MiddlewareInterface
 		$configuredRoots = $this->imageCfg->get('sourceRoots', []);
 		if (! is_array($configuredRoots)) {
 			$this->resolvedSourceRoots = [];
+
 			return $this->resolvedSourceRoots;
 		}
 
@@ -312,6 +313,7 @@ class ImageManager implements MiddlewareInterface
 
 			if ($this->paths->has($pathName)) {
 				$basePath = $this->paths->get($pathName);
+
 				return $suffix === '' ? $basePath : Path::from($suffix, $basePath);
 			}
 		}

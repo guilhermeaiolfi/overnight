@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Mutation\MutationStateInterface;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 trait RelationStateSupport
 {

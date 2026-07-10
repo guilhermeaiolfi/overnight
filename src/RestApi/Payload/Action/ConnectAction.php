@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload\Action;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 final class ConnectAction implements RelationAction
 {

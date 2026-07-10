@@ -7,20 +7,21 @@ namespace ON\RestApi\Repository;
 use Cycle\Database\DatabaseInterface;
 use Cycle\Database\Query\SelectQuery;
 use Cycle\Database\StatementInterface as CycleStatementInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 use ON\Mapper\Exception\ConversionException;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
-
-use function ON\Mapper\map;
+use ON\RestApi\Support\PrimaryKeyValue;
+use Throwable;
 
 class ItemRepository implements ItemRepositoryInterface
 {
@@ -53,6 +54,7 @@ class ItemRepository implements ItemRepositoryInterface
 	public function fetchOne(SelectQuery $query): ?array
 	{
 		$statement = $query->run();
+
 		try {
 			$row = $statement->fetch(CycleStatementInterface::FETCH_ASSOC);
 		} finally {
@@ -95,15 +97,15 @@ class ItemRepository implements ItemRepositoryInterface
 	{
 		try {
 			$storageInput = $this->mapInputToColumns($collection, $input);
-			$primaryKeyValue = $collection->getPrimaryKey()->extractFromInput($storageInput);
+			$primaryKeyValue = PrimaryKey::of($collection)->extractFromInput($storageInput);
 			$lastId = $this->database->insert($collection->getTable())
 				->values($storageInput)
 				->run();
 
 			$id = $primaryKeyValue;
-			if ($id === null && $lastId !== null && ! $collection->getPrimaryKey()->isComposite()) {
-				$id = $collection->getPrimaryKey()->extractFromInput([
-					$collection->getPrimaryKey()->getFieldNames()[0] => $lastId,
+			if ($id === null && $lastId !== null && ! PrimaryKey::of($collection)->isComposite()) {
+				$id = PrimaryKey::of($collection)->extractFromInput([
+					PrimaryKey::of($collection)->getFieldNames()[0] => $lastId,
 				], false);
 			}
 
@@ -116,7 +118,7 @@ class ItemRepository implements ItemRepositoryInterface
 			return $row === null ? [] : $row;
 		} catch (RestApiError $e) {
 			throw $e;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -142,7 +144,7 @@ class ItemRepository implements ItemRepositoryInterface
 			return $row === null ? null : $row;
 		} catch (RestApiError $e) {
 			throw $e;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -154,7 +156,7 @@ class ItemRepository implements ItemRepositoryInterface
 			$this->applyCriteriaFilter($query, $collection, $criteria);
 
 			return $query->run() > 0;
-		} catch (\Throwable $e) {
+		} catch (Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
 	}
@@ -242,7 +244,7 @@ class ItemRepository implements ItemRepositoryInterface
 		return $row !== null ? $collection->mapVisibleRowFromColumns($row) : null;
 	}
 
-	protected function convertDatabaseError(\Throwable $e, CollectionInterface $collection): RestApiError
+	protected function convertDatabaseError(Throwable $e, CollectionInterface $collection): RestApiError
 	{
 		$message = $e->getMessage();
 

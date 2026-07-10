@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Mapper\Conversion\Resolver;
 
+use DateTimeInterface;
 use ON\Mapper\Blueprint\MappingBlueprint;
 use ON\Mapper\Field\FieldContext;
 
@@ -19,7 +20,7 @@ final class BlueprintFieldContextResolver
 
 		if (class_exists($entry->type)
 			&& ! enum_exists($entry->type)
-			&& ! is_subclass_of($entry->type, \DateTimeInterface::class)
+			&& ! is_subclass_of($entry->type, DateTimeInterface::class)
 		) {
 			return null;
 		}

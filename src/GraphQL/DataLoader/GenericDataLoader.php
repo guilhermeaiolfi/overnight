@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace ON\GraphQL\DataLoader;
 
 use GraphQL\Deferred;
-use ON\ORM\Definition\Field\FieldInterface;
-use ON\ORM\Definition\Registry;
+use function ksort;
+use ON\Data\Definition\Field\FieldInterface;
+use ON\Data\Definition\Registry;
 
 class GenericDataLoader
 {
@@ -34,6 +35,7 @@ class GenericDataLoader
 			$items = $this->loadPendingBatch($entity, $loaderFn);
 
 			$normalized = $this->normalizeKey($entity, $keys);
+
 			return $items[$normalized] ?? null;
 		});
 	}
@@ -178,7 +180,7 @@ class GenericDataLoader
 			$sorted = $keys;
 		}
 
-		\ksort($sorted);
+		ksort($sorted);
 
 		$parts = [];
 		foreach ($sorted as $col => $value) {
@@ -198,6 +200,7 @@ class GenericDataLoader
 		if (count($pkColumns) === 1) {
 			$pkColumn = $pkColumns[0];
 			$value = count($parts) === 1 ? $parts[0] : $parts[1];
+
 			return [
 				'entity' => $entity,
 				'keys' => [$pkColumn => $value],
@@ -220,7 +223,7 @@ class GenericDataLoader
 
 	protected function getPrimaryKeyColumns(string $entity): array
 	{
-		if (!isset($this->registry->collections[$entity])) {
+		if (! isset($this->registry->collections[$entity])) {
 			return ['id'];
 		}
 
@@ -233,7 +236,7 @@ class GenericDataLoader
 		}
 
 		if (is_array($pk)) {
-			return array_map(fn($field) => $field->getColumn(), $pk);
+			return array_map(fn ($field) => $field->getColumn(), $pk);
 		}
 
 		return ['id'];

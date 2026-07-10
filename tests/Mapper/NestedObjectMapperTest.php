@@ -8,11 +8,10 @@ use DateTimeImmutable;
 use Laminas\Diactoros\ServerRequest;
 use ON\Mapper\Attribute\MapFrom;
 use ON\Mapper\Attribute\MapTo;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\WireRepresentation;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ServerRequestInterface;
-
-use function ON\Mapper\map;
 
 final class NestedObjectMapperTest extends TestCase
 {

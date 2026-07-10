@@ -50,8 +50,8 @@ trait ForeignKeyOnTargetApply
 	private function connectionUpdatePayload(MutationStateInterface $source, bool $disconnect): array
 	{
 		$payload = [];
-		foreach ($this->relation->outerKeys() as $index => $outerKey) {
-			$payload[$outerKey] = $disconnect ? null : $source->getValue($this->relation->innerKeys()[$index]);
+		foreach ($this->relation->getOuterKeys() as $index => $outerKey) {
+			$payload[$outerKey] = $disconnect ? null : $source->getValue($this->relation->getInnerKeys()[$index]);
 		}
 
 		return $payload;

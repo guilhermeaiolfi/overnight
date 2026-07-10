@@ -8,27 +8,29 @@ use Psr\Container\ContainerInterface;
 
 class DiscoveryCache
 {
-	protected array $adapters = []; 
+	protected array $adapters = [];
 
 	public function __construct(
 		protected ContainerInterface $container
 	) {
 
 	}
-	
+
 	protected function getAdapter(DiscoveryLocation $location): mixed
 	{
 		$className = $location->strategy;
-		if (!isset($this->adapters[$location->strategy])) {
+		if (! isset($this->adapters[$location->strategy])) {
 			$instance = $this->container->get($className);
 			$this->adapters[$className] = $instance;
 		}
+
 		return $this->adapters[$className];
 	}
 
 	public function save(DiscoverInterface $discover, DiscoveryLocation $location): bool
 	{
 		$adapter = $this->getAdapter($location);
+
 		return $adapter->save($discover, $location);
 	}
 
@@ -44,6 +46,7 @@ class DiscoveryCache
 	public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface
 	{
 		$adapter = $this->getAdapter($location);
+
 		return $adapter->recover($discover, $location);
 	}
 

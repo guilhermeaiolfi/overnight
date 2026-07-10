@@ -8,8 +8,8 @@ use Exception;
 use ON\CMS\Parser\Node\FieldNode;
 use ON\CMS\Parser\Node\RelationNode;
 use ON\CMS\Parser\Node\VirtualNode;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Registry;
 
 class VerifyNamesNormalizer
 {

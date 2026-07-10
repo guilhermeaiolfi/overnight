@@ -4,11 +4,12 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler\Mutation;
 
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
-use ON\ORM\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Mutation\ValueRef;
+use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
+use ON\RestApi\Support\PrimaryKeyValue;
 
 trait RelationNormalizeSupport
 {
@@ -17,13 +18,13 @@ trait RelationNormalizeSupport
 	protected function getCurrentRelationRows(MutationStateInterface $source): array
 	{
 		$fieldValueMap = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
 			$value = $source->getValue($innerKey);
-			if ($value instanceof ValueRef && !$value->isReady()) {
+			if ($value instanceof ValueRef && ! $value->isReady()) {
 				return [];
 			}
 
-			$fieldValueMap[$this->relation->outerKeys()[$index]] = $source->resolveValue($value);
+			$fieldValueMap[$this->relation->getOuterKeys()[$index]] = $source->resolveValue($value);
 		}
 
 		return $this->fetchRowsByFields($this->getTargetCollection(), $fieldValueMap);
@@ -46,7 +47,7 @@ trait RelationNormalizeSupport
 		?array $fieldNames = null
 	): array {
 		$fieldNames ??= $collection->getVisibleFields();
-		if (!in_array($fieldName, $fieldNames, true)) {
+		if (! in_array($fieldName, $fieldNames, true)) {
 			$fieldNames[] = $fieldName;
 		}
 
@@ -54,7 +55,7 @@ trait RelationNormalizeSupport
 		$query->where($collection->fields->get($fieldName)->getColumn(), $value);
 
 		return array_map(
-			fn(array $row): array => $collection->mapRowFromColumns($row),
+			fn (array $row): array => $collection->mapRowFromColumns($row),
 			$this->items->fetchAll($query)
 		);
 	}
@@ -66,7 +67,7 @@ trait RelationNormalizeSupport
 	): array {
 		$fieldNames ??= $collection->getVisibleFields();
 		foreach (array_keys($fieldValueMap) as $fieldName) {
-			if (!in_array((string) $fieldName, $fieldNames, true)) {
+			if (! in_array((string) $fieldName, $fieldNames, true)) {
 				$fieldNames[] = (string) $fieldName;
 			}
 		}
@@ -77,7 +78,7 @@ trait RelationNormalizeSupport
 		}
 
 		return array_map(
-			fn(array $row): array => $collection->mapRowFromColumns($row),
+			fn (array $row): array => $collection->mapRowFromColumns($row),
 			$this->items->fetchAll($query)
 		);
 	}
@@ -87,8 +88,8 @@ trait RelationNormalizeSupport
 		PrimaryKeyValue|string $identity
 	): ?array {
 		$fieldNames = $collection->getVisibleFields();
-		foreach ($collection->getPrimaryKey()->getFieldNames() as $fieldName) {
-			if (!in_array($fieldName, $fieldNames, true)) {
+		foreach (PrimaryKey::of($collection)->getFieldNames() as $fieldName) {
+			if (! in_array($fieldName, $fieldNames, true)) {
 				$fieldNames[] = $fieldName;
 			}
 		}
@@ -103,20 +104,20 @@ trait RelationNormalizeSupport
 
 	protected function applySourceValuesToTargetInput(array &$input, MutationStateInterface $source): void
 	{
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			$input[$this->relation->outerKeys()[$index]] = $source->getValue($innerKey);
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
+			$input[$this->relation->getOuterKeys()[$index]] = $source->getValue($innerKey);
 		}
 	}
 
 	protected function getTargetIdentityFromSourceRow(array $row): ?PrimaryKeyValue
 	{
 		$values = [];
-		foreach ($this->relation->innerKeys() as $index => $innerKey) {
-			if (!array_key_exists($innerKey, $row)) {
+		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
+			if (! array_key_exists($innerKey, $row)) {
 				return null;
 			}
 
-			$values[$this->relation->outerKeys()[$index]] = $row[$innerKey];
+			$values[$this->relation->getOuterKeys()[$index]] = $row[$innerKey];
 		}
 
 		return new PrimaryKeyValue($this->getTargetCollection(), $values);

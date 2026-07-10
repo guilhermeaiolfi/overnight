@@ -6,8 +6,7 @@ namespace ON\ORM\Select\Loader;
 
 use Cycle\Database\Query\SelectQuery;
 use Cycle\ORM\Parser\RootNode;
-use Cycle\ORM\Relation;
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\ORM\FactoryInterface;
 use ON\ORM\Select\JoinableLoader;
 use RuntimeException;
@@ -33,7 +32,7 @@ final class SubQueryLoader extends JoinableLoader
 		JoinableLoader $loader,
 		array $options
 	) {
-		parent::__construct($registry, $factory, $loader->name, $loader->getTarget(), $loader->schema);
+		parent::__construct($registry, $factory, $loader->getTarget(), $loader->relation, $options);
 
 		$this->loader = $loader->withContext($this, [
 			'method' => self::SUBQUERY,
@@ -69,10 +68,10 @@ final class SubQueryLoader extends JoinableLoader
 		}
 
 		$query = $query->columns($queryColumns);
-		$parentKeys = (array)$this->schema[Relation::INNER_KEY];
+		$parentKeys = $this->relation->getInnerKeys();
 		$parentPrefix = $this->parent->getAlias() . '.';
 		$on = [];
-		foreach ((array)$this->schema[Relation::OUTER_KEY] as $i => $key) {
+		foreach ($this->relation->getOuterKeys() as $i => $key) {
 			$field = $alias . '.' . $aliases[$this->fieldAlias($key)];
 			$on[$field] = $parentPrefix . $this->parent->fieldAlias($parentKeys[$i]);
 		}

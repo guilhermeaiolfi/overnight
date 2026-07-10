@@ -2,8 +2,14 @@
 
 declare(strict_types=1);
 
-namespace ON\ORM\Definition\Collection;
+namespace ON\RestApi\Support;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use RuntimeException;
+
+/**
+ * RestApi-local identity value for a collection primary key.
+ */
 final class PrimaryKeyValue
 {
 	/**
@@ -35,10 +41,8 @@ final class PrimaryKeyValue
 
 	public function isComplete(): bool
 	{
-		$primaryKey = $this->collection->getPrimaryKey();
-
-		foreach ($primaryKey->getFieldNames() as $fieldName) {
-			if (!array_key_exists($fieldName, $this->values)) {
+		foreach (PrimaryKey::of($this->collection)->getFieldNames() as $fieldName) {
+			if (! array_key_exists($fieldName, $this->values)) {
 				return false;
 			}
 		}
@@ -48,9 +52,9 @@ final class PrimaryKeyValue
 
 	public function toUrlId(): string
 	{
-		$primaryKey = $this->collection->getPrimaryKey();
+		$primaryKey = PrimaryKey::of($this->collection);
 
-		if (!$primaryKey->isComposite()) {
+		if (! $primaryKey->isComposite()) {
 			$fieldName = $primaryKey->getFieldNames()[0] ?? 'id';
 
 			return (string) ($this->values[$fieldName] ?? '');
@@ -63,7 +67,7 @@ final class PrimaryKeyValue
 
 		$json = json_encode($ordered, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 		if ($json === false) {
-			throw new \RuntimeException('Unable to encode composite primary key.');
+			throw new RuntimeException('Unable to encode composite primary key.');
 		}
 
 		return rtrim(strtr(base64_encode($json), '+/', '-_'), '=');
@@ -71,6 +75,6 @@ final class PrimaryKeyValue
 
 	public static function fromUrlId(CollectionInterface $collection, string $id): self
 	{
-		return $collection->getPrimaryKey()->getValueFromUrlId($id);
+		return PrimaryKey::of($collection)->getValueFromUrlId($id);
 	}
 }

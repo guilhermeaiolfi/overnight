@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Support;
 
+use ON\Data\Definition\Collection\CollectionInterface;
+use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\ORM\Definition\Collection\CollectionInterface;
-use ON\ORM\Definition\Collection\PrimaryKeyValue;
 use ON\RestApi\Error\RestApiError;
-
-use function ON\Mapper\map;
 
 trait ETagTrait
 {

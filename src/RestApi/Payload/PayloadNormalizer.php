@@ -4,10 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Payload;
 
-use ON\ORM\Definition\Registry;
+use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Handler\RelationMutationHandlerInterface;
+use ON\RestApi\Mutation\MutationState;
 use ON\RestApi\Payload\Node\MutationNodeSpec;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\Node\RelationPayload;
@@ -44,7 +45,7 @@ final class PayloadNormalizer
 	public function normalizeRelation(RelationPayload $relation, MutationContext $context): void
 	{
 		$handler = $this->handlers->mutation($context->collection, $relation->relationName);
-		if (!$handler instanceof RelationMutationHandlerInterface) {
+		if (! $handler instanceof RelationMutationHandlerInterface) {
 			$definition = $context->collection->relations->get($relation->relationName);
 			if ($definition->metadata(self::READ_ONLY_RELATION_INPUT_POLICY) === self::READ_ONLY_RELATION_INPUT_ERROR) {
 				throw new RestApiError(
@@ -56,6 +57,7 @@ final class PayloadNormalizer
 			}
 
 			$relation->actions = [];
+
 			return;
 		}
 
@@ -70,7 +72,7 @@ final class PayloadNormalizer
 
 		$context = new MutationContext(
 			$collection,
-			new \ON\RestApi\Mutation\MutationState($collection, $data),
+			new MutationState($collection, $data),
 			$operation,
 		);
 		$this->normalizeNode($node, $context);
