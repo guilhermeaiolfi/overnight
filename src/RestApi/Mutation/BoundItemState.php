@@ -1,0 +1,227 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ON\RestApi\Mutation;
+
+use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\ORM\Representation\Schema\Manual\PropertyRef;
+use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
+use ON\RestApi\Mutation\Payload\PayloadPath;
+use ON\RestApi\Support\PrimaryKey;
+use ON\RestApi\Support\PrimaryKeyValue;
+
+/**
+ * Hook-facing mutable item state backed by the same representation Session will flush.
+ */
+final class BoundItemState implements MutationStateInterface
+{
+	/** @var array<string, mixed> */
+	private array $values;
+
+	private ?array $row;
+
+	private bool $ready;
+
+	/** @var array<string, string> */
+	private array $fieldPaths = [];
+
+	private ?RelationRepresentationSource $relatedSource = null;
+
+	/** @var list<string> */
+	private array $pendingHookFields = [];
+
+	public function __construct(
+		private readonly CollectionInterface $collection,
+		private object $representation,
+		array $values = [],
+		?array $row = null,
+		bool $ready = false,
+		private readonly PayloadPath $path = new PayloadPath([]),
+		array $fieldPaths = [],
+	) {
+		$this->values = $values;
+		$this->row = $row;
+		$this->ready = $ready;
+		$this->fieldPaths = $fieldPaths;
+		$this->writeRepresentation($values);
+	}
+
+	public function setRelatedSource(RelationRepresentationSource $source): void
+	{
+		$this->relatedSource = $source;
+	}
+
+	public function getRelatedSource(): ?RelationRepresentationSource
+	{
+		return $this->relatedSource;
+	}
+
+	/**
+	 * Nested hook-added fields are projected onto the related identity object so
+	 * MANY-relation flattened aliases on the root do not collide on sourcePathKey.
+	 *
+	 * @return list<string>
+	 */
+	public function pullPendingHookFields(): array
+	{
+		$fields = $this->pendingHookFields;
+		$this->pendingHookFields = [];
+
+		return $fields;
+	}
+
+	/**
+	 * @deprecated Use pullPendingHookFields(); kept for transitional callers.
+	 * @return list<PropertyRef>
+	 */
+	public function pullPendingPropertyRefs(): array
+	{
+		if ($this->relatedSource === null) {
+			return [];
+		}
+
+		$refs = [];
+		foreach ($this->pullPendingHookFields() as $field) {
+			$refs[] = $this->relatedSource->field($field)->as(
+				'__hook_' . str_replace('.', '_', $this->path->toString()) . '_' . $field
+			);
+		}
+
+		return $refs;
+	}
+
+	public function getCollection(): CollectionInterface
+	{
+		return $this->collection;
+	}
+
+	public function getRepresentation(): object
+	{
+		return $this->representation;
+	}
+
+	public function getPath(): PayloadPath
+	{
+		return $this->path;
+	}
+
+	public function getData(): array
+	{
+		return $this->values;
+	}
+
+	public function setData(array $data): void
+	{
+		$this->values = $data;
+		$this->writeRepresentation($data);
+	}
+
+	public function getValue(string $column): mixed
+	{
+		if (array_key_exists($column, $this->values)) {
+			return $this->values[$column];
+		}
+
+		if ($this->row !== null && array_key_exists($column, $this->row)) {
+			return $this->row[$column];
+		}
+
+		return null;
+	}
+
+	public function setValue(string $column, mixed $value): void
+	{
+		$this->values[$column] = $value;
+		$this->writeField($column, $value);
+	}
+
+	public function resolveValue(mixed $value): mixed
+	{
+		return $value;
+	}
+
+	public function isValueReady(string $column): bool
+	{
+		return array_key_exists($column, $this->values)
+			|| ($this->row !== null && array_key_exists($column, $this->row))
+			|| $this->ready;
+	}
+
+	public function isReady(): bool
+	{
+		return $this->ready;
+	}
+
+	public function getRow(): ?array
+	{
+		return $this->row;
+	}
+
+	public function markReady(array $row): void
+	{
+		$this->row = $row;
+		foreach ($row as $field => $value) {
+			$this->setValue((string) $field, $value);
+		}
+		$this->ready = true;
+	}
+
+	public function getPrimaryKeyValue(bool $requireReady = true): ?PrimaryKeyValue
+	{
+		$values = [];
+		foreach (PrimaryKey::of($this->collection)->getFieldNames() as $fieldName) {
+			$value = $this->getValue($fieldName);
+			if ($value === null && $requireReady && ! $this->isValueReady($fieldName)) {
+				return null;
+			}
+			$values[$fieldName] = $value;
+		}
+
+		return new PrimaryKeyValue($this->collection, $values);
+	}
+
+	public function rebindValueRefs(array $values): array
+	{
+		return $values;
+	}
+
+	/**
+	 * @param array<string, mixed> $values
+	 */
+	private function writeRepresentation(array $values): void
+	{
+		foreach ($values as $field => $value) {
+			$this->writeField((string) $field, $value);
+		}
+	}
+
+	private function writeField(string $field, mixed $value): void
+	{
+		if (! $this->collection->hasField($field)) {
+			return;
+		}
+
+		if (isset($this->fieldPaths[$field])) {
+			$this->representation->{$this->fieldPaths[$field]} = $value;
+
+			return;
+		}
+
+		// Nested items: binder already aliased known fields onto the root. Hook-added
+		// fields go onto the related identity object to avoid MANY sourcePath collisions.
+		if ($this->relatedSource !== null && ! $this->path->isRoot()) {
+			$target = $this->relatedSource->getTargetObject();
+			$target->{$field} = $value;
+			$this->fieldPaths[$field] = $field;
+			if (! in_array($field, $this->pendingHookFields, true)) {
+				$this->pendingHookFields[] = $field;
+			}
+
+			return;
+		}
+
+		$this->fieldPaths[$field] = $field;
+		$this->representation->{$field} = $value;
+	}
+}

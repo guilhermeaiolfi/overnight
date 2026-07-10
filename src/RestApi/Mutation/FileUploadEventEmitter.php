@@ -9,14 +9,12 @@ use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Hook\RestHookDispatcher;
-use ON\RestApi\Payload\Action\CreateAction;
-use ON\RestApi\Payload\Action\RelationAction;
-use ON\RestApi\Payload\Action\UpdateAction;
-use ON\RestApi\Payload\Node\MutationNodeSpec;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Payload\Node\RelationPayload;
+use ON\RestApi\Support\MutationInput;
 use Psr\Http\Message\UploadedFileInterface;
 
+/**
+ * Converts uploaded files in Directus payloads to stored PHP values before binding.
+ */
 final class FileUploadEventEmitter
 {
 	public function __construct(
@@ -25,50 +23,84 @@ final class FileUploadEventEmitter
 	) {
 	}
 
-	public function process(MutationSpec $spec): void
+	/**
+	 * @param array<string, mixed> $input
+	 * @return array<string, mixed>
+	 */
+	public function processInput(CollectionInterface $collection, array $input): array
 	{
-		$this->processNode($spec->root);
+		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $input);
+		$scalars = $this->processFields($collection, $scalars);
+
+		foreach ($relations as $relationName => $raw) {
+			$relation = $collection->relations->get((string) $relationName);
+			$target = $relation->getCollection();
+			$relations[$relationName] = $this->processRelationPayload($target, $raw);
+		}
+
+		return $scalars + $relations;
 	}
 
-	private function processNode(MutationNodeSpec $node): void
+	/**
+	 * @deprecated Legacy MutationSpec path; prefer processInput().
+	 */
+	public function process(\ON\RestApi\Payload\Node\MutationSpec $spec): void
 	{
-		$collection = $this->registry->getCollection($node->collection);
-		$node->fields = $this->processFields($collection, $node->fields);
-
-		foreach ($node->relations as $relation) {
-			$this->processRelation($relation);
-		}
+		$collection = $this->registry->getCollection($spec->root->collection);
+		$payload = $spec->root->fields;
+		$spec->root->fields = $this->processFields($collection, $payload);
 	}
 
-	private function processRelation(RelationPayload $relation): void
+	private function processRelationPayload(CollectionInterface $target, mixed $raw): mixed
 	{
-		foreach ($relation->actions as $action) {
-			$this->processAction($action);
+		if ($raw === null || (! is_array($raw) && ! $raw instanceof UploadedFileInterface)) {
+			return $raw;
 		}
+
+		if ($raw instanceof UploadedFileInterface) {
+			return $raw;
+		}
+
+		if (MutationInput::isAssociativeArray($raw) && $this->isDetailed($raw)) {
+			foreach (['create', 'update'] as $op) {
+				if (! isset($raw[$op]) || ! is_array($raw[$op])) {
+					continue;
+				}
+				foreach ($raw[$op] as $index => $item) {
+					if (is_array($item)) {
+						$raw[$op][$index] = $this->processInput($target, $item);
+					}
+				}
+			}
+
+			return $raw;
+		}
+
+		if (MutationInput::isAssociativeArray($raw)) {
+			return $this->processInput($target, $raw);
+		}
+
+		foreach ($raw as $index => $item) {
+			if (is_array($item)) {
+				$raw[$index] = $this->processInput($target, $item);
+			}
+		}
+
+		return $raw;
 	}
 
-	private function processAction(RelationAction $action): void
+	/**
+	 * @param array<string, mixed> $input
+	 */
+	private function isDetailed(array $input): bool
 	{
-		if (! $action instanceof CreateAction && ! $action instanceof UpdateAction) {
-			return;
+		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+			if (array_key_exists($key, $input)) {
+				return true;
+			}
 		}
 
-		if ($action->node !== null) {
-			$this->processNode($action->node);
-
-			return;
-		}
-
-		if ($action->collection === null || ! is_array($action->data) || $action->data === []) {
-			return;
-		}
-
-		$collection = $this->registry->getCollection($action->collection);
-		if ($collection === null) {
-			return;
-		}
-
-		$action->data = $this->processFields($collection, $action->data);
+		return false;
 	}
 
 	/**

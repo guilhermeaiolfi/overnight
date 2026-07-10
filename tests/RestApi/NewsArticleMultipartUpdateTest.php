@@ -35,7 +35,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 	public function testPatchUpdateAcceptsNestedUploadedFiles(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, , $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -74,15 +74,17 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Updated article', $body['data']['title'] ?? null);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
-		$this->assertSame(1, $resolver->createCalls[0]['input']['news_id']);
+		$stmt = $db->database()->query('SELECT file_id, news_id FROM news_article_file WHERE news_id = 1 AND file_id = 501');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row, 'Expected nested uploaded file row to be persisted.');
+		$this->assertSame(501, (int) $row['file_id']);
+		$this->assertSame(1, (int) $row['news_id']);
 	}
 
 	public function testPatchUpdateAcceptsExplicitCreateUpdatePayloadWithNestedUpload(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, , $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -126,14 +128,17 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$stmt = $db->database()->query('SELECT file_id, news_id FROM news_article_file WHERE news_id = 1 AND file_id = 501');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row, 'Expected nested uploaded file row to be persisted.');
+		$this->assertSame(501, (int) $row['file_id']);
+		$this->assertSame(1, (int) $row['news_id']);
 	}
 
 	public function testPatchUpdateAcceptsFlatArrayPayloadWithCreateFileUploadKey(): void
 	{
-		[, $resolver, $middleware] = $this->createNewsArticleFixture();
+		[, , $middleware, $db] = $this->createNewsArticleFixture();
 
 		$payload = [
 			'title' => 'Updated article',
@@ -173,9 +178,12 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$body = json_decode((string) $response->getBody(), true);
 
 		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('news_article_file', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$stmt = $db->database()->query('SELECT file_id, news_id FROM news_article_file WHERE news_id = 1 AND file_id = 501');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row, 'Expected nested uploaded file row to be persisted.');
+		$this->assertSame(501, (int) $row['file_id']);
+		$this->assertSame(1, (int) $row['news_id']);
 	}
 
 	private function createUploadedFile(string $filename): UploadedFileInterface
@@ -217,14 +225,14 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 	}
 
 	/**
-	 * @return array{0: Registry, 1: ItemRepository, 2: RestMiddleware}
+	 * @return array{0: Registry, 1: ItemRepository, 2: RestMiddleware, 3: CycleSqliteTestDatabase}
 	 */
 	private function createNewsArticleFixture(): array
 	{
 		$registry = new Registry();
 		$registry->collection('news_article')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('title', 'string')->type('string')->nullable(false)->end()
 			->field('slug', 'string')->type('string')->nullable(false)->end()
 			->field('status', 'string')->type('string')->nullable(false)->end()
@@ -234,7 +242,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 
 		$registry->collection('news_article_file')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('news_id', 'int')->type('int')->nullable(false)->end()
 			->field('file_id', 'int')->type('int')->nullable(false)->end()
 			->field('role', 'string')->type('string')->nullable(true)->end()
@@ -332,6 +340,6 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			['endpointUri' => '/items'],
 		);
 
-		return [$registry, $resolver, $middleware];
+		return [$registry, $resolver, $middleware, $db];
 	}
 }

@@ -6,8 +6,6 @@ namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Event\HasEventNameInterface;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Mutation\MutationStateInterface;
 
 class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInterface
@@ -15,13 +13,12 @@ class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInte
 	use AuthorizationAwareEventTrait;
 
 	public function __construct(
-		protected MutationNode $node,
-		protected MutationQueue $queue,
+		protected CollectionInterface $collection,
+		protected MutationStateInterface $state,
 		protected array $path = [],
-		protected ?MutationStateInterface $rootState = null
+		protected ?MutationStateInterface $rootState = null,
 	) {
-		$this->path = $path === [] ? $node->path : $path;
-		$this->rootState ??= $node->state;
+		$this->rootState ??= $state;
 	}
 
 	public function eventName(): string
@@ -29,24 +26,14 @@ class ItemCreating implements AuthorizationAwareEventInterface, HasEventNameInte
 		return 'restapi.item.creating';
 	}
 
-	public function getNode(): MutationNode
-	{
-		return $this->node;
-	}
-
 	public function getCollection(): CollectionInterface
 	{
-		return $this->node->collection;
+		return $this->collection;
 	}
 
 	public function getState(): MutationStateInterface
 	{
-		return $this->node->state;
-	}
-
-	public function getQueue(): MutationQueue
-	{
-		return $this->queue;
+		return $this->state;
 	}
 
 	public function getPath(): array

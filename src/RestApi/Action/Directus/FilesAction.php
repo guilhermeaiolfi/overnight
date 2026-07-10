@@ -8,37 +8,25 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Action\RestActionInterface;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\RestApiConfig;
+use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
-use Throwable;
 
 final class FilesAction implements RestActionInterface
 {
 	use RegistrySupportTrait;
 	use ValidationTrait;
 
-	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
-
 	public function __construct(
 		private Registry $registry,
-		private ItemRepositoryInterface $items,
-		private HandlerFactory $relationHandlers,
+		private MutationCoordinator $mutations,
 		private FileUploadEventEmitter $fileUploadEventEmitter,
 		private RestApiConfig $config,
-		private RestHookDispatcher $hookDispatcher,
 	) {
 	}
 
@@ -53,43 +41,51 @@ final class FilesAction implements RestActionInterface
 
 		$collection = $this->getFilesCollection();
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
+		$files = is_array($payload['files'] ?? null) ? $payload['files'] : [];
 
-		return ['data' => $this->createOne($collection, $body, $payload, $options)];
+		return ['data' => $this->createOne($collection, $body, $files, $options)];
 	}
 
-	private function createOne(CollectionInterface $collection, array $item, array $payload, array $options): array
-	{
+	/**
+	 * @param array<string, mixed> $item
+	 * @param array<string, mixed> $files
+	 * @param array<string, mixed> $options
+	 * @return array<string, mixed>
+	 */
+	private function createOne(
+		CollectionInterface $collection,
+		array $item,
+		array $files,
+		array $options,
+	): array {
 		$this->validate($collection, $item);
-		$spec = map($item)
-			->using(DirectusMutationBuilder::class, $collection, 'create', null, $payload['files'] ?? [])
-			->from($options['input'])
-			->as(self::INTERMEDIATE_REPRESENTATION)
-			->to(MutationSpec::class);
-
-		$this->fileUploadEventEmitter->process($spec);
-		$queue = new MutationQueue();
-		$afterHooksTx = $this->hookDispatcher->start();
-		$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
-		$root = null;
-		if ($rootNode !== null) {
-			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-			$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+		if ($files !== []) {
+			foreach ($files as $field => $file) {
+				$item[(string) $field] = $file;
+			}
 		}
 
-		try {
-			$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-			$afterHooksTx->flush();
-		} catch (Throwable $throwable) {
-			$afterHooksTx->rollback();
-
-			throw $throwable;
+		if ($options['input'] !== PhpRepresentation::class) {
+			[$scalars, $relations] = MutationInput::splitNodeInput($collection, $item);
+			if ($scalars !== []) {
+				$scalars = map($scalars)
+					->using(CollectionRowMapper::class, $collection)
+					->from($options['input'])
+					->as(PhpRepresentation::class)
+					->toArray();
+			}
+			$item = $scalars + $relations;
 		}
 
-		return map($result)
-			->using(CollectionRowMapper::class, $collection)
-			->from(PhpRepresentation::class)
-			->as($options['output'])
-			->toArray();
+		$item = $this->fileUploadEventEmitter->processInput($collection, $item);
+
+		return $this->mutations->create(
+			$collection,
+			$item,
+			[],
+			(bool) $options['dispatchEvents'],
+			$options['output'],
+		);
 	}
 
 	private function getFilesCollection(): CollectionInterface

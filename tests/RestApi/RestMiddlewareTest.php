@@ -5,12 +5,9 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use BadMethodCallException;
-use Cycle\Database\DatabaseInterface;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
-use ON\Data\DataRuntime;
-use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
@@ -71,14 +68,14 @@ final class RestMiddlewareTest extends TestCase
 		$registry = new Registry();
 		$registry->collection('asset')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file_id', 'upload')->type('upload')->nullable(true)->end()
@@ -103,28 +100,7 @@ final class RestMiddlewareTest extends TestCase
 			],
 		]);
 		$runtime = $this->createDataRuntime($db);
-		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
-			public array $createCalls = [];
-
-			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
-			{
-				parent::__construct(
-					$registry,
-					$runtime,
-					$database,
-				);
-			}
-
-			public function create(CollectionInterface $collection, array $input): ?array
-			{
-				$this->createCalls[] = [
-					'collection' => $collection->getName(),
-					'input' => $input,
-				];
-
-				return parent::create($collection, $input);
-			}
-		};
+		$resolver = new ItemRepository($registry, $runtime, $db->database());
 		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		RestHooks::for($registry->getCollection('attachment'))
@@ -198,9 +174,15 @@ final class RestMiddlewareTest extends TestCase
 		$response->getBody()->rewind();
 		$body = json_decode((string) $response->getBody(), true);
 
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Asset', $body['data']['title']);
-		$this->assertCount(2, $resolver->createCalls);
-		$this->assertSame(501, $resolver->createCalls[1]['input']['file_id']);
+		$stmt = $db->database()->query('SELECT asset_id, title, file_id FROM attachment');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row);
+		$this->assertSame(1, (int) $row['asset_id']);
+		$this->assertSame('Attachment one', $row['title']);
+		$this->assertSame(501, (int) $row['file_id']);
 	}
 
 	public function testRootAuthorizationCanAllowNestedCreateOperations(): void
@@ -208,14 +190,14 @@ final class RestMiddlewareTest extends TestCase
 		$registry = new Registry();
 		$registry->collection('asset')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();
@@ -265,7 +247,7 @@ final class RestMiddlewareTest extends TestCase
 		$response->getBody()->rewind();
 		$body = json_decode((string) $response->getBody(), true);
 
-		$this->assertSame(200, $response->getStatusCode());
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Asset', $body['data']['title']);
 	}
 
@@ -274,14 +256,14 @@ final class RestMiddlewareTest extends TestCase
 		$registry = new Registry();
 		$registry->collection('asset')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->hasMany('attachments', 'attachment')->innerKey('id')->outerKey('asset_id')->end()
 			->end();
 
 		$registry->collection('attachment')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('asset_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file_id', 'upload')->type('upload')->nullable(false)->end()
@@ -310,28 +292,7 @@ final class RestMiddlewareTest extends TestCase
 			],
 		]);
 		$runtime = $this->createDataRuntime($db);
-		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
-			public array $createCalls = [];
-
-			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
-			{
-				parent::__construct(
-					$registry,
-					$runtime,
-					$database,
-				);
-			}
-
-			public function create(CollectionInterface $collection, array $input): ?array
-			{
-				$this->createCalls[] = [
-					'collection' => $collection->getName(),
-					'input' => $input,
-				];
-
-				return parent::create($collection, $input);
-			}
-		};
+		$resolver = new ItemRepository($registry, $runtime, $db->database());
 		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		RestHooks::for($registry->getCollection('attachment'))
@@ -406,10 +367,13 @@ final class RestMiddlewareTest extends TestCase
 		$response->getBody()->rewind();
 		$body = json_decode((string) $response->getBody(), true);
 
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Updated asset', $body['data']['title']);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('attachment', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file_id']);
+		$stmt = $db->database()->query('SELECT title, file_id FROM attachment WHERE title = \'New attachment\'');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row);
+		$this->assertSame(501, (int) $row['file_id']);
 	}
 
 	public function testDirectusFilesEndpointCreatesFileRecordAndDispatchesUploadEvent(): void
@@ -417,7 +381,7 @@ final class RestMiddlewareTest extends TestCase
 		$registry = new Registry();
 		$registry->collection('directus_files')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('file', 'upload')->type('upload')->nullable(false)->end()
 			->end();
@@ -433,24 +397,7 @@ final class RestMiddlewareTest extends TestCase
 			],
 		]);
 		$runtime = $this->createDataRuntime($db);
-		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
-			public array $createCalls = [];
-
-			public function __construct(Registry $registry, DataRuntime $runtime, DatabaseInterface $database)
-			{
-				parent::__construct($registry, $runtime, $database);
-			}
-
-			public function create(CollectionInterface $collection, array $input): ?array
-			{
-				$this->createCalls[] = [
-					'collection' => $collection->getName(),
-					'input' => $input,
-				];
-
-				return parent::create($collection, $input);
-			}
-		};
+		$resolver = new ItemRepository($registry, $runtime, $db->database());
 		$this->itemRuntimes[spl_object_id($resolver)] = $runtime;
 
 		$uploads = [];
@@ -464,9 +411,6 @@ final class RestMiddlewareTest extends TestCase
 				$event->setStoredValue(501);
 			});
 
-		$dispatcher = new class () {
-			public array $uploads = [];
-		};
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
@@ -499,6 +443,7 @@ final class RestMiddlewareTest extends TestCase
 		$response->getBody()->rewind();
 		$body = json_decode((string) $response->getBody(), true);
 
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
 		$this->assertSame('Uploaded file', $body['data']['title']);
 		$this->assertSame(501, $body['data']['file']);
 		$this->assertSame([[
@@ -506,9 +451,12 @@ final class RestMiddlewareTest extends TestCase
 			'field' => 'file',
 			'filename' => 'photo.jpg',
 		]], $uploads);
-		$this->assertCount(1, $resolver->createCalls);
-		$this->assertSame('directus_files', $resolver->createCalls[0]['collection']);
-		$this->assertSame(501, $resolver->createCalls[0]['input']['file']);
+		$stmt = $db->database()->query('SELECT title, file FROM directus_files');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row);
+		$this->assertSame('Uploaded file', $row['title']);
+		$this->assertSame(501, (int) $row['file']);
 	}
 
 	public function testAuthorizationErrorsReturnReadableMessagesAndExtensions(): void

@@ -1307,7 +1307,7 @@ final class SqlRestResolverTest extends TestCase
 
 		$registry->collection('post_attachment')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('post_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->end();

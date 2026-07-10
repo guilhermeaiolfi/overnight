@@ -4,21 +4,20 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Event;
 
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemUpdating extends ItemCreating
 {
 	public function __construct(
-		MutationNode $node,
+		CollectionInterface $collection,
+		MutationStateInterface $state,
 		protected PrimaryKeyValue $identity,
-		MutationQueue $queue,
 		array $path = [],
-		?MutationStateInterface $rootState = null
+		?MutationStateInterface $rootState = null,
 	) {
-		parent::__construct($node, $queue, $path, $rootState);
+		parent::__construct($collection, $state, $path, $rootState);
 	}
 
 	public function eventName(): string

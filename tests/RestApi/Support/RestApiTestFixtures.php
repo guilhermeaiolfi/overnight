@@ -126,7 +126,7 @@ trait RestApiTestFixtures
 	{
 		$registry->collection('user')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('name', 'string')->type('string')->nullable(true)->end()
 			->field('email', 'string')->type('string')->nullable(true)->end()
 			->field('password', 'string')->type('string')->hidden(true)->nullable(true)->end()
@@ -137,7 +137,7 @@ trait RestApiTestFixtures
 	{
 		$registry->collection('post')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('user_id', 'int')->type('int')->nullable(false)->end()
 			->field('title', 'string')->type('string')->nullable(true)->end()
 			->field('content', 'text')->type('text')->nullable(true)->end()
@@ -150,7 +150,7 @@ trait RestApiTestFixtures
 	{
 		$registry->collection('comment')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('post_id', 'int')->type('int')->nullable(false)->end()
 			->field('body', 'string')->type('string')->nullable(true)->end()
 			->field('author', 'string')->type('string')->nullable(true)->end()
@@ -161,7 +161,7 @@ trait RestApiTestFixtures
 	{
 		$registry->collection('tag')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('name', 'string')->type('string')->nullable(true)->end()
 			->end();
 	}
@@ -170,7 +170,7 @@ trait RestApiTestFixtures
 	{
 		$registry->collection('profile')
 			->primaryKey('id')
-			->field('id', 'int')->type('int')->nullable(false)->end()
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
 			->field('displayName', 'string')->type('string')->column('display_name')->nullable(true)->end()
 			->end();
 	}
@@ -192,7 +192,7 @@ trait RestApiTestFixtures
 		// Create post collection with relations
 		$postCollection = $registry->collection('post');
 		$postCollection->primaryKey('id');
-		$postCollection->field('id', 'int')->type('int')->nullable(false)->end();
+		$postCollection->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end();
 		$postCollection->field('user_id', 'int')->type('int')->nullable(false)->end();
 		$postCollection->field('title', 'string')->type('string')->nullable(true)->end();
 		$postCollection->field('content', 'text')->type('text')->nullable(true)->end();
@@ -224,7 +224,7 @@ trait RestApiTestFixtures
 		// Create user collection with hasMany posts
 		$userCollection = $registry->collection('user');
 		$userCollection->primaryKey('id');
-		$userCollection->field('id', 'int')->type('int')->nullable(false)->end();
+		$userCollection->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end();
 		$userCollection->field('name', 'string')->type('string')->nullable(true)->end();
 		$userCollection->field('email', 'string')->type('string')->nullable(true)->end();
 		$userCollection->field('password', 'string')->type('string')->hidden(true)->nullable(true)->end();
@@ -655,30 +655,19 @@ trait RestApiTestFixtures
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$this->fileUploadEventEmitter()->process($spec);
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = MutationNodeBuilder::fromSpec($spec, 'create', $this->registry, $this->items, $this->relationHandlers);
-				$root = null;
-				if ($rootNode !== null) {
-					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+				$input = $spec->root->fields;
+				foreach ($spec->root->relations as $relation) {
+					// Legacy MutationSpec path still used by tests via m(); convert back to Directus body shape.
+					$input[$relation->relationName] = $this->relationSpecToPayload($collection, $relation);
 				}
 
-				try {
-					$result = $this->items->commit($queue, fn (): array => $root?->getRow() ?? []);
-					$afterHooksTx->flush();
-				} catch (Throwable $throwable) {
-					$afterHooksTx->rollback();
-
-					throw $throwable;
-				}
-
-				return map($result)
-					->using(CollectionRowMapper::class, $collection)
-					->from(PhpRepresentation::class)
-					->as($options['output'])
-					->toArray();
+				return $this->mutations()->create(
+					$collection,
+					$input,
+					[],
+					(bool) $options['dispatchEvents'],
+					$options['output'],
+				);
 			}
 
 			public function update(
@@ -693,32 +682,19 @@ trait RestApiTestFixtures
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$this->fileUploadEventEmitter()->process($spec);
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
-				$root = null;
-				if ($rootNode !== null) {
-					$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-					$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+				$input = $spec->root->fields;
+				foreach ($spec->root->relations as $relation) {
+					$input[$relation->relationName] = $this->relationSpecToPayload($collection, $relation);
 				}
 
-				try {
-					$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
-					$afterHooksTx->flush();
-				} catch (Throwable $throwable) {
-					$afterHooksTx->rollback();
-
-					throw $throwable;
-				}
-
-				return $result !== null
-					? map($result)
-						->using(CollectionRowMapper::class, $collection)
-						->from(PhpRepresentation::class)
-						->as($options['output'])
-						->toArray()
-					: null;
+				return $this->mutations()->update(
+					$collection,
+					$identity,
+					$input,
+					[],
+					(bool) $options['dispatchEvents'],
+					$options['output'],
+				);
 			}
 
 			public function delete(
@@ -729,26 +705,110 @@ trait RestApiTestFixtures
 				$collection = $this->getCollection($collection);
 				$identity = PrimaryKey::of($collection)->getValue($identity);
 				$options = $options + ['dispatchEvents' => true];
-				$queue = new MutationQueue();
-				$afterHooksTx = $this->hookDispatcher->start();
-				$rootNode = new MutationNode(
-					operation: 'delete',
-					collection: $collection,
-					state: new MutationState($collection, $identity->values()),
+
+				return $this->mutations()->delete(
+					$collection,
+					$identity,
+					(bool) $options['dispatchEvents'],
 				);
-				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
+			}
 
-				try {
-					$result = $this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
-					$afterHooksTx->flush();
-				} catch (Throwable $throwable) {
-					$afterHooksTx->rollback();
+			private function mutations(): \ON\RestApi\Mutation\MutationCoordinator
+			{
+				return new \ON\RestApi\Mutation\MutationCoordinator(
+					new \ON\RestApi\Mutation\SessionFactory($this->runtime),
+					new \ON\RestApi\Mutation\DirectusMutationBinder($this->items),
+					new \ON\RestApi\Mutation\Payload\DirectusPayloadParser(),
+					$this->items,
+					$this->hookDispatcher,
+					$this->runtime,
+				);
+			}
 
-					throw $throwable;
+			private function relationSpecToPayload(
+				CollectionInterface $sourceCollection,
+				\ON\RestApi\Payload\Node\RelationPayload $relation,
+			): mixed {
+				$actions = $relation->actions;
+				$definition = $sourceCollection->relations->has($relation->relationName)
+					? $sourceCollection->relations->get($relation->relationName)
+					: null;
+				$isToOne = $definition?->getCardinality()->isSingle() ?? false;
+
+				if (count($actions) === 1 && $actions[0] instanceof \ON\RestApi\Payload\Action\BasicRelationAction) {
+					$basic = $actions[0];
+
+					return $basic->item !== null ? $basic->item : $basic->items;
 				}
 
-				return $result;
+				if ($isToOne) {
+					$final = null;
+					$assigned = false;
+					foreach ($actions as $action) {
+						if ($action instanceof \ON\RestApi\Payload\Action\ConnectAction) {
+							$final = $this->normalizeIdentityPayload($action->data ?? $action->target);
+							$assigned = true;
+						} elseif ($action instanceof \ON\RestApi\Payload\Action\CreateAction
+							|| $action instanceof \ON\RestApi\Payload\Action\UpdateAction) {
+							$final = $this->actionNodeToPayload($action);
+							$assigned = true;
+						} elseif ($action instanceof \ON\RestApi\Payload\Action\DisconnectAction
+							|| $action instanceof \ON\RestApi\Payload\Action\DeleteAction) {
+							if (! $assigned) {
+								$final = null;
+							}
+						} elseif ($action instanceof \ON\RestApi\Payload\Action\BasicRelationAction) {
+							$final = $action->item !== null ? $action->item : $action->items;
+							$assigned = true;
+						}
+					}
+
+					return $final;
+				}
+
+				$detailed = [];
+				foreach ($actions as $action) {
+					if ($action instanceof \ON\RestApi\Payload\Action\CreateAction) {
+						$detailed['create'][] = $this->actionNodeToPayload($action);
+					} elseif ($action instanceof \ON\RestApi\Payload\Action\UpdateAction) {
+						$detailed['update'][] = $this->actionNodeToPayload($action);
+					} elseif ($action instanceof \ON\RestApi\Payload\Action\DeleteAction) {
+						$detailed['delete'][] = $action->target ?? $action->data;
+					} elseif ($action instanceof \ON\RestApi\Payload\Action\ConnectAction) {
+						$detailed['connect'][] = $this->normalizeIdentityPayload($action->data ?? $action->target);
+					} elseif ($action instanceof \ON\RestApi\Payload\Action\DisconnectAction) {
+						$detailed['disconnect'][] = $this->normalizeIdentityPayload($action->target);
+					}
+				}
+
+				return $detailed;
+			}
+
+			private function actionNodeToPayload(
+				\ON\RestApi\Payload\Action\CreateAction|\ON\RestApi\Payload\Action\UpdateAction $action,
+			): array {
+				if ($action->node === null) {
+					return is_array($action->data) ? $action->data : [];
+				}
+
+				$payload = $action->node->fields;
+				$nestedCollection = $this->registry->getCollection($action->node->collection);
+				foreach ($action->node->relations as $nested) {
+					$payload[$nested->relationName] = $this->relationSpecToPayload($nestedCollection, $nested);
+				}
+
+				return $payload;
+			}
+
+			private function normalizeIdentityPayload(mixed $value): mixed
+			{
+				if ($value instanceof PrimaryKeyValue) {
+					$values = $value->values();
+
+					return count($values) === 1 ? reset($values) : $values;
+				}
+
+				return $value;
 			}
 
 			public function serialize(CollectionInterface $collection, array $phpRow): array
@@ -859,14 +919,55 @@ trait RestApiTestFixtures
 				return match ($id) {
 					ListAction::class => new ListAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
 					GetAction::class => new GetAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
-					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					BatchUpdateAction::class => new BatchUpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
-					DeleteAction::class => new DeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
-					BatchDeleteAction::class => new BatchDeleteAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
+					FilesAction::class => new FilesAction(
+						$this->registry,
+						$this->mutations(),
+						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+						$this->config,
+					),
+					CreateAction::class => new CreateAction(
+						$this->registry,
+						$this->mutations(),
+						$this->config,
+						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+					),
+					UpdateAction::class => new UpdateAction(
+						$this->registry,
+						$this->mutations(),
+						$this->items,
+						$this->config,
+						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+					),
+					BatchUpdateAction::class => new BatchUpdateAction(
+						$this->registry,
+						$this->mutations(),
+						$this->items,
+						$this->config,
+						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+					),
+					DeleteAction::class => new DeleteAction($this->registry, $this->mutations(), $this->items, $this->config),
+					BatchDeleteAction::class => new BatchDeleteAction(
+						$this->registry,
+						$this->mutations(),
+						$this->items,
+						$this->config,
+					),
 					default => throw new RuntimeException("Unknown service {$id}."),
 				};
+			}
+
+			private function mutations(): \ON\RestApi\Mutation\MutationCoordinator
+			{
+				$runtime = $this->runtime;
+
+				return new \ON\RestApi\Mutation\MutationCoordinator(
+					new \ON\RestApi\Mutation\SessionFactory($runtime),
+					new \ON\RestApi\Mutation\DirectusMutationBinder($this->items),
+					new \ON\RestApi\Mutation\Payload\DirectusPayloadParser(),
+					$this->items,
+					$this->hookDispatcher,
+					$runtime,
+				);
 			}
 
 			public function has(string $id): bool

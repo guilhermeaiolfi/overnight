@@ -142,9 +142,9 @@ final class MutationQueue implements MutationQueueInterface
 			? $node->state->getPrimaryKeyValue()
 			: null;
 		$event = match ($node->operation) {
-			'create' => new ItemCreating($node, $this, $node->path, $rootState),
-			'update' => $id === null ? null : new ItemUpdating($node, $id, $this, $node->path, $rootState),
-			'delete' => $id === null ? null : new ItemDeleting($node, $id, $this, $node->path, $rootState),
+			'create' => new ItemCreating($node->collection, $node->state, $node->path, $rootState),
+			'update' => $id === null ? null : new ItemUpdating($node->collection, $node->state, $id, $node->path, $rootState),
+			'delete' => $id === null ? null : new ItemDeleting($node->collection, $node->state, $id, $node->path, $rootState),
 			default => null,
 		};
 		if ($event === null) {

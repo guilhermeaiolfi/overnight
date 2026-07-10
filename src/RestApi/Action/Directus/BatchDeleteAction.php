@@ -9,19 +9,13 @@ use ON\Data\Definition\Registry;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Hook\RestHookDispatcher;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationState;
+use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 use ON\RestApi\Support\RegistrySupportTrait;
-use Throwable;
 
 final class BatchDeleteAction implements RestActionInterface
 {
@@ -30,10 +24,9 @@ final class BatchDeleteAction implements RestActionInterface
 
 	public function __construct(
 		private Registry $registry,
+		private MutationCoordinator $mutations,
 		private ItemRepositoryInterface $items,
-		private HandlerFactory $relationHandlers,
 		private RestApiConfig $config,
-		private RestHookDispatcher $hookDispatcher,
 	) {
 	}
 
@@ -67,25 +60,11 @@ final class BatchDeleteAction implements RestActionInterface
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
-			$queue = new MutationQueue();
-			$rootState = new MutationState($collection, $identity->values());
-			$afterHooksTx = $this->hookDispatcher->start();
-			$rootNode = new MutationNode(
-				operation: 'delete',
-				collection: $collection,
-				state: $rootState,
+			$this->mutations->delete(
+				$collection,
+				$identity,
+				(bool) $options['dispatchEvents'],
 			);
-			$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-			$deleted = $task instanceof MutationDeleteTaskInterface ? $task : null;
-
-			try {
-				$this->items->commit($queue, fn (): bool => $deleted?->getResult() ?? true);
-				$afterHooksTx->flush();
-			} catch (Throwable $throwable) {
-				$afterHooksTx->rollback();
-
-				throw $throwable;
-			}
 		}
 
 		return null;

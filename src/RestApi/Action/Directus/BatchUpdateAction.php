@@ -8,26 +8,20 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\Node\MutationSpec;
+use ON\RestApi\Mutation\MutationCoordinator;
+use ON\RestApi\Payload\MutationInputMerger;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
+use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyValue;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
-use Throwable;
 
 final class BatchUpdateAction implements RestActionInterface
 {
@@ -35,15 +29,12 @@ final class BatchUpdateAction implements RestActionInterface
 	use RegistrySupportTrait;
 	use ValidationTrait;
 
-	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
-
 	public function __construct(
 		private Registry $registry,
+		private MutationCoordinator $mutations,
 		private ItemRepositoryInterface $items,
-		private HandlerFactory $relationHandlers,
-		private FileUploadEventEmitter $fileUploadEventEmitter,
 		private RestApiConfig $config,
-		private RestHookDispatcher $hookDispatcher,
+		private ?FileUploadEventEmitter $fileUploadEventEmitter = null,
 	) {
 	}
 
@@ -57,6 +48,7 @@ final class BatchUpdateAction implements RestActionInterface
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
+		$files = is_array($payload['files'] ?? null) ? $payload['files'] : [];
 
 		if (! isset($body[0]) || ! is_array($body[0])) {
 			throw new RestApiError('Batch update expects an array of objects with primary keys.', 'INVALID_PAYLOAD', null, 400);
@@ -84,39 +76,23 @@ final class BatchUpdateAction implements RestActionInterface
 			}
 
 			$this->validate($collection, $item, true);
-			$spec = map($item)
-				->using(DirectusMutationBuilder::class, $collection, 'update', $identity, $payload['files'] ?? [])
-				->from($options['input'])
-				->as(self::INTERMEDIATE_REPRESENTATION)
-				->to(MutationSpec::class);
-			$identity = PrimaryKey::of($collection)->getValue($identity);
+			$identityValue = PrimaryKey::of($collection)->getValue($identity);
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
-			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
-			$this->fileUploadEventEmitter->process($spec);
-			$queue = new MutationQueue();
-			$afterHooksTx = $this->hookDispatcher->start();
-			$rootNode = MutationNodeBuilder::fromSpec($spec, 'update', $this->registry, $this->items, $this->relationHandlers, $identity);
-			$root = null;
-			if ($rootNode !== null) {
-				$task = $queue->fill($rootNode, $this->hookDispatcher, $afterHooksTx, $options['dispatchEvents']);
-				$root = $task instanceof MutationDeleteTaskInterface ? null : $task;
+			$this->checkIfMatch($collection, $identityValue, $this->getIfMatch($headers));
+
+			$input = $this->toPhpInput($collection, $item, $files, $options['input']);
+			if ($this->fileUploadEventEmitter !== null) {
+				$input = $this->fileUploadEventEmitter->processInput($collection, $input);
 			}
 
-			try {
-				$result = $this->items->commit($queue, fn (): ?array => $root?->getRow());
-				$afterHooksTx->flush();
-			} catch (Throwable $throwable) {
-				$afterHooksTx->rollback();
-
-				throw $throwable;
-			}
-			$results[] = $result !== null
-				? map($result)
-					->using(CollectionRowMapper::class, $collection)
-					->from(PhpRepresentation::class)
-					->as($options['output'])
-					->toArray()
-				: [];
+			$results[] = $this->mutations->update(
+				$collection,
+				$identityValue,
+				$input,
+				[],
+				(bool) $options['dispatchEvents'],
+				$options['output'],
+			);
 		}
 
 		return ['data' => $results];
@@ -129,5 +105,37 @@ final class BatchUpdateAction implements RestActionInterface
 			PrimaryKey::of($collection)->getValue($identity),
 			PhpRepresentation::class,
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $item
+	 * @param array<string, mixed> $files
+	 * @param class-string $from
+	 * @return array<string, mixed>
+	 */
+	private function toPhpInput(
+		CollectionInterface $collection,
+		array $item,
+		array $files,
+		string $from,
+	): array {
+		if ($files !== []) {
+			$item = (new MutationInputMerger())->mergeFiles($collection, $item, $files);
+		}
+
+		if ($from === PhpRepresentation::class) {
+			return $item;
+		}
+
+		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $item);
+		if ($scalars !== []) {
+			$scalars = map($scalars)
+				->using(CollectionRowMapper::class, $collection)
+				->from($from)
+				->as(PhpRepresentation::class)
+				->toArray();
+		}
+
+		return $scalars + $relations;
 	}
 }

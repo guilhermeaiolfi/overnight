@@ -84,24 +84,29 @@ class ItemRepository implements ItemRepositoryInterface
 	public function create(CollectionInterface $collection, array $input): ?array
 	{
 		try {
-			$storageInput = $this->mapInputToColumns($collection, $input);
-			$primaryKeyValue = PrimaryKey::of($collection)->extractFromInput($storageInput);
-			$lastId = $this->database->insert($collection->getTable())
-				->values($storageInput)
-				->run();
+			$session = new \ON\Data\ORM\Session($this->runtime->getCommandExecutor());
+			$binder = new \ON\RestApi\Mutation\DirectusMutationBinder($this);
+			$mutation = (new \ON\RestApi\Mutation\Payload\DirectusPayloadParser())->parse($collection, $input);
+			$bound = $binder->bindCreate($session, $collection, $mutation);
+			$session->sync($bound->representation);
+			$session->flush();
 
-			$id = $primaryKeyValue;
-			if ($id === null && $lastId !== null && ! PrimaryKey::of($collection)->isComposite()) {
-				$id = PrimaryKey::of($collection)->extractFromInput([
-					PrimaryKey::of($collection)->getFieldNames()[0] => $lastId,
-				], false);
+			$representationState = $session->getRepresentations()->get($bound->representation);
+			$key = null;
+			if ($representationState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
+				$record = $session->getRecords()->getFromRepresentation($representationState);
+				if ($record instanceof \ON\Data\ORM\Record\RecordState && $record->hasKey()) {
+					$key = $record->getKey();
+				}
 			}
-
-			if ($id === null) {
+			if ($key === null && $bound->identity !== null) {
+				$key = $bound->identity;
+			}
+			if ($key === null) {
 				return [];
 			}
 
-			$row = $this->loadByIdentity($collection, $id);
+			$row = $this->loadByIdentity($collection, new PrimaryKeyValue($collection, $key->getValues()));
 
 			return $row === null ? [] : $row;
 		} catch (RestApiError $e) {
