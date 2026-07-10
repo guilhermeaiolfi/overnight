@@ -189,7 +189,7 @@ class SqlResolver implements GraphQLResolverInterface
 				$outerKeyColumn = $relation->getOuterField()->getColumn();
 				$parentKeyValue = $parent->{$innerKeyColumn} ?? $parentId;
 
-				if ($relation->getCardinality() === 'many') {
+				if ($relation->getCardinality()->isMany()) {
 					foreach ($relationData as $childInput) {
 						$childInput[$outerKeyColumn] = $parentKeyValue;
 						$this->resolveCreate($targetCollection, $childInput);
@@ -226,11 +226,11 @@ class SqlResolver implements GraphQLResolverInterface
 			: ($source->{$innerKey} ?? null);
 
 		if ($sourceId === null) {
-			return $relation->getCardinality() === 'single' ? null : [];
+			return $relation->getCardinality()->isSingle() ? null : [];
 		}
 
 		$table = $collection->getTable();
-		$isSingle = $relation->getCardinality() === 'single';
+		$isSingle = $relation->getCardinality()->isSingle();
 
 		$entityKey = $collectionName . ':' . $outerKey;
 

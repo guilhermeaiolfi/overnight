@@ -4,20 +4,20 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "c9325550afc5de3372aa31b0b9a87b48",
+    "content-hash": "fde23b4b285a9fd18eb0551e84016307",
     "packages": [
         {
             "name": "cycle/database",
-            "version": "2.16.0",
+            "version": "2.21.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/cycle/database.git",
-                "reference": "279e3bb64185cebeb7c6a9cb637d67f6a7c206ce"
+                "reference": "14c2bc280aa0973a9339866b21d8c03931a5c18e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/cycle/database/zipball/279e3bb64185cebeb7c6a9cb637d67f6a7c206ce",
-                "reference": "279e3bb64185cebeb7c6a9cb637d67f6a7c206ce",
+                "url": "https://api.github.com/repos/cycle/database/zipball/14c2bc280aa0973a9339866b21d8c03931a5c18e",
+                "reference": "14c2bc280aa0973a9339866b21d8c03931a5c18e",
                 "shasum": ""
             },
             "require": {
@@ -98,7 +98,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-03-19T10:07:45+00:00"
+            "time": "2026-06-24T09:51:31+00:00"
         },
         {
             "name": "cycle/migrations",
@@ -573,16 +573,16 @@
         },
         {
             "name": "guilhermeaiolfi/overnight-data",
-            "version": "v1.0.0",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/guilhermeaiolfi/overnight-data.git",
-                "reference": "9b4661e72155e4018fabafce004f80dbf692a2c0"
+                "reference": "95f94281cbef9dd6026d5eefec2d20a2d27cec96"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/9b4661e72155e4018fabafce004f80dbf692a2c0",
-                "reference": "9b4661e72155e4018fabafce004f80dbf692a2c0",
+                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/95f94281cbef9dd6026d5eefec2d20a2d27cec96",
+                "reference": "95f94281cbef9dd6026d5eefec2d20a2d27cec96",
                 "shasum": ""
             },
             "require": {
@@ -659,10 +659,10 @@
                 "php"
             ],
             "support": {
-                "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/v1.0.0",
+                "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/v1.1.0",
                 "issues": "https://github.com/guilhermeaiolfi/overnight-data/issues"
             },
-            "time": "2026-07-05T22:52:53+00:00"
+            "time": "2026-07-10T15:35:57+00:00"
         },
         {
             "name": "illuminate/collections",
@@ -2845,22 +2845,22 @@
         },
         {
             "name": "spiral/core",
-            "version": "3.16.2",
+            "version": "3.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/core.git",
-                "reference": "914c62757ed4aba8363ae63ed07aad3755ba8ca6"
+                "reference": "faa40cb998ac0ba58b24cb599315026fe276f099"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/core/zipball/914c62757ed4aba8363ae63ed07aad3755ba8ca6",
-                "reference": "914c62757ed4aba8363ae63ed07aad3755ba8ca6",
+                "url": "https://api.github.com/repos/spiral/core/zipball/faa40cb998ac0ba58b24cb599315026fe276f099",
+                "reference": "faa40cb998ac0ba58b24cb599315026fe276f099",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
                 "psr/container": "^1.1|^2.0",
-                "spiral/security": "^3.16.2"
+                "spiral/security": "^3.17"
             },
             "provide": {
                 "psr/container-implementation": "^1.1|^2.0"
@@ -2915,7 +2915,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-04-09T18:45:22+00:00"
+            "time": "2026-06-03T10:04:47+00:00"
         },
         {
             "name": "spiral/files",
@@ -2988,23 +2988,23 @@
         },
         {
             "name": "spiral/hmvc",
-            "version": "3.16.2",
+            "version": "3.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/hmvc.git",
-                "reference": "65d82e9c0f26d81b2cefda9f83270b44c3a52109"
+                "reference": "42ff28d261ef5335d80b33423f642aeb20f5420e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/hmvc/zipball/65d82e9c0f26d81b2cefda9f83270b44c3a52109",
-                "reference": "65d82e9c0f26d81b2cefda9f83270b44c3a52109",
+                "url": "https://api.github.com/repos/spiral/hmvc/zipball/42ff28d261ef5335d80b33423f642aeb20f5420e",
+                "reference": "42ff28d261ef5335d80b33423f642aeb20f5420e",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
                 "psr/event-dispatcher": "^1.0",
-                "spiral/core": "^3.16.2",
-                "spiral/interceptors": "^3.16.2"
+                "spiral/core": "^3.17",
+                "spiral/interceptors": "^3.17"
             },
             "require-dev": {
                 "phpunit/phpunit": "^10.5.41",
@@ -3058,26 +3058,26 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-04-09T18:45:28+00:00"
+            "time": "2026-06-03T10:08:18+00:00"
         },
         {
             "name": "spiral/interceptors",
-            "version": "3.16.2",
+            "version": "3.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/interceptors.git",
-                "reference": "b7cec5a71b6dc37d80981835f2fc5ef7178c9ac2"
+                "reference": "b5b5712311b51a06c64f2197ee5ac69d1a1c56f0"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/interceptors/zipball/b7cec5a71b6dc37d80981835f2fc5ef7178c9ac2",
-                "reference": "b7cec5a71b6dc37d80981835f2fc5ef7178c9ac2",
+                "url": "https://api.github.com/repos/spiral/interceptors/zipball/b5b5712311b51a06c64f2197ee5ac69d1a1c56f0",
+                "reference": "b5b5712311b51a06c64f2197ee5ac69d1a1c56f0",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
                 "psr/event-dispatcher": "^1.0",
-                "spiral/core": "^3.16.2"
+                "spiral/core": "^3.17"
             },
             "require-dev": {
                 "phpunit/phpunit": "^10.5.41",
@@ -3136,7 +3136,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-04-09T18:49:45+00:00"
+            "time": "2026-06-03T10:09:12+00:00"
         },
         {
             "name": "spiral/logger",
@@ -3211,16 +3211,16 @@
         },
         {
             "name": "spiral/pagination",
-            "version": "3.16.2",
+            "version": "3.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/pagination.git",
-                "reference": "3da266cf0b4cefbe516786d5236caf73d53b8e75"
+                "reference": "da6931e2e40c7f378ae7bd8a5d9cf03a840e526b"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/pagination/zipball/3da266cf0b4cefbe516786d5236caf73d53b8e75",
-                "reference": "3da266cf0b4cefbe516786d5236caf73d53b8e75",
+                "url": "https://api.github.com/repos/spiral/pagination/zipball/da6931e2e40c7f378ae7bd8a5d9cf03a840e526b",
+                "reference": "da6931e2e40c7f378ae7bd8a5d9cf03a840e526b",
                 "shasum": ""
             },
             "require": {
@@ -3276,7 +3276,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-01-19T11:10:29+00:00"
+            "time": "2026-06-02T20:04:16+00:00"
         },
         {
             "name": "spiral/reactor",
@@ -3353,27 +3353,27 @@
         },
         {
             "name": "spiral/security",
-            "version": "3.16.2",
+            "version": "3.17.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/spiral/security.git",
-                "reference": "c809d9ff14d38db3ab820456ec07e020c9cb3e3d"
+                "reference": "52bab8373ba0172256321cb7cdc9baf06567eb66"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/spiral/security/zipball/c809d9ff14d38db3ab820456ec07e020c9cb3e3d",
-                "reference": "c809d9ff14d38db3ab820456ec07e020c9cb3e3d",
+                "url": "https://api.github.com/repos/spiral/security/zipball/52bab8373ba0172256321cb7cdc9baf06567eb66",
+                "reference": "52bab8373ba0172256321cb7cdc9baf06567eb66",
                 "shasum": ""
             },
             "require": {
                 "php": ">=8.1",
-                "spiral/core": "^3.16.2",
-                "spiral/hmvc": "^3.16.2"
+                "spiral/core": "^3.17",
+                "spiral/hmvc": "^3.17"
             },
             "require-dev": {
                 "mockery/mockery": "^1.6.12",
                 "phpunit/phpunit": "^10.5.41",
-                "spiral/console": "^3.16.2",
+                "spiral/console": "^3.17",
                 "vimeo/psalm": "^6.0"
             },
             "type": "library",
@@ -3421,7 +3421,7 @@
                     "type": "github"
                 }
             ],
-            "time": "2026-04-09T18:44:11+00:00"
+            "time": "2026-06-03T10:05:17+00:00"
         },
         {
             "name": "spiral/tokenizer",
@@ -4331,16 +4331,16 @@
         },
         {
             "name": "symfony/polyfill-php83",
-            "version": "v1.34.0",
+            "version": "v1.38.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-php83.git",
-                "reference": "3600c2cb22399e25bb226e4a135ce91eeb2a6149"
+                "reference": "796a26abb75ce49f3a84433cd81bf1009d73d5f8"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-php83/zipball/3600c2cb22399e25bb226e4a135ce91eeb2a6149",
-                "reference": "3600c2cb22399e25bb226e4a135ce91eeb2a6149",
+                "url": "https://api.github.com/repos/symfony/polyfill-php83/zipball/796a26abb75ce49f3a84433cd81bf1009d73d5f8",
+                "reference": "796a26abb75ce49f3a84433cd81bf1009d73d5f8",
                 "shasum": ""
             },
             "require": {
@@ -4387,7 +4387,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-php83/tree/v1.34.0"
+                "source": "https://github.com/symfony/polyfill-php83/tree/v1.38.2"
             },
             "funding": [
                 {
@@ -4407,7 +4407,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-04-10T17:25:58+00:00"
+            "time": "2026-05-27T06:51:48+00:00"
         },
         {
             "name": "symfony/polyfill-php84",

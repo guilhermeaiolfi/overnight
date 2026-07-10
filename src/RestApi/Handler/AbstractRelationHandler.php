@@ -46,7 +46,7 @@ abstract class AbstractRelationHandler extends AbstractHandler
 
 	public function isSingle(): bool
 	{
-		return $this->relation->getCardinality() === 'single';
+		return $this->relation->getCardinality()->isSingle();
 	}
 
 	public function getSelectColumns(): array

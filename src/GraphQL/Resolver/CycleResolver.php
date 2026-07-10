@@ -141,7 +141,7 @@ class CycleResolver implements GraphQLResolverInterface
 				$parentKeyValue = $entity->{$innerKey} ?? null;
 				$targetEntityClass = $targetCollection->getEntity();
 
-				if ($relation->getCardinality() === 'many') {
+				if ($relation->getCardinality()->isMany()) {
 					$em2 = new EntityManager($this->orm);
 					foreach ($relationData as $childInput) {
 						$child = new $targetEntityClass();
@@ -183,11 +183,11 @@ class CycleResolver implements GraphQLResolverInterface
 		if (isset($source->{$relationName})) {
 			$value = $source->{$relationName};
 
-			if ($relation->getCardinality() === 'single') {
+			if ($relation->getCardinality()->isSingle()) {
 				return is_array($value) ? ($value[0] ?? null) : $value;
 			}
 
-			if ($relation->getCardinality() === 'many') {
+			if ($relation->getCardinality()->isMany()) {
 				return is_iterable($value) ? iterator_to_array($value) : [];
 			}
 
@@ -207,13 +207,13 @@ class CycleResolver implements GraphQLResolverInterface
 			: ($source->{$innerKey} ?? null);
 
 		if ($sourceId === null) {
-			return $relation->getCardinality() === 'single' ? null : [];
+			return $relation->getCardinality()->isSingle() ? null : [];
 		}
 
 		$repo = $this->orm->getRepository($role);
 		$results = iterator_to_array($repo->findAll([$outerKey => $sourceId]));
 
-		if ($relation->getCardinality() === 'single') {
+		if ($relation->getCardinality()->isSingle()) {
 			return $results[0] ?? null;
 		}
 

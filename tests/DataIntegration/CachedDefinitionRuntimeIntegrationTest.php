@@ -93,7 +93,7 @@ final class CachedDefinitionRuntimeIntegrationTest extends TestCase
 
 		$posts = $user->getRelation('posts');
 		$this->assertNotNull($posts);
-		$this->assertSame('many', $posts->getCardinality());
+		$this->assertTrue($posts->getCardinality()->isMany());
 
 		$tags = $post->getRelation('tags');
 		$this->assertNotNull($tags);

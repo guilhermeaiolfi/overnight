@@ -80,7 +80,7 @@ Key rules:
 - `innerKey` = key on the **source** entity (the one defining the relation); `outerKey` = key on the **target** entity (Cycle ORM convention)
 - For hasMany/hasOne: `innerKey` is typically the PK (`id`), `outerKey` is the FK on the target (`user_id`)
 - For belongsTo: `innerKey` is the FK on the source (`user_id`), `outerKey` is the PK on the target (`id`)
-- `getCardinality()` returns `'single'` or `'many'`; `isJunction()` for M2M
+- `getCardinality()` returns `RelationCardinality::SINGLE` or `RelationCardinality::MANY` (`isSingle()` / `isMany()`); `isJunction()` for M2M
 - `validation('rules')` — pipe-delimited rules using `somnambulist/validation`
 - Object properties (`fields`, `relations`, `through`) are public: `$collection->fields->get('name')`
 - Field `->type()` for Cycle schema: string Cycle types (`int`, `string`, `datetime`, …) or `FieldTypeInterface::class` (uses `storageType()`). Unknown types fail in `CycleRegistryGenerator`.

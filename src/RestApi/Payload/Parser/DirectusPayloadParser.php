@@ -77,7 +77,7 @@ final class DirectusPayloadParser implements PayloadParserInterface
 			$parsed[] = new RelationPayload(
 				relationName: (string) $relationName,
 				targetCollection: $relation->getCollection()->getName(),
-				actions: $this->parseRelationInput($relation->getCardinality() === 'single', $rawInput),
+				actions: $this->parseRelationInput($relation->getCardinality()->isSingle(), $rawInput),
 			);
 		}
 

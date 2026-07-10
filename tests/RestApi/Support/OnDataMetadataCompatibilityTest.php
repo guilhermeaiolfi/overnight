@@ -118,7 +118,7 @@ final class OnDataMetadataCompatibilityTest extends TestCase
 		$this->assertSame('user', $author->getCollectionName());
 		$this->assertSame(['user_id'], $author->getInnerKeys());
 		$this->assertSame(['id'], $author->getOuterKeys());
-		$this->assertSame('single', $author->getCardinality());
+		$this->assertTrue($author->getCardinality()->isSingle());
 	}
 
 	public function testHasManyMetadata(): void
@@ -129,7 +129,7 @@ final class OnDataMetadataCompatibilityTest extends TestCase
 		$this->assertSame('post', $posts->getCollectionName());
 		$this->assertSame(['id'], $posts->getInnerKeys());
 		$this->assertSame(['user_id'], $posts->getOuterKeys());
-		$this->assertSame('many', $posts->getCardinality());
+		$this->assertTrue($posts->getCardinality()->isMany());
 	}
 
 	public function testManyToManyThroughMetadata(): void

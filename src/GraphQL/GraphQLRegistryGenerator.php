@@ -145,9 +145,9 @@ class GraphQLRegistryGenerator
 			$this->types[$targetType] = $targetTypeObj;
 		}
 
-		if ($relation->getCardinality() === 'single') {
+		if ($relation->getCardinality()->isSingle()) {
 			$type = $targetTypeObj;
-		} elseif ($relation->getCardinality() === 'many') {
+		} elseif ($relation->getCardinality()->isMany()) {
 			$type = Type::listOf($targetTypeObj);
 		} else {
 			$type = Type::string();
@@ -166,10 +166,10 @@ class GraphQLRegistryGenerator
 					// Fallback: property access using relation name
 					$property = $relation->getName();
 					$value = $source->{$property} ?? null;
-					if ($relation->getCardinality() === 'single') {
+					if ($relation->getCardinality()->isSingle()) {
 						return is_array($value) ? ($value[0] ?? null) : $value;
 					}
-					if ($relation->getCardinality() === 'many' && is_array($value)) {
+					if ($relation->getCardinality()->isMany() && is_array($value)) {
 						return $value;
 					}
 
@@ -372,7 +372,7 @@ class GraphQLRegistryGenerator
 				// Build a nested input type for the target collection (without its own relations to avoid infinite recursion)
 				$nestedInputType = $this->buildNestedInputType($targetCollection);
 
-				if ($relation->getCardinality() === 'many') {
+				if ($relation->getCardinality()->isMany()) {
 					$fields[$relationName] = ['type' => Type::listOf($nestedInputType)];
 				} else {
 					$fields[$relationName] = ['type' => $nestedInputType];

@@ -116,6 +116,6 @@ class HandlerRegistry
 			return 'hasOne';
 		}
 
-		return $relation->getCardinality() === 'many' ? 'hasMany' : 'hasOne';
+		return $relation->getCardinality()->isMany() ? 'hasMany' : 'hasOne';
 	}
 }
