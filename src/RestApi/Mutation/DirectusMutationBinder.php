@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Key;
+use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Relation\ToManyRelationState;
 use ON\Data\ORM\Relation\ToOneRelationState;
 use ON\Data\ORM\Representation\Schema\Manual\Builder;
@@ -14,6 +16,7 @@ use ON\Data\ORM\Representation\Schema\Manual\RelationRef;
 use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
 use ON\Data\ORM\Representation\Schema\Manual\RootRepresentationSource;
 use ON\Data\ORM\Representation\Schema\RepresentationSchema;
+use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\Payload\DirectusMutation;
@@ -31,12 +34,20 @@ use stdClass;
 
 /**
  * Binds Directus-normalized mutations onto ON\Data Session projections and relation state.
+ *
+ * Expresses membership intent only. ON\Data planners own FK / through-row persistence.
  */
 final class DirectusMutationBinder
 {
+	private readonly RelationBaselineReader $baselines;
+
 	public function __construct(
 		private readonly ItemRepositoryInterface $items,
+		SessionFactory|RelationBaselineReader $sessionsOrBaselines,
 	) {
+		$this->baselines = $sessionsOrBaselines instanceof RelationBaselineReader
+			? $sessionsOrBaselines
+			: new RelationBaselineReader($items, $sessionsOrBaselines);
 	}
 
 	public function bindCreate(
@@ -153,20 +164,14 @@ final class DirectusMutationBinder
 			}
 		}
 
-		$related = [];
-		foreach ($mutation->relations as $relationMutation) {
-			$boundRelations = $this->bindRelation(
-				$session,
-				$projection,
-				$source,
-				$representation,
-				$relationMutation,
-				$propertyRefs,
-			);
-			foreach ($boundRelations as $boundRelation) {
-				$related[] = $boundRelation;
-			}
-		}
+		$related = $this->bindRelations(
+			$session,
+			$projection,
+			$source,
+			$representation,
+			$mutation->relations,
+			$propertyRefs,
+		);
 
 		if ($propertyRefs === []) {
 			$projection->properties($source->all())->end();
@@ -197,14 +202,44 @@ final class DirectusMutationBinder
 	}
 
 	/**
+	 * @param list<RelationMutation> $relations
 	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
-	private function bindRelation(
+	private function bindRelations(
 		Session $session,
 		Builder $projection,
 		RootRepresentationSource|RelationRepresentationSource $source,
-		object $rootRepresentation,
+		object $ownerRepresentation,
+		array $relations,
+		array &$propertyRefs,
+	): array {
+		$bound = [];
+		foreach ($relations as $relationMutation) {
+			foreach ($this->bindRelationMutation(
+				$session,
+				$projection,
+				$source,
+				$ownerRepresentation,
+				$relationMutation,
+				$propertyRefs,
+			) as $child) {
+				$bound[] = $child;
+			}
+		}
+
+		return $bound;
+	}
+
+	/**
+	 * @param list<PropertyRef> $propertyRefs
+	 * @return list<BoundMutation>
+	 */
+	private function bindRelationMutation(
+		Session $session,
+		Builder $projection,
+		RootRepresentationSource|RelationRepresentationSource $source,
+		object $ownerRepresentation,
 		RelationMutation $relationMutation,
 		array &$propertyRefs,
 	): array {
@@ -214,24 +249,24 @@ final class DirectusMutationBinder
 					$session,
 					$projection,
 					$source,
-					$rootRepresentation,
+					$ownerRepresentation,
 					$relationMutation,
 					$propertyRefs,
 				),
 			])),
-			$relationMutation instanceof ToManyImplicitMutation => $this->bindToManyImplicitMutation(
+			$relationMutation instanceof ToManyImplicitMutation => $this->bindToManyImplicit(
 				$session,
 				$projection,
 				$source,
-				$rootRepresentation,
+				$ownerRepresentation,
 				$relationMutation,
 				$propertyRefs,
 			),
-			$relationMutation instanceof ToManyExplicitMutation => $this->bindToManyExplicitMutation(
+			$relationMutation instanceof ToManyExplicitMutation => $this->bindToManyExplicit(
 				$session,
 				$projection,
 				$source,
-				$rootRepresentation,
+				$ownerRepresentation,
 				$relationMutation,
 				$propertyRefs,
 			),
@@ -246,28 +281,16 @@ final class DirectusMutationBinder
 		Session $session,
 		Builder $projection,
 		RootRepresentationSource|RelationRepresentationSource $source,
-		object $rootRepresentation,
+		object $ownerRepresentation,
 		ToOneMutation $mutation,
 		array &$propertyRefs,
 	): ?BoundMutation {
 		$mutation->assertValid();
 		$relation = $mutation->relation();
-		$relationName = $relation->getName();
-		if (! $source instanceof RootRepresentationSource) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Nested to-one under a related item is not supported yet.'],
-			]);
-		}
-
-		$relationRef = $source->{$relationName};
-		if (! $relationRef instanceof RelationRef) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Unknown to-one relation.'],
-			]);
-		}
+		$relationRef = $this->relationRef($source, $relation, $mutation->path());
 
 		if ($mutation->kind === ToOneKind::Clear) {
-			$this->clearToOne($session, $source, $relationRef, $relationName);
+			$this->clearToOne($session, $source->getTargetRecord(), $relation);
 
 			return null;
 		}
@@ -284,44 +307,25 @@ final class DirectusMutationBinder
 		}
 
 		return $this->bindRelatedItem(
+			$session,
 			$projection,
 			$relationRef,
-			$rootRepresentation,
+			$ownerRepresentation,
 			$item,
 			$propertyRefs,
-			$relationName,
 		);
 	}
 
 	private function clearToOne(
 		Session $session,
-		RootRepresentationSource $source,
-		RelationRef $relationRef,
-		string $relationName,
+		RecordState $ownerRecord,
+		RelationInterface $relation,
 	): void {
-		$targetCollection = $relationRef->getDefinition()->getCollection();
-		$ownerRecord = $source->getTargetRecord();
+		$relationName = $relation->getName();
+		$targetCollection = $relation->getCollection();
 		$session->getRelations()->remove($ownerRecord, $relationName);
 
-		$baseline = null;
-		$currentKey = [];
-		foreach ($relationRef->getDefinition()->getInnerKeys() as $index => $innerKey) {
-			$outer = $relationRef->getDefinition()->getOuterKeys()[$index] ?? null;
-			$value = $ownerRecord->getValue($innerKey);
-			if ($value !== null && $outer !== null) {
-				$currentKey[$outer] = $value;
-			}
-		}
-		if ($currentKey !== []) {
-			try {
-				$baselineKey = $targetCollection->getKey($currentKey);
-				$baseline = new stdClass();
-				$session->identify($targetCollection, $baselineKey, $baseline);
-			} catch (\Throwable) {
-				$baseline = null;
-			}
-		}
-
+		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
 		$toOne = new ToOneRelationState(
 			$ownerRecord,
 			$relationName,
@@ -336,107 +340,58 @@ final class DirectusMutationBinder
 	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
-	private function bindToManyImplicitMutation(
+	private function bindToManyImplicit(
 		Session $session,
 		Builder $projection,
 		RootRepresentationSource|RelationRepresentationSource $source,
-		object $rootRepresentation,
+		object $ownerRepresentation,
 		ToManyImplicitMutation $mutation,
 		array &$propertyRefs,
 	): array {
-		if (! $source instanceof RootRepresentationSource) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Nested to-many under a related item is not supported yet.'],
-			]);
-		}
-
 		$relation = $mutation->relation();
 		$relationName = $relation->getName();
-		$relationRef = $source->{$relationName};
-		if (! $relationRef instanceof RelationRef) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Unknown to-many relation.'],
-			]);
-		}
-
+		$relationRef = $this->relationRef($source, $relation, $mutation->path());
 		$ownerRecord = $source->getTargetRecord();
 		$targetCollection = $relation->getCollection();
 		$relatedSchema = new RepresentationSchema($targetCollection);
-		$baseline = $this->loadCurrentToManyTargets($session, $ownerRecord, $relation);
+
+		$baseline = $this->baselines->loadToManyIdentities($session, $ownerRecord, $relation);
 		$session->getRelations()->remove($ownerRecord, $relationName);
 		$toMany = ToManyRelationState::full($ownerRecord, $relationName, $relatedSchema, $baseline);
 		$session->getRelations()->add($toMany);
 
 		$desired = [];
 		$bound = [];
+
 		foreach ($mutation->items as $item) {
 			$reused = null;
 			if (! $item->isNew() && $item->identity !== null) {
-				foreach ($baseline as $existing) {
-					$existingState = $session->getRepresentations()->get($existing);
-					if (! $existingState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
-						continue;
-					}
-					try {
-						$existingRecord = $session->getRecords()->getFromRepresentation($existingState);
-					} catch (\Throwable) {
-						continue;
-					}
-					if (
-						$existingRecord instanceof \ON\Data\ORM\Record\RecordState
-						&& $existingRecord->hasKey()
-						&& $existingRecord->getKey()?->equals($item->identity)
-					) {
-						$reused = $existing;
-
-						break;
-					}
-				}
+				$reused = $this->findByKey($session, $baseline, $item->identity);
 			}
 
 			if ($reused !== null) {
-				foreach ($item->values as $field => $value) {
-					$alias = $this->aliasFor($relationName, (string) $field, $item->path);
-					$rootRepresentation->{$alias} = $value;
-					$childProjection = $session->projection($reused);
-					$childSource = $childProjection->from($relation->getCollection())->tracked();
-					if ($relation->getCollection()->hasField((string) $field)) {
-						// Keep updates on the related object itself for sync.
-						$reused->{(string) $field} = $value;
-					}
-				}
-				$desired[spl_object_id($reused)] = $reused;
-				$bound[] = new BoundMutation(
-					operation: 'update',
-					collection: $relation->getCollection(),
-					representation: $reused,
-					state: new BoundItemState(
-						$relation->getCollection(),
-						$reused,
-						$item->values,
-						null,
-						true,
-						$item->path,
-					),
-					mutation: new DirectusMutation($item->values, [], $item->path),
-					identity: $item->identity,
-					path: $item->path,
+				$childBound = $this->bindExistingRelatedObject(
+					$session,
+					$reused,
+					$targetCollection,
+					$item,
 				);
+				$desired[spl_object_id($reused)] = $reused;
+				$bound[] = $childBound;
 
 				continue;
 			}
 
 			$childBound = $this->bindRelatedItem(
+				$session,
 				$projection,
 				$relationRef,
-				$rootRepresentation,
+				$ownerRepresentation,
 				$item,
 				$propertyRefs,
-				$relationName,
 			);
 			$bound[] = $childBound;
-			$targetObject = $this->relationTargetObject($session, $relationRef, $item);
-			$desired[spl_object_id($targetObject)] = $targetObject;
+			$desired[spl_object_id($childBound->representation)] = $childBound->representation;
 		}
 
 		foreach ($baseline as $existing) {
@@ -444,40 +399,11 @@ final class DirectusMutationBinder
 				continue;
 			}
 
-			$matched = false;
-			$existingState = $session->getRepresentations()->get($existing);
-			if ($existingState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
-				try {
-					$existingRecord = $session->getRecords()->getFromRepresentation($existingState);
-				} catch (\Throwable) {
-					$existingRecord = null;
-				}
-				if ($existingRecord instanceof \ON\Data\ORM\Record\RecordState && $existingRecord->hasKey()) {
-					foreach ($desired as $desiredObject) {
-						$desiredState = $session->getRepresentations()->get($desiredObject);
-						if (! $desiredState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
-							continue;
-						}
-						try {
-							$desiredRecord = $session->getRecords()->getFromRepresentation($desiredState);
-						} catch (\Throwable) {
-							continue;
-						}
-						if (
-							$desiredRecord instanceof \ON\Data\ORM\Record\RecordState
-							&& $desiredRecord->hasKey()
-							&& $desiredRecord->getKey()?->equals($existingRecord->getKey())
-						) {
-							$matched = true;
+			if ($this->matchesAnyDesiredKey($session, $desired, $existing)) {
+				continue;
+			}
 
-							break;
-						}
-					}
-				}
-			}
-			if (! $matched) {
-				$toMany->remove($existing);
-			}
+			$toMany->remove($existing);
 		}
 
 		return $bound;
@@ -487,289 +413,95 @@ final class DirectusMutationBinder
 	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
-	private function bindToManyExplicitMutation(
+	private function bindToManyExplicit(
 		Session $session,
 		Builder $projection,
 		RootRepresentationSource|RelationRepresentationSource $source,
-		object $rootRepresentation,
+		object $ownerRepresentation,
 		ToManyExplicitMutation $mutation,
 		array &$propertyRefs,
 	): array {
-		if (! $source instanceof RootRepresentationSource) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Nested to-many under a related item is not supported yet.'],
-			]);
-		}
-
 		$relation = $mutation->relation();
-		$relationName = $relation->getName();
-		$relationRef = $source->{$relationName};
-		if (! $relationRef instanceof RelationRef) {
-			throw RestApiError::validationFailed([
-				$mutation->path()->toString() => ['Unknown to-many relation.'],
-			]);
-		}
-
+		$relationRef = $this->relationRef($source, $relation, $mutation->path());
 		$bound = [];
+
 		foreach ($mutation->create as $item) {
 			$bound[] = $this->bindRelatedItem(
+				$session,
 				$projection,
 				$relationRef,
-				$rootRepresentation,
+				$ownerRepresentation,
 				$item,
 				$propertyRefs,
-				$relationName,
 			);
 		}
 
 		foreach ($mutation->update as $item) {
 			$bound[] = $this->bindRelatedItem(
+				$session,
 				$projection,
 				$relationRef,
-				$rootRepresentation,
+				$ownerRepresentation,
 				$item,
 				$propertyRefs,
-				$relationName,
 			);
 		}
 
 		foreach ($mutation->delete as $key) {
-			$previous = $this->items->findByIdentity(
-				$relation->getCollection(),
-				new PrimaryKeyValue($relation->getCollection(), $key->getValues()),
-			);
-			if ($previous === null) {
-				throw RestApiError::notFound();
-			}
-			$representation = new stdClass();
-			foreach ($previous as $field => $value) {
-				$representation->{$field} = $value;
-			}
-			$childProjection = $session->projection($representation);
-			$childSource = $childProjection->from($relation->getCollection())->existing($key, $previous);
-			$childProjection->properties($childSource->all())->end();
-			$session->remove($representation);
-			$bound[] = new BoundMutation(
-				operation: 'delete',
-				collection: $relation->getCollection(),
-				representation: $representation,
-				state: new BoundItemState($relation->getCollection(), $representation, $previous, $previous, true, $mutation->path()),
-				mutation: new DirectusMutation([], [], $mutation->path()),
-				identity: $key,
-				path: $mutation->path(),
-			);
-		}
-
-		foreach ($mutation->unlink as $key) {
-			$ownerRecord = $source->getTargetRecord();
-			$relatedSchema = new RepresentationSchema($relation->getCollection());
-			$state = $session->getRelations()->get($ownerRecord, $relationName);
-			if (! $state instanceof ToManyRelationState) {
-				$baseline = $this->loadCurrentToManyTargets($session, $ownerRecord, $relation);
-				$state = ToManyRelationState::full($ownerRecord, $relationName, $relatedSchema, $baseline);
-				$session->getRelations()->add($state);
-			}
-
-			$target = null;
-			foreach ($state->getItems() as $item) {
-				$itemState = $session->getRepresentations()->get($item);
-				if (! $itemState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
-					continue;
-				}
-				$record = $session->getRecords()->getFromRepresentation($itemState);
-				if ($record instanceof \ON\Data\ORM\Record\RecordState && $record->hasKey() && $record->getKey()?->equals($key)) {
-					$target = $item;
-
-					break;
-				}
-			}
-
-			if ($target === null) {
-				$previous = $this->items->findByIdentity(
-					$relation->getCollection(),
-					new PrimaryKeyValue($relation->getCollection(), $key->getValues()),
-				);
-				$target = new stdClass();
-				if ($previous !== null) {
-					foreach ($previous as $field => $value) {
-						$target->{$field} = $value;
-					}
-					$childProjection = $session->projection($target);
-					$childSource = $childProjection->from($relation->getCollection())->existing($key, $previous);
-					$childProjection->properties($childSource->all())->end();
-				} else {
-					$session->identify($relation->getCollection(), $key, $target);
-				}
-			}
-
-			$state->remove($target);
+			$bound[] = $this->bindExplicitDelete($session, $relation->getCollection(), $key, $mutation->path());
 		}
 
 		return $bound;
 	}
 
-	/**
-	 * @return list<object>
-	 */
-	private function loadCurrentToManyTargets(
+	private function bindExplicitDelete(
 		Session $session,
-		\ON\Data\ORM\Record\RecordState $ownerRecord,
-		\ON\Data\Definition\Relation\RelationInterface $relation,
-	): array {
-		if (! $ownerRecord->hasKey()) {
-			return [];
+		CollectionInterface $collection,
+		Key $key,
+		PayloadPath $path,
+	): BoundMutation {
+		$previous = $this->items->findByIdentity(
+			$collection,
+			new PrimaryKeyValue($collection, $key->getValues()),
+		);
+		if ($previous === null) {
+			throw RestApiError::notFound();
 		}
 
-		$targetCollection = $relation->getCollection();
-		$ownerKey = $ownerRecord->getKey();
-		$query = $this->items->select($targetCollection, $targetCollection->getVisibleFields());
-
-		if ($relation instanceof \ON\Data\Definition\Relation\M2MRelation) {
-			// Load currently linked targets through the junction table via a simple query on through.
-			$through = $relation->getThrough()->getCollection();
-			$throughRows = $this->items->select($through)->fetchAll();
-			$ownerValues = $ownerKey->getValues();
-			$targetKeys = [];
-			foreach ($throughRows as $row) {
-				$matchesOwner = true;
-				foreach ($relation->getThrough()->getInnerKeys() as $index => $throughInner) {
-					$ownerField = $relation->getInnerKeys()[$index] ?? null;
-					if ($ownerField === null || ($row[$throughInner] ?? null) != ($ownerValues[$ownerField] ?? null)) {
-						$matchesOwner = false;
-
-						break;
-					}
-				}
-				if (! $matchesOwner) {
-					continue;
-				}
-				$targetKeyValues = [];
-				foreach ($relation->getThrough()->getOuterKeys() as $index => $throughOuter) {
-					$targetField = $relation->getOuterKeys()[$index] ?? null;
-					if ($targetField === null) {
-						continue;
-					}
-					$targetKeyValues[$targetField] = $row[$throughOuter] ?? null;
-				}
-				if ($targetKeyValues !== []) {
-					$targetKeys[] = $targetKeyValues;
-				}
-			}
-
-			$objects = [];
-			foreach ($targetKeys as $keyValues) {
-				$row = $this->items->findByIdentity($targetCollection, new PrimaryKeyValue($targetCollection, $keyValues));
-				if ($row === null) {
-					continue;
-				}
-				$object = new stdClass();
-				foreach ($row as $field => $value) {
-					$object->{$field} = $value;
-				}
-				$key = $targetCollection->getKey($keyValues);
-				$childProjection = $session->projection($object);
-				$childSource = $childProjection->from($targetCollection)->existing($key, $row);
-				$childProjection->properties($childSource->all())->end();
-				$objects[] = $object;
-			}
-
-			return $objects;
+		$representation = new stdClass();
+		foreach ($previous as $field => $value) {
+			$representation->{$field} = $value;
 		}
 
-		// O2M / has-many: filter by outer keys = owner inner key values
-		$criteria = [];
-		foreach ($relation->getOuterKeys() as $index => $outerKey) {
-			$innerKey = $relation->getInnerKeys()[$index] ?? null;
-			if ($innerKey === null) {
-				continue;
-			}
-			$criteria[$outerKey] = $ownerKey->getValues()[$innerKey] ?? null;
-		}
-		if ($criteria === []) {
-			return [];
-		}
+		$childProjection = $session->projection($representation);
+		$childSource = $childProjection->from($collection)->existing($key, $previous);
+		$childProjection->properties($childSource->all())->end();
+		$session->remove($representation);
 
-		$rows = [];
-		foreach ($this->items->select($targetCollection, $targetCollection->getVisibleFields())->fetchAll() as $row) {
-			$match = true;
-			foreach ($criteria as $field => $value) {
-				if (($row[$field] ?? null) != $value) {
-					$match = false;
-
-					break;
-				}
-			}
-			if ($match) {
-				$rows[] = $row;
-			}
-		}
-
-		$objects = [];
-		foreach ($rows as $row) {
-			$identity = PrimaryKey::of($targetCollection)->extractFromRow($row);
-			if ($identity === null) {
-				continue;
-			}
-			$object = new stdClass();
-			foreach ($row as $field => $value) {
-				$object->{$field} = $value;
-			}
-			$key = $this->normalizeKey($targetCollection, $identity);
-			$childProjection = $session->projection($object);
-			$source = $childProjection->from($targetCollection)->existing($key, $row);
-			$childProjection->properties($source->all())->end();
-			$objects[] = $object;
-		}
-
-		return $objects;
-	}
-
-	private function relationTargetObject(
-		Session $session,
-		RelationRef $relationRef,
-		RelatedItemInput $item,
-	): object {
-		// Manual create/existing attaches an identity/target object; recover the latest added relation member.
-		$owner = $relationRef->getOwner()->getTargetRecord();
-		$state = $session->getRelations()->get($owner, $relationRef->getName());
-		if ($state instanceof ToManyRelationState) {
-			$items = $state->getItems();
-			if ($items !== []) {
-				return $items[array_key_last($items)];
-			}
-		}
-		if ($state instanceof ToOneRelationState && $state->getTarget() !== null) {
-			return $state->getTarget();
-		}
-
-		$fallback = new stdClass();
-		if ($item->identity !== null) {
-			$session->identify($relationRef->getDefinition()->getCollection(), $item->identity, $fallback);
-		}
-
-		return $fallback;
-	}
-
-	/**
-	 * @param array<int, object> $desired
-	 */
-	private function isDesiredByKey(array $desired, object $existing, Session $session): bool
-	{
-		return false;
+		return new BoundMutation(
+			operation: 'delete',
+			collection: $collection,
+			representation: $representation,
+			state: new BoundItemState($collection, $representation, $previous, $previous, true, $path),
+			mutation: new DirectusMutation([], [], $path),
+			identity: $key,
+			path: $path,
+		);
 	}
 
 	/**
 	 * @param list<PropertyRef> $propertyRefs
 	 */
 	private function bindRelatedItem(
+		Session $session,
 		Builder $projection,
 		RelationRef $relationRef,
-		object $rootRepresentation,
+		object $ownerRepresentation,
 		RelatedItemInput $item,
 		array &$propertyRefs,
-		string $relationName,
 	): BoundMutation {
 		$collection = $relationRef->getDefinition()->getCollection();
+
 		if ($item->isNew()) {
 			$seed = $item->values;
 			if ($item->identity !== null) {
@@ -788,25 +520,30 @@ final class DirectusMutationBinder
 			$relatedSource = $projection->existing($relationRef, $item->identity, $seed);
 		}
 
+		$childObject = $relatedSource->getTargetObject();
 		$fieldPaths = [];
 		foreach ($item->values as $field => $value) {
-			$alias = $this->aliasFor($relationName, (string) $field, $item->path);
-			$fieldPaths[(string) $field] = $alias;
-			$rootRepresentation->{$alias} = $value;
-			if ($collection->hasField((string) $field)) {
-				$propertyRefs[] = $relatedSource->field((string) $field)->as($alias);
+			$name = (string) $field;
+			if (! $collection->hasField($name)) {
+				continue;
 			}
+			$alias = $this->aliasFor($relationRef->getName(), $name, $item->path);
+			$fieldPaths[$name] = $alias;
+			$ownerRepresentation->{$alias} = $value;
+			$propertyRefs[] = $relatedSource->field($name)->as($alias);
 		}
 
-		if ($item->relations !== []) {
-			throw RestApiError::validationFailed([
-				$item->path->toString() => ['Nested relation payloads under related items are not supported yet.'],
-			]);
-		}
+		$related = $this->bindNestedOnRelated(
+			$session,
+			$relatedSource,
+			$childObject,
+			$collection,
+			$item,
+		);
 
 		$state = new BoundItemState(
 			$collection,
-			$rootRepresentation,
+			$ownerRepresentation,
 			$item->values,
 			null,
 			! $item->isNew(),
@@ -818,13 +555,199 @@ final class DirectusMutationBinder
 		return new BoundMutation(
 			operation: $item->isNew() ? 'create' : 'update',
 			collection: $collection,
-			representation: $rootRepresentation,
+			representation: $childObject,
 			state: $state,
-			mutation: new DirectusMutation($item->values, [], $item->path),
+			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
 			identity: $item->identity,
 			path: $item->path,
-			related: [],
+			related: $related,
 		);
+	}
+
+	private function bindExistingRelatedObject(
+		Session $session,
+		object $representation,
+		CollectionInterface $collection,
+		RelatedItemInput $item,
+	): BoundMutation {
+		if ($item->values === [] && $item->relations === []) {
+			return new BoundMutation(
+				operation: 'update',
+				collection: $collection,
+				representation: $representation,
+				state: new BoundItemState(
+					$collection,
+					$representation,
+					[],
+					null,
+					true,
+					$item->path,
+				),
+				mutation: new DirectusMutation([], [], $item->path),
+				identity: $item->identity,
+				path: $item->path,
+			);
+		}
+
+		foreach ($item->values as $field => $value) {
+			$name = (string) $field;
+			if ($collection->hasField($name)) {
+				$representation->{$name} = $value;
+			}
+		}
+
+		$childProjection = $session->projection($representation);
+		$childSource = $childProjection->from($collection)->tracked();
+		$propertyRefs = [];
+		foreach (array_keys($item->values) as $fieldName) {
+			$name = (string) $fieldName;
+			if ($collection->hasField($name)) {
+				$propertyRefs[] = $childSource->field($name);
+			}
+		}
+		if ($propertyRefs !== []) {
+			$childProjection->properties(...$propertyRefs)->end();
+		}
+
+		$nestedPropertyRefs = [];
+		$related = $this->bindRelations(
+			$session,
+			$childProjection,
+			$childSource,
+			$representation,
+			$item->relations,
+			$nestedPropertyRefs,
+		);
+		if ($nestedPropertyRefs !== []) {
+			$childProjection->properties(...$nestedPropertyRefs)->end();
+		}
+
+		return new BoundMutation(
+			operation: 'update',
+			collection: $collection,
+			representation: $representation,
+			state: new BoundItemState(
+				$collection,
+				$representation,
+				$item->values,
+				null,
+				true,
+				$item->path,
+			),
+			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
+			identity: $item->identity,
+			path: $item->path,
+			related: $related,
+		);
+	}
+
+	/**
+	 * @return list<BoundMutation>
+	 */
+	private function bindNestedOnRelated(
+		Session $session,
+		RelationRepresentationSource $relatedSource,
+		object $childObject,
+		CollectionInterface $collection,
+		RelatedItemInput $item,
+	): array {
+		if ($item->relations === []) {
+			return [];
+		}
+
+		// Nested relations are bound on the related identity object so recursion
+		// uses RootRepresentationSource relation navigation without storage details.
+		$childProjection = $session->projection($childObject);
+		$childRoot = $childProjection->from($collection)->tracked();
+		$nestedPropertyRefs = [];
+		$bound = $this->bindRelations(
+			$session,
+			$childProjection,
+			$childRoot,
+			$childObject,
+			$item->relations,
+			$nestedPropertyRefs,
+		);
+
+		if ($nestedPropertyRefs !== []) {
+			$childProjection->properties(...$nestedPropertyRefs)->end();
+		}
+
+		return $bound;
+	}
+
+	private function relationRef(
+		RootRepresentationSource|RelationRepresentationSource $source,
+		RelationInterface $relation,
+		PayloadPath $path,
+	): RelationRef {
+		if ($source instanceof RootRepresentationSource) {
+			$ref = $source->{$relation->getName()};
+			if (! $ref instanceof RelationRef) {
+				throw RestApiError::validationFailed([
+					$path->toString() => ['Unknown relation.'],
+				]);
+			}
+
+			return $ref;
+		}
+
+		return new RelationRef($source, $relation->getName(), $relation);
+	}
+
+	/**
+	 * @param list<object> $candidates
+	 */
+	private function findByKey(Session $session, array $candidates, Key $key): ?object
+	{
+		foreach ($candidates as $candidate) {
+			$record = $this->recordFor($session, $candidate);
+			if ($record instanceof RecordState && $record->hasKey() && $record->getKey()?->equals($key)) {
+				return $candidate;
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * @param array<int, object> $desired
+	 */
+	private function matchesAnyDesiredKey(Session $session, array $desired, object $existing): bool
+	{
+		$existingRecord = $this->recordFor($session, $existing);
+		if (! $existingRecord instanceof RecordState || ! $existingRecord->hasKey()) {
+			return false;
+		}
+
+		foreach ($desired as $desiredObject) {
+			$desiredRecord = $this->recordFor($session, $desiredObject);
+			if (
+				$desiredRecord instanceof RecordState
+				&& $desiredRecord->hasKey()
+				&& $desiredRecord->getKey()?->equals($existingRecord->getKey())
+			) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	private function recordFor(Session $session, object $representation): ?RecordState
+	{
+		$state = $session->getRepresentations()->get($representation);
+		if (! $state instanceof RepresentationState) {
+			return null;
+		}
+
+		try {
+			$record = $session->getRecords()->getFromRepresentation($state);
+		} catch (\Throwable) {
+			return null;
+		}
+
+		return $record instanceof RecordState ? $record : null;
 	}
 
 	private function aliasFor(string $relationName, string $field, PayloadPath $path): string

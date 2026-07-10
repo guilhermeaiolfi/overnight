@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation\Payload;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Key;
 use ON\RestApi\Error\RestApiError;
@@ -19,8 +20,7 @@ use Psr\Http\Message\UploadedFileInterface;
  */
 final class DirectusPayloadParser
 {
-	private const DETAILED_KEYS = ['create', 'update', 'delete', 'connect', 'disconnect'];
-	private const DIRECTUS_DETAILED_KEYS = ['create', 'update', 'delete'];
+	private const DETAILED_KEYS = ['create', 'update', 'delete'];
 
 	/**
 	 * @param array<string, mixed> $input
@@ -62,6 +62,12 @@ final class DirectusPayloadParser
 
 			$relation = $collection->relations->get($name);
 			$relationPath = $path->append($name);
+			if ($relation instanceof FirstOfManyRelation) {
+				throw RestApiError::validationFailed([
+					$relationPath->toString() => ['First-of-many relations are read-only for mutations.'],
+				]);
+			}
+
 			$parsed[] = $relation->getCardinality()->isSingle()
 				? $this->parseToOne($relation, $rawInput, $relationPath)
 				: $this->parseToMany($relation, $rawInput, $relationPath);
@@ -135,7 +141,14 @@ final class DirectusPayloadParser
 		$create = [];
 		$update = [];
 		$delete = [];
-		$unlink = [];
+
+		foreach (array_keys($input) as $key) {
+			if (! in_array((string) $key, self::DETAILED_KEYS, true)) {
+				throw RestApiError::validationFailed([
+					$path->toString() => [sprintf("Unknown detailed relation operation '%s'.", (string) $key)],
+				]);
+			}
+		}
 
 		foreach (MutationInput::normalizeRelationItems($input['create'] ?? []) as $index => $item) {
 			if (! is_array($item)) {
@@ -165,28 +178,7 @@ final class DirectusPayloadParser
 			$delete[] = $this->identityFromMixed($target, $item, $path->append('delete')->append((int) $index));
 		}
 
-		// Overnight extension beyond Directus: connect assigns existing identities; disconnect unlinks.
-		foreach (MutationInput::normalizeRelationItems($input['connect'] ?? []) as $index => $item) {
-			$create[] = $this->parseRelatedItemOrIdentity(
-				$target,
-				$item,
-				$path->append('connect')->append((int) $index),
-			);
-		}
-
-		foreach (MutationInput::normalizeRelationItems($input['disconnect'] ?? []) as $index => $item) {
-			$unlink[] = $this->identityFromMixed($target, $item, $path->append('disconnect')->append((int) $index));
-		}
-
-		foreach (array_keys($input) as $key) {
-			if (! in_array((string) $key, self::DETAILED_KEYS, true)) {
-				throw RestApiError::validationFailed([
-					$path->toString() => [sprintf("Unknown detailed relation operation '%s'.", (string) $key)],
-				]);
-			}
-		}
-
-		return new ToManyExplicitMutation($relation, $path, $create, $update, $delete, $unlink);
+		return new ToManyExplicitMutation($relation, $path, $create, $update, $delete);
 	}
 
 	/**

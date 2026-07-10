@@ -10,7 +10,6 @@ use ON\Data\Key;
 /**
  * Detailed to-many object payload: incremental create/update/delete deltas.
  * Unmentioned members are left untouched. delete removes the represented item.
- * unlink is an Overnight extension for relation removal without deleting the row.
  */
 final readonly class ToManyExplicitMutation implements RelationMutation
 {
@@ -18,7 +17,6 @@ final readonly class ToManyExplicitMutation implements RelationMutation
 	 * @param list<RelatedItemInput> $create
 	 * @param list<RelatedItemInput> $update
 	 * @param list<Key> $delete
-	 * @param list<Key> $unlink
 	 */
 	public function __construct(
 		private RelationInterface $relation,
@@ -26,7 +24,6 @@ final readonly class ToManyExplicitMutation implements RelationMutation
 		public array $create = [],
 		public array $update = [],
 		public array $delete = [],
-		public array $unlink = [],
 	) {
 	}
 

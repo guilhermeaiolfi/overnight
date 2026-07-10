@@ -8,7 +8,6 @@ use ON\Data\Query\SelectQuery;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
-use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Support\PrimaryKeyValue;
 
 interface ItemRepositoryInterface
@@ -40,7 +39,4 @@ interface ItemRepositoryInterface
 	public function update(CollectionInterface $collection, array $criteria, array $input): ?array;
 
 	public function delete(CollectionInterface $collection, array $criteria): bool;
-
-	public function commit(MutationQueue $queue, callable $resolve): mixed;
-
 }

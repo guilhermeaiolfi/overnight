@@ -336,7 +336,6 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 

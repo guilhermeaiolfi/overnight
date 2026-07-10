@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
-use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Hook\RestHookDispatcher;
@@ -18,7 +17,6 @@ use Psr\Http\Message\UploadedFileInterface;
 final class FileUploadEventEmitter
 {
 	public function __construct(
-		private readonly Registry $registry,
 		private readonly RestHookDispatcher $hooks,
 	) {
 	}
@@ -39,16 +37,6 @@ final class FileUploadEventEmitter
 		}
 
 		return $scalars + $relations;
-	}
-
-	/**
-	 * @deprecated Legacy MutationSpec path; prefer processInput().
-	 */
-	public function process(\ON\RestApi\Payload\Node\MutationSpec $spec): void
-	{
-		$collection = $this->registry->getCollection($spec->root->collection);
-		$payload = $spec->root->fields;
-		$spec->root->fields = $this->processFields($collection, $payload);
 	}
 
 	private function processRelationPayload(CollectionInterface $target, mixed $raw): mixed
@@ -94,7 +82,7 @@ final class FileUploadEventEmitter
 	 */
 	private function isDetailed(array $input): bool
 	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+		foreach (['create', 'update', 'delete'] as $key) {
 			if (array_key_exists($key, $input)) {
 				return true;
 			}

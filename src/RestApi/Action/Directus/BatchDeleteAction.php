@@ -41,6 +41,7 @@ final class BatchDeleteAction implements RestActionInterface
 			throw new RestApiError('Batch delete expects an array of IDs.', 'INVALID_PAYLOAD', null, 400);
 		}
 
+		$identities = [];
 		foreach ($body as $id) {
 			$identity = is_array($id)
 				? PrimaryKey::of($collection)->extractFromInput($id)
@@ -59,13 +60,14 @@ final class BatchDeleteAction implements RestActionInterface
 			$identity = PrimaryKey::of($collection)->getValue($identity);
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
-
-			$this->mutations->delete(
-				$collection,
-				$identity,
-				(bool) $options['dispatchEvents'],
-			);
+			$identities[] = $identity;
 		}
+
+		$this->mutations->batchDelete(
+			$collection,
+			$identities,
+			(bool) $options['dispatchEvents'],
+		);
 
 		return null;
 	}

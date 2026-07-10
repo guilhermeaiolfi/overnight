@@ -31,6 +31,9 @@ use Throwable;
 
 /**
  * Directus payload → binder → hooks → Session sync/flush → reload.
+ *
+ * Batch operations share one Session and one flush (one transaction when the
+ * command executor is transactional).
  */
 final class MutationCoordinator
 {
@@ -48,6 +51,7 @@ final class MutationCoordinator
 	 * @param array<string, mixed> $input
 	 * @param array<string, mixed> $files
 	 * @param class-string $output
+	 * @return array<string, mixed>
 	 */
 	public function create(
 		CollectionInterface $collection,
@@ -56,17 +60,18 @@ final class MutationCoordinator
 		bool $dispatchEvents = true,
 		string $output = PhpRepresentation::class,
 	): array {
-		$mutation = $this->parser->parse($collection, $input, $files);
 		$session = $this->sessions->create();
+		$mutation = $this->parser->parse($collection, $input, $files);
 		$bound = $this->binder->bindCreate($session, $collection, $mutation);
 
-		return $this->executeWrite($session, $bound, $dispatchEvents, $output);
+		return $this->executeWrite($session, [$bound], $dispatchEvents, $output)[0];
 	}
 
 	/**
 	 * @param array<string, mixed> $input
 	 * @param array<string, mixed> $files
 	 * @param class-string $output
+	 * @return array<string, mixed>
 	 */
 	public function update(
 		CollectionInterface $collection,
@@ -76,11 +81,11 @@ final class MutationCoordinator
 		bool $dispatchEvents = true,
 		string $output = PhpRepresentation::class,
 	): array {
-		$mutation = $this->parser->parse($collection, $input, $files);
 		$session = $this->sessions->create();
+		$mutation = $this->parser->parse($collection, $input, $files);
 		$bound = $this->binder->bindUpdate($session, $collection, $mutation, $identity);
 
-		return $this->executeWrite($session, $bound, $dispatchEvents, $output);
+		return $this->executeWrite($session, [$bound], $dispatchEvents, $output)[0];
 	}
 
 	public function delete(
@@ -90,23 +95,124 @@ final class MutationCoordinator
 	): bool {
 		$session = $this->sessions->create();
 		$bound = $this->binder->bindDelete($session, $collection, $identity);
-		$plan = MutationEventPlan::fromBound($bound);
+		$this->executeDelete($session, [$bound], $dispatchEvents);
+
+		return true;
+	}
+
+	/**
+	 * One request → one Session → bind all roots → before-events → one flush → after-events.
+	 *
+	 * @param list<array<string, mixed>> $inputs
+	 * @param class-string $output
+	 * @return list<array<string, mixed>>
+	 */
+	public function batchCreate(
+		CollectionInterface $collection,
+		array $inputs,
+		bool $dispatchEvents = true,
+		string $output = PhpRepresentation::class,
+	): array {
+		$session = $this->sessions->create();
+		$bound = [];
+		foreach ($inputs as $input) {
+			$mutation = $this->parser->parse($collection, $input);
+			$bound[] = $this->binder->bindCreate($session, $collection, $mutation);
+		}
+
+		return $this->executeWrite($session, $bound, $dispatchEvents, $output);
+	}
+
+	/**
+	 * @param list<array{identity: PrimaryKeyValue|string|int, input: array<string, mixed>}> $items
+	 * @param class-string $output
+	 * @return list<array<string, mixed>>
+	 */
+	public function batchUpdate(
+		CollectionInterface $collection,
+		array $items,
+		bool $dispatchEvents = true,
+		string $output = PhpRepresentation::class,
+	): array {
+		$session = $this->sessions->create();
+		$bound = [];
+		foreach ($items as $item) {
+			$mutation = $this->parser->parse($collection, $item['input']);
+			$bound[] = $this->binder->bindUpdate($session, $collection, $mutation, $item['identity']);
+		}
+
+		return $this->executeWrite($session, $bound, $dispatchEvents, $output);
+	}
+
+	/**
+	 * @param list<PrimaryKeyValue|string|int> $identities
+	 */
+	public function batchDelete(
+		CollectionInterface $collection,
+		array $identities,
+		bool $dispatchEvents = true,
+	): bool {
+		$session = $this->sessions->create();
+		$bound = [];
+		foreach ($identities as $identity) {
+			$bound[] = $this->binder->bindDelete($session, $collection, $identity);
+		}
+		$this->executeDelete($session, $bound, $dispatchEvents);
+
+		return true;
+	}
+
+	/**
+	 * @param list<BoundMutation> $roots
+	 * @param class-string $output
+	 * @return list<array<string, mixed>>
+	 */
+	private function executeWrite(
+		Session $session,
+		array $roots,
+		bool $dispatchEvents,
+		string $output,
+	): array {
+		$plans = [];
+		foreach ($roots as $bound) {
+			$plans[] = MutationEventPlan::fromBound($bound);
+		}
 		$afterHooksTx = $this->hooks->start();
 
 		try {
 			if ($dispatchEvents) {
-				$this->dispatchBefore($plan, $bound);
+				foreach ($plans as $index => $plan) {
+					$this->dispatchBefore($plan, $roots[$index]);
+					foreach ($plan->before as $item) {
+						$this->reapplyHookMutations($session, $roots[$index], $item);
+					}
+				}
 			}
 
-			$session->sync($bound->representation);
+			foreach ($roots as $bound) {
+				$session->sync($bound->representation);
+			}
 			$session->flush();
 
+			$results = [];
+			foreach ($roots as $index => $bound) {
+				$row = $this->reload($session, $bound);
+				$bound->state->markReady($row);
+				if ($dispatchEvents) {
+					$this->scheduleAfter($afterHooksTx, $plans[$index], $bound);
+				}
+				$results[] = map($row)
+					->using(CollectionRowMapper::class, $bound->collection)
+					->from(PhpRepresentation::class)
+					->as($output)
+					->toArray();
+			}
+
 			if ($dispatchEvents) {
-				$this->scheduleAfter($afterHooksTx, $plan, $bound);
 				$afterHooksTx->flush();
 			}
 
-			return true;
+			return $results;
 		} catch (Throwable $throwable) {
 			$afterHooksTx->rollback();
 
@@ -115,59 +221,37 @@ final class MutationCoordinator
 	}
 
 	/**
-	 * Execute an already-parsed mutation on a shared session (batch).
-	 *
-	 * @param class-string $output
+	 * @param list<BoundMutation> $roots
 	 */
-	public function executeBound(
+	private function executeDelete(
 		Session $session,
-		BoundMutation $bound,
-		bool $dispatchEvents = true,
-		string $output = PhpRepresentation::class,
-	): array {
-		return $this->executeWrite($session, $bound, $dispatchEvents, $output, false);
-	}
-
-	/**
-	 * @param class-string $output
-	 * @return array<string, mixed>
-	 */
-	private function executeWrite(
-		Session $session,
-		BoundMutation $bound,
+		array $roots,
 		bool $dispatchEvents,
-		string $output,
-		bool $flush = true,
-	): array {
-		$plan = MutationEventPlan::fromBound($bound);
+	): void {
+		$plans = [];
+		foreach ($roots as $bound) {
+			$plans[] = MutationEventPlan::fromBound($bound);
+		}
 		$afterHooksTx = $this->hooks->start();
 
 		try {
 			if ($dispatchEvents) {
-				$this->dispatchBefore($plan, $bound);
-				foreach ($plan->before as $item) {
-					$this->reapplyHookMutations($session, $bound, $item);
+				foreach ($plans as $index => $plan) {
+					$this->dispatchBefore($plan, $roots[$index]);
 				}
 			}
 
-			$session->sync($bound->representation);
-			if ($flush) {
-				$session->flush();
+			foreach ($roots as $bound) {
+				$session->sync($bound->representation);
 			}
-
-			$row = $this->reload($session, $bound);
-			$bound->state->markReady($row);
+			$session->flush();
 
 			if ($dispatchEvents) {
-				$this->scheduleAfter($afterHooksTx, $plan, $bound);
+				foreach ($plans as $index => $plan) {
+					$this->scheduleAfter($afterHooksTx, $plan, $roots[$index]);
+				}
 				$afterHooksTx->flush();
 			}
-
-			return map($row)
-				->using(CollectionRowMapper::class, $bound->collection)
-				->from(PhpRepresentation::class)
-				->as($output)
-				->toArray();
 		} catch (Throwable $throwable) {
 			$afterHooksTx->rollback();
 
@@ -246,7 +330,6 @@ final class MutationCoordinator
 			return;
 		}
 
-		// Refresh representation writes (including newly mapped hook fields).
 		$bound->state->setData($data);
 
 		$pendingFields = $bound->state->pullPendingHookFields();
@@ -256,9 +339,6 @@ final class MutationCoordinator
 
 		$relatedSource = $bound->state->getRelatedSource();
 		if ($relatedSource !== null && ! $bound->path->isRoot()) {
-			// Project onto the related identity object. Flattened root aliases share
-			// sourcePathKey for MANY items, so overlaying on the root can attach a
-			// hook field to the wrong related record.
 			$target = $relatedSource->getTargetObject();
 			$projection = $session->projection($target);
 			$source = $projection->from($bound->collection)->tracked();
@@ -314,6 +394,19 @@ final class MutationCoordinator
 					return $record->getKey();
 				}
 			}
+		}
+
+		$record = null;
+		try {
+			$state = $session->getRepresentations()->get($bound->representation);
+			if ($state instanceof RepresentationState) {
+				$record = $session->getRecords()->getFromRepresentation($state);
+			}
+		} catch (Throwable) {
+			$record = null;
+		}
+		if ($record instanceof RecordState && $record->hasKey()) {
+			return $record->getKey();
 		}
 
 		if ($bound->identity instanceof Key) {

@@ -9,7 +9,6 @@ use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-use ON\Mapper\ConversionGateway;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
@@ -25,18 +24,14 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
 use ON\Data\DataRuntime;
-use ON\RestApi\Container\DirectusMutationBuilderFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
-use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\MutationCoordinatorFactory;
 use ON\RestApi\Container\RestHookDispatcherFactory;
 use ON\RestApi\Event\RestApiActivatedEvent;
-use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Repository\ItemRepository;
@@ -71,10 +66,8 @@ class RestApiExtension extends AbstractExtension
 		$event->containerConfig->addFactories([
 			ItemRepository::class => ItemRepositoryFactory::class,
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
-			HandlerFactory::class => HandlerFactoryFactory::class,
 			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
-			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
 			\ON\RestApi\Mutation\MutationCoordinator::class => MutationCoordinatorFactory::class,
 			DirectusQueryParser::class => static function (ContainerInterface $container): DirectusQueryParser {
 				return new DirectusQueryParser($container->get(DataRuntime::class));
@@ -91,7 +84,6 @@ class RestApiExtension extends AbstractExtension
 		$this->container = $container;
 		$config = $this->config = $container->get(RestApiConfig::class);
 		$this->registerDefaultActions($config);
-		$this->registerDirectusMutationBuilder($container);
 
 		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
@@ -202,17 +194,6 @@ class RestApiExtension extends AbstractExtension
 			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
 			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
 			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
-	}
-
-	protected function registerDirectusMutationBuilder(ContainerInterface $container): void
-	{
-		if (! $container->has(ConversionGateway::class)) {
-			return;
-		}
-
-		$container->get(ConversionGateway::class)
-			->getMappers()
-			->replace(DirectusMutationBuilder::class);
 	}
 
 	protected function loadAddons(

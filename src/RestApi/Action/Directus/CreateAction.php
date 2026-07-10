@@ -44,12 +44,24 @@ final class CreateAction implements RestActionInterface
 		$files = is_array($payload['files'] ?? null) ? $payload['files'] : [];
 
 		if (isset($body[0]) && is_array($body[0])) {
-			$results = [];
+			$inputs = [];
 			foreach ($body as $item) {
-				$results[] = $this->createOne($collection, $item, $files, $options);
+				$this->validate($collection, $item);
+				$input = $this->toPhpInput($collection, $item, $files, $options['input']);
+				if ($this->fileUploadEventEmitter !== null) {
+					$input = $this->fileUploadEventEmitter->processInput($collection, $input);
+				}
+				$inputs[] = $input;
 			}
 
-			return ['data' => $results];
+			return [
+				'data' => $this->mutations->batchCreate(
+					$collection,
+					$inputs,
+					(bool) $options['dispatchEvents'],
+					$options['output'],
+				),
+			];
 		}
 
 		return ['data' => $this->createOne($collection, $body, $files, $options)];

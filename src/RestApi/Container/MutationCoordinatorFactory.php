@@ -20,9 +20,11 @@ final class MutationCoordinatorFactory
 		$runtime = $container->get(DataRuntime::class);
 		$items = $container->get(ItemRepositoryInterface::class);
 
+		$sessions = new SessionFactory($runtime);
+
 		return new MutationCoordinator(
-			new SessionFactory($runtime),
-			new DirectusMutationBinder($items),
+			$sessions,
+			new DirectusMutationBinder($items, $sessions),
 			new DirectusPayloadParser(),
 			$items,
 			$container->get(RestHookDispatcher::class),

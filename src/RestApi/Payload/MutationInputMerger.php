@@ -167,7 +167,7 @@ final class MutationInputMerger
 
 	private function hasOperationPayload(array $input): bool
 	{
-		foreach (['create', 'update', 'delete', 'connect', 'disconnect'] as $key) {
+		foreach (['create', 'update', 'delete'] as $key) {
 			if (array_key_exists($key, $input)) {
 				return true;
 			}

@@ -8,6 +8,9 @@ use ON\RestApi\Mutation\BoundMutation;
 
 /**
  * Ordered before/after event descriptors derived from Directus-bound mutations.
+ *
+ * Before: parent then children (pre-order) so nested intent is part of the parent request.
+ * After: children then parent (post-order) so parent final events run after nested work.
  */
 final class MutationEventPlan
 {
@@ -23,20 +26,33 @@ final class MutationEventPlan
 
 	public static function fromBound(BoundMutation $root): self
 	{
-		$ordered = [];
-		self::walk($root, $ordered);
+		$before = [];
+		self::preOrder($root, $before);
+		$after = [];
+		self::postOrder($root, $after);
 
-		return new self($ordered, $ordered);
+		return new self($before, $after);
 	}
 
 	/**
 	 * @param list<BoundMutation> $ordered
 	 */
-	private static function walk(BoundMutation $mutation, array &$ordered): void
+	private static function preOrder(BoundMutation $mutation, array &$ordered): void
 	{
 		$ordered[] = $mutation;
 		foreach ($mutation->related as $related) {
-			self::walk($related, $ordered);
+			self::preOrder($related, $ordered);
 		}
+	}
+
+	/**
+	 * @param list<BoundMutation> $ordered
+	 */
+	private static function postOrder(BoundMutation $mutation, array &$ordered): void
+	{
+		foreach ($mutation->related as $related) {
+			self::postOrder($related, $ordered);
+		}
+		$ordered[] = $mutation;
 	}
 }

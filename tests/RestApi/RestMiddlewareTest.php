@@ -41,7 +41,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items']
 		);
 
@@ -109,7 +108,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -224,7 +222,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -301,7 +298,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -414,7 +410,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 
@@ -488,7 +483,6 @@ final class RestMiddlewareTest extends TestCase
 		$middleware = $this->createRestMiddleware(
 			$registry,
 			$resolver,
-			$this->createMutationBuilder($registry, $resolver),
 			['endpointUri' => '/items'],
 		);
 

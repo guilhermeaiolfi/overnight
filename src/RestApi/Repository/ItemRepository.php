@@ -16,7 +16,6 @@ use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Mutation\MutationQueue;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use ON\RestApi\Support\PrimaryKeyValue;
@@ -85,7 +84,8 @@ class ItemRepository implements ItemRepositoryInterface
 	{
 		try {
 			$session = new \ON\Data\ORM\Session($this->runtime->getCommandExecutor());
-			$binder = new \ON\RestApi\Mutation\DirectusMutationBinder($this);
+			$sessions = new \ON\RestApi\Mutation\SessionFactory($this->runtime);
+			$binder = new \ON\RestApi\Mutation\DirectusMutationBinder($this, $sessions);
 			$mutation = (new \ON\RestApi\Mutation\Payload\DirectusPayloadParser())->parse($collection, $input);
 			$bound = $binder->bindCreate($session, $collection, $mutation);
 			$session->sync($bound->representation);
@@ -152,15 +152,6 @@ class ItemRepository implements ItemRepositoryInterface
 		} catch (Throwable $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
-	}
-
-	public function commit(MutationQueue $queue, callable $resolve): mixed
-	{
-		return $this->database->transaction(function () use ($queue, $resolve): mixed {
-			$queue->execute($this);
-
-			return $resolve();
-		});
 	}
 
 	protected function buildSelectColumnNames(CollectionInterface $collection, ?array $fieldNames): ?array

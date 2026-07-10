@@ -107,16 +107,18 @@ RestApiExtension::install($app, [
 
 ### SQL Resolver and mutation pipeline
 
-**Reads** live in the Directus read actions and use relation handlers (`load()` + Cycle parser nodes). List/get/aggregate never touch the mutation queue.
+**Reads** use ON\Data `SelectQuery` through Directus list/get actions.
 
-**Writes** go through Directus actions:
+**Writes** go through `MutationCoordinator`:
 
-1. **Plan** — walk input tree, `normalizePayload()` per relation, build `MutationNode` tree → `MutationPlan`.
-2. **Commit** — dispatch before-events on the full plan, schedule after-events, `fillQueue()`.
-3. **Transaction** — `MutationQueue::execute()`.
-4. **After-events** — `ItemCreated`, `ItemUpdated`, `ItemDeleted`, relation connected/disconnected.
+1. **Parse** — `DirectusPayloadParser` → `ToOneMutation` / `ToManyImplicitMutation` / `ToManyExplicitMutation`.
+2. **Bind** — `DirectusMutationBinder` attaches intent to an ON\Data `Session` (recursive nested relations).
+3. **Before-events** — parent then children; preventable hooks stop flush.
+4. **Flush** — `Session::sync()` + `Session::flush()` (one transaction for batch endpoints).
+5. **After-events** — children then parent; skipped on rollback.
+6. **Reload** — result rows via ON\Data query.
 
-Callers still pass one nested JSON tree to `create()` or `update()`. Relation handlers own FK direction, connect/disconnect, and M2M pivot semantics; the planner owns row CRUD ordering.
+Implicit to-many arrays define **final membership** (omitted members are unlinked, not deleted). Explicit `{ create, update, delete }` applies only those deltas; `delete` removes the represented row. There is no `connect` / `disconnect` payload operation.
 
 Internal architecture: [`src/RestApi/README.md`](../../src/RestApi/README.md).
 
@@ -599,7 +601,7 @@ The stored path is saved in the database column as a string.
 
 ## Events
 
-The REST API uses a browser-style event model. **Read** operations dispatch a single event per request. **Write** operations dispatch before/after pairs for each planned node and relation link.
+The REST API uses a browser-style event model. **Read** operations dispatch a single event per request. **Write** operations dispatch before/after pairs for each bound item in the mutation tree.
 
 ### Read events
 
@@ -612,46 +614,35 @@ The REST API uses a browser-style event model. **Read** operations dispatch a si
 
 ### Write events — item lifecycle
 
-Each row in the mutation tree gets a **before** event (during plan, before the transaction) and an **after** event (after successful commit).
-
 | Before (preventable) | After | Event Name (before / after) |
 |---------------------|-------|----------------------------|
 | `ItemCreating` | `ItemCreated` | `restapi.item.creating` / `restapi.item.created` |
 | `ItemUpdating` | `ItemUpdated` | `restapi.item.updating` / `restapi.item.updated` |
 | `ItemDeleting` | `ItemDeleted` | `restapi.item.deleting` / `restapi.item.deleted` |
 
+Order:
+
+- **before:** parent then children
+- **after:** children then parent (only after successful flush)
+
 Before-events expose:
 
-- `getState()` — `MutationStateInterface`; modify pending values with `setValue()`
-- `getQueue()` — `MutationQueue`; enqueue extra commands before execute
+- `getState()` — `MutationStateInterface`; modify pending values with `setValue()` (reapplied onto the Session representation before flush)
 - `getPath()` — nested path segments (empty for root)
-- `preventDefault(?array $result)` — skip default queue execution for this node
+- `preventDefault(?array $result)` — stop the write
 
 Authorization: implement `AuthorizationAwareEventInterface` listeners (`allow()`, `forbid()`, `requireAuthentication()`).
 
-### Write events — relation connect/disconnect
-
-| Before | After | Event Name |
-|--------|-------|------------|
-| `RelationConnecting` | `RelationConnected` | `restapi.relation.connecting` / `restapi.relation.connected` |
-| `RelationDisconnecting` | `RelationDisconnected` | `restapi.relation.disconnecting` / `restapi.relation.disconnected` |
-
-These fire for explicit `connect` / `disconnect` entries in relation payloads (including M2M).
-
-Before-events expose the same hooks as item before-events where applicable:
-
-- `getState()` — parent row `MutationStateInterface`
-- `getTarget()` — connect/disconnect target identity
-- `getQueue()` — `MutationQueue`; enqueue extra commands before execute
-- `getPath()` — e.g. `['tags', 'connect', 0]`
+Relation connect/disconnect events are not part of the Session mutation path. Membership changes are expressed as item create/update/delete events on represented rows plus ON\Data relation-state unlinks.
 
 ### How writes flow
 
 ```
-1. Plan tree → MutationPlan (no events)
-2. Commit: dispatch before-events, schedule after-events, fill queue
-3. Run transaction → queue.execute()
-4. Dispatch after-events
+1. Parse + bind → BoundMutation tree on one Session
+2. Dispatch before-events (parent → child)
+3. Session::sync() + Session::flush()
+4. Reload roots via ON\Data Query
+5. Dispatch after-events (child → parent)
 ```
 
 Reads follow the simpler model:

@@ -1,202 +1,91 @@
-# RestApi Extension — Architecture
+# RestApi Extension — Mutation Architecture
 
-Developer reference for the REST API mutation pipeline, handlers, and extension points.
+Developer reference for the REST API mutation pipeline after the ON\Data Session cutover.
 
 User-facing API docs: [`docs/extensions/rest-api.md`](../../docs/extensions/rest-api.md).
 
 ---
 
-## Read vs write pipelines
+## Pipeline
 
-**Reads** use ONData `SelectQuery` objects directly. **Writes** still use the RestApi mutation planner and queue:
-
+```text
+Directus payload
+    → DirectusPayloadParser
+    → ToOneMutation /
+      ToManyImplicitMutation /
+      ToManyExplicitMutation
+    → DirectusMutationBinder
+    → ON\Data Session and projections
+    → before-events
+    → Session::flush()
+    → after-events
+    → ON\Data Query reload
+    → Directus response
 ```
-Reads:  HTTP params → QueryParser → ONData SelectQuery → action read logic → PHP rows
-                                                                      ↓
-Writes: JSON body  → PayloadParser → MutationSpec → PayloadNormalizer → Directus mutation actions → PHP rows
-                                                                              ↓
-        Directus actions format response rows → PHP (default) | wire (serialize)
-```
 
-Swapping Directus for another wire format means swapping `DirectusQueryParser` / `DirectusPayloadParser` — the planner, queue, and handler apply layer stay unchanged.
+Reads continue to use ON\Data `SelectQuery`. Writes use one Session path only — there is no MutationQueue fallback.
 
 ---
 
-## Write lifecycle
+## Normalized relation mutations
 
-Mutations follow a strict four-phase pipeline:
+| Type | Wire shape | Semantics |
+|------|------------|-----------|
+| `ToOneMutation` | `null` \| identity \| object | clear, assign existing, create/update nested target |
+| `ToManyImplicitMutation` | array of identities/objects | **final membership**; omitted current members are **unlinked**, not deleted |
+| `ToManyExplicitMutation` | `{ create, update, delete }` | incremental deltas only; `delete` removes the **represented** row |
 
-```
-file uploads (pre-plan)
-  → build node       parse + normalize payload → build MutationNode tree
-  → fill queue       dispatch before-hooks → queue mutations → schedule after-hooks
-  → transaction { queue.execute() }
-  → flush after-hooks
-```
+There is no Directus `connect` / `disconnect` payload operation. Linking existing members uses implicit arrays (or nested identities). Unlinking uses implicit omission.
 
 ---
 
-## Vocabulary
+## Binding rules
 
-| Term | Role |
-|------|------|
-| `Directus\Action\*` | HTTP/action orchestration; shapes responses via mapper representations |
-| Directus read actions | Build ONData `SelectQuery` objects, run list/get/aggregate, and return PHP rows |
-| `DirectusPayloadParser` | Wire-format parser: JSON → `MutationSpec` (may include `BasicRelationAction`) |
-| `PayloadNormalizer` | Walks the mutation tree; delegates relation payload normalization to handlers |
-| `MutationSpec` / `MutationNodeSpec` | Normalized entity tree: scalars + `RelationPayload` list |
-| `RelationPayload` | One relation occurrence: flat `list<RelationAction>` |
-| `RelationAction` | `CreateAction`, `UpdateAction`, `DeleteAction`, `ConnectAction`, `DisconnectAction` |
-| Directus mutation actions | Build mutation trees, commit through the queue, and dispatch collection hooks |
-| `MutationNodeBuilder` | Builds a root `MutationNode` tree from a normalized `MutationSpec` |
-| `MutationNode` | One entity in the plan tree: operation, state, nested relations |
-| `RelationNode` | One relation on a node: handler, `RelationPayload`, planned child nodes |
-| `MutationQueue` | Ordered list of insert/update/delete commands; resolves `ValueRef` deps at execute time |
-| `MutationState` | Mutable row values for one entity during a mutation |
-| `ValueRef` | Deferred field value from another state's PK (cross-row FK wiring) |
-| `Handler` / `HandlerRegistry` | Relation-scoped mutation implementation per relation kind |
-| `HandlerFactory` | `mutation()` normalize + apply |
+- RestApi expresses membership intent only (`add` / `remove` / `Session::remove`).
+- ON\Data planners own FK updates, through-row insert/delete, and generated-key ordering.
+- Relation baselines for implicit reconciliation load through ON\Data mutable queries (`RelationBaselineReader`), not through-table scans in RestApi.
+- Nested relation payloads bind recursively on the same Session.
+- M2M represented items may be junction items when the relation target is the through collection; target-represented M2M (common Overnight schemas) treat target identities as membership.
+- First-of-many relations are read-only for mutations.
+
+---
+
+## Events
+
+`MutationEventPlan` builds separate orders:
+
+- **before:** parent then children (pre-order)
+- **after:** children then parent (post-order)
+
+Prevented before-events stop flush. After-events are not emitted on rollback.
+
+---
+
+## Batch atomicity
+
+`batchCreate` / `batchUpdate` / `batchDelete` (and array-body create) share:
+
+```text
+one request → one Session → bind all roots → all before-events → one Session::flush() → all after-events → ordered reloads
+```
+
+One flush uses the transactional command executor when available, so the batch is atomic.
 
 ---
 
 ## Package map
 
+```text
+src/RestApi/Mutation/
+├── MutationCoordinator.php      create/update/delete + batch*
+├── DirectusMutationBinder.php   recursive Directus → Session binding
+├── RelationBaselineReader.php   current membership via ON\Data queries
+├── SessionFactory.php
+├── BoundMutation.php / BoundItemState.php
+├── Event/MutationEventPlan.php
+└── Payload/
+    ├── DirectusPayloadParser.php
+    ├── ToOneMutation.php
+    ├── ToManyImplicitMutation.php
+    └── ToManyExplicitMutation.php
 ```
-src/RestApi/
-├── Action/                     Generic action router and action interface
-├── Directus/Action/            Directus-compatible list/get/create/update/delete actions
-├── Query/
-│   └── Parser/                 Directus/CMS query params → ONData SelectQuery
-├── Payload/
-│   ├── Parser/                 DirectusPayloadParser → MutationSpec
-│   ├── PayloadNormalizer.php   tree walk + handler delegation
-│   ├── Action/                 CreateAction, ConnectAction, BasicRelationAction, …
-│   └── Node/                   MutationNodeSpec, RelationPayload, MutationSpec
-├── Mutation/
-│   ├── MutationNodeBuilder.php
-│   ├── MutationQueue.php
-│   ├── MutationNode.php
-│   └── RelationNode.php
-├── Handler/
-│   ├── HandlerRegistry.php
-│   ├── HandlerFactory.php
-│   ├── HasOneHandler.php …     normalizeRelation() + applyRelation()
-│   └── Mutation/               Normalize + apply traits (HasManyNormalize, ForeignKeyOnTargetApply, …)
-└── Event/
-```
-
----
-
-## Plan Phase
-
-1. **`DirectusPayloadParser::parse()`** — split scalars vs relations; detailed → typed actions; basic → `BasicRelationAction`.
-2. **`PayloadNormalizer::normalize()`** — for each relation, `HandlerFactory::mutation()` returns a handler that normalizes the payload in one call (`normalizeRelation()`).
-3. **`MutationNodeBuilder::fromSpec()`** — walk `MutationNodeSpec`; entity actions → child `MutationNode`s; link actions stay on `RelationPayload.actions` for `applyRelation()`.
-4. Return the root `MutationNode` — **no hooks yet**.
-
-## Commit phase (`commit`)
-
-1. **Before-hooks** — depth-first: item → child nodes → relation connect/disconnect (from `RelationPayload.actions`).
-2. **`MutationQueue::fill()`** — depth-first: child nodes → `applyRelation()` → `queueNode()`.
-3. **After-hooks scheduled** — relation hooks and item hooks are flushed after commit.
-
-Row CRUD never lives in relation handlers. Handlers only interpret relation semantics at apply time.
-
----
-
-## Payload actions (Option B)
-
-Each `RelationPayload` holds a flat `list<RelationAction>`. The planner uses a two-pass model:
-
-| Pass | Action types | Work |
-|------|-------------|------|
-| Entity | `CreateAction`, `UpdateAction`, `DeleteAction` | Plan nested `MutationNode` trees (recursive) |
-| Link | `ConnectAction`, `DisconnectAction` | `applyRelation()` — FK wiring, pivot inserts |
-
-Basic vs detailed is a **parser/normalizer** concern only. By plan time, `BasicRelationAction` is gone and every action is fully typed.
-
----
-
-## Handler model
-
-One **mutation handler class per relation kind**. Reads are described directly on ONData relation refs by the query parsers; handlers only implement:
-
-- **Write** (`RelationMutationHandlerInterface`): `normalizeRelation()`, `applyRelation()`
-
-| Kind | Handler | Normalize trait | Apply trait |
-|------|---------|-----------------|-------------|
-| hasOne | `HasOneHandler` | `HasOneNormalize` | `ForeignKeyOnTargetApply` |
-| hasMany | `HasManyHandler` | `HasManyNormalize` | `ForeignKeyOnTargetApply` |
-| belongsTo | `BelongsToHandler` | `BelongsToNormalize` | `BelongsToApply` |
-| manyToMany | `ManyToManyHandler` | `ManyToManyNormalize` | `ManyToManyApply` |
-
-### Register a custom handler
-
-```php
-$registry = HandlerRegistry::defaults()
-    ->relation('post', 'tags', MyCustomM2MHandler::class);
-
-$factory = new HandlerFactory($registry, $items);
-```
-
-### Custom handler checklist
-
-1. Extend `AbstractRelationHandler` (or an existing handler if behavior is close).
-2. Add a `*Normalize` trait (use `RelationPayloadNormalizeEntry` or extend an existing normalize trait).
-3. Add a `*Apply` trait implementing `applyRelation()` reading from `RelationPayload.actions`.
-4. Register in `HandlerRegistry`.
-5. Add tests under `tests/RestApi/`.
-
-### Polymorphic example (sketch)
-
-Resolve target collection inside `coerceBasicActions()` when normalizing basic/detailed create actions:
-
-```php
-protected function coerceBasicActions(MutationContext $context, BasicRelationAction $basic): array
-{
-    $actions = [];
-    foreach ($basic->items as $item) {
-        $collection = $this->resolveMorphCollection($item['type'] ?? '');
-        $actions[] = new CreateAction(collection: $collection->getName(), data: $item);
-    }
-    return $actions;
-}
-```
-
----
-
-## Mutation events
-
-### Item events (per node in the tree)
-
-| Before (preventable) | After | Event name |
-|---------------------|-------|------------|
-| `ItemCreating` | `ItemCreated` | `restapi.item.creating` / `.created` |
-| `ItemUpdating` | `ItemUpdated` | `restapi.item.updating` / `.updated` |
-| `ItemDeleting` | `ItemDeleted` | `restapi.item.deleting` / `.deleted` |
-
-### Relation events (connect/disconnect)
-
-Dispatched from `ConnectAction` / `DisconnectAction` on `RelationPayload.actions`. Path arrays identify nested location, e.g. `['tags', 'connect', 1]`.
-
----
-
-## Testing
-
-```bash
-php vendor/bin/phpunit tests/RestApi/
-```
-
-Key suites: `RestActionRouterTest`, `SqlRestResolverTest`, `PayloadParserTest`, `HandlerRegistryTest`.
-
----
-
-## Known limitations
-
-### Plan-phase duplicate check (race window)
-
-Directus mutation actions check explicit create IDs during **plan**, before the transaction. Concurrent creates with the same explicit PK can both pass until the DB unique constraint rejects one at execute time.
-
-### Polymorphic relations
-
-Not in the default handler set. Register a custom handler with normalize + apply traits; resolve target collection in `coerceBasicActions()` / `resolvePayloadAction()`.

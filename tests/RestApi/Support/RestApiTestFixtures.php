@@ -14,12 +14,9 @@ use ON\Data\Mapper\ConversionGateway as DataConversionGateway;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Exception\ConversionException;
 use function ON\Mapper\map;
-use ON\Mapper\MapperConfig;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
-use ON\Mapper\Structural\MapperInterface;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
@@ -32,20 +29,14 @@ use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Event\AuthState;
-use ON\RestApi\Handler\HandlerFactory;
-use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Middleware\RestMiddleware;
+use ON\RestApi\Mutation\DirectusMutationBinder;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
-use ON\RestApi\Mutation\MutationDeleteTaskInterface;
-use ON\RestApi\Mutation\MutationNode;
-use ON\RestApi\Mutation\MutationNodeBuilder;
-use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Mutation\MutationState;
-use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Payload\Node\MutationSpec;
-use ON\RestApi\Payload\PayloadNormalizer;
+use ON\RestApi\Mutation\MutationCoordinator;
+use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
+use ON\RestApi\Mutation\SessionFactory;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
@@ -56,13 +47,9 @@ use ON\RestApi\Support\RegistrySupportTrait;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use RuntimeException;
-use Throwable;
 
 trait RestApiTestFixtures
 {
-	/** @var array<class-string, object> */
-	protected array $mapperServices = [];
-
 	/** @var array<int, DataRuntime> */
 	protected array $itemRuntimes = [];
 
@@ -368,14 +355,6 @@ trait RestApiTestFixtures
 		return $items;
 	}
 
-	protected function createHandlerFactory(ItemRepositoryInterface $items): HandlerFactory
-	{
-		return new HandlerFactory(
-			HandlerRegistry::defaults(),
-			$items,
-		);
-	}
-
 	protected function createQueryParser(?CycleSqliteTestDatabase $db = null): DirectusQueryParser
 	{
 		$db ??= new CycleSqliteTestDatabase();
@@ -392,6 +371,11 @@ trait RestApiTestFixtures
 			$db->database(),
 			$gateway,
 		);
+	}
+
+	protected function ensureConversionGateway(): void
+	{
+		ConversionGateway::setInstance(ConversionGateway::createDefault());
 	}
 
 	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db, ?RestApiConfig $config = null): object
@@ -473,102 +457,30 @@ trait RestApiTestFixtures
 		};
 	}
 
-	protected function createMutationBuilder(
-		Registry $registry,
-		ItemRepositoryInterface $items,
-		?EventDispatcherInterface $eventDispatcher = null,
-	): DirectusMutationBuilder {
-		$builder = new DirectusMutationBuilder(
-			$registry,
-			$items,
-			new PayloadNormalizer($this->createHandlerFactory($items), $registry),
-		);
-		$this->registerDirectusMutationBuilder($builder);
-
-		return $builder;
-	}
-
-	protected function registerDirectusMutationBuilder(DirectusMutationBuilder $builder): void
-	{
-		$this->registerMapperService(DirectusMutationBuilder::class, $builder);
-	}
-
-	/**
-	 * @param class-string $class
-	 */
-	protected function registerMapperService(string $class, object $service): void
-	{
-		$this->mapperServices[$class] = $service;
-		$services = &$this->mapperServices;
-
-		$container = new class ($services) implements ContainerInterface {
-			public ?ConversionGateway $gateway = null;
-
-			/**
-			 * @param array<class-string, object> $services
-			 */
-			public function __construct(private array &$services)
-			{
-			}
-
-			public function get(string $id): mixed
-			{
-				if (isset($this->services[$id])) {
-					return $this->services[$id];
-				}
-
-				if ($this->gateway !== null && is_subclass_of($id, MapperInterface::class)) {
-					return new $id($this->gateway);
-				}
-
-				throw new RuntimeException("Unknown service {$id}.");
-			}
-
-			public function has(string $id): bool
-			{
-				return isset($this->services[$id])
-					|| is_subclass_of($id, MapperInterface::class);
-			}
-		};
-
-		$gateway = ConversionGateway::create(new MapperConfig(), $container);
-		$container->gateway = $gateway;
-		foreach (array_keys($this->mapperServices) as $mapperClass) {
-			$gateway->getMappers()->replace($mapperClass);
-		}
-		ConversionGateway::setInstance($gateway);
-	}
-
 	protected function createDirectusOperations(
 		Registry $registry,
 		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null,
 		?RestApiConfig $config = null,
 	): object {
-		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$config ??= new RestApiConfig(['databaseType' => 'sqlite']);
 		$runtime = $this->runtimeForItems($items);
+		$this->ensureConversionGateway();
 
 		return new class (
 			$registry,
 			$items,
 			$runtime,
-			$this->createHandlerFactory($items),
-			$this->createMutationBuilder($registry, $items, $eventDispatcher),
 			$config,
 			$hookDispatcher,
 		) {
 			use RegistrySupportTrait;
 
-			private ?FileUploadEventEmitter $fileUploadEventEmitter = null;
-
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
 				private DataRuntime $runtime,
-				private HandlerFactory $relationHandlers,
-				private DirectusMutationBuilder $mutationBuilder,
 				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
 			) {
@@ -648,18 +560,16 @@ trait RestApiTestFixtures
 				return $response['data'] ?? [];
 			}
 
-			public function create(string|CollectionInterface $collection, MutationSpec $spec, array $options = []): array
+			/**
+			 * @param array<string, mixed> $input
+			 */
+			public function create(string|CollectionInterface $collection, array $input, array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$input = $spec->root->fields;
-				foreach ($spec->root->relations as $relation) {
-					// Legacy MutationSpec path still used by tests via m(); convert back to Directus body shape.
-					$input[$relation->relationName] = $this->relationSpecToPayload($collection, $relation);
-				}
 
 				return $this->mutations()->create(
 					$collection,
@@ -670,10 +580,13 @@ trait RestApiTestFixtures
 				);
 			}
 
+			/**
+			 * @param array<string, mixed> $input
+			 */
 			public function update(
 				string|CollectionInterface $collection,
 				PrimaryKeyValue|string $identity,
-				MutationSpec $spec,
+				array $input,
 				array $options = []
 			): ?array {
 				$collection = $this->getCollection($collection);
@@ -682,10 +595,6 @@ trait RestApiTestFixtures
 					'dispatchEvents' => true,
 					'output' => PhpRepresentation::class,
 				];
-				$input = $spec->root->fields;
-				foreach ($spec->root->relations as $relation) {
-					$input[$relation->relationName] = $this->relationSpecToPayload($collection, $relation);
-				}
 
 				return $this->mutations()->update(
 					$collection,
@@ -713,102 +622,18 @@ trait RestApiTestFixtures
 				);
 			}
 
-			private function mutations(): \ON\RestApi\Mutation\MutationCoordinator
+			private function mutations(): MutationCoordinator
 			{
-				return new \ON\RestApi\Mutation\MutationCoordinator(
-					new \ON\RestApi\Mutation\SessionFactory($this->runtime),
-					new \ON\RestApi\Mutation\DirectusMutationBinder($this->items),
-					new \ON\RestApi\Mutation\Payload\DirectusPayloadParser(),
+				$sessions = new SessionFactory($this->runtime);
+
+				return new MutationCoordinator(
+					$sessions,
+					new DirectusMutationBinder($this->items, $sessions),
+					new DirectusPayloadParser(),
 					$this->items,
 					$this->hookDispatcher,
 					$this->runtime,
 				);
-			}
-
-			private function relationSpecToPayload(
-				CollectionInterface $sourceCollection,
-				\ON\RestApi\Payload\Node\RelationPayload $relation,
-			): mixed {
-				$actions = $relation->actions;
-				$definition = $sourceCollection->relations->has($relation->relationName)
-					? $sourceCollection->relations->get($relation->relationName)
-					: null;
-				$isToOne = $definition?->getCardinality()->isSingle() ?? false;
-
-				if (count($actions) === 1 && $actions[0] instanceof \ON\RestApi\Payload\Action\BasicRelationAction) {
-					$basic = $actions[0];
-
-					return $basic->item !== null ? $basic->item : $basic->items;
-				}
-
-				if ($isToOne) {
-					$final = null;
-					$assigned = false;
-					foreach ($actions as $action) {
-						if ($action instanceof \ON\RestApi\Payload\Action\ConnectAction) {
-							$final = $this->normalizeIdentityPayload($action->data ?? $action->target);
-							$assigned = true;
-						} elseif ($action instanceof \ON\RestApi\Payload\Action\CreateAction
-							|| $action instanceof \ON\RestApi\Payload\Action\UpdateAction) {
-							$final = $this->actionNodeToPayload($action);
-							$assigned = true;
-						} elseif ($action instanceof \ON\RestApi\Payload\Action\DisconnectAction
-							|| $action instanceof \ON\RestApi\Payload\Action\DeleteAction) {
-							if (! $assigned) {
-								$final = null;
-							}
-						} elseif ($action instanceof \ON\RestApi\Payload\Action\BasicRelationAction) {
-							$final = $action->item !== null ? $action->item : $action->items;
-							$assigned = true;
-						}
-					}
-
-					return $final;
-				}
-
-				$detailed = [];
-				foreach ($actions as $action) {
-					if ($action instanceof \ON\RestApi\Payload\Action\CreateAction) {
-						$detailed['create'][] = $this->actionNodeToPayload($action);
-					} elseif ($action instanceof \ON\RestApi\Payload\Action\UpdateAction) {
-						$detailed['update'][] = $this->actionNodeToPayload($action);
-					} elseif ($action instanceof \ON\RestApi\Payload\Action\DeleteAction) {
-						$detailed['delete'][] = $action->target ?? $action->data;
-					} elseif ($action instanceof \ON\RestApi\Payload\Action\ConnectAction) {
-						$detailed['connect'][] = $this->normalizeIdentityPayload($action->data ?? $action->target);
-					} elseif ($action instanceof \ON\RestApi\Payload\Action\DisconnectAction) {
-						$detailed['disconnect'][] = $this->normalizeIdentityPayload($action->target);
-					}
-				}
-
-				return $detailed;
-			}
-
-			private function actionNodeToPayload(
-				\ON\RestApi\Payload\Action\CreateAction|\ON\RestApi\Payload\Action\UpdateAction $action,
-			): array {
-				if ($action->node === null) {
-					return is_array($action->data) ? $action->data : [];
-				}
-
-				$payload = $action->node->fields;
-				$nestedCollection = $this->registry->getCollection($action->node->collection);
-				foreach ($action->node->relations as $nested) {
-					$payload[$nested->relationName] = $this->relationSpecToPayload($nestedCollection, $nested);
-				}
-
-				return $payload;
-			}
-
-			private function normalizeIdentityPayload(mixed $value): mixed
-			{
-				if ($value instanceof PrimaryKeyValue) {
-					$values = $value->values();
-
-					return count($values) === 1 ? reset($values) : $values;
-				}
-
-				return $value;
 			}
 
 			public function serialize(CollectionInterface $collection, array $phpRow): array
@@ -837,14 +662,6 @@ trait RestApiTestFixtures
 					$this->runtime,
 					$this->config,
 					$this->hookDispatcher,
-				);
-			}
-
-			private function fileUploadEventEmitter(): FileUploadEventEmitter
-			{
-				return $this->fileUploadEventEmitter ??= new FileUploadEventEmitter(
-					$this->registry,
-					$this->hookDispatcher
 				);
 			}
 
@@ -879,7 +696,6 @@ trait RestApiTestFixtures
 	protected function createRestMiddleware(
 		Registry $registry,
 		ItemRepositoryInterface $items,
-		DirectusMutationBuilder $mutationBuilder,
 		array $options = ['endpointUri' => '/items'],
 		?EventDispatcherInterface $eventDispatcher = null,
 	): RestMiddleware {
@@ -898,52 +714,50 @@ trait RestApiTestFixtures
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
 		$runtime = $this->runtimeForItems($items);
+		$this->ensureConversionGateway();
 
-		$container = new class ($registry, $items, $runtime, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
-			private HandlerFactory $handlers;
-
+		$container = new class ($registry, $items, $runtime, $config, $hookDispatcher) implements ContainerInterface {
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
 				private DataRuntime $runtime,
-				private DirectusMutationBuilder $mutationBuilder,
 				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
-			private ?EventDispatcherInterface $eventDispatcher = null,
 			) {
-				$this->handlers = new HandlerFactory(HandlerRegistry::defaults(), $this->items);
 			}
 
 			public function get(string $id): mixed
 			{
+				$fileUploads = new FileUploadEventEmitter($this->hookDispatcher);
+
 				return match ($id) {
 					ListAction::class => new ListAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
 					GetAction::class => new GetAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
 					FilesAction::class => new FilesAction(
 						$this->registry,
 						$this->mutations(),
-						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+						$fileUploads,
 						$this->config,
 					),
 					CreateAction::class => new CreateAction(
 						$this->registry,
 						$this->mutations(),
 						$this->config,
-						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+						$fileUploads,
 					),
 					UpdateAction::class => new UpdateAction(
 						$this->registry,
 						$this->mutations(),
 						$this->items,
 						$this->config,
-						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+						$fileUploads,
 					),
 					BatchUpdateAction::class => new BatchUpdateAction(
 						$this->registry,
 						$this->mutations(),
 						$this->items,
 						$this->config,
-						new FileUploadEventEmitter($this->registry, $this->hookDispatcher),
+						$fileUploads,
 					),
 					DeleteAction::class => new DeleteAction($this->registry, $this->mutations(), $this->items, $this->config),
 					BatchDeleteAction::class => new BatchDeleteAction(
@@ -956,17 +770,17 @@ trait RestApiTestFixtures
 				};
 			}
 
-			private function mutations(): \ON\RestApi\Mutation\MutationCoordinator
+			private function mutations(): MutationCoordinator
 			{
-				$runtime = $this->runtime;
+				$sessions = new SessionFactory($this->runtime);
 
-				return new \ON\RestApi\Mutation\MutationCoordinator(
-					new \ON\RestApi\Mutation\SessionFactory($runtime),
-					new \ON\RestApi\Mutation\DirectusMutationBinder($this->items),
-					new \ON\RestApi\Mutation\Payload\DirectusPayloadParser(),
+				return new MutationCoordinator(
+					$sessions,
+					new DirectusMutationBinder($this->items, $sessions),
+					new DirectusPayloadParser(),
 					$this->items,
 					$this->hookDispatcher,
-					$runtime,
+					$this->runtime,
 				);
 			}
 
@@ -1006,38 +820,12 @@ trait RestApiTestFixtures
 	}
 
 	/**
+	 * Pass-through helper: returns the Directus input payload as-is.
+	 *
 	 * @param array<string, mixed> $input
 	 * @param array<string, mixed> $files
 	 * @param 'create'|'update'|'upsert' $mode
-	 */
-	protected function buildMutationSpec(
-		Registry $registry,
-		ItemRepositoryInterface $items,
-		CollectionInterface|string $collection,
-		array $input,
-		string $mode = 'create',
-		PrimaryKeyValue|string|null $id = null,
-		array $files = [],
-		?EventDispatcherInterface $eventDispatcher = null,
-		bool $unserializeWire = true,
-	): MutationSpec {
-		$collection = is_string($collection) ? $registry->getCollection($collection) : $collection;
-
-		return $this->createMutationBuilder($registry, $items)->build(
-			$collection,
-			$input,
-			$mode,
-			$id,
-			$files,
-			$unserializeWire ? WireRepresentation::class : PhpRepresentation::class,
-			PhpRepresentation::class,
-		);
-	}
-
-	/**
-	 * @param array<string, mixed> $input
-	 * @param array<string, mixed> $files
-	 * @param 'create'|'update'|'upsert' $mode
+	 * @return array<string, mixed>
 	 */
 	protected function m(
 		Registry $registry,
@@ -1047,7 +835,7 @@ trait RestApiTestFixtures
 		string $mode = 'create',
 		PrimaryKeyValue|string|null $id = null,
 		array $files = [],
-	): MutationSpec {
-		return $this->buildMutationSpec($registry, $items, $collection, $input, $mode, $id, $files);
+	): array {
+		return $input;
 	}
 }

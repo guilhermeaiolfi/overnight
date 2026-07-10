@@ -338,13 +338,15 @@ final class SqlRestResolverTest extends TestCase
 			->end();
 		$db = $this->createFullDatabase();
 		$resolver = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $resolver);
 
-		$spec = $this->m($registry, $resolver, 'user', [
+		$this->expectException(RestApiError::class);
+		$this->expectExceptionMessage('First-of-many relations are read-only for mutations.');
+
+		$service->create('user', [
 			'name' => 'Ignored Relation',
 			'latest_post' => ['title' => 'Should not be normalized'],
-		]);
-
-		$this->assertSame([], $spec->root->relations[0]->actions);
+		], ['dispatchEvents' => false]);
 	}
 
 	public function testReadOnlyRelationInputCanOptIntoErrors(): void
@@ -361,14 +363,15 @@ final class SqlRestResolverTest extends TestCase
 			->end();
 		$db = $this->createFullDatabase();
 		$resolver = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $resolver);
 
 		$this->expectException(RestApiError::class);
-		$this->expectExceptionMessage("Relation 'latest_post' is read-only.");
+		$this->expectExceptionMessage('First-of-many relations are read-only for mutations.');
 
-		$this->m($registry, $resolver, 'user', [
+		$service->create('user', [
 			'name' => 'Errored Relation',
 			'latest_post' => ['title' => 'Should fail'],
-		]);
+		], ['dispatchEvents' => false]);
 	}
 
 	public function testCompositeKeyHasManyLimitPartitionsByEveryRelationKey(): void
@@ -1033,10 +1036,14 @@ final class SqlRestResolverTest extends TestCase
 		$service = $this->createDirectusOperations($registry, $resolver);
 
 		// Post 2 belongs to user 1. Reassign it to user 2 via user.posts (hasMany side).
+		// Implicit final membership must keep user 2's existing post 3 (non-nullable FK)
+		// and link post 2.
 		$service->update(
 			'user',
 			'2',
-			$this->m($registry, $resolver, 'user', ['posts' => [['id' => 2]]], 'update', '2'),
+			[
+				'posts' => [2, 3],
+			],
 			['dispatchEvents' => false]
 		);
 
@@ -1122,7 +1129,7 @@ final class SqlRestResolverTest extends TestCase
 	}
 
 	// -------------------------------------------------------------------------
-	// M2M Connect / Disconnect
+	// M2M link / unlink (Directus: implicit membership, not connect/disconnect)
 	// -------------------------------------------------------------------------
 
 	public function testNestedM2MConnect(): void
@@ -1133,7 +1140,7 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createDirectusOperations($registry, $resolver);
 
-		// Create a new post and connect it to tags 1 and 2
+		// Create a new post and link tags 1 and 2 via implicit membership
 		$created = $service->create(
 			'post',
 			$this->m($registry, $resolver, 'post', [
@@ -1141,7 +1148,7 @@ final class SqlRestResolverTest extends TestCase
 				'title' => 'Tagged Post',
 				'content' => 'Content',
 				'status' => 'published',
-				'tags' => ['connect' => [1, 2]],
+				'tags' => [1, 2],
 			]),
 			['dispatchEvents' => false]
 		);
@@ -1197,8 +1204,10 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createDirectusOperations($registry, $resolver);
 
-		// Post 1 is connected to tags 1 and 2. Disconnect tag 1.
-		$service->update('post', '1', $this->m($registry, $resolver, 'post', ['tags' => ['disconnect' => [1]]], 'update', '1'), ['dispatchEvents' => false]);
+		// Post 1 is linked to tags 1 and 2. Implicit membership omits tag 1 → unlink.
+		$service->update('post', '1', [
+			'tags' => [2],
+		], ['dispatchEvents' => false]);
 
 		// Verify only tag 2 remains
 		$stmt = $db->database()->query('SELECT tag_id FROM post_tag WHERE post_id = 1 ORDER BY tag_id');
@@ -1206,6 +1215,12 @@ final class SqlRestResolverTest extends TestCase
 		$stmt->close();
 
 		$this->assertSame([2], array_map('intval', array_column($tagIds, 'tag_id')));
+
+		// Omitted tag row must still exist
+		$stmt = $db->database()->query('SELECT id FROM tag WHERE id = 1');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row);
 	}
 
 	public function testNestedM2MConnectAndCreateWithStringPrimaryKeys(): void
@@ -1269,17 +1284,22 @@ final class SqlRestResolverTest extends TestCase
 		$resolver = $this->createItems($registry, $db);
 		$service = $this->createDirectusOperations($registry, $resolver);
 
+		$service->create(
+			'tag',
+			[
+				'id' => 'budget-2026',
+				'label' => 'Budget 2026',
+				'active' => true,
+			],
+			['dispatchEvents' => false]
+		);
+
 		$created = $service->create(
 			'report',
-			$this->m($registry, $resolver, 'report', [
+			[
 				'title' => 'Tagged Report',
-				'tags' => [
-					'connect' => ['homepage'],
-					'create' => [
-						['id' => 'budget-2026', 'label' => 'Budget 2026', 'active' => true],
-					],
-				],
-			]),
+				'tags' => ['homepage', 'budget-2026'],
+			],
 			['dispatchEvents' => false]
 		);
 

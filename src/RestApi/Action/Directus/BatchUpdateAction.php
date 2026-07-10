@@ -54,7 +54,7 @@ final class BatchUpdateAction implements RestActionInterface
 			throw new RestApiError('Batch update expects an array of objects with primary keys.', 'INVALID_PAYLOAD', null, 400);
 		}
 
-		$results = [];
+		$batch = [];
 		foreach ($body as $item) {
 			$identity = PrimaryKey::of($collection)->extractFromInput($item);
 			if ($identity === null) {
@@ -85,17 +85,20 @@ final class BatchUpdateAction implements RestActionInterface
 				$input = $this->fileUploadEventEmitter->processInput($collection, $input);
 			}
 
-			$results[] = $this->mutations->update(
-				$collection,
-				$identityValue,
-				$input,
-				[],
-				(bool) $options['dispatchEvents'],
-				$options['output'],
-			);
+			$batch[] = [
+				'identity' => $identityValue,
+				'input' => $input,
+			];
 		}
 
-		return ['data' => $results];
+		return [
+			'data' => $this->mutations->batchUpdate(
+				$collection,
+				$batch,
+				(bool) $options['dispatchEvents'],
+				$options['output'],
+			),
+		];
 	}
 
 	protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
