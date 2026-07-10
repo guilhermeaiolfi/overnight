@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "a345d9bce58a9322cae8fc1b01e2726b",
+    "content-hash": "c9325550afc5de3372aa31b0b9a87b48",
     "packages": [
         {
             "name": "cycle/database",
@@ -570,6 +570,99 @@
                 "source": "https://github.com/php-fig/http-message-util/tree/1.1.5"
             },
             "time": "2020-11-24T22:02:12+00:00"
+        },
+        {
+            "name": "guilhermeaiolfi/overnight-data",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/guilhermeaiolfi/overnight-data.git",
+                "reference": "9b4661e72155e4018fabafce004f80dbf692a2c0"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/9b4661e72155e4018fabafce004f80dbf692a2c0",
+                "reference": "9b4661e72155e4018fabafce004f80dbf692a2c0",
+                "shasum": ""
+            },
+            "require": {
+                "cycle/database": "^2.16",
+                "php": ">=8.3"
+            },
+            "require-dev": {
+                "friendsofphp/php-cs-fixer": "^3.64",
+                "phpbench/phpbench": "^1.4",
+                "phpstan/phpstan": "^1.12",
+                "phpunit/phpunit": "^11.5"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "ON\\Data\\": "src/"
+                },
+                "files": [
+                    "src/Mapper/functions.php",
+                    "src/Query/functions.php"
+                ]
+            },
+            "autoload-dev": {
+                "psr-4": {
+                    "Tests\\ON\\Data\\": "tests/",
+                    "Benchmarks\\ON\\Data\\": "benchmarks/"
+                }
+            },
+            "scripts": {
+                "validate-composer": [
+                    "composer validate --strict"
+                ],
+                "test": [
+                    "php vendor/phpunit/phpunit/phpunit --configuration phpunit.xml.dist"
+                ],
+                "analyse": [
+                    "php vendor/phpstan/phpstan/phpstan analyse --configuration phpstan.neon.dist"
+                ],
+                "check-style": [
+                    "php vendor/friendsofphp/php-cs-fixer/php-cs-fixer fix --config=.php-cs-fixer.php --dry-run --diff"
+                ],
+                "fix-style": [
+                    "php vendor/friendsofphp/php-cs-fixer/php-cs-fixer fix --config=.php-cs-fixer.php"
+                ],
+                "bench": [
+                    "php vendor/phpbench/phpbench/bin/phpbench run --config=phpbench.json"
+                ],
+                "bench:mapping": [
+                    "php vendor/phpbench/phpbench/bin/phpbench run --config=phpbench.json --filter=MappingBench"
+                ],
+                "bench:mapping:record": [
+                    "php benchmark/mapping_bench.php record"
+                ],
+                "bench:mapping:compare": [
+                    "php benchmark/mapping_bench.php compare"
+                ],
+                "bench:mapping:history": [
+                    "php benchmark/mapping_bench.php history"
+                ],
+                "check": [
+                    "@test",
+                    "@analyse",
+                    "@check-style"
+                ]
+            },
+            "license": [
+                "MIT"
+            ],
+            "description": "A metadata-driven PHP data layer with definitions, mapping, query modeling, relation loading, and ORM persistence.",
+            "keywords": [
+                "data-layer",
+                "definitions",
+                "metadata",
+                "php"
+            ],
+            "support": {
+                "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/v1.0.0",
+                "issues": "https://github.com/guilhermeaiolfi/overnight-data/issues"
+            },
+            "time": "2026-07-05T22:52:53+00:00"
         },
         {
             "name": "illuminate/collections",
@@ -9087,8 +9180,8 @@
     "prefer-stable": false,
     "prefer-lowest": false,
     "platform": {
-        "php": ">=8.1"
+        "php": ">=8.3"
     },
     "platform-dev": {},
-    "plugin-api-version": "2.6.0"
+    "plugin-api-version": "2.9.0"
 }

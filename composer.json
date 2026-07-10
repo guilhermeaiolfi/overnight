@@ -3,7 +3,7 @@
     "description": "New ideas for a PHP framework",
     "type": "library",
     "require": {
-        "php": ">=8.1",
+        "php": ">=8.3",
         "psr/container": "^1.0||^2.0",
         "psr/http-factory": "^1.0",
         "psr/http-message": "^1.0.1 || ^2.0.0",
@@ -31,7 +31,8 @@
         "webonyx/graphql-php": "^15.0",
         "laminas/laminas-stdlib": "^3.20",
         "mezzio/mezzio-helpers": "^5.18",
-        "somnambulist/validation": "^1.13"
+        "somnambulist/validation": "^1.13",
+        "guilhermeaiolfi/overnight-data": "^1.0"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
@@ -61,5 +62,10 @@
       "psr-4": {
         "ON\\": "src/"
       }
-    }
+    },
+    "repositories": [{
+        "name": "overnight-data",
+        "type": "vcs",
+        "url": "https://github.com/guilhermeaiolfi/overnight-data.git"
+    }]
 }
