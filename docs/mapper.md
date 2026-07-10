@@ -118,12 +118,12 @@ Mapper-specific configuration is passed via `args()` or `using(Mapper::class, ..
 Implement `ON\Mapper\Conversion\FieldResolverInterface`. Return `FieldContext` when you handle a field; return `null` to fall through to the next resolver. `FieldConversionCoordinator` starts empty and resolvers are added with `register()`. The active mapper registers its default resolver first, then multiple `resolver()` calls stack in call order after it.
 
 ```php
-map($query)
-    ->using(DirectusQueryBuilder::class, $collection)
-    ->resolver(FilterLiteralResolver::class, $registry)
-    ->from(WireRepresentation::class)
+map($row)
+    ->using(CollectionRowMapper::class, $collection)
+    ->resolver(CustomFieldResolver::class, $registry)
+    ->from(StorageRepresentation::class)
     ->as(PhpRepresentation::class)
-    ->to(QuerySpec::class);
+    ->toArray();
 ```
 
 Resolver signature:
