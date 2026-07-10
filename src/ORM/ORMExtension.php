@@ -8,6 +8,8 @@ use ON\Application;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\ORM\Compiler\OnDataCycleRegistryGenerator;
+use ON\ORM\Container\OnDataCycleRegistryGeneratorFactory;
 use ON\ORM\Container\RegistryFactory;
 use ON\ORM\Definition\Registry;
 
@@ -28,6 +30,9 @@ class ORMExtension extends AbstractExtension
 
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$event->containerConfig->addFactory(Registry::class, RegistryFactory::class);
+		$event->containerConfig->addFactories([
+			Registry::class => RegistryFactory::class,
+			OnDataCycleRegistryGenerator::class => OnDataCycleRegistryGeneratorFactory::class,
+		]);
 	}
 }
