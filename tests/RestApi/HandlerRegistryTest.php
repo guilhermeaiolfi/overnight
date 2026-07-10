@@ -6,13 +6,12 @@ namespace Tests\ON\RestApi;
 
 use LogicException;
 use ON\Data\Definition\Registry;
+use ON\Data\Query\Expression\FieldRef;
+use ON\Data\Query\Selection\SelectionTag;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Handler\HandlerRegistry;
 use ON\RestApi\Handler\HasManyHandler;
 use ON\RestApi\Handler\ManyToManyHandler;
-use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -69,24 +68,35 @@ final class HandlerRegistryTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 
-		$query = (new DirectusQueryParser())->parse(
+		$query = $this->createQueryParser()->parse(
 			$registry->getCollection('user'),
-			['fields' => 'name,posts.tags.name']
+			['fields' => 'name,posts.tags.name'],
+			new \ON\RestApi\Query\QueryContext(),
 		);
 
-		$rootFields = array_values(array_filter($query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
-		$this->assertSame(['id', 'name'], array_map(fn (FieldSelection $node) => $node->field->field, $rootFields));
-		$this->assertTrue($rootFields[0]->internal);
+		$publicNames = [];
+		foreach ($query->getSelections()->getByTag(SelectionTag::PUBLIC) as $selection) {
+			$expr = $selection->getExpression();
+			if ($expr instanceof FieldRef) {
+				$publicNames[] = $expr->getName();
+			}
+		}
+		$this->assertSame(['name'], $publicNames);
 
-		$posts = $this->relation($query->selection->nodes, 'posts');
-		$postFields = array_values(array_filter($posts->query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
-		$this->assertSame(['id'], array_map(fn (FieldSelection $node) => $node->field->field, $postFields));
-		$this->assertTrue($postFields[0]->internal);
+		$internalNames = [];
+		foreach ($query->getSelections()->getByTag(SelectionTag::INTERNAL) as $selection) {
+			$expr = $selection->getExpression();
+			if ($expr instanceof FieldRef) {
+				$internalNames[] = $expr->getName();
+			}
+		}
+		$this->assertContains('id', $internalNames);
 
-		$tags = $this->relation($posts->query->selection->nodes, 'tags');
-		$tagFields = array_values(array_filter($tags->query->selection->nodes, fn ($node) => $node instanceof FieldSelection));
-		$this->assertSame(['id', 'name'], array_map(fn (FieldSelection $node) => $node->field->field, $tagFields));
-		$this->assertTrue($tagFields[0]->internal);
+		$posts = $query->relation('posts');
+		$this->assertTrue($posts->isSelected());
+		$tags = $posts->relation('tags');
+		$this->assertTrue($tags->isSelected());
+		$this->assertSame(['name'], $tags->getFields());
 	}
 
 	public function testAliasRegistryCreatesReadableUniqueAliases(): void
@@ -96,16 +106,5 @@ final class HandlerRegistryTest extends TestCase
 		$this->assertSame('__on_tags_parent_key', $aliases->alias('__on_tags_parent_key'));
 		$this->assertSame('__on_tags_parent_key_1', $aliases->alias('__on_tags_parent_key'));
 		$this->assertSame('tags_parent_key', $aliases->alias('tags.parent-key'));
-	}
-
-	private function relation(array $nodes, string $name): RelationSelection
-	{
-		foreach ($nodes as $node) {
-			if ($node instanceof RelationSelection && $node->responseName === $name) {
-				return $node;
-			}
-		}
-
-		$this->fail("Relation {$name} was not selected.");
 	}
 }

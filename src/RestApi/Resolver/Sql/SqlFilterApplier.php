@@ -9,8 +9,10 @@ use Cycle\Database\Injection\Expression;
 use Cycle\Database\Injection\Fragment;
 use Cycle\Database\Injection\Parameter;
 use Cycle\Database\Query\QueryParameters;
+use ON\Data\Database\Cycle\CycleRuntimeFactory;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Mapper\ConversionGateway as DataConversionGateway;
 use ON\RestApi\Handler\AliasRegistry;
 use ON\RestApi\Query\Node\BetweenFilter;
 use ON\RestApi\Query\Node\ComparisonFilter;
@@ -234,8 +236,14 @@ class SqlFilterApplier
 			return;
 		}
 
-		$filter = (new DirectusQueryParser())->parse($collection, ['filter' => $where])->filter;
-		$this->applyNode($query, $collection, $filter, $tableAlias, $aliases);
+		$runtime = (new CycleRuntimeFactory())->create(
+			$this->database,
+			DataConversionGateway::createDefault(),
+		);
+		$filter = (new DirectusQueryParser($runtime))->parseFilterAst($collection, $where);
+		if ($filter !== null) {
+			$this->applyNode($query, $collection, $filter, $tableAlias, $aliases);
+		}
 	}
 
 	protected function getPrimaryKeyColumn(CollectionInterface $collection): string

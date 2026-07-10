@@ -10,31 +10,20 @@ use ON\Mapper\Representation\WireRepresentation;
 use ON\Mapper\Structural\MapperInterface;
 use ON\Mapper\Structural\MappingContext;
 use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
-use ON\RestApi\Query\Parser\QueryParserInterface;
 use RuntimeException;
 
 /**
- * Directus wire query params → normalized QuerySpec.
+ * Legacy QuerySpec normalizer retained for mutation-era callers that still hold a QuerySpec.
  *
- * parse → normalize
+ * @deprecated Use DirectusQueryParser(DataRuntime) for reads.
  *
- * @example
- * map($query)
- *     ->using(DirectusQueryBuilder::class, $collection)
- *     ->to(QuerySpec::class);
+ * Read paths use DirectusQueryParser → SelectQuery directly.
  */
 final class DirectusQueryBuilder implements MapperInterface
 {
-	private QueryParserInterface $parser;
-
 	public function __construct(
 		private readonly QueryNormalizer $normalizer,
-		?QueryParserInterface $parser = null,
-		int $defaultLimit = 100,
-		int $maxLimit = 1000,
 	) {
-		$this->parser = $parser ?? new DirectusQueryParser(defaultLimit: $defaultLimit, maxLimit: $maxLimit);
 	}
 
 	public static function defaultRepresentations(): array
@@ -55,7 +44,7 @@ final class DirectusQueryBuilder implements MapperInterface
 			return false;
 		}
 
-		if (! is_array($from) && ! $from instanceof QuerySpec) {
+		if (! $from instanceof QuerySpec) {
 			return false;
 		}
 
@@ -78,8 +67,8 @@ final class DirectusQueryBuilder implements MapperInterface
 			return $this->normalizer->normalize($input);
 		}
 
-		return $this->normalizer->normalize(
-			$this->parser->parse($collection, is_array($input) ? $input : [])
+		throw new RuntimeException(
+			'DirectusQueryBuilder no longer parses wire query params. Use DirectusQueryParser with DataRuntime.'
 		);
 	}
 

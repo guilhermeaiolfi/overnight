@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Query\SelectQuery;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
-use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\QueryContext;
 use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
@@ -23,7 +24,8 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 	public function __construct(
 		protected CollectionInterface $collection,
 		protected PrimaryKeyValue $identity,
-		protected ?QuerySpec $querySpec = null,
+		protected SelectQuery $query,
+		protected QueryContext $context,
 		protected array $options = [],
 	) {
 	}
@@ -69,14 +71,24 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 		return $this->getPrimaryKeyValue();
 	}
 
-	public function getQuerySpec(): ?QuerySpec
+	public function getQuery(): SelectQuery
 	{
-		return $this->querySpec;
+		return $this->query;
 	}
 
-	public function setQuerySpec(?QuerySpec $querySpec): void
+	public function setQuery(SelectQuery $query): void
 	{
-		$this->querySpec = $querySpec;
+		$this->query = $query;
+	}
+
+	public function getContext(): QueryContext
+	{
+		return $this->context;
+	}
+
+	public function setContext(QueryContext $context): void
+	{
+		$this->context = $context;
 	}
 
 	public function getResult(): ?array

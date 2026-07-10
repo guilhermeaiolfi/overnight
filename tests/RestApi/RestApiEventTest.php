@@ -7,7 +7,7 @@ namespace Tests\ON\RestApi;
 use ON\Data\Definition\Registry;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemList;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryContext;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -20,8 +20,9 @@ final class RestApiEventTest extends TestCase
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$collection = $registry->getCollection('user');
-		$query = (new DirectusQueryParser())->parse($collection, []);
-		$event = new ItemList($collection, $query);
+		$context = new QueryContext();
+		$query = $this->createQueryParser()->parse($collection, [], $context);
+		$event = new ItemList($collection, $query, $context);
 
 		$this->assertSame(AuthState::Pending, $event->getAuthState());
 
@@ -35,24 +36,29 @@ final class RestApiEventTest extends TestCase
 		$this->assertSame(AuthState::Forbidden, $event->getAuthState());
 	}
 
-	public function testItemListAggregateHelpersReadQuerySpec(): void
+	public function testItemListAggregateHelpersReadContext(): void
 	{
 		$registry = new Registry();
 		$this->createUserCollection($registry);
 		$collection = $registry->getCollection('user');
-		$aggregateQuery = (new DirectusQueryParser())->parse($collection, [
-			'aggregate' => ['count' => 'id'],
-			'groupBy' => ['status'],
-		]);
-		$plainQuery = (new DirectusQueryParser())->parse($collection, []);
+		$parser = $this->createQueryParser();
 
-		$aggregateEvent = new ItemList($collection, $aggregateQuery);
-		$plainEvent = new ItemList($collection, $plainQuery);
+		$aggregateContext = new QueryContext();
+		$aggregateQuery = $parser->parse($collection, [
+			'aggregate' => ['count' => 'id'],
+			'groupBy' => ['name'],
+		], $aggregateContext);
+
+		$plainContext = new QueryContext();
+		$plainQuery = $parser->parse($collection, [], $plainContext);
+
+		$aggregateEvent = new ItemList($collection, $aggregateQuery, $aggregateContext);
+		$plainEvent = new ItemList($collection, $plainQuery, $plainContext);
 
 		$this->assertTrue($aggregateEvent->isAggregate());
-		$this->assertSame('count', $aggregateEvent->getAggregate()[0]->responseFunction);
-		$this->assertSame('id', $aggregateEvent->getAggregate()[0]->responseField);
-		$this->assertSame('status', $aggregateEvent->getGroupBy()[0]->responseName);
+		$this->assertSame('count', $aggregateEvent->getAggregate()[0]['function']);
+		$this->assertSame('id', $aggregateEvent->getAggregate()[0]['field']);
+		$this->assertSame('name', $aggregateEvent->getGroupBy()[0]['responseName']);
 
 		$this->assertFalse($plainEvent->isAggregate());
 		$this->assertNull($plainEvent->getAggregate());

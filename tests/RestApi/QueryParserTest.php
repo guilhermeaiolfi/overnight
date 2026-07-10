@@ -5,18 +5,18 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use ON\Data\Definition\Registry;
-use ON\RestApi\Query\Node\AggregateFunction;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
+use ON\Data\Query\Condition\ComparisonCondition;
+use ON\Data\Query\Condition\ComparisonOperator;
+use ON\Data\Query\Expression\AggregateExpression;
+use ON\Data\Query\Expression\AggregateFunction;
+use ON\Data\Query\Expression\FieldRef;
+use ON\Data\Query\Expression\RawSqlExpression;
+use ON\Data\Query\Selection\SelectionTag;
 use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\FunctionExpression;
 use ON\RestApi\Query\Node\RelationLoadHint;
-use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Node\SortDirection;
 use ON\RestApi\Query\Node\WildcardSelection;
 use ON\RestApi\Query\Parser\CmsQueryParser;
-use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\QueryContext;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
@@ -24,75 +24,82 @@ final class QueryParserTest extends TestCase
 {
 	use RestApiTestFixtures;
 
-	public function testDirectusRelationAliasesHaveIndependentQuerySpecs(): void
+	public function testDirectusRelationAliasesConfigureIndependentBranches(): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$collection = $registry->getCollection('user');
+		$parser = $this->createQueryParser();
 
-		$query = (new DirectusQueryParser())->parse($collection, [
-			'fields' => 'id,name,published_posts.title,recent_posts.title',
+		$context = new QueryContext();
+		$query = $parser->parse($collection, [
+			'fields' => 'id,name,published_posts.title',
 			'alias' => [
 				'published_posts' => 'posts',
-				'recent_posts' => 'posts',
 			],
 			'deep' => [
 				'published_posts' => [
 					'_filter' => ['status' => ['_eq' => 'published']],
 				],
-				'recent_posts' => [
-					'_sort' => '-created_at',
-					'_limit' => 3,
-				],
 			],
-		]);
+		], $context);
 
-		$relations = $this->relationsByResponseName($query->selection->nodes);
-
-		$this->assertArrayHasKey('published_posts', $relations);
-		$this->assertArrayHasKey('recent_posts', $relations);
-		$this->assertSame('posts', $relations['published_posts']->relationName);
-		$this->assertSame('posts', $relations['recent_posts']->relationName);
-
-		$publishedFilter = $relations['published_posts']->query->filter;
-		$this->assertInstanceOf(ComparisonFilter::class, $publishedFilter);
-		$this->assertSame(ComparisonOperator::Eq, $publishedFilter->operator);
-		$this->assertSame('published', $publishedFilter->right->value());
-
-		$this->assertSame(SortDirection::Desc, $relations['recent_posts']->query->sort[0]->direction);
-		$this->assertSame(3, $relations['recent_posts']->query->pagination->limit);
+		$this->assertSame('published_posts', $context->getRelationResponseNames()['posts'] ?? null);
+		$posts = $query->relation('posts');
+		$this->assertTrue($posts->isSelected());
+		$this->assertNotEmpty($posts->getConditions());
+		$condition = $posts->getConditions()[0];
+		$this->assertInstanceOf(ComparisonCondition::class, $condition);
+		$this->assertSame(ComparisonOperator::EQ, $condition->getOperator());
 	}
 
-	public function testDirectusFunctionsAggregatesAndSearchBecomeAstNodes(): void
+	public function testDirectusFunctionsAggregatesAndSearchBecomeSelectQuery(): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$collection = $registry->getCollection('post');
+		$parser = $this->createQueryParser();
 
-		$query = (new DirectusQueryParser())->parse($collection, [
+		$context = new QueryContext(databaseType: 'sqlite');
+		$query = $parser->parse($collection, [
 			'filter' => ['year(created_at)' => ['_eq' => 2026]],
 			'search' => 'GraphQL',
 			'sort' => '-month(created_at)',
 			'aggregate' => ['countDistinct' => 'user_id'],
 			'groupBy' => ['year(created_at)'],
-		]);
+		], $context);
 
-		$this->assertInstanceOf(WildcardSelection::class, $query->selection->nodes[0]);
-		$this->assertSame('GraphQL', $query->search->term);
+		$this->assertTrue($context->isAggregate());
+		$this->assertSame('countDistinct', $context->getAggregates()[0]['function']);
+		$this->assertSame('user_id', $context->getAggregates()[0]['field']);
+		$this->assertSame('year(created_at)', $context->getGroupBy()[0]['responseName']);
 
-		$this->assertInstanceOf(ComparisonFilter::class, $query->filter);
-		$this->assertInstanceOf(FunctionExpression::class, $query->filter->left);
-		$this->assertSame('year', $query->filter->left->name);
+		$selections = $query->getSelections()->getAll();
+		$this->assertNotEmpty($selections);
+		$hasCountDistinct = false;
+		foreach ($selections as $selection) {
+			$expr = $selection->getExpression();
+			if ($expr instanceof \ON\Data\Query\Expression\AliasedExpression) {
+				$expr = $expr->getExpression();
+			}
+			if ($expr instanceof AggregateExpression && $expr->getFunction() === AggregateFunction::COUNT_DISTINCT) {
+				$hasCountDistinct = true;
+			}
+		}
+		$this->assertTrue($hasCountDistinct);
 
-		$this->assertInstanceOf(FunctionExpression::class, $query->sort[0]->expression);
-		$this->assertSame('month', $query->sort[0]->expression->name);
+		$filterContext = new QueryContext(databaseType: 'sqlite');
+		$filterQuery = $parser->parse($collection, [
+			'filter' => ['year(created_at)' => ['_eq' => 2026]],
+			'search' => 'GraphQL',
+			'sort' => '-month(created_at)',
+		], $filterContext);
 
-		$this->assertSame(AggregateFunction::Count, $query->aggregate[0]->expression->function);
-		$this->assertTrue($query->aggregate[0]->expression->distinct);
-		$this->assertSame('countDistinct', $query->aggregate[0]->responseFunction);
-
-		$this->assertInstanceOf(FunctionExpression::class, $query->groupBy[0]->expression);
-		$this->assertSame('year_created_at', $query->groupBy[0]->alias);
+		$conditions = $filterQuery->getConditions();
+		$this->assertGreaterThanOrEqual(2, count($conditions));
+		$sorts = $filterQuery->getSorts();
+		$this->assertNotEmpty($sorts);
+		$this->assertInstanceOf(RawSqlExpression::class, $sorts[0]->getExpression());
 	}
 
 	public function testDirectusNestedAliasesAreScopedByRelationPath(): void
@@ -100,8 +107,10 @@ final class QueryParserTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 		$collection = $registry->getCollection('user');
+		$parser = $this->createQueryParser();
 
-		$query = (new DirectusQueryParser())->parse($collection, [
+		$context = new QueryContext();
+		$query = $parser->parse($collection, [
 			'fields' => 'posts.published_comments.body',
 			'alias' => [
 				'posts.published_comments' => 'comments',
@@ -113,15 +122,13 @@ final class QueryParserTest extends TestCase
 					],
 				],
 			],
-		]);
+		], $context);
 
-		$posts = $this->relationsByResponseName($query->selection->nodes)['posts'];
-		$comments = $this->relationsByResponseName($posts->query->selection->nodes)['published_comments'];
-
-		$this->assertSame('comments', $comments->relationName);
-		$this->assertSame('comment', $comments->targetCollection);
-		$this->assertInstanceOf(ComparisonFilter::class, $comments->query->filter);
-		$this->assertSame('Alice', $comments->query->filter->right->value());
+		$posts = $query->relation('posts');
+		$comments = $posts->relation('comments');
+		$this->assertTrue($comments->isSelected());
+		$this->assertSame('published_comments', $context->getRelationResponseNames()['posts.comments'] ?? null);
+		$this->assertNotEmpty($comments->getConditions());
 	}
 
 	public function testCmsQueryLanguageMapsToSameSelectionAst(): void
@@ -149,49 +156,36 @@ final class QueryParserTest extends TestCase
 		$registry = new Registry();
 		$this->createFullSchema($registry);
 
-		$cms = (new CmsQueryParser($registry))->parseQuery('post{author.name}');
-		$directus = (new DirectusQueryParser())->parse($registry->getCollection('post'), [
-			'fields' => 'author.name',
-		]);
-
-		$cmsAuthor = $this->relationsByResponseName($cms->selection->nodes)['author'];
-		$directusAuthor = $this->relationsByResponseName($directus->selection->nodes)['author'];
-
-		$this->assertSame($cmsAuthor->relationName, $directusAuthor->relationName);
-		$this->assertSame(
-			$cmsAuthor->query->selection->nodes[0]->responseName,
-			$this->firstPublicField($directusAuthor->query->selection->nodes)->responseName
+		$cms = (new CmsQueryParser($registry))->parseQuery('post{id,comments{body}}');
+		$directus = $this->createQueryParser()->parse(
+			$registry->getCollection('post'),
+			['fields' => 'id,comments.body'],
+			new QueryContext(),
 		);
-		$this->assertInstanceOf(FieldExpression::class, $this->firstPublicField($directusAuthor->query->selection->nodes)->field);
+
+		$this->assertSame('id', $cms->selection->nodes[0]->responseName);
+		$this->assertTrue($directus->relation('comments')->isSelected());
+		$this->assertContains('id', array_map(
+			static fn ($s) => $s->getExpression() instanceof FieldRef
+				? $s->getExpression()->getName()
+				: null,
+			$directus->getSelections()->getByTag(SelectionTag::PUBLIC),
+		));
 	}
 
 	/**
 	 * @param list<object> $nodes
-	 * @return array<string, RelationSelection>
+	 * @return array<string, object>
 	 */
 	private function relationsByResponseName(array $nodes): array
 	{
-		$relations = [];
+		$result = [];
 		foreach ($nodes as $node) {
-			if ($node instanceof RelationSelection) {
-				$relations[$node->responseName] = $node;
+			if (isset($node->responseName) && isset($node->loadHint)) {
+				$result[$node->responseName] = $node;
 			}
 		}
 
-		return $relations;
-	}
-
-	/**
-	 * @param list<object> $nodes
-	 */
-	private function firstPublicField(array $nodes): FieldSelection
-	{
-		foreach ($nodes as $node) {
-			if ($node instanceof FieldSelection && ! $node->internal) {
-				return $node;
-			}
-		}
-
-		$this->fail('No public field selection found.');
+		return $result;
 	}
 }

@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi\Support;
 
 use ON\Container\Executor\ExecutorInterface;
+use ON\Data\Database\Cycle\CycleRuntimeFactory;
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Mapper\ConversionGateway as DataConversionGateway;
 use ON\Mapper\ConversionGateway;
 use ON\Mapper\Exception\ConversionException;
 use function ON\Mapper\map;
@@ -44,7 +47,6 @@ use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Payload\Node\MutationSpec;
 use ON\RestApi\Payload\PayloadNormalizer;
 use ON\RestApi\Query\DirectusQueryBuilder;
-use ON\RestApi\Query\Node\QuerySpec;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\QueryNormalizer;
 use ON\RestApi\Repository\ItemRepository;
@@ -370,35 +372,41 @@ trait RestApiTestFixtures
 		);
 	}
 
-	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db): object
+	protected function createQueryParser(?CycleSqliteTestDatabase $db = null): DirectusQueryParser
 	{
-		$items = $this->createItems($registry, $db);
-		$handlers = $this->createHandlerFactory($items);
-		$config = new RestApiConfig();
+		$db ??= new CycleSqliteTestDatabase();
+
+		return new DirectusQueryParser($this->createDataRuntime($db));
+	}
+
+	protected function createDataRuntime(CycleSqliteTestDatabase $db): DataRuntime
+	{
+		return (new CycleRuntimeFactory())->create(
+			$db->database(),
+			DataConversionGateway::createDefault(),
+		);
+	}
+
+	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db, ?RestApiConfig $config = null): object
+	{
+		$config ??= new RestApiConfig(['databaseType' => 'sqlite']);
 		$hookDispatcher = $this->noopHookDispatcher($registry);
-		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
-			new QueryNormalizer(),
-			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
-		));
+		$runtime = $this->createDataRuntime($db);
 
-		return new class ($registry, $items, $handlers, $config, $hookDispatcher) {
-			private SqlQuerySpecCompiler $querySpecCompiler;
-
+		return new class ($registry, $runtime, $config, $hookDispatcher) {
 			public function __construct(
 				private Registry $registry,
-				private ItemRepositoryInterface $items,
-				private HandlerFactory $handlers,
+				private DataRuntime $runtime,
 				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
 			) {
-				$this->querySpecCompiler = new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
 			}
 
-			public function list(CollectionInterface $collection, QuerySpec $querySpec): array
+			public function list(CollectionInterface $collection, array $query = []): array
 			{
 				return $this->listAction()(
 					['collection' => $collection->getName()],
-					['query' => $querySpec],
+					['query' => $query],
 					['dispatchEvents' => false],
 				);
 			}
@@ -406,12 +414,12 @@ trait RestApiTestFixtures
 			public function get(
 				CollectionInterface $collection,
 				PrimaryKeyValue|string $identity,
-				?QuerySpec $querySpec = null,
+				?array $query = null,
 			): ?array {
 				try {
 					$response = $this->getAction()(
 						['collection' => $collection->getName(), 'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity],
-						['query' => $querySpec],
+						['query' => $query ?? []],
 						['dispatchEvents' => false]
 					);
 				} catch (RestApiError $error) {
@@ -425,11 +433,11 @@ trait RestApiTestFixtures
 				return $response['data'] ?? null;
 			}
 
-			public function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
+			public function aggregate(CollectionInterface $collection, array $query = []): array
 			{
 				$response = $this->listAction()(
 					['collection' => $collection->getName()],
-					['query' => $querySpec],
+					['query' => $query],
 					['dispatchEvents' => false]
 				);
 
@@ -440,9 +448,7 @@ trait RestApiTestFixtures
 			{
 				return new ListAction(
 					$this->registry,
-					$this->items,
-					$this->handlers,
-					$this->querySpecCompiler,
+					$this->runtime,
 					$this->config,
 					$this->hookDispatcher,
 				);
@@ -452,8 +458,7 @@ trait RestApiTestFixtures
 			{
 				return new GetAction(
 					$this->registry,
-					$this->items,
-					$this->handlers,
+					$this->runtime,
 					$this->config,
 					$this->hookDispatcher,
 				);
@@ -483,12 +488,9 @@ trait RestApiTestFixtures
 
 	protected function createQueryBuilder(
 		array $dynamicVariables = [],
-		int $defaultLimit = 100,
-		int $maxLimit = 1000,
 	): DirectusQueryBuilder {
 		$builder = new DirectusQueryBuilder(
 			new QueryNormalizer($dynamicVariables),
-			new DirectusQueryParser(defaultLimit: $defaultLimit, maxLimit: $maxLimit),
 		);
 		$this->registerDirectusQueryBuilder($builder);
 
@@ -550,27 +552,33 @@ trait RestApiTestFixtures
 		Registry $registry,
 		ItemRepositoryInterface $items,
 		?EventDispatcherInterface $eventDispatcher = null,
+		?RestApiConfig $config = null,
 	): object {
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
-		$this->createQueryBuilder();
+		$config ??= new RestApiConfig(['databaseType' => 'sqlite']);
+		$runtime = (new CycleRuntimeFactory())->create(
+			$items->getDatabase(),
+			DataConversionGateway::createDefault(),
+		);
 
 		return new class (
 			$registry,
 			$items,
+			$runtime,
 			$this->createHandlerFactory($items),
 			$this->createMutationBuilder($registry, $items, $eventDispatcher),
-			new RestApiConfig(),
+			$config,
 			$hookDispatcher,
 		) {
 			use RegistrySupportTrait;
 
 			private ?FileUploadEventEmitter $fileUploadEventEmitter = null;
-			private ?SqlQuerySpecCompiler $querySpecCompiler = null;
 
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
+				private DataRuntime $runtime,
 				private HandlerFactory $relationHandlers,
 				private DirectusMutationBuilder $mutationBuilder,
 				private RestApiConfig $config,
@@ -588,7 +596,7 @@ trait RestApiTestFixtures
 				return $this->registry->getCollections();
 			}
 
-			public function list(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
+			public function list(string|CollectionInterface $collection, array $query = [], array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
@@ -598,7 +606,7 @@ trait RestApiTestFixtures
 
 				return $this->listAction()(
 					['collection' => $collection->getName()],
-					['query' => $querySpec],
+					['query' => $query],
 					$options,
 				);
 			}
@@ -606,7 +614,7 @@ trait RestApiTestFixtures
 			public function get(
 				string|CollectionInterface $collection,
 				PrimaryKeyValue|string $identity,
-				?QuerySpec $querySpec = null,
+				?array $query = null,
 				array $options = []
 			): ?array {
 				$collection = $this->getCollection($collection);
@@ -622,7 +630,7 @@ trait RestApiTestFixtures
 							'collection' => $collection->getName(),
 							'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity,
 						],
-						['query' => $querySpec],
+						['query' => $query ?? []],
 						$options,
 					);
 				} catch (RestApiError $error) {
@@ -636,7 +644,7 @@ trait RestApiTestFixtures
 				return $response['data'] ?? null;
 			}
 
-			public function aggregate(string|CollectionInterface $collection, QuerySpec $querySpec, array $options = []): array
+			public function aggregate(string|CollectionInterface $collection, array $query = [], array $options = []): array
 			{
 				$collection = $this->getCollection($collection);
 				$options = $options + [
@@ -645,7 +653,7 @@ trait RestApiTestFixtures
 				];
 				$response = $this->listAction()(
 					['collection' => $collection->getName()],
-					['query' => $querySpec],
+					['query' => $query],
 					$options,
 				);
 
@@ -764,18 +772,11 @@ trait RestApiTestFixtures
 					->toArray();
 			}
 
-			private function querySpecCompiler(): SqlQuerySpecCompiler
-			{
-				return $this->querySpecCompiler ??= new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000);
-			}
-
 			private function listAction(): ListAction
 			{
 				return new ListAction(
 					$this->registry,
-					$this->items,
-					$this->relationHandlers,
-					$this->querySpecCompiler(),
+					$this->runtime,
 					$this->config,
 					$this->hookDispatcher,
 				);
@@ -785,8 +786,7 @@ trait RestApiTestFixtures
 			{
 				return new GetAction(
 					$this->registry,
-					$this->items,
-					$this->relationHandlers,
+					$this->runtime,
 					$this->config,
 					$this->hookDispatcher,
 				);
@@ -849,18 +849,22 @@ trait RestApiTestFixtures
 
 		$this->registerDirectusQueryBuilder(new DirectusQueryBuilder(
 			new QueryNormalizer($config->get('dynamicVariables', [])),
-			new DirectusQueryParser(defaultLimit: 100, maxLimit: 1000),
 		));
 
 		$eventDispatcher ??= $this->noopEventDispatcher();
 		$hookDispatcher = $this->noopHookDispatcher($registry);
+		$runtime = (new CycleRuntimeFactory())->create(
+			$items->getDatabase(),
+			DataConversionGateway::createDefault(),
+		);
 
-		$container = new class ($registry, $items, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
+		$container = new class ($registry, $items, $runtime, $mutationBuilder, $config, $hookDispatcher, $eventDispatcher) implements ContainerInterface {
 			private HandlerFactory $handlers;
 
 			public function __construct(
 				private Registry $registry,
 				private ItemRepositoryInterface $items,
+				private DataRuntime $runtime,
 				private DirectusMutationBuilder $mutationBuilder,
 				private RestApiConfig $config,
 				private RestHookDispatcher $hookDispatcher,
@@ -873,8 +877,8 @@ trait RestApiTestFixtures
 			public function get(string $id): mixed
 			{
 				return match ($id) {
-					ListAction::class => new ListAction($this->registry, $this->items, $this->handlers, new SqlQuerySpecCompiler($this->items->getDatabase(), 100, 1000), $this->config, $this->hookDispatcher),
-					GetAction::class => new GetAction($this->registry, $this->items, $this->handlers, $this->config, $this->hookDispatcher),
+					ListAction::class => new ListAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
+					GetAction::class => new GetAction($this->registry, $this->runtime, $this->config, $this->hookDispatcher),
 					FilesAction::class => new FilesAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
 					CreateAction::class => new CreateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),
 					UpdateAction::class => new UpdateAction($this->registry, $this->items, $this->handlers, new FileUploadEventEmitter($this->registry, $this->hookDispatcher), $this->config, $this->hookDispatcher),

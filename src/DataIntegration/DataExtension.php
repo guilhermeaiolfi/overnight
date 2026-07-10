@@ -13,8 +13,10 @@ use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Data\Definition\Registry;
 use ON\Data\Mapper\ConversionGateway;
 use ON\Data\Mapper\Mapping;
+use ON\Data\DataRuntime;
 use ON\DataIntegration\Command\DefinitionsClearCommand;
 use ON\DataIntegration\Command\DefinitionsWarmupCommand;
+use ON\DataIntegration\Container\DataRuntimeFactory;
 use ON\DataIntegration\Definition\DefinitionCache;
 use ON\DataIntegration\Definition\DefinitionCacheFactory;
 use ON\DataIntegration\Definition\DefinitionRegistryProvider;
@@ -57,7 +59,28 @@ final class DataExtension extends AbstractExtension
 			Registry::class => DefinitionRegistryProvider::class,
 			DefinitionCache::class => DefinitionCacheFactory::class,
 			ConversionGateway::class => ConversionGatewayFactory::class,
+			DataRuntime::class => DataRuntimeFactory::class,
 		]);
+	}
+
+	/**
+	 * Overnight DatabaseManager connection name used by the shared DataRuntime.
+	 */
+	public function getDatabaseName(): string
+	{
+		$database = $this->options['database'] ?? null;
+
+		return is_string($database) && $database !== '' ? $database : 'cycle';
+	}
+
+	/**
+	 * Cycle database name within the DatabaseManager connection.
+	 */
+	public function getCycleDatabaseName(): string
+	{
+		$cycleDatabase = $this->options['cycleDatabase'] ?? null;
+
+		return is_string($cycleDatabase) && $cycleDatabase !== '' ? $cycleDatabase : 'default';
 	}
 
 	public function onContainerReady(ContainerReadyEvent $event): void

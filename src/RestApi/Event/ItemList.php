@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Query\SelectQuery;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
-use ON\RestApi\Query\Node\QuerySpec;
+use ON\RestApi\Query\QueryContext;
 
 class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
@@ -22,7 +23,8 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 	 */
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected QuerySpec $querySpec,
+		protected SelectQuery $query,
+		protected QueryContext $context,
 		protected array $options = [],
 	) {
 	}
@@ -53,29 +55,53 @@ class ItemList implements AuthorizationAwareEventInterface, HasEventNameInterfac
 		$this->options = $options;
 	}
 
-	public function getQuerySpec(): QuerySpec
+	public function getQuery(): SelectQuery
 	{
-		return $this->querySpec;
+		return $this->query;
 	}
 
-	public function setQuerySpec(QuerySpec $querySpec): void
+	public function setQuery(SelectQuery $query): void
 	{
-		$this->querySpec = $querySpec;
+		$this->query = $query;
+	}
+
+	public function getContext(): QueryContext
+	{
+		return $this->context;
+	}
+
+	public function setContext(QueryContext $context): void
+	{
+		$this->context = $context;
 	}
 
 	public function isAggregate(): bool
 	{
-		return $this->getAggregate() !== null;
+		return $this->context->isAggregate();
 	}
 
+	/**
+	 * @return list<array{function: string, field: string, alias: string}>|null
+	 */
 	public function getAggregate(): ?array
 	{
-		return $this->querySpec->aggregate ?: null;
+		return $this->context->getAggregates() !== [] ? $this->context->getAggregates() : null;
 	}
 
+	/**
+	 * @return list<array{responseName: string, alias: string}>|null
+	 */
 	public function getGroupBy(): ?array
 	{
-		return $this->querySpec->groupBy ?: null;
+		return $this->context->getGroupBy() !== [] ? $this->context->getGroupBy() : null;
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	public function getMeta(): array
+	{
+		return $this->context->getMeta();
 	}
 
 	public function getResult(): ?array

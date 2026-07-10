@@ -4,43 +4,41 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Query\SelectQuery;
+use function ON\Data\Query\x;
 use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
-use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemGet;
-use ON\RestApi\Handler\AliasRegistry;
-use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
-use ON\RestApi\Query\DirectusQueryBuilder;
-use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\Parser\QueryParserInterface;
+use ON\RestApi\Query\QueryContext;
 use ON\RestApi\RestApiConfig;
-use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyCriteria;
 use ON\RestApi\Support\PrimaryKeyValue;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class GetAction implements RestActionInterface
 {
 	use RegistrySupportTrait;
-	use DirectusSupportTrait;
 
-	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
+	private QueryParserInterface $parser;
 
 	public function __construct(
 		private Registry $registry,
-		private ItemRepositoryInterface $items,
-		private HandlerFactory $relationHandlers,
+		private DataRuntime $runtime,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hooks,
+		?QueryParserInterface $parser = null,
 	) {
+		$this->parser = $parser ?? new DirectusQueryParser($runtime);
 	}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -52,36 +50,39 @@ final class GetAction implements RestActionInterface
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
 		$identity = PrimaryKey::of($collection)->getValue((string) ($params['id'] ?? ''));
-		$querySpec = map($payload['query'] ?? [])
-			->using(DirectusQueryBuilder::class, $collection)
-			->to(QuerySpec::class);
+		$queryParams = is_array($payload['query'] ?? null) ? $payload['query'] : [];
+		$context = $this->createContext();
+		$query = $this->parser->parse($collection, $queryParams, $context);
+		$this->applyIdentity($query, $collection, $identity);
+		$query->limit(1);
 
 		if (! $options['dispatchEvents']) {
 			$item = $this->mapRowOutput(
 				$collection,
-				$this->get($collection, $identity, $querySpec),
-				self::INTERMEDIATE_REPRESENTATION,
+				$this->fetchOne($query, $context),
+				PhpRepresentation::class,
 				$options['output'],
 			);
 		} else {
-			$event = new ItemGet($collection, $identity, $querySpec, $options);
+			$event = new ItemGet($collection, $identity, $query, $context, $options);
 			$this->hooks->dispatch($collection, 'get', $event);
-			$querySpec = $event->getQuerySpec() ?? $querySpec;
+			$query = $event->getQuery();
+			$context = $event->getContext();
 			$responseOptions = $event->getOptions() + ['output' => PhpRepresentation::class];
 
 			if ($event->isDefaultPrevented()) {
 				$item = $this->mapRowOutput(
 					$collection,
 					$event->getResult(),
-					self::INTERMEDIATE_REPRESENTATION,
+					PhpRepresentation::class,
 					$responseOptions['output'],
 				);
 			} else {
-				$event->setResult($this->get($collection, $identity, $querySpec));
+				$event->setResult($this->fetchOne($query, $context));
 				$item = $this->mapRowOutput(
 					$collection,
 					$event->getResult(),
-					self::INTERMEDIATE_REPRESENTATION,
+					PhpRepresentation::class,
 					$responseOptions['output'],
 				);
 			}
@@ -94,50 +95,26 @@ final class GetAction implements RestActionInterface
 		return ['data' => $item];
 	}
 
-	private function get(
-		CollectionInterface $collection,
-		PrimaryKeyValue|string $identity,
-		?QuerySpec $querySpec = null,
-	): ?array {
-		if ($querySpec === null) {
-			return $this->items->findByIdentity($collection, $identity);
-		}
-
-		$selection = $this->buildSelectionPlan($querySpec->selection);
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
-		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $selection['relations']);
-		$fieldsForSelect = array_values(array_unique(array_merge(
-			$selection['fields'],
-			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
-		)));
-
-		$query = $this->items->select($collection, $fieldsForSelect);
-		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
-		$query->limit(1);
-		$row = $this->items->fetchOne($query);
+	private function fetchOne(SelectQuery $query, QueryContext $context): ?array
+	{
+		$row = $query->fetchOne();
 		if ($row === null) {
 			return null;
 		}
 
-		$items = $this->fetchData(
-			$collection,
-			[$row],
-			$requestedColumnNames === [] && ! $querySpec->selection->explicit
-				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
-				: $requestedColumnNames,
-			$internalRelationKeyColumnNames,
-			$selection['relations']
-		);
+		$rows = $this->renameRelationAliases([$row], $context);
 
-		$item = $items[0] ?? null;
+		return $rows[0] ?? null;
+	}
 
-		return $item !== null
-			? map($item)
-				->using(CollectionRowMapper::class, $collection)
-				->from(StorageRepresentation::class)
-				->as(self::INTERMEDIATE_REPRESENTATION)
-				->toArray()
-			: null;
+	private function applyIdentity(
+		SelectQuery $query,
+		CollectionInterface $collection,
+		PrimaryKeyValue $identity,
+	): void {
+		foreach (PrimaryKey::of($collection)->getFields() as $field) {
+			$query->where(x()->eq($query->field($field->getName()), $identity->value($field->getName())));
+		}
 	}
 
 	/**
@@ -161,28 +138,42 @@ final class GetAction implements RestActionInterface
 			->toArray();
 	}
 
-	private function fetchData(
-		CollectionInterface $collection,
-		array $rows,
-		array $requestedColumnNames,
-		array $internalRelationKeyColumnNames,
-		array $relations,
-		?AliasRegistry $aliases = null
-	): array {
-		if ($rows === []) {
-			return [];
+	/**
+	 * @param list<array<string, mixed>> $rows
+	 * @return list<array<string, mixed>>
+	 */
+	private function renameRelationAliases(array $rows, QueryContext $context): array
+	{
+		if ($context->getRelationResponseNames() === []) {
+			return $rows;
 		}
 
-		$root = $this->relationHandlers->configuredRoot(
-			$collection,
-			$rows,
-			array_keys($rows[0]),
-			$requestedColumnNames,
-			$internalRelationKeyColumnNames,
-			$relations,
-			$aliases ?? new AliasRegistry()
-		);
+		foreach ($rows as &$row) {
+			foreach ($context->getRelationResponseNames() as $relationPath => $responseName) {
+				$segments = explode('.', $relationPath);
+				$relationName = $segments[0] ?? null;
+				if ($relationName === null || $relationName === $responseName) {
+					continue;
+				}
+				if (! array_key_exists($relationName, $row)) {
+					continue;
+				}
+				$row[$responseName] = $row[$relationName];
+				unset($row[$relationName]);
+			}
+		}
+		unset($row);
 
-		return $root->fetchData();
+		return $rows;
+	}
+
+	private function createContext(): QueryContext
+	{
+		return new QueryContext(
+			defaultLimit: (int) $this->config->get('defaultLimit', 100),
+			maxLimit: (int) $this->config->get('maxLimit', 1000),
+			dynamicVariables: $this->config->get('dynamicVariables', []),
+			databaseType: (string) $this->config->get('databaseType', 'sqlite'),
+		);
 	}
 }

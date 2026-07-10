@@ -4,40 +4,37 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Query\SelectQuery;
+use function ON\Data\Query\x;
 use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Event\ItemList;
-use ON\RestApi\Handler\AliasRegistry;
-use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
-use ON\RestApi\Query\DirectusQueryBuilder;
-use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\Parser\QueryParserInterface;
+use ON\RestApi\Query\QueryContext;
 use ON\RestApi\RestApiConfig;
-use ON\RestApi\Support\DirectusSupportTrait;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class ListAction implements RestActionInterface
 {
 	use RegistrySupportTrait;
-	use DirectusSupportTrait;
 
-	private const INTERMEDIATE_REPRESENTATION = PhpRepresentation::class;
+	private QueryParserInterface $parser;
 
 	public function __construct(
 		private Registry $registry,
-		private ItemRepositoryInterface $items,
-		private HandlerFactory $relationHandlers,
-		private SqlQuerySpecCompiler $querySpecCompiler,
+		private DataRuntime $runtime,
 		private RestApiConfig $config,
 		private RestHookDispatcher $hooks,
+		?QueryParserInterface $parser = null,
 	) {
+		$this->parser = $parser ?? new DirectusQueryParser($runtime);
 	}
 
 	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
@@ -48,50 +45,46 @@ final class ListAction implements RestActionInterface
 			'output' => PhpRepresentation::class,
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$querySpec = map($payload['query'] ?? [])
-			->using(DirectusQueryBuilder::class, $collection)
-			->to(QuerySpec::class);
+		$queryParams = is_array($payload['query'] ?? null) ? $payload['query'] : [];
+		$context = $this->createContext();
+		$query = $this->parser->parse($collection, $queryParams, $context);
 
-
-		// Aggregate query
-		if ($querySpec->aggregate !== []) {
+		if ($context->isAggregate()) {
 			if (! $options['dispatchEvents']) {
-				return ['data' => $this->aggregate($collection, $querySpec)];
+				return ['data' => $this->aggregate($query, $context)];
 			}
 
-			$event = new ItemList($collection, $querySpec, $options);
+			$event = new ItemList($collection, $query, $context, $options);
 			$this->hooks->dispatch($collection, 'list', $event);
-			$querySpec = $event->getQuerySpec();
+			$query = $event->getQuery();
+			$context = $event->getContext();
 
 			if ($event->isDefaultPrevented()) {
 				return ['data' => $event->getResult() ?? []];
 			}
 
-			$result = $this->aggregate($collection, $querySpec);
-
-			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
-
-			$event->setResult($result ?? []);
+			$result = $this->aggregate($query, $context);
+			$responseOptions = $event->getOptions() + ['output' => $options['output']];
+			$event->setResult($result);
 
 			return [
-				'data' => map($result ?? [])
+				'data' => map($result)
 					->using(CollectionRowMapper::class, $collection)
-					->from(StorageRepresentation::class)
-					->as($responseOptions["output"])
+					->from(PhpRepresentation::class)
+					->as($responseOptions['output'])
 					->collection()
 					->toArray(),
 			];
 		}
 
-
-		// list without aggregates
 		$event = null;
 		$responseOptions = null;
 		if ($options['dispatchEvents']) {
-			$event = new ItemList($collection, $querySpec, $options);
+			$event = new ItemList($collection, $query, $context, $options);
 			$this->hooks->dispatch($collection, 'list', $event);
-			$querySpec = $event->getQuerySpec();
-			$responseOptions = $event->getOptions() + ['output' => $options["output"]];
+			$query = $event->getQuery();
+			$context = $event->getContext();
+			$responseOptions = $event->getOptions() + ['output' => $options['output']];
 
 			if ($event->isDefaultPrevented()) {
 				$response = ['data' => $event->getResult() ?? []];
@@ -103,15 +96,14 @@ final class ListAction implements RestActionInterface
 			}
 		}
 
-
-		$result = $this->list($collection, $querySpec);
+		$result = $this->list($collection, $query, $context);
 		if (isset($event)) {
 			$event->setResult($result['data'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
 
 		$result['data'] = map($result['data'] ?? [])
 			->using(CollectionRowMapper::class, $collection)
-			->from(StorageRepresentation::class)
+			->from(PhpRepresentation::class)
 			->as(($responseOptions ?? $options)['output'])
 			->collection()
 			->toArray();
@@ -121,113 +113,119 @@ final class ListAction implements RestActionInterface
 		}
 
 		return $result;
-
 	}
 
-	private function list(CollectionInterface $collection, QuerySpec $querySpec): array
+	/**
+	 * @return array{data: list<array<string, mixed>>, meta: array<string, int>}
+	 */
+	private function list(CollectionInterface $collection, SelectQuery $query, QueryContext $context): array
 	{
-		$selection = $this->buildSelectionPlan($querySpec->selection);
-		$requestedColumnNames = $this->fieldNamesToColumnNames($collection, $selection['requestedFields']);
-		$internalRelationKeyColumnNames = $this->getRelationKeyColumnNames($collection, $selection['relations']);
-		$fieldsForSelect = array_values(array_unique(array_merge(
-			$selection['fields'],
-			$this->columnNamesToFieldNames($collection, $internalRelationKeyColumnNames)
-		)));
-
-		$aliases = new AliasRegistry();
-		$query = $this->items->select($collection, $fieldsForSelect);
-		$this->querySpecCompiler->applyFilters($query, $collection, $querySpec->filter, null, $aliases);
-		$this->querySpecCompiler->applySearch($query, $collection, $querySpec->search);
-
 		$meta = [];
-		if (in_array('total_count', $querySpec->meta, true)) {
-			$meta['total_count'] = $this->items->getDatabase()->select()
-				->from($collection->getTable())
-				->count();
+		if (in_array('total_count', $context->getMeta(), true)) {
+			$meta['total_count'] = $this->countAll($collection);
 		}
 
-		if (in_array('filter_count', $querySpec->meta, true)) {
-			$meta['filter_count'] = $this->items->count($query);
+		if (in_array('filter_count', $context->getMeta(), true)) {
+			$meta['filter_count'] = $this->countFiltered($query);
 		}
 
-		$this->querySpecCompiler->applyOrderBy($query, $collection, $querySpec->sort);
-		$this->querySpecCompiler->applyPagination($query, $querySpec->pagination);
-
-		$rows = $this->items->fetchAll($query);
-		$items = $this->fetchData(
-			$collection,
-			$rows,
-			$requestedColumnNames === [] && ! $querySpec->selection->explicit
-				? $this->fieldNamesToColumnNames($collection, $collection->getVisibleFields())
-				: $requestedColumnNames,
-			$internalRelationKeyColumnNames,
-			$selection['relations'],
-			$aliases
-		);
+		$rows = $query->fetchAll();
+		$rows = $this->renameRelationAliases($rows, $context);
 
 		return [
-			'data' => $items,
+			'data' => $rows,
 			'meta' => $meta,
 		];
 	}
 
-	// it returns storage representation results for the aggregate query
-	private function aggregate(CollectionInterface $collection, QuerySpec $querySpec): array
+	/**
+	 * @return list<array<string, mixed>>
+	 */
+	private function aggregate(SelectQuery $query, QueryContext $context): array
 	{
-		if ($querySpec->aggregate === []) {
-			return [];
+		$rows = $query->fetchAll();
+		$result = [];
+		foreach ($rows as $row) {
+			$entry = [];
+			foreach ($context->getGroupBy() as $group) {
+				$alias = $group['alias'];
+				if (array_key_exists($alias, $row)) {
+					$entry[$group['responseName']] = $row[$alias];
+				}
+			}
+
+			foreach ($context->getAggregates() as $aggregate) {
+				$alias = $aggregate['alias'];
+				if (array_key_exists($alias, $row)) {
+					$entry[$aggregate['function']][$aggregate['field']] = $row[$alias];
+				}
+			}
+
+			$result[] = $entry;
 		}
 
-		$query = $this->items->getDatabase()->select()->from($collection->getTable());
-		$this->querySpecCompiler->applyFilters($query, $collection, $querySpec->filter, null, new AliasRegistry());
-		$this->querySpecCompiler->applySearch($query, $collection, $querySpec->search);
-		$this->querySpecCompiler->applyGroupBy($query, $collection, $querySpec->groupBy);
-
-		$selectExpressions = array_merge(
-			$this->querySpecCompiler->compileGroupBySelects($collection, $querySpec->groupBy),
-			$this->querySpecCompiler->compileAggregateSelects(
-				$collection,
-				$querySpec->aggregate,
-				null,
-				fn (string $function, string $field): string => $this->aggregateAlias($function, $field)
-			)
-		);
-
-		if ($selectExpressions === []) {
-			return [];
-		}
-
-		$query->columns($selectExpressions);
-
-		return $this->formatAggregateRows(
-			$this->items->fetchAll($query),
-			$querySpec->aggregate,
-			$querySpec->groupBy
-		);
+		return $result;
 	}
 
-	private function fetchData(
-		CollectionInterface $collection,
-		array $rows,
-		array $requestedColumnNames,
-		array $internalRelationKeyColumnNames,
-		array $relations,
-		?AliasRegistry $aliases = null
-	): array {
-		if ($rows === []) {
-			return [];
+	private function countAll(CollectionInterface $collection): int
+	{
+		$countQuery = $this->runtime->query($collection);
+		$row = $countQuery
+			->select(x()->count($countQuery->all())->as('aggregate_count'))
+			->fetchOne();
+
+		return (int) ($row['aggregate_count'] ?? 0);
+	}
+
+	private function countFiltered(SelectQuery $query): int
+	{
+		$filtered = $this->runtime->query($query->getCollection());
+		foreach ($query->getConditions() as $condition) {
+			$filtered->where($condition->bindTo($filtered, from: $query));
+		}
+		$row = $filtered
+			->select(x()->count($filtered->all())->as('aggregate_count'))
+			->fetchOne();
+
+		return (int) ($row['aggregate_count'] ?? 0);
+	}
+
+	/**
+	 * @param list<array<string, mixed>> $rows
+	 * @return list<array<string, mixed>>
+	 */
+	private function renameRelationAliases(array $rows, QueryContext $context): array
+	{
+		if ($context->getRelationResponseNames() === []) {
+			return $rows;
 		}
 
-		$root = $this->relationHandlers->configuredRoot(
-			$collection,
-			$rows,
-			array_keys($rows[0]),
-			$requestedColumnNames,
-			$internalRelationKeyColumnNames,
-			$relations,
-			$aliases ?? new AliasRegistry()
-		);
+		foreach ($rows as &$row) {
+			foreach ($context->getRelationResponseNames() as $relationPath => $responseName) {
+				$segments = explode('.', $relationPath);
+				$relationName = $segments[0] ?? null;
+				if ($relationName === null || $relationName === $responseName) {
+					continue;
+				}
+				if (! array_key_exists($relationName, $row)) {
+					continue;
+				}
+				$row[$responseName] = $row[$relationName];
+				unset($row[$relationName]);
+			}
+		}
+		unset($row);
 
-		return $root->fetchData();
+		return $rows;
+	}
+
+	private function createContext(): QueryContext
+	{
+		return new QueryContext(
+			defaultLimit: (int) $this->config->get('defaultLimit', 100),
+			maxLimit: (int) $this->config->get('maxLimit', 1000),
+			dynamicVariables: $this->config->get('dynamicVariables', []),
+			databaseType: (string) $this->config->get('databaseType', 'sqlite'),
+		);
 	}
 }

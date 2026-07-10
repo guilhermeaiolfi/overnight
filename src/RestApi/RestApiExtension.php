@@ -24,6 +24,7 @@ use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
+use ON\Data\DataRuntime;
 use ON\RestApi\Container\DirectusMutationBuilderFactory;
 use ON\RestApi\Container\DirectusQueryBuilderFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
@@ -38,6 +39,8 @@ use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Payload\DirectusMutationBuilder;
 use ON\RestApi\Query\DirectusQueryBuilder;
+use ON\RestApi\Query\Parser\DirectusQueryParser;
+use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
@@ -77,6 +80,12 @@ class RestApiExtension extends AbstractExtension
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
 			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
 			DirectusQueryBuilder::class => DirectusQueryBuilderFactory::class,
+			DirectusQueryParser::class => static function (ContainerInterface $container): DirectusQueryParser {
+				return new DirectusQueryParser($container->get(DataRuntime::class));
+			},
+			QueryParserInterface::class => static function (ContainerInterface $container): QueryParserInterface {
+				return $container->get(DirectusQueryParser::class);
+			},
 		]);
 	}
 
