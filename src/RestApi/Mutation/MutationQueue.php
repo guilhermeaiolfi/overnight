@@ -23,7 +23,6 @@ use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHookTransaction;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\DisconnectAction;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 
@@ -44,7 +43,7 @@ final class MutationQueue implements MutationQueueInterface
 
 	public function queueUpdate(
 		CollectionInterface $collection,
-		FilterNode $criteria,
+		array $criteria,
 		array|MutationStateInterface $input
 	): MutationTaskInterface {
 		$command = new UpdateCommand($collection, $criteria, $input);
@@ -55,7 +54,7 @@ final class MutationQueue implements MutationQueueInterface
 
 	public function queueDelete(
 		CollectionInterface $collection,
-		FilterNode $criteria,
+		array $criteria,
 		?MutationStateInterface $state = null,
 	): MutationDeleteTaskInterface {
 		$command = new DeleteCommand($collection, $criteria, $state);

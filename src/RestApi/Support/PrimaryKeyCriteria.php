@@ -6,13 +6,6 @@ namespace ON\RestApi\Support;
 
 use InvalidArgumentException;
 use ON\Data\Definition\Collection\CollectionInterface;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Query\Node\LiteralValue;
-use ON\RestApi\Query\Node\LogicalFilter;
-use ON\RestApi\Query\Node\LogicalOperator;
 
 final class PrimaryKeyCriteria
 {
@@ -42,22 +35,19 @@ final class PrimaryKeyCriteria
 		return new PrimaryKeyValue($collection, [PrimaryKey::of($collection)->getFieldNames()[0] => $value]);
 	}
 
-	public static function build(CollectionInterface $collection, PrimaryKeyValue|array|string|int|float $value): FilterNode
+	/**
+	 * @return non-empty-array<string, mixed>
+	 */
+	public static function build(CollectionInterface $collection, PrimaryKeyValue|array|string|int|float $value): array
 	{
 		$identity = self::normalize($collection, $value);
-		$filters = [];
+		$criteria = [];
 
 		foreach (PrimaryKey::of($collection)->getFields() as $field) {
-			$filters[] = new ComparisonFilter(
-				new FieldExpression($field->getName()),
-				ComparisonOperator::Eq,
-				new LiteralValue($identity->value($field->getName()))
-			);
+			$criteria[$field->getName()] = $identity->value($field->getName());
 		}
 
-		return count($filters) === 1
-			? $filters[0]
-			: new LogicalFilter(LogicalOperator::And, $filters);
+		return $criteria;
 	}
 
 	public static function applyWhere(object $query, CollectionInterface $collection, PrimaryKeyValue|array|string|int|float $value): void

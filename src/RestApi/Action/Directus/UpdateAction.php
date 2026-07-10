@@ -89,7 +89,7 @@ final class UpdateAction implements RestActionInterface
 		$result = $result !== null
 			? map($result)
 				->using(CollectionRowMapper::class, $collection)
-				->from(StorageRepresentation::class)
+				->from(PhpRepresentation::class)
 				->as($options['output'])
 				->toArray()
 			: null;

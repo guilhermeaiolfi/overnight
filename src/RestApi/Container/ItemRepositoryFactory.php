@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Container;
 
 use ON\Data\Definition\Registry;
+use ON\Data\DataRuntime;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\RestApi\Error\RestApiError;
@@ -33,9 +34,8 @@ class ItemRepositoryFactory
 
 		return new ItemRepository(
 			$registry,
+			$container->get(DataRuntime::class),
 			$database,
-			$config->get('defaultLimit', 100),
-			$config->get('maxLimit', 1000),
 		);
 	}
 }

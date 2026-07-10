@@ -12,12 +12,6 @@ use ON\RestApi\Mutation\MutationStateInterface;
 use ON\RestApi\Payload\Action\ConnectAction;
 use ON\RestApi\Payload\Action\DisconnectAction;
 use ON\RestApi\Payload\Node\RelationPayload;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\LiteralValue;
-use ON\RestApi\Query\Node\LogicalFilter;
-use ON\RestApi\Query\Node\LogicalOperator;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use ON\RestApi\Support\PrimaryKeyValue;
 
@@ -88,23 +82,15 @@ trait ManyToManyApply
 		$targetIdentity = $targetId instanceof PrimaryKeyValue
 			? $targetId
 			: PrimaryKeyCriteria::normalize($this->getTargetCollection(), $targetId);
-		$filters = [];
+		$criteria = [];
 		foreach ($this->relation->getInnerKeys() as $index => $innerKey) {
-			$filters[] = new ComparisonFilter(
-				new FieldExpression($through->getInnerKeys()[$index]),
-				ComparisonOperator::Eq,
-				new LiteralValue($parentId->value($innerKey))
-			);
+			$criteria[$through->getInnerKeys()[$index]] = $parentId->value($innerKey);
 		}
 		foreach ($this->relation->getOuterKeys() as $index => $outerKey) {
-			$filters[] = new ComparisonFilter(
-				new FieldExpression($through->getOuterKeys()[$index]),
-				ComparisonOperator::Eq,
-				new LiteralValue($targetIdentity->value($outerKey))
-			);
+			$criteria[$through->getOuterKeys()[$index]] = $targetIdentity->value($outerKey);
 		}
 
-		$queue->queueDelete($through->getCollection(), new LogicalFilter(LogicalOperator::And, $filters));
+		$queue->queueDelete($through->getCollection(), $criteria);
 	}
 
 	private function getParentIdentityFromSource(MutationStateInterface $source): PrimaryKeyValue

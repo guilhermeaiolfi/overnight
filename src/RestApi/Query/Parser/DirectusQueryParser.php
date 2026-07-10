@@ -15,20 +15,7 @@ use ON\Data\Query\SelectQuery;
 use ON\Data\Query\Selection\SelectionTag;
 use function ON\Data\Query\x;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Query\Node\BetweenFilter;
-use ON\RestApi\Query\Node\ComparisonFilter;
-use ON\RestApi\Query\Node\ComparisonOperator;
-use ON\RestApi\Query\Node\EmptyFilter;
-use ON\RestApi\Query\Node\ExpressionNode;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Query\Node\FunctionExpression;
-use ON\RestApi\Query\Node\LogicalFilter;
-use ON\RestApi\Query\Node\LogicalOperator;
-use ON\RestApi\Query\Node\NullFilter;
-use ON\RestApi\Query\Node\RelationExistsFilter;
-use ON\RestApi\Query\Node\SetFilter;
-use ON\RestApi\Query\Node\SetOperator;
+use ON\RestApi\Query\Directus\DirectusFunctionParser;
 use ON\RestApi\Query\QueryContext;
 use Throwable;
 
@@ -38,7 +25,7 @@ final class DirectusQueryParser implements QueryParserInterface
 
 	public function __construct(
 		private readonly DataRuntime $runtime,
-		private readonly ExpressionParser $expressions = new ExpressionParser(),
+		private readonly DirectusFunctionParser $functions = new DirectusFunctionParser(),
 	) {
 	}
 
@@ -69,21 +56,6 @@ final class DirectusQueryParser implements QueryParserInterface
 		return $query;
 	}
 
-	/**
-	 * Legacy FilterNode AST for mutation handlers (SqlFilterApplier).
-	 *
-	 * @param array<string, mixed> $filters
-	 * @param array<string, string> $aliases
-	 */
-	public function parseFilterAst(
-		CollectionInterface $collection,
-		array $filters,
-		array $aliases = [],
-		string $scope = '',
-	): ?FilterNode {
-		return $this->buildFilterAst($collection, $filters, $aliases, $scope);
-	}
-
 	private function applyAggregateQuery(
 		SelectQuery $query,
 		CollectionInterface $collection,
@@ -100,7 +72,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			if ($field === '') {
 				continue;
 			}
-			$alias = $this->expressions->alias($field);
+			$alias = $this->functions->alias($field);
 			$expression = $this->valueExpression($query, $collection, $field, $context);
 			$selects[] = $expression->as($alias);
 			$groupByMeta[] = ['responseName' => $field, 'alias' => $alias];
@@ -800,20 +772,16 @@ final class DirectusQueryParser implements QueryParserInterface
 		string $field,
 		QueryContext $context,
 	): ValueExpressionInterface {
-		$parsed = $this->expressions->parseExpression($field);
-		if ($parsed instanceof FunctionExpression && isset($parsed->arguments[0]) && $parsed->arguments[0] instanceof FieldExpression) {
-			$column = $collection->fields->has($parsed->arguments[0]->field)
-				? $collection->fields->get($parsed->arguments[0]->field)->getColumn()
-				: $parsed->arguments[0]->field;
+		$parsed = $this->functions->parse($field);
+		if ($parsed->isFunction()) {
+			$column = $collection->fields->has($parsed->field)
+				? $collection->fields->get($parsed->field)->getColumn()
+				: $parsed->field;
 
-			return x()->rawSql($this->dateFunctionSql($parsed->name, $column, $context->databaseType));
+			return x()->rawSql($this->dateFunctionSql($parsed->function, $column, $context->databaseType));
 		}
 
-		if ($parsed instanceof FieldExpression) {
-			return $query->field($parsed->field);
-		}
-
-		return $query->field($field);
+		return $query->field($parsed->field);
 	}
 
 	private function relationValueExpression(
@@ -822,20 +790,16 @@ final class DirectusQueryParser implements QueryParserInterface
 		string $field,
 		QueryContext $context,
 	): ValueExpressionInterface {
-		$parsed = $this->expressions->parseExpression($field);
-		if ($parsed instanceof FunctionExpression && isset($parsed->arguments[0]) && $parsed->arguments[0] instanceof FieldExpression) {
-			$column = $collection->fields->has($parsed->arguments[0]->field)
-				? $collection->fields->get($parsed->arguments[0]->field)->getColumn()
-				: $parsed->arguments[0]->field;
+		$parsed = $this->functions->parse($field);
+		if ($parsed->isFunction()) {
+			$column = $collection->fields->has($parsed->field)
+				? $collection->fields->get($parsed->field)->getColumn()
+				: $parsed->field;
 
-			return x()->rawSql($this->dateFunctionSql($parsed->name, $column, $context->databaseType));
+			return x()->rawSql($this->dateFunctionSql($parsed->function, $column, $context->databaseType));
 		}
 
-		if ($parsed instanceof FieldExpression) {
-			return $rel->field($parsed->field);
-		}
-
-		return $rel->field($field);
+		return $rel->field($parsed->field);
 	}
 
 	private function aggregateExpression(
@@ -1028,124 +992,4 @@ final class DirectusQueryParser implements QueryParserInterface
 		return $scope === '' ? $name : $scope . '.' . $name;
 	}
 
-	/**
-	 * @param array<string, mixed> $filters
-	 * @param array<string, string> $aliases
-	 */
-	private function buildFilterAst(
-		CollectionInterface $collection,
-		mixed $filters,
-		array $aliases,
-		string $scope,
-	): ?FilterNode {
-		if (! is_array($filters) || $filters === []) {
-			return null;
-		}
-
-		$nodes = [];
-		foreach ($filters as $key => $value) {
-			if (
-				is_string($key)
-				&& str_contains($key, '.')
-				&& $this->relationName($collection, $key, $aliases, $scope) === null
-			) {
-				[$relationKey, $nestedKey] = explode('.', $key, 2);
-				$value = [$nestedKey => $value];
-				$key = $relationKey;
-			}
-
-			if ($key === '_and' || $key === '_or') {
-				if (! is_array($value)) {
-					continue;
-				}
-
-				$children = [];
-				foreach ($value as $group) {
-					$child = $this->buildFilterAst($collection, $group, $aliases, $scope);
-					if ($child !== null) {
-						$children[] = $child;
-					}
-				}
-
-				if ($children !== []) {
-					$nodes[] = new LogicalFilter($key === '_and' ? LogicalOperator::And : LogicalOperator::Or, $children);
-				}
-
-				continue;
-			}
-
-			if (! is_string($key) || ! is_array($value)) {
-				continue;
-			}
-
-			$relationName = $this->relationName($collection, $key, $aliases, $scope);
-			if ($relationName !== null && ! $this->isOperatorArray($value)) {
-				$relation = $collection->relations->get($relationName);
-				$targetCollection = $relation->getCollection();
-				if ($targetCollection === null) {
-					continue;
-				}
-
-				$child = $this->buildFilterAst($targetCollection, $value, $aliases, $this->joinScope($scope, $key));
-				if ($child !== null) {
-					$nodes[] = new RelationExistsFilter($key, $relationName, $targetCollection->getName(), $child);
-				}
-
-				continue;
-			}
-
-			foreach ($value as $operator => $operand) {
-				if (! is_string($operator)) {
-					continue;
-				}
-				$node = $this->parseOperatorAst($key, $operator, $operand);
-				if ($node !== null) {
-					$nodes[] = $node;
-				}
-			}
-		}
-
-		if ($nodes === []) {
-			return null;
-		}
-
-		return count($nodes) === 1 ? $nodes[0] : new LogicalFilter(LogicalOperator::And, $nodes);
-	}
-
-	private function parseOperatorAst(string $field, string $operator, mixed $operand): ?FilterNode
-	{
-		$left = $this->expressions->parseExpression($field);
-
-		return match ($operator) {
-			'_eq' => new ComparisonFilter($left, ComparisonOperator::Eq, $this->expressions->parseValue($operand)),
-			'_neq' => new ComparisonFilter($left, ComparisonOperator::Neq, $this->expressions->parseValue($operand)),
-			'_lt' => new ComparisonFilter($left, ComparisonOperator::Lt, $this->expressions->parseValue($operand)),
-			'_lte' => new ComparisonFilter($left, ComparisonOperator::Lte, $this->expressions->parseValue($operand)),
-			'_gt' => new ComparisonFilter($left, ComparisonOperator::Gt, $this->expressions->parseValue($operand)),
-			'_gte' => new ComparisonFilter($left, ComparisonOperator::Gte, $this->expressions->parseValue($operand)),
-			'_contains' => new ComparisonFilter($left, ComparisonOperator::Contains, $this->expressions->parseValue($operand)),
-			'_ncontains' => new ComparisonFilter($left, ComparisonOperator::NotContains, $this->expressions->parseValue($operand)),
-			'_starts_with' => new ComparisonFilter($left, ComparisonOperator::StartsWith, $this->expressions->parseValue($operand)),
-			'_ends_with' => new ComparisonFilter($left, ComparisonOperator::EndsWith, $this->expressions->parseValue($operand)),
-			'_in' => new SetFilter($left, SetOperator::In, array_map(fn (mixed $item) => $this->expressions->parseValue($item), $this->parseArrayValue($operand))),
-			'_nin' => new SetFilter($left, SetOperator::NotIn, array_map(fn (mixed $item) => $this->expressions->parseValue($item), $this->parseArrayValue($operand))),
-			'_between' => $this->parseBetweenAst($left, $operand, false),
-			'_nbetween' => $this->parseBetweenAst($left, $operand, true),
-			'_null' => new NullFilter($left),
-			'_nnull' => new NullFilter($left, true),
-			'_empty' => new EmptyFilter($left),
-			'_nempty' => new EmptyFilter($left, true),
-			default => null,
-		};
-	}
-
-	private function parseBetweenAst(ExpressionNode $left, mixed $operand, bool $negated): ?BetweenFilter
-	{
-		$values = $this->parseArrayValue($operand);
-		if (count($values) !== 2) {
-			return null;
-		}
-
-		return new BetweenFilter($left, $this->expressions->parseValue($values[0]), $this->expressions->parseValue($values[1]), $negated);
-	}
 }

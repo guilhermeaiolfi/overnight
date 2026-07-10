@@ -52,12 +52,9 @@ trait RelationNormalizeSupport
 		}
 
 		$query = $this->items->select($collection, $fieldNames);
-		$query->where($collection->fields->get($fieldName)->getColumn(), $value);
+		$query->where(\ON\Data\Query\x()->eq($query->field($fieldName), $value));
 
-		return array_map(
-			fn (array $row): array => $collection->mapRowFromColumns($row),
-			$this->items->fetchAll($query)
-		);
+		return $this->items->fetchAll($query);
 	}
 
 	protected function fetchRowsByFields(
@@ -74,13 +71,10 @@ trait RelationNormalizeSupport
 
 		$query = $this->items->select($collection, $fieldNames);
 		foreach ($fieldValueMap as $fieldName => $value) {
-			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
+			$query->where(\ON\Data\Query\x()->eq($query->field((string) $fieldName), $value));
 		}
 
-		return array_map(
-			fn (array $row): array => $collection->mapRowFromColumns($row),
-			$this->items->fetchAll($query)
-		);
+		return $this->items->fetchAll($query);
 	}
 
 	protected function fetchRowByIdentity(
@@ -95,11 +89,12 @@ trait RelationNormalizeSupport
 		}
 
 		$query = $this->items->select($collection, $fieldNames);
-		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		foreach (PrimaryKeyCriteria::build($collection, $identity) as $fieldName => $value) {
+			$query->where(\ON\Data\Query\x()->eq($query->field($fieldName), $value));
+		}
 		$query->limit(1);
-		$row = $this->items->fetchOne($query);
 
-		return $row === null ? null : $collection->mapRowFromColumns($row);
+		return $this->items->fetchOne($query);
 	}
 
 	protected function applySourceValuesToTargetInput(array &$input, MutationStateInterface $source): void

@@ -95,7 +95,7 @@ final class CreateAction implements RestActionInterface
 
 		return map($result)
 			->using(CollectionRowMapper::class, $collection)
-			->from(StorageRepresentation::class)
+			->from(PhpRepresentation::class)
 			->as($options['output'])
 			->toArray();
 	}

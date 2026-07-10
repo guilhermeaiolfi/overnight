@@ -4,97 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Handler;
 
-use Cycle\Database\StatementInterface as CycleStatementInterface;
-use Cycle\ORM\Parser\AbstractNode;
-use Cycle\ORM\Parser\SingularNode;
 use ON\RestApi\Handler\Mutation\ForeignKeyOnTargetApply;
 use ON\RestApi\Handler\Mutation\HasOneNormalize;
-use ON\RestApi\Support\PrimaryKey;
 
-class HasOneHandler extends AbstractRelationHandler implements RelationMutationHandlerInterface
+final class HasOneHandler extends AbstractRelationHandler
 {
-	use LimitedSubquerySupport;
 	use ForeignKeyOnTargetApply;
 	use HasOneNormalize;
-
-	public function configureParserNode(AbstractNode $parent): AbstractNode
-	{
-		$node = new SingularNode(
-			$this->getSelectColumns(),
-			PrimaryKey::of($this->getTargetCollection())->getColumns(),
-			$this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys()),
-			$this->fieldNamesToColumnNames($this->getCollection(), $this->relation->getInnerKeys())
-		);
-		$parent->linkNode($this->getResponseName(), $node);
-		$this->setNode($node);
-
-		return $node;
-	}
-
-	public function load(): mixed
-	{
-		$node = $this->getNode();
-		$parentKeySets = $this->referenceValueSets($node);
-		if ($parentKeySets === []) {
-			return null;
-		}
-
-		$columns = $this->getSelectColumns();
-		$outerKeyColumns = $this->fieldNamesToColumnNames($this->getTargetCollection(), $this->relation->getOuterKeys());
-		$query = $this->items->getDatabase()->select($columns)
-			->from($this->getTargetCollection()->getTable());
-
-		if (count($outerKeyColumns) === 1) {
-			$query->where($outerKeyColumns[0], 'IN', array_map(
-				static fn (array $set): mixed => reset($set),
-				$parentKeySets
-			));
-		} else {
-			$query->where(function ($nested) use ($parentKeySets, $outerKeyColumns) {
-				foreach ($parentKeySets as $set) {
-					$nested->orWhere(array_combine($outerKeyColumns, array_values($set)));
-				}
-			});
-		}
-
-		if ($this->selection !== null) {
-			$this->querySpecCompiler->applyFilters(
-				$query,
-				$this->getTargetCollection(),
-				$this->selection->query->filter,
-				null,
-				$this->aliases
-			);
-			$this->querySpecCompiler->applySearch(
-				$query,
-				$this->getTargetCollection(),
-				$this->selection->query->search
-			);
-			$this->querySpecCompiler->applyOrderBy(
-				$query,
-				$this->getTargetCollection(),
-				$this->selection->query->sort
-			);
-		}
-
-		$limit = $this->selectionPagination()?->limit;
-		$offset = $this->selectionPagination()?->offset;
-		if ($limit !== null || $offset !== null) {
-			$query = $this->limitedSubquery(
-				$query,
-				$columns,
-				array_map(
-					fn (string $column): string => $this->getTargetCollection()->getTable() . '.' . $column,
-					$outerKeyColumns
-				),
-				$this->selectionWindowOrderBy(),
-				$limit,
-				$offset
-			);
-		}
-
-		$this->parseRows($node, $query->fetchAll(CycleStatementInterface::FETCH_NUM));
-
-		return null;
-	}
 }

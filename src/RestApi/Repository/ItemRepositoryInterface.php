@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Repository;
 
-use Cycle\Database\DatabaseInterface;
-use Cycle\Database\Query\SelectQuery;
+use ON\Data\Query\SelectQuery;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
 use ON\Mapper\Representation\RepresentationInterface;
 use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Support\PrimaryKeyValue;
 
 interface ItemRepositoryInterface
@@ -27,8 +25,6 @@ interface ItemRepositoryInterface
 	 */
 	public function fetchOne(SelectQuery $query): ?array;
 
-	public function count(SelectQuery $query): int;
-
 	/**
 	 * @param class-string<RepresentationInterface> $output
 	 * @return array<string, mixed>|null
@@ -41,14 +37,10 @@ interface ItemRepositoryInterface
 
 	public function create(CollectionInterface $collection, array $input): ?array;
 
-	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array;
+	public function update(CollectionInterface $collection, array $criteria, array $input): ?array;
 
-	public function delete(CollectionInterface $collection, FilterNode $criteria): bool;
+	public function delete(CollectionInterface $collection, array $criteria): bool;
 
 	public function commit(MutationQueue $queue, callable $resolve): mixed;
 
-	/**
-	 * Advanced escape hatch: direct database access bypasses the canonical model.
-	 */
-	public function getDatabase(): DatabaseInterface;
 }

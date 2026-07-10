@@ -7,7 +7,6 @@ namespace ON\RestApi\Support;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\RestApi\Error\RestApiError;
-use ON\RestApi\Query\Node\RelationSelection;
 
 trait RegistrySupportTrait
 {
@@ -60,17 +59,4 @@ trait RegistrySupportTrait
 		return array_values(array_unique($fieldNames));
 	}
 
-	protected function getRelationKeyColumnNames(CollectionInterface $collection, array $relations): array
-	{
-		$columnNames = [];
-		foreach ($relations as $relation) {
-			if ($relation instanceof RelationSelection && $collection->relations->has($relation->relationName)) {
-				foreach ($collection->relations->get($relation->relationName)->getInnerKeys() as $fieldName) {
-					$columnNames[] = $collection->fields->get($fieldName)->getColumn();
-				}
-			}
-		}
-
-		return array_values(array_unique($columnNames));
-	}
 }

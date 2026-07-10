@@ -13,15 +13,9 @@ use ON\CMS\Parser\Node\VirtualNode;
 use ON\CMS\Parser\QueryParser;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use ON\RestApi\Query\Node\FieldExpression;
-use ON\RestApi\Query\Node\FieldSelection;
-use ON\RestApi\Query\Node\QuerySpec;
-use ON\RestApi\Query\Node\RelationLoadHint;
-use ON\RestApi\Query\Node\RelationQuerySpec;
-use ON\RestApi\Query\Node\RelationSelection;
-use ON\RestApi\Query\Node\SelectionNode;
-use ON\RestApi\Query\Node\SelectionSet;
-use ON\RestApi\Query\Node\WildcardSelection;
+use ON\Data\Query\Relation\LoadStrategy;
+use ON\Data\Query\Relation\RelationRef;
+use ON\Data\Query\SelectQuery;
 
 final class CmsQueryParser
 {
@@ -30,7 +24,7 @@ final class CmsQueryParser
 	) {
 	}
 
-	public function parseQuery(string $query): QuerySpec
+	public function parseQuery(string $query): SelectQuery
 	{
 		$root = (new QueryParser($this->registry))->parse($query);
 		if (! $root instanceof RootNode || $root->collection === null) {
@@ -38,63 +32,72 @@ final class CmsQueryParser
 		}
 
 		$collection = $this->registry->getCollection($root->collection);
-		if ($collection === null) {
-			throw new InvalidArgumentException("Collection '{$root->collection}' is not registered.");
-		}
+		$select = new SelectQuery($collection);
+		$this->applyChildren($select, $collection, $root->children);
 
-		return new QuerySpec(
-			$root->collection,
-			$this->selectionFromChildren($collection, $root->children, true)
-		);
+		return $select;
 	}
 
-	/**
-	 * @param list<Node> $children
-	 */
-	private function selectionFromChildren(CollectionInterface $collection, array $children, bool $explicit): SelectionSet
-	{
-		$nodes = [];
+	/** @param list<Node> $children */
+	private function applyChildren(
+		SelectQuery $query,
+		CollectionInterface $collection,
+		array $children,
+		?RelationRef $parent = null,
+	): void {
+		$fields = [];
+		$wildcard = false;
+
 		foreach ($children as $child) {
-			$nodes[] = $this->selectionNode($collection, $child);
+			if ($child instanceof VirtualNode || $child->name === '*') {
+				$wildcard = true;
+				continue;
+			}
+
+			if ($child instanceof RelationNode || $collection->relations->has($child->name)) {
+				$relation = $parent === null
+					? $query->relation($child->name)
+					: $parent->relation($child->name);
+				$this->applyStrategy($relation, $child->modifier);
+				$this->applyChildren($query, $relation->getCollection(), $child->children, $relation);
+				continue;
+			}
+
+			if ($child instanceof FieldNode || $collection->fields->has($child->name)) {
+				$fields[] = $child->name;
+				continue;
+			}
+
+			throw new InvalidArgumentException("Field or relation '{$child->name}' is not registered on {$collection->getName()}.");
 		}
 
-		return new SelectionSet($nodes, $explicit);
+		if ($parent !== null) {
+			if ($wildcard || $fields === []) {
+				$parent->load();
+			} else {
+				$parent->fields(...$fields);
+			}
+			return;
+		}
+
+		if (! $wildcard && $fields !== []) {
+			$query->select(...array_map(
+				static fn (string $field) => $query->field($field),
+				$fields,
+			));
+		}
 	}
 
-	private function selectionNode(CollectionInterface $collection, Node $node): SelectionNode
+	private function applyStrategy(RelationRef $relation, ?string $modifier): void
 	{
-		if ($node instanceof VirtualNode || $node->name === '*') {
-			return new WildcardSelection();
-		}
-
-		if ($node instanceof RelationNode || $collection->relations->has($node->name)) {
-			$relation = $collection->relations->get($node->name);
-			$targetCollection = $relation->getCollection();
-
-			return new RelationSelection(
-				$node->name,
-				$node->name,
-				$targetCollection->getName(),
-				new RelationQuerySpec($this->selectionFromChildren($targetCollection, $node->children, true)),
-				$this->loadHint($node->modifier)
-			);
-		}
-
-		if ($node instanceof FieldNode || $collection->fields->has($node->name)) {
-			return new FieldSelection(new FieldExpression($node->name), $node->name);
-		}
-
-		throw new InvalidArgumentException("Field or relation '{$node->name}' is not registered on {$collection->getName()}.");
-	}
-
-	private function loadHint(?string $modifier): ?RelationLoadHint
-	{
-		return match ($modifier) {
-			'%' => RelationLoadHint::InLoad,
-			':' => RelationLoadHint::PostLoad,
-			'!' => RelationLoadHint::Join,
-			'~' => RelationLoadHint::LeftJoin,
+		$strategy = match ($modifier) {
+			'!', '~' => LoadStrategy::JOIN,
+			'%', ':' => LoadStrategy::SEPARATE_QUERY,
 			default => null,
 		};
+
+		if ($strategy !== null) {
+			$relation->strategy($strategy);
+		}
 	}
 }

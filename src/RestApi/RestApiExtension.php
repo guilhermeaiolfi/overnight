@@ -26,24 +26,20 @@ use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
 use ON\Data\DataRuntime;
 use ON\RestApi\Container\DirectusMutationBuilderFactory;
-use ON\RestApi\Container\DirectusQueryBuilderFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\HandlerFactoryFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\RestHookDispatcherFactory;
-use ON\RestApi\Container\SqlQuerySpecCompilerFactory;
 use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\Handler\HandlerFactory;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Payload\DirectusMutationBuilder;
-use ON\RestApi\Query\DirectusQueryBuilder;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Server\MiddlewareInterface;
@@ -74,12 +70,10 @@ class RestApiExtension extends AbstractExtension
 		$event->containerConfig->addFactories([
 			ItemRepository::class => ItemRepositoryFactory::class,
 			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
-			SqlQuerySpecCompiler::class => SqlQuerySpecCompilerFactory::class,
 			HandlerFactory::class => HandlerFactoryFactory::class,
 			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
 			DirectusMutationBuilder::class => DirectusMutationBuilderFactory::class,
-			DirectusQueryBuilder::class => DirectusQueryBuilderFactory::class,
 			DirectusQueryParser::class => static function (ContainerInterface $container): DirectusQueryParser {
 				return new DirectusQueryParser($container->get(DataRuntime::class));
 			},
@@ -96,7 +90,6 @@ class RestApiExtension extends AbstractExtension
 		$config = $this->config = $container->get(RestApiConfig::class);
 		$this->registerDefaultActions($config);
 		$this->registerDirectusMutationBuilder($container);
-		$this->registerDirectusQueryBuilder($container);
 
 		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
@@ -218,17 +211,6 @@ class RestApiExtension extends AbstractExtension
 		$container->get(ConversionGateway::class)
 			->getMappers()
 			->replace(DirectusMutationBuilder::class);
-	}
-
-	protected function registerDirectusQueryBuilder(ContainerInterface $container): void
-	{
-		if (! $container->has(ConversionGateway::class)) {
-			return;
-		}
-
-		$container->get(ConversionGateway::class)
-			->getMappers()
-			->replace(DirectusQueryBuilder::class);
 	}
 
 	protected function loadAddons(

@@ -5,10 +5,11 @@ declare(strict_types=1);
 namespace ON\RestApi\Repository;
 
 use Cycle\Database\DatabaseInterface;
-use Cycle\Database\Query\SelectQuery;
-use Cycle\Database\StatementInterface as CycleStatementInterface;
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Query\SelectQuery;
+use function ON\Data\Query\x;
 use ON\Mapper\Exception\ConversionException;
 use function ON\Mapper\map;
 use ON\Mapper\Representation\PhpRepresentation;
@@ -16,8 +17,6 @@ use ON\Mapper\Representation\StorageRepresentation;
 use ON\Mapper\Structural\CollectionRowMapper;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\MutationQueue;
-use ON\RestApi\Query\Node\FilterNode;
-use ON\RestApi\Resolver\Sql\SqlQuerySpecCompiler;
 use ON\RestApi\Support\PrimaryKey;
 use ON\RestApi\Support\PrimaryKeyCriteria;
 use ON\RestApi\Support\PrimaryKeyValue;
@@ -27,20 +26,20 @@ class ItemRepository implements ItemRepositoryInterface
 {
 	public function __construct(
 		private Registry $registry,
+		private DataRuntime $runtime,
 		private DatabaseInterface $database,
-		private int $defaultLimit = 100,
-		private int $maxLimit = 1000,
 	) {
 	}
 
 	public function select(CollectionInterface|string $collection, array $fieldNames = []): SelectQuery
 	{
 		$collection = is_string($collection) ? $this->registry->getCollection($collection) : $collection;
-		$query = $this->database->select()->from($collection->getTable());
-		$columns = $this->buildSelectColumnNames($collection, $fieldNames);
-
-		if ($columns !== null) {
-			$query->columns($columns);
+		$query = $this->runtime->query($collection);
+		if ($fieldNames !== []) {
+			$query->select(...array_map(
+				static fn (string $fieldName) => $query->field($fieldName),
+				$fieldNames,
+			));
 		}
 
 		return $query;
@@ -48,25 +47,14 @@ class ItemRepository implements ItemRepositoryInterface
 
 	public function fetchAll(SelectQuery $query): array
 	{
-		return $query->fetchAll(CycleStatementInterface::FETCH_ASSOC);
+		return $query->fetchAll();
 	}
 
 	public function fetchOne(SelectQuery $query): ?array
 	{
-		$statement = $query->run();
-
-		try {
-			$row = $statement->fetch(CycleStatementInterface::FETCH_ASSOC);
-		} finally {
-			$statement->close();
-		}
+		$row = $query->fetchOne();
 
 		return is_array($row) ? $row : null;
-	}
-
-	public function count(SelectQuery $query): int
-	{
-		return (int) (clone $query)->count();
 	}
 
 	public function findByIdentity(
@@ -123,7 +111,7 @@ class ItemRepository implements ItemRepositoryInterface
 		}
 	}
 
-	public function update(CollectionInterface $collection, FilterNode $criteria, array $input): ?array
+	public function update(CollectionInterface $collection, array $criteria, array $input): ?array
 	{
 		try {
 			$storageInput = $input;
@@ -136,7 +124,7 @@ class ItemRepository implements ItemRepositoryInterface
 
 			$query = $this->database->update($collection->getTable())
 				->values($this->mapInputToColumns($collection, $storageInput));
-			$this->applyCriteriaFilter($query, $collection, $criteria);
+			$this->applyCriteriaWhere($query, $collection, $criteria);
 			$query->run();
 
 			$row = $this->firstByCriteria($collection, $criteria);
@@ -149,11 +137,11 @@ class ItemRepository implements ItemRepositoryInterface
 		}
 	}
 
-	public function delete(CollectionInterface $collection, FilterNode $criteria): bool
+	public function delete(CollectionInterface $collection, array $criteria): bool
 	{
 		try {
 			$query = $this->database->delete($collection->getTable());
-			$this->applyCriteriaFilter($query, $collection, $criteria);
+			$this->applyCriteriaWhere($query, $collection, $criteria);
 
 			return $query->run() > 0;
 		} catch (Throwable $e) {
@@ -168,11 +156,6 @@ class ItemRepository implements ItemRepositoryInterface
 
 			return $resolve();
 		});
-	}
-
-	public function getDatabase(): DatabaseInterface
-	{
-		return $this->database;
 	}
 
 	protected function buildSelectColumnNames(CollectionInterface $collection, ?array $fieldNames): ?array
@@ -218,30 +201,36 @@ class ItemRepository implements ItemRepositoryInterface
 		return $mapped;
 	}
 
-	protected function applyCriteriaFilter(object $query, CollectionInterface $collection, FilterNode $criteria): void
+	protected function applyCriteriaWhere(object $query, CollectionInterface $collection, array $criteria): void
 	{
-		(new SqlQuerySpecCompiler($this->database, $this->defaultLimit, $this->maxLimit))
-			->applyFilters($query, $collection, $criteria);
+		foreach ($criteria as $fieldName => $value) {
+			$query->where($collection->fields->get((string) $fieldName)->getColumn(), $value);
+		}
 	}
 
 	protected function loadByIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
 	{
 		$query = $this->select($collection, $collection->getVisibleFields());
-		PrimaryKeyCriteria::applyWhere($query, $collection, $identity);
+		$this->applyReadCriteria($query, PrimaryKeyCriteria::build($collection, $identity));
 		$query->limit(1);
-		$row = $this->fetchOne($query);
 
-		return $row !== null ? $collection->mapVisibleRowFromColumns($row) : null;
+		return $this->fetchOne($query);
 	}
 
-	protected function firstByCriteria(CollectionInterface $collection, FilterNode $criteria): ?array
+	protected function firstByCriteria(CollectionInterface $collection, array $criteria): ?array
 	{
 		$query = $this->select($collection);
-		$this->applyCriteriaFilter($query, $collection, $criteria);
+		$this->applyReadCriteria($query, $criteria);
 		$query->limit(1);
-		$row = $this->fetchOne($query);
 
-		return $row !== null ? $collection->mapVisibleRowFromColumns($row) : null;
+		return $this->fetchOne($query);
+	}
+
+	private function applyReadCriteria(SelectQuery $query, array $criteria): void
+	{
+		foreach ($criteria as $fieldName => $value) {
+			$query->where(x()->eq($query->field((string) $fieldName), $value));
+		}
 	}
 
 	protected function convertDatabaseError(Throwable $e, CollectionInterface $collection): RestApiError

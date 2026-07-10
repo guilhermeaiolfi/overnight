@@ -6,7 +6,6 @@ namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Mapper\Representation\PhpRepresentation;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class DeleteCommand extends AbstractMutationCommand
@@ -15,7 +14,7 @@ final class DeleteCommand extends AbstractMutationCommand
 
 	public function __construct(
 		private CollectionInterface $collection,
-		private FilterNode $criteria,
+		private array $criteria,
 		private ?MutationStateInterface $state = null,
 	) {
 	}

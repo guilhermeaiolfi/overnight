@@ -7,19 +7,17 @@ namespace ON\RestApi\Handler;
 use LogicException;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Relation\BelongsToRelation;
-use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\HasManyRelation;
 use ON\Data\Definition\Relation\HasOneRelation;
 use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Definition\Relation\RelationInterface;
-use RuntimeException;
 
 class HandlerRegistry
 {
-	/** @var array<string, class-string<HandlerInterface>> */
+	/** @var array<string, class-string<RelationMutationHandlerInterface>> */
 	private array $relations = [];
 
-	/** @var array<string, class-string<HandlerInterface>> */
+	/** @var array<string, class-string<RelationMutationHandlerInterface>> */
 	private array $defaults = [];
 
 	public static function defaults(): self
@@ -27,13 +25,12 @@ class HandlerRegistry
 		return (new self())
 			->default('hasOne', HasOneHandler::class)
 			->default('belongsTo', BelongsToHandler::class)
-			->default('firstOfMany', FirstOfManyHandler::class)
 			->default('hasMany', HasManyHandler::class)
 			->default('manyToMany', ManyToManyHandler::class);
 	}
 
 	/**
-	 * @param class-string<HandlerInterface> $handlerClass
+	 * @param class-string<RelationMutationHandlerInterface> $handlerClass
 	 */
 	public function relation(string $collectionName, string $relationName, string $handlerClass): self
 	{
@@ -48,7 +45,7 @@ class HandlerRegistry
 	}
 
 	/**
-	 * @param class-string<HandlerInterface> $handlerClass
+	 * @param class-string<RelationMutationHandlerInterface> $handlerClass
 	 */
 	public function replaceRelation(string $collectionName, string $relationName, string $handlerClass): self
 	{
@@ -58,7 +55,7 @@ class HandlerRegistry
 	}
 
 	/**
-	 * @param class-string<HandlerInterface> $handlerClass
+	 * @param class-string<RelationMutationHandlerInterface> $handlerClass
 	 */
 	public function default(string $kind, string $handlerClass): self
 	{
@@ -72,9 +69,9 @@ class HandlerRegistry
 	}
 
 	/**
-	 * @return class-string<HandlerInterface>
+	 * @return class-string<RelationMutationHandlerInterface>|null
 	 */
-	public function resolve(CollectionInterface $collection, string $responseName, RelationInterface $relation): string
+	public function resolve(CollectionInterface $collection, string $responseName, RelationInterface $relation): ?string
 	{
 		$key = $this->relationKey($collection->getName(), $responseName);
 		if (isset($this->relations[$key])) {
@@ -86,7 +83,7 @@ class HandlerRegistry
 			return $this->defaults[$kind];
 		}
 
-		throw new RuntimeException("No REST SQL handler configured for {$key} ({$kind}).");
+		return null;
 	}
 
 	private function relationKey(string $collectionName, string $relationName): string
@@ -102,10 +99,6 @@ class HandlerRegistry
 
 		if ($relation instanceof BelongsToRelation) {
 			return 'belongsTo';
-		}
-
-		if ($relation instanceof FirstOfManyRelation) {
-			return 'firstOfMany';
 		}
 
 		if ($relation instanceof HasManyRelation) {

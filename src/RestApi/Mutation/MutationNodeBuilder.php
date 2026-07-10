@@ -188,7 +188,7 @@ final class MutationNodeBuilder
 			return $mode;
 		}
 
-		return $id !== null && $items->findByIdentity($collection, $id, StorageRepresentation::class) !== null ? 'update' : 'create';
+		return $id !== null && $items->findByIdentity($collection, $id) !== null ? 'update' : 'create';
 	}
 
 	private static function assertCreateIdAvailable(ItemRepositoryInterface $items, string $operation, CollectionInterface $collection, MutationStateInterface $state): void
@@ -201,7 +201,7 @@ final class MutationNodeBuilder
 		if (
 			$createId !== null
 			&& ! array_filter($createId->values(), static fn (mixed $value): bool => $value instanceof ValueRef)
-			&& $items->findByIdentity($collection, $createId, StorageRepresentation::class) !== null
+			&& $items->findByIdentity($collection, $createId) !== null
 		) {
 			throw new RestApiError(
 				"A record with this " . implode(', ', PrimaryKey::of($collection)->getFieldNames()) . " already exists.",

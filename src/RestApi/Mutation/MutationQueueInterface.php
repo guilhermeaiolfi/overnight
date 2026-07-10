@@ -7,7 +7,6 @@ namespace ON\RestApi\Mutation;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Hook\RestHookTransaction;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
 interface MutationQueueInterface
@@ -19,13 +18,13 @@ interface MutationQueueInterface
 
 	public function queueUpdate(
 		CollectionInterface $collection,
-		FilterNode $criteria,
+		array $criteria,
 		array|MutationStateInterface $input
 	): MutationTaskInterface;
 
 	public function queueDelete(
 		CollectionInterface $collection,
-		FilterNode $criteria,
+		array $criteria,
 		?MutationStateInterface $state = null,
 	): MutationDeleteTaskInterface;
 

@@ -32,5 +32,5 @@ interface RelationMutationHandlerInterface
 
 	public function getTargetCollection(): CollectionInterface;
 
-	public function getRelationName(): ?string;
+	public function getRelationName(): string;
 }

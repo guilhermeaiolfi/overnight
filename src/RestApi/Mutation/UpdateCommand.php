@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
-use ON\RestApi\Query\Node\FilterNode;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 
 final class UpdateCommand extends AbstractMutationCommand
@@ -14,7 +13,7 @@ final class UpdateCommand extends AbstractMutationCommand
 
 	public function __construct(
 		private CollectionInterface $collection,
-		private FilterNode $criteria,
+		private array $criteria,
 		private array|MutationStateInterface $input
 	) {
 		$this->state = $input instanceof MutationStateInterface
