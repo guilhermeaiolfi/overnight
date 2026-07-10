@@ -37,7 +37,9 @@ final class ConversionGatewayFactory
 		);
 
 		$config = $this->config($container);
-		foreach ($config->prependedComponents as $component) {
+		// MapperManager::prepend() unshifts, so apply declared prepends in reverse
+		// to preserve declaration order as runtime precedence (first prepended = first tried).
+		foreach (array_reverse($config->prependedComponents) as $component) {
 			$gateway->getMapperManager()->prepend($component);
 		}
 
