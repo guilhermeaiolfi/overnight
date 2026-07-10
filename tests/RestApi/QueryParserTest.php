@@ -10,7 +10,9 @@ use ON\Data\Query\Condition\ComparisonOperator;
 use ON\Data\Query\Expression\AggregateExpression;
 use ON\Data\Query\Expression\AggregateFunction;
 use ON\Data\Query\Expression\FieldRef;
-use ON\Data\Query\Expression\RawSqlExpression;
+use ON\Data\Query\Expression\FunctionCallExpression;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
 use ON\Data\Query\Relation\LoadStrategy;
 use ON\Data\Query\Selection\SelectionTag;
 use ON\RestApi\Query\Parser\CmsQueryParser;
@@ -58,7 +60,7 @@ final class QueryParserTest extends TestCase
 		$collection = $registry->getCollection('post');
 		$parser = $this->createQueryParser();
 
-		$context = new QueryContext(databaseType: 'sqlite');
+		$context = new QueryContext();
 		$query = $parser->parse($collection, [
 			'filter' => ['year(created_at)' => ['_eq' => 2026]],
 			'search' => 'GraphQL',
@@ -86,7 +88,7 @@ final class QueryParserTest extends TestCase
 		}
 		$this->assertTrue($hasCountDistinct);
 
-		$filterContext = new QueryContext(databaseType: 'sqlite');
+		$filterContext = new QueryContext();
 		$filterQuery = $parser->parse($collection, [
 			'filter' => ['year(created_at)' => ['_eq' => 2026]],
 			'search' => 'GraphQL',
@@ -97,7 +99,21 @@ final class QueryParserTest extends TestCase
 		$this->assertGreaterThanOrEqual(2, count($conditions));
 		$sorts = $filterQuery->getSorts();
 		$this->assertNotEmpty($sorts);
-		$this->assertInstanceOf(RawSqlExpression::class, $sorts[0]->getExpression());
+		$this->assertInstanceOf(FunctionCallExpression::class, $sorts[0]->getExpression());
+		$this->assertSame(Month::class, $sorts[0]->getExpression()->getFunction());
+
+		$filterExpr = null;
+		foreach ($conditions as $condition) {
+			if (method_exists($condition, 'getLeft')) {
+				$left = $condition->getLeft();
+				if ($left instanceof FunctionCallExpression) {
+					$filterExpr = $left;
+					break;
+				}
+			}
+		}
+		$this->assertInstanceOf(FunctionCallExpression::class, $filterExpr);
+		$this->assertSame(Year::class, $filterExpr->getFunction());
 	}
 
 	public function testDirectusNestedAliasesAreScopedByRelationPath(): void
@@ -182,5 +198,30 @@ final class QueryParserTest extends TestCase
 				: null,
 			$directus->getSelections()->getByTag(SelectionTag::PUBLIC),
 		));
+	}
+
+	public function testDirectusParserHasNoManualTemporalSqlOrRelationKeyTraversal(): void
+	{
+		$contents = (string) file_get_contents(dirname(__DIR__, 2) . '/src/RestApi/Query/Parser/DirectusQueryParser.php');
+
+		foreach ([
+			'strftime',
+			'EXTRACT',
+			'YEAR(',
+			'MONTH(',
+			'DAY(',
+			'HOUR(',
+			'dateFunctionSql',
+			'rawSql(',
+			'getInnerKeys(',
+			'getOuterKeys(',
+			'getThrough(',
+			'M2MRelation',
+		] as $forbidden) {
+			$this->assertStringNotContainsString($forbidden, $contents, $forbidden);
+		}
+
+		$this->assertStringContainsString('relatedQuery(', $contents);
+		$this->assertStringContainsString('FUNCTION_CLASSES', $contents);
 	}
 }

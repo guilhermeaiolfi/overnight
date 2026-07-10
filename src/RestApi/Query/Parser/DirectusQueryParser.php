@@ -6,10 +6,14 @@ namespace ON\RestApi\Query\Parser;
 
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
-use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Query\Condition\ConditionInterface;
 use ON\Data\Query\Expression\ValueExpressionInterface;
+use ON\Data\Query\QueryFunction\Standard\Temporal\DateValue;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Day;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Hour;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
 use ON\Data\Query\Relation\RelationRef;
 use ON\Data\Query\SelectQuery;
 use ON\Data\Query\Selection\SelectionTag;
@@ -22,7 +26,16 @@ use Throwable;
 
 final class DirectusQueryParser implements QueryParserInterface
 {
-	private const DATE_FUNCTIONS = ['year', 'month', 'day', 'hour', 'date'];
+	/**
+	 * @var array<string, class-string>
+	 */
+	private const FUNCTION_CLASSES = [
+		'year' => Year::class,
+		'month' => Month::class,
+		'day' => Day::class,
+		'hour' => Hour::class,
+		'date' => DateValue::class,
+	];
 
 	public function __construct(
 		private readonly DataRuntime $runtime,
@@ -460,52 +473,27 @@ final class DirectusQueryParser implements QueryParserInterface
 			return null;
 		}
 
-		$parentSource = $parentRelation ?? $rootQuery;
+		$query = $parentRelation?->getQuery() ?? $rootQuery;
+		$relationRef = $parentRelation !== null
+			? $parentRelation->relation($relation->getName())
+			: $query->relation($relation->getName());
 
-		if ($relation->isJunction() && $relation instanceof M2MRelation) {
-			$through = $relation->getThrough();
-			$throughCollection = $through->getCollection();
-			$junction = $rootQuery->related($throughCollection);
-			foreach ($through->getInnerKeys() as $index => $throughInnerKey) {
-				$sourceKey = $relation->getInnerKeys()[$index];
-				$junction->where(x()->eq(
-					$junction->field($throughInnerKey),
-					$parentSource->field($sourceKey),
-				));
-			}
-
-			$target = $rootQuery->related($targetCollection);
-			foreach ($through->getOuterKeys() as $index => $throughOuterKey) {
-				$targetKey = $relation->getOuterKeys()[$index];
-				$target->where(x()->eq(
-					$target->field($targetKey),
-					$junction->field($throughOuterKey),
-				));
-			}
-
-			$nested = $this->buildConditionsOnRelated($target, $targetCollection, $nestedFilter, $aliases, $scope, $context);
-			if ($nested !== []) {
-				$target->where(...$nested);
-			}
-
-			$junction->where(x()->exists($target));
-
-			return x()->exists($junction);
-		}
-
-		$related = $rootQuery->related($targetCollection);
-		foreach ($relation->getInnerKeys() as $index => $innerKey) {
-			$outerKey = $relation->getOuterKeys()[$index];
-			$related->where(x()->eq(
-				$related->field($outerKey),
-				$parentSource->field($innerKey),
-			));
-		}
-
-		$nested = $this->buildConditionsOnRelated($related, $targetCollection, $nestedFilter, $aliases, $scope, $context);
-		if ($nested !== []) {
-			$related->where(...$nested);
-		}
+		$related = $query->relatedQuery(
+			$relationRef,
+			function (SelectQuery $target) use ($targetCollection, $nestedFilter, $aliases, $scope, $context): void {
+				$conditions = $this->buildConditionsOnRelated(
+					$target,
+					$targetCollection,
+					$nestedFilter,
+					$aliases,
+					$scope,
+					$context,
+				);
+				if ($conditions !== []) {
+					$target->where(...$conditions);
+				}
+			},
+		);
 
 		return x()->exists($related);
 	}
@@ -775,15 +763,13 @@ final class DirectusQueryParser implements QueryParserInterface
 		QueryContext $context,
 	): ValueExpressionInterface {
 		$parsed = $this->functions->parse($field);
-		if ($parsed->isFunction()) {
-			$column = $collection->fields->has($parsed->field)
-				? $collection->fields->get($parsed->field)->getColumn()
-				: $parsed->field;
+		$expression = $query->field($parsed->field);
 
-			return x()->rawSql($this->dateFunctionSql($parsed->function, $column, $context->databaseType));
+		if (! $parsed->isFunction()) {
+			return $expression;
 		}
 
-		return $query->field($parsed->field);
+		return $this->functionCall($parsed->function, $expression);
 	}
 
 	private function relationValueExpression(
@@ -793,15 +779,24 @@ final class DirectusQueryParser implements QueryParserInterface
 		QueryContext $context,
 	): ValueExpressionInterface {
 		$parsed = $this->functions->parse($field);
-		if ($parsed->isFunction()) {
-			$column = $collection->fields->has($parsed->field)
-				? $collection->fields->get($parsed->field)->getColumn()
-				: $parsed->field;
+		$expression = $rel->field($parsed->field);
 
-			return x()->rawSql($this->dateFunctionSql($parsed->function, $column, $context->databaseType));
+		if (! $parsed->isFunction()) {
+			return $expression;
 		}
 
-		return $rel->field($parsed->field);
+		return $this->functionCall($parsed->function, $expression);
+	}
+
+	private function functionCall(string $function, ValueExpressionInterface $expression): ValueExpressionInterface
+	{
+		$function = strtolower($function);
+		$class = self::FUNCTION_CLASSES[$function] ?? null;
+		if ($class === null) {
+			throw RestApiError::invalidField($function);
+		}
+
+		return x()->fn()->call($class, $expression);
 	}
 
 	private function aggregateExpression(
@@ -829,40 +824,6 @@ final class DirectusQueryParser implements QueryParserInterface
 			'min' => x()->min($operand),
 			'max' => x()->max($operand),
 			default => throw new RestApiError("Unsupported aggregate function '{$function}'.", 'INVALID_AGGREGATE', $function, 400),
-		};
-	}
-
-	private function dateFunctionSql(string $function, string $column, string $databaseType): string
-	{
-		$function = strtolower($function);
-		if (! in_array($function, self::DATE_FUNCTIONS, true)) {
-			throw RestApiError::invalidField($function);
-		}
-
-		$quoted = $column;
-
-		return match (strtolower($databaseType)) {
-			'sqlite' => match ($function) {
-				'year' => "CAST(strftime('%Y', {$quoted}) AS INTEGER)",
-				'month' => "CAST(strftime('%m', {$quoted}) AS INTEGER)",
-				'day' => "CAST(strftime('%d', {$quoted}) AS INTEGER)",
-				'hour' => "CAST(strftime('%H', {$quoted}) AS INTEGER)",
-				'date' => "date({$quoted})",
-			},
-			'postgres', 'pgsql' => match ($function) {
-				'year' => "EXTRACT(YEAR FROM {$quoted})",
-				'month' => "EXTRACT(MONTH FROM {$quoted})",
-				'day' => "EXTRACT(DAY FROM {$quoted})",
-				'hour' => "EXTRACT(HOUR FROM {$quoted})",
-				'date' => "DATE({$quoted})",
-			},
-			default => match ($function) {
-				'year' => "YEAR({$quoted})",
-				'month' => "MONTH({$quoted})",
-				'day' => "DAY({$quoted})",
-				'hour' => "HOUR({$quoted})",
-				'date' => "DATE({$quoted})",
-			},
 		};
 	}
 

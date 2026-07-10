@@ -225,7 +225,6 @@ final class ListAction implements RestActionInterface
 			defaultLimit: (int) $this->config->get('defaultLimit', 100),
 			maxLimit: (int) $this->config->get('maxLimit', 1000),
 			dynamicVariables: $this->config->get('dynamicVariables', []),
-			databaseType: (string) $this->config->get('databaseType', 'sqlite'),
 		);
 	}
 }

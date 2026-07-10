@@ -25,7 +25,6 @@ final class QueryContext
 		public readonly int $defaultLimit = 100,
 		public readonly int $maxLimit = 1000,
 		public readonly array $dynamicVariables = [],
-		public readonly string $databaseType = 'sqlite',
 		private array $meta = [],
 		private bool $isAggregate = false,
 		private array $aggregates = [],
