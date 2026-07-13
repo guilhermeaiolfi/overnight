@@ -36,17 +36,15 @@ RestApiExtension::install($app, [
 ]);
 ```
 
-The extension requires the `container`, `events`, and `mapper` extensions. RestApi serializes and deserializes collection rows through the [Mapper](../mapper.md) (`ConversionGateway`, `CollectionRowMapper`). Load `MapperExtension` before or alongside RestApi:
+The extension requires the `container`, `events`, and `data` extensions. RestApi serializes and deserializes collection rows through `ON\Data\Mapper` (`ConversionGateway`, `map()->args($collection)->…->to([])`). `DataExtension` registers the default conversion gateway.
 
 ```php
-use ON\Mapper\MapperExtension;
 use ON\RestApi\RestApiExtension;
 
-MapperExtension::install($app);
 RestApiExtension::install($app, ['path' => '/items']);
 ```
 
-Register custom field handlers on `MapperConfig` during `ConfigConfigureEvent` when your entities use non-builtin types (enums, files, etc.). See [Mapper — Extension registration](../mapper.md#extension-registration).
+Register custom field handlers on `DataMapperConfig` during `ConfigConfigureEvent` when your entities use non-builtin types (enums, files, etc.).
 
 ---
 
@@ -631,7 +629,8 @@ Order:
 
 Before-events expose:
 
-- `getState()` — `MutationStateInterface`; modify pending **scalar** values with `setValue()` / `setData()` (reapplied onto the Session representation before flush)
+- `getState()` — `MutationStateInterface` façade over the Session representation that will flush. Hooks mutate pending **scalars** with `setValue()` / `setData()` (also written onto that representation). Hooks do **not** see `RecordState`.
+- `getKey()` / `getId()` — `ON\Data\Key` identity when available (`getPrimaryKeyValue()` remains as a deprecated alias).
 - `getPath()` — nested path segments (empty for root)
 - `preventDefault(?array $result = null)` — stop the write (no flush, no after-events). Root may supply an alternate result.
 
@@ -639,7 +638,8 @@ Hook mutability boundaries:
 
 - **Supported:** scalar field changes, including fields absent from the original payload; explicit `null` via `setValue`.
 - **Unsupported:** changing primary-key fields on existing items (`IDENTITY_MUTATION_NOT_ALLOWED`); mutating relation membership / normalized relation intent through hooks (relation names are not scalar fields — there is no relation-intent hook API).
-- `setData()` replaces the pending value map; keys omitted from `setData` are not written again (representation values already set remain unchanged — not an implicit null).
+- `setData()` replaces the pending overlay map; keys omitted from `setData` are not written again (representation values already set remain unchanged — not an implicit null).
+- Identity is `ON\Data\Key` via `PrimaryKey` helpers (`getKey()`), not a RestApi-specific PK value type.
 
 Authorization: implement `AuthorizationAwareEventInterface` listeners (`allow()`, `forbid()`, `requireAuthentication()`).
 
@@ -649,9 +649,9 @@ Relation connect/disconnect events are not part of the Session mutation path. Se
 
 ```
 1. Parse + bind → BoundMutation tree on one Session
-2. Dispatch before-events (parent → child)
+2. Dispatch before-events (parent → child); reapply hook scalar mutations onto representations
 3. Session::sync() + Session::flush()
-4. Reload roots via ON\Data Query
+4. Reload roots via ON\Data Query; markReady(row) on state
 5. Dispatch after-events (child → parent)
 ```
 
@@ -739,7 +739,7 @@ $app->events->eventDispatcher->subscribeTo('restapi.item.deleting', function (It
 });
 ```
 
-For production soft-delete, prefer building criteria with `PrimaryKeyCriteria` from the event state.
+For production soft-delete, prefer building update criteria from `$event->getId()->getValues()` (or `PrimaryKey::of($collection)->getValue(...)`).
 
 ### Using EventSubscriberInterface
 

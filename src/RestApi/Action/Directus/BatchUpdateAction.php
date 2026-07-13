@@ -6,9 +6,8 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
@@ -19,7 +18,7 @@ use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
 
@@ -101,7 +100,7 @@ final class BatchUpdateAction implements RestActionInterface
 		];
 	}
 
-	protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
+	protected function getItemForETag(CollectionInterface $collection, Key|string $identity): ?array
 	{
 		return $this->items->findByIdentity(
 			$collection,
@@ -133,10 +132,10 @@ final class BatchUpdateAction implements RestActionInterface
 		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $item);
 		if ($scalars !== []) {
 			$scalars = map($scalars)
-				->using(CollectionRowMapper::class, $collection)
+				->args($collection)
 				->from($from)
 				->as(PhpRepresentation::class)
-				->toArray();
+				->to([]);
 		}
 
 		return $scalars + $relations;

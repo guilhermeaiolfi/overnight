@@ -13,18 +13,16 @@ final class DefinitionRegistryProvider
 {
 	public function __invoke(ContainerInterface $container): Registry
 	{
+		$app = $container->get(Application::class);
 		$cache = $container->get(DefinitionCache::class);
 
-		if ($cache->exists()) {
+		if (! $app->isDebug() && $cache->exists()) {
 			return new Registry($cache->load());
 		}
 
 		$registry = new Registry();
 
-		$container
-			->get(Application::class)
-			->init()
-			->emit(new DataDefinitionConfigureEvent($registry));
+		$app->init()->emit(new DataDefinitionConfigureEvent($registry));
 
 		$definitions = $registry->all();
 

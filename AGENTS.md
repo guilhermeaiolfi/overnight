@@ -85,15 +85,14 @@ Key rules:
 - Object properties (`fields`, `relations`, `through`) are public: `$collection->fields->get('name')`
 - Field `->type()` for Cycle schema: string Cycle types (`int`, `string`, `datetime`, …) or `FieldTypeInterface::class` (uses `storageType()`). Unknown types fail in `CycleRegistryGenerator`.
 
-## Mapper
+## Mapper (`ON\Data\Mapper`)
 
-- Entry point: `map()` in `src/Mapper/functions.php`, hub: `ConversionGateway`
+- Entry point: `ON\Data\Mapper\map()`, hub: `ON\Data\Mapper\ConversionGateway`
 - Representations: `StorageRepresentation`, `PhpRepresentation`, `WireRepresentation` (class constants, not strings)
-- Field handlers: `FieldTypeInterface` with `storageType()`, `toPhp()`, `fromPhp()`; registry via `MapperConfig::register($type, Handler::class)`
-- Never register handlers with single-arg form — `storageType()` is DB encoding, not registry key
-- ORM rows: `map($row)->using(CollectionRowMapper::class, $collection)->from(...)->to(...)->toArray()`
-- RestApi depends on `MapperExtension`; tests can use `ConversionGateway::configure()` / `reset()`
-- Docs: `docs/mapper.md`
+- Field handlers: `FieldTypeInterface` with `getNames()`, `getStorageType()`, `toPhp()`, `fromPhp()`; register via `DataMapperConfig` / `MapperManager::register()`
+- ORM rows: `map($row)->args($collection)->from(...)->as(...)->to([])` (lists: `->collection()->to([])`)
+- RestApi uses DataIntegration's gateway (`Mapping::setDefaultGateway`); tests set the gateway the same way
+- Overnight no longer ships `ON\Mapper` / `MapperExtension`
 
 ## Testing Conventions
 

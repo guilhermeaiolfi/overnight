@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Key;
 use ON\Data\ORM\Representation\Schema\Manual\PropertyRef;
 use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\Payload\PayloadPath;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
 
 /**
- * Hook-facing mutable item state backed by the same representation Session will flush.
+ * Hook-facing façade over the Session representation the binder will flush.
+ *
+ * Pending Directus scalars live in an overlay map ({@see getData()}) that is also
+ * written onto the representation. After flush, {@see markReady()} merges the
+ * reloaded row into that overlay. Hooks never see {@see \ON\Data\ORM\Record\RecordState}.
  *
  * Supported before-hook mutations: scalar field setValue/setData (including fields
  * absent from the original payload). Removing a key from setData leaves the prior
@@ -24,7 +28,11 @@ use ON\RestApi\Support\PrimaryKeyValue;
  */
 final class BoundItemState implements MutationStateInterface
 {
-	/** @var array<string, mixed> */
+	/**
+	 * Pending scalar overlay for hooks (Directus-shaped). Representation is what Session flushes.
+	 *
+	 * @var array<string, mixed>
+	 */
 	private array $values;
 
 	private ?array $row;
@@ -147,18 +155,6 @@ final class BoundItemState implements MutationStateInterface
 		$this->writeField($column, $value);
 	}
 
-	public function resolveValue(mixed $value): mixed
-	{
-		return $value;
-	}
-
-	public function isValueReady(string $column): bool
-	{
-		return array_key_exists($column, $this->values)
-			|| ($this->row !== null && array_key_exists($column, $this->row))
-			|| $this->ready;
-	}
-
 	public function isReady(): bool
 	{
 		return $this->ready;
@@ -180,23 +176,19 @@ final class BoundItemState implements MutationStateInterface
 		$this->ready = true;
 	}
 
-	public function getPrimaryKeyValue(bool $requireReady = true): ?PrimaryKeyValue
+	public function getKey(bool $requireReady = true): ?Key
 	{
-		$values = [];
-		foreach (PrimaryKey::of($this->collection)->getFieldNames() as $fieldName) {
-			$value = $this->getValue($fieldName);
-			if ($value === null && $requireReady && ! $this->isValueReady($fieldName)) {
-				return null;
-			}
-			$values[$fieldName] = $value;
+		$source = $this->row === null
+			? $this->values
+			: array_merge($this->row, $this->values);
+
+		$key = PrimaryKey::of($this->collection)->extractFromInput($source);
+		if ($key !== null) {
+			return $key;
 		}
 
-		return new PrimaryKeyValue($this->collection, $values);
-	}
-
-	public function rebindValueRefs(array $values): array
-	{
-		return $values;
+		// Incomplete PK: allow a second look at the pending overlay only when not required ready.
+		return $requireReady ? null : PrimaryKey::of($this->collection)->extractFromInput($this->values);
 	}
 
 	/**

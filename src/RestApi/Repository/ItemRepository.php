@@ -10,15 +10,13 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
-use ON\Mapper\Exception\ConversionException;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\StorageRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use ON\Data\Mapper\Exception\ConversionException;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\StorageRepresentation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyCriteria;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
 use Throwable;
 
 class ItemRepository implements ItemRepositoryInterface
@@ -58,7 +56,7 @@ class ItemRepository implements ItemRepositoryInterface
 
 	public function findByIdentity(
 		CollectionInterface $collection,
-		PrimaryKeyValue|string $identity,
+		Key|string $identity,
 		string $output = PhpRepresentation::class,
 	): ?array {
 		$row = $this->loadByIdentity($collection, $identity);
@@ -69,13 +67,13 @@ class ItemRepository implements ItemRepositoryInterface
 
 		try {
 			return map($row)
-				->using(CollectionRowMapper::class, $collection)
+				->args($collection)
 				->from(PhpRepresentation::class)
 				->as($output)
-				->toArray();
+				->to([]);
 		} catch (ConversionException $e) {
 			throw RestApiError::validationFailed([
-				$e->getField() ?? '_root' => [$e->getMessage()],
+				'_root' => [$e->getMessage()],
 			]);
 		}
 	}
@@ -106,7 +104,7 @@ class ItemRepository implements ItemRepositoryInterface
 				return [];
 			}
 
-			$row = $this->loadByIdentity($collection, new PrimaryKeyValue($collection, $key->getValues()));
+			$row = $this->loadByIdentity($collection, $key);
 
 			return $row === null ? [] : $row;
 		} catch (RestApiError $e) {
@@ -174,13 +172,13 @@ class ItemRepository implements ItemRepositoryInterface
 	{
 		try {
 			$dehydrated = map($input)
-				->using(CollectionRowMapper::class, $collection)
+				->args($collection)
 				->from(PhpRepresentation::class)
 				->as(StorageRepresentation::class)
-				->toArray();
+				->to([]);
 		} catch (ConversionException $e) {
 			throw RestApiError::validationFailed([
-				$e->getField() ?? '_root' => [$e->getMessage()],
+				'_root' => [$e->getMessage()],
 			]);
 		}
 
@@ -211,10 +209,11 @@ class ItemRepository implements ItemRepositoryInterface
 		}
 	}
 
-	protected function loadByIdentity(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
+	protected function loadByIdentity(CollectionInterface $collection, Key|string $identity): ?array
 	{
+		$key = PrimaryKey::of($collection)->getValue($identity);
 		$query = $this->select($collection, $collection->getVisibleFields());
-		$this->applyReadCriteria($query, PrimaryKeyCriteria::build($collection, $identity));
+		$this->applyReadCriteria($query, $key->getValues());
 		$query->limit(1);
 
 		return $this->fetchOne($query);

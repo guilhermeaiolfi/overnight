@@ -164,6 +164,12 @@ final class CycleRegistryGenerator implements GeneratorInterface
 		$cycleRelations = $entity->getRelations();
 
 		foreach ($collection->getRelations() as $name => $relation) {
+			// ON\Data marks query-only relations with a null persistence planner
+			// (e.g. FirstOfMany). Cycle has no equivalent — do not approximate them.
+			if ($relation->getPersistencePlanner() === null) {
+				continue;
+			}
+
 			$cycleRelations->set($name, $this->convertRelation($relation));
 		}
 	}
@@ -285,11 +291,11 @@ final class CycleRegistryGenerator implements GeneratorInterface
 
 	private function resolveRelationType(RelationInterface $relation): string
 	{
+		// FirstOfManyRelation extends HasManyRelation. convertRelationMap() must
+		// skip null-planner relations first; keep this guard so it is never emitted as hasMany.
 		if ($relation instanceof FirstOfManyRelation) {
 			throw new UnsupportedDefinitionFeatureException(sprintf(
-				'FirstOfManyRelation "%s" is not supported by CycleRegistryGenerator. '
-				. 'Cycle has no first-of-many relation type; do not approximate it as hasMany. '
-				. 'Runtime first-of-many remains a query/relation-loading concern outside Cycle schema.',
+				'FirstOfManyRelation "%s" must be skipped by CycleRegistryGenerator, not compiled.',
 				$relation->getName(),
 			));
 		}

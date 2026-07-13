@@ -48,25 +48,6 @@ final class MutationHardeningTest extends TestCase
 		$this->assertSame($postsBefore, $this->countRows($db, 'post'));
 	}
 
-	public function testMissingToOneObjectTargetFailsBeforeFlush(): void
-	{
-		[$service] = $this->ops();
-
-		try {
-			$service->create('post', [
-				'user_id' => 1,
-				'title' => 'X',
-				'content' => 'Y',
-				'status' => 'draft',
-				'author' => ['id' => 999, 'name' => 'Ghost'],
-			], ['dispatchEvents' => false]);
-			$this->fail('Expected RELATED_NOT_FOUND');
-		} catch (RestApiError $error) {
-			$this->assertSame('RELATED_NOT_FOUND', $error->getErrorCode());
-			$this->assertSame('author', $error->getField());
-		}
-	}
-
 	public function testMissingImplicitExistingItemFails(): void
 	{
 		[$service] = $this->ops();
@@ -86,23 +67,42 @@ final class MutationHardeningTest extends TestCase
 		}
 	}
 
-	public function testMissingImplicitExistingItemWithUpdatesFails(): void
+	public function testMissingImplicitExistingItemWithUpdatesCreatesRelated(): void
 	{
-		[$service] = $this->ops();
+		[$service, $db] = $this->ops();
 
-		try {
-			$service->create('post', [
-				'user_id' => 1,
-				'title' => 'X',
-				'content' => 'Y',
-				'status' => 'draft',
-				'tags' => [['id' => 999, 'name' => 'Nope']],
-			], ['dispatchEvents' => false]);
-			$this->fail('Expected RELATED_NOT_FOUND');
-		} catch (RestApiError $error) {
-			$this->assertSame('RELATED_NOT_FOUND', $error->getErrorCode());
-			$this->assertSame('tags.0', $error->getField());
-		}
+		$result = $service->create('post', [
+			'user_id' => 1,
+			'title' => 'X',
+			'content' => 'Y',
+			'status' => 'draft',
+			'tags' => [['id' => 999, 'name' => 'Nope']],
+		], ['dispatchEvents' => false]);
+
+		$this->assertGreaterThan(0, (int) ($result['id'] ?? 0));
+		$tag = $db->database()->query('SELECT id, name FROM tag WHERE id = 999')->fetch();
+		$this->assertNotFalse($tag);
+		$this->assertSame('Nope', $tag['name']);
+		$link = $db->database()->query('SELECT post_id, tag_id FROM post_tag WHERE tag_id = 999')->fetch();
+		$this->assertNotFalse($link);
+		$this->assertSame((int) $result['id'], (int) $link['post_id']);
+	}
+
+	public function testMissingToOneObjectTargetCreatesRelated(): void
+	{
+		[$service, $db] = $this->ops();
+
+		$result = $service->create('post', [
+			'title' => 'X',
+			'content' => 'Y',
+			'status' => 'draft',
+			'author' => ['id' => 999, 'name' => 'Ghost'],
+		], ['dispatchEvents' => false]);
+
+		$this->assertSame(999, (int) ($result['user_id'] ?? 0));
+		$user = $db->database()->query('SELECT id, name FROM user WHERE id = 999')->fetch();
+		$this->assertNotFalse($user);
+		$this->assertSame('Ghost', $user['name']);
 	}
 
 	public function testMissingExplicitUpdateItemFails(): void

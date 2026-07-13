@@ -6,9 +6,8 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationCoordinator;
@@ -117,10 +116,10 @@ final class CreateAction implements RestActionInterface
 		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $item);
 		if ($scalars !== []) {
 			$scalars = map($scalars)
-				->using(CollectionRowMapper::class, $collection)
+				->args($collection)
 				->from($from)
 				->as(PhpRepresentation::class)
-				->toArray();
+				->to([]);
 		}
 
 		return $scalars + $relations;

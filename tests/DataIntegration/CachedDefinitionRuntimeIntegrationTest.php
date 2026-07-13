@@ -43,7 +43,7 @@ final class CachedDefinitionRuntimeIntegrationTest extends TestCase
 		$this->projectDir = sys_get_temp_dir() . '/overnight-cached-def-' . bin2hex(random_bytes(8));
 		mkdir($this->projectDir, 0777, true);
 		mkdir($this->projectDir . '/config', 0777, true);
-		file_put_contents($this->projectDir . '/.env', "APP_DEBUG=true\nAPP_ENV=testing\n");
+		file_put_contents($this->projectDir . '/.env', "APP_DEBUG=false\nAPP_ENV=testing\n");
 		CachedDefinitionProbeExtension::reset();
 	}
 
@@ -84,7 +84,7 @@ final class CachedDefinitionRuntimeIntegrationTest extends TestCase
 
 		$pk = PrimaryKey::of($user);
 		$this->assertSame(['id'], $pk->getFieldNames());
-		$this->assertSame(['id' => 7], $pk->getValue(7)->values());
+		$this->assertSame(['id' => 7], $pk->getValue(7)->getValues());
 
 		$author = $post->getRelation('author');
 		$this->assertNotNull($author);
@@ -127,7 +127,7 @@ final class CachedDefinitionRuntimeIntegrationTest extends TestCase
 				'project' => $this->projectDir,
 			],
 			'extensions' => $extensions,
-			'debug' => true,
+			'debug' => false,
 		]);
 	}
 

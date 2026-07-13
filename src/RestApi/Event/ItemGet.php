@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Key;
 use ON\Data\Query\SelectQuery;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\RestApi\Query\QueryContext;
-use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
@@ -23,7 +23,7 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 	 */
 	public function __construct(
 		protected CollectionInterface $collection,
-		protected PrimaryKeyValue $identity,
+		protected Key $identity,
 		protected SelectQuery $query,
 		protected QueryContext $context,
 		protected array $options = [],
@@ -56,19 +56,25 @@ class ItemGet implements AuthorizationAwareEventInterface, HasEventNameInterface
 		$this->options = $options;
 	}
 
-	public function getPrimaryKeyValue(): PrimaryKeyValue
+	public function getKey(): Key
 	{
 		return $this->identity;
 	}
 
-	public function getIdentity(): PrimaryKeyValue
+	/** @deprecated Use getKey() */
+	public function getPrimaryKeyValue(): Key
 	{
-		return $this->getPrimaryKeyValue();
+		return $this->getKey();
 	}
 
-	public function getId(): PrimaryKeyValue
+	public function getIdentity(): Key
 	{
-		return $this->getPrimaryKeyValue();
+		return $this->getKey();
+	}
+
+	public function getId(): Key
+	{
+		return $this->getKey();
 	}
 
 	public function getQuery(): SelectQuery

@@ -25,7 +25,6 @@ use ON\Data\Mapper\Field\DateTimeFieldType;
 use ON\Data\Mapper\Field\StringFieldType;
 use ON\DataIntegration\DataExtension;
 use ON\ORM\Compiler\CycleRegistryGenerator;
-use ON\ORM\Compiler\Exception\UnsupportedDefinitionFeatureException;
 use ON\ORM\ORMExtension;
 use ON\ORM\Select\Source;
 use PHPUnit\Framework\TestCase;
@@ -427,13 +426,14 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$this->compile($registry);
 	}
 
-	public function testFirstOfManyThrowsUnsupportedFeature(): void
+	public function testRelationsWithoutPersistencePlannerAreSkippedInCycleSchema(): void
 	{
 		$registry = new DataRegistry();
 		$registry->collection('user')
 			->table('user')
 			->primaryKey('id')
 			->field('id', 'primary')->end()
+			->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
 			->relation('latest_post', FirstOfManyRelation::class)
 				->collection('post')
 				->innerKey('id')
@@ -447,10 +447,14 @@ final class CycleRegistryGeneratorTest extends TestCase
 			->field('user_id', 'int')->end()
 			->end();
 
-		$this->expectException(UnsupportedDefinitionFeatureException::class);
-		$this->expectExceptionMessage('FirstOfManyRelation "latest_post" is not supported');
+		$relations = $this->compile($registry)->getEntity('user')->getRelations();
 
-		$this->compile($registry);
+		$this->assertTrue($relations->has('posts'));
+		$this->assertSame('hasMany', $relations->get('posts')->getType());
+		$this->assertFalse($relations->has('latest_post'));
+		$this->assertNull(
+			$registry->getCollection('user')->getRelations()->get('latest_post')->getPersistencePlanner()
+		);
 	}
 
 	public function testContainerResolvesGeneratorWithDataRegistry(): void

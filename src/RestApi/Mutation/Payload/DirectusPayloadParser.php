@@ -11,7 +11,6 @@ use ON\Data\Key;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
 use Psr\Http\Message\UploadedFileInterface;
 use Throwable;
 
@@ -288,9 +287,9 @@ final class DirectusPayloadParser
 		$identity = PrimaryKey::of($collection)->extractFromInput($scalars);
 		$key = null;
 		if ($identity !== null) {
-			$key = $this->toKey($collection, $identity);
+			$key = $identity;
 			if (! $forceNew) {
-				foreach ($identity->values() as $fieldName => $_) {
+				foreach ($identity->getValues() as $fieldName => $_) {
 					unset($scalars[$fieldName]);
 				}
 			}
@@ -335,7 +334,7 @@ final class DirectusPayloadParser
 				]);
 			}
 
-			return $this->toKey($collection, $identity);
+			return $identity;
 		}
 
 		return $this->identityFromScalar($collection, $item, $path);
@@ -344,30 +343,12 @@ final class DirectusPayloadParser
 	private function identityFromScalar(CollectionInterface $collection, mixed $value, PayloadPath $path): Key
 	{
 		try {
-			$identity = PrimaryKey::of($collection)->getValue($value);
-
-			return $this->toKey($collection, $identity);
+			return PrimaryKey::of($collection)->getValue($value);
 		} catch (Throwable) {
 			throw RestApiError::validationFailed([
 				$path->toString() !== '' ? $path->toString() : '_root' => ['Invalid related item identity.'],
 			]);
 		}
-	}
-
-	private function toKey(CollectionInterface $collection, PrimaryKeyValue $identity): Key
-	{
-		/** @var non-empty-array<string, string|int|float|bool> $values */
-		$values = [];
-		foreach ($identity->values() as $fieldName => $value) {
-			if (! is_string($value) && ! is_int($value) && ! is_float($value) && ! is_bool($value)) {
-				throw RestApiError::validationFailed([
-					(string) $fieldName => ['Primary key values must be scalar.'],
-				]);
-			}
-			$values[(string) $fieldName] = $value;
-		}
-
-		return new Key($collection, $values);
 	}
 
 	/**

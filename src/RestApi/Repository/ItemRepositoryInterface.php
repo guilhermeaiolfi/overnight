@@ -6,9 +6,9 @@ namespace ON\RestApi\Repository;
 
 use ON\Data\Query\SelectQuery;
 use ON\Data\Definition\Collection\CollectionInterface;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\RepresentationInterface;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\RepresentationInterface;
 
 interface ItemRepositoryInterface
 {
@@ -30,7 +30,7 @@ interface ItemRepositoryInterface
 	 */
 	public function findByIdentity(
 		CollectionInterface $collection,
-		PrimaryKeyValue|string $identity,
+		Key|string $identity,
 		string $output = PhpRepresentation::class,
 	): ?array;
 

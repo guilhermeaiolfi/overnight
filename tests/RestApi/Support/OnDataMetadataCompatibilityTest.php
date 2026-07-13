@@ -80,9 +80,9 @@ final class OnDataMetadataCompatibilityTest extends TestCase
 		$this->assertSame(['id'], $pk->getColumns());
 
 		$identity = $pk->getValue(42);
-		$this->assertSame(['id' => 42], $identity->values());
-		$this->assertSame('42', $identity->toUrlId());
-		$this->assertSame(['id' => '42'], $pk->getValueFromUrlId('42')->values());
+		$this->assertSame(['id' => 42], $identity->getValues());
+		$this->assertSame('42', $pk->toUrlId($identity));
+		$this->assertSame(['id' => '42'], $pk->getValueFromUrlId('42')->getValues());
 	}
 
 	public function testCompositePrimaryKeyParsing(): void
@@ -95,11 +95,11 @@ final class OnDataMetadataCompatibilityTest extends TestCase
 
 		$identity = $pk->extractFromInput(['region_id' => 1, 'sku' => 'ABC']);
 		$this->assertNotNull($identity);
-		$this->assertSame(['region_id' => 1, 'sku' => 'ABC'], $identity->values());
+		$this->assertSame(['region_id' => 1, 'sku' => 'ABC'], $identity->getValues());
 
-		$urlId = $identity->toUrlId();
+		$urlId = $pk->toUrlId($identity);
 		$roundTrip = $pk->getValueFromUrlId($urlId);
-		$this->assertSame(['region_id' => 1, 'sku' => 'ABC'], $roundTrip->values());
+		$this->assertSame(['region_id' => 1, 'sku' => 'ABC'], $roundTrip->getValues());
 	}
 
 	public function testFieldSelection(): void

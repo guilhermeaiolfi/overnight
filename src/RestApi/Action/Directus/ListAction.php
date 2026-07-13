@@ -9,9 +9,8 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Hook\RestHookDispatcher;
@@ -69,11 +68,11 @@ final class ListAction implements RestActionInterface
 
 			return [
 				'data' => map($result)
-					->using(CollectionRowMapper::class, $collection)
+					->args($collection)
 					->from(PhpRepresentation::class)
 					->as($responseOptions['output'])
 					->collection()
-					->toArray(),
+					->to([]),
 			];
 		}
 
@@ -102,11 +101,11 @@ final class ListAction implements RestActionInterface
 		}
 
 		$result['data'] = map($result['data'] ?? [])
-			->using(CollectionRowMapper::class, $collection)
+			->args($collection)
 			->from(PhpRepresentation::class)
 			->as(($responseOptions ?? $options)['output'])
 			->collection()
-			->toArray();
+			->to([]);
 
 		if (($result['meta'] ?? []) === []) {
 			unset($result['meta']);

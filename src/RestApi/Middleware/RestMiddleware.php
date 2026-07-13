@@ -7,7 +7,7 @@ namespace ON\RestApi\Middleware;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\Http\MultipartFormDataParser;
-use ON\Mapper\Representation\WireRepresentation;
+use ON\Data\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RequestComplete;

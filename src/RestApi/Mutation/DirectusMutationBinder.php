@@ -29,7 +29,6 @@ use ON\RestApi\Mutation\Payload\ToOneKind;
 use ON\RestApi\Mutation\Payload\ToOneMutation;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
 use stdClass;
 use Throwable;
 
@@ -37,6 +36,12 @@ use Throwable;
  * Binds Directus-normalized mutations onto ON\Data Session projections and relation state.
  *
  * Expresses membership intent only. ON\Data planners own FK / through-row persistence.
+ *
+ * Missing related identities:
+ * - Scalar / identity-only references still require the row to exist (RELATED_NOT_FOUND).
+ * - Nested objects with a body (field values and/or nested relations) whose identity is
+ *   missing are promoted to create with the client-supplied primary key (upsert-style).
+ * - Explicit `update` / `delete` remain strict via relation-scope checks.
  *
  * Identity lookup cache: request-local (cleared per MutationCoordinator operation). It
  * memoizes DB existence reads only. Identities scheduled for Session::remove() in earlier
@@ -89,7 +94,7 @@ final class DirectusMutationBinder
 		Session $session,
 		CollectionInterface $collection,
 		DirectusMutation $mutation,
-		PrimaryKeyValue|Key|string|int $identity,
+		Key|string|int $identity,
 	): BoundMutation {
 		return $this->bindRoot(
 			$session,
@@ -103,7 +108,7 @@ final class DirectusMutationBinder
 	public function bindDelete(
 		Session $session,
 		CollectionInterface $collection,
-		PrimaryKeyValue|Key|string|int $identity,
+		Key|string|int $identity,
 	): BoundMutation {
 		$key = $this->normalizeKey($collection, $identity);
 		$previous = $this->findRow($collection, $key);
@@ -148,7 +153,7 @@ final class DirectusMutationBinder
 		if ($operation === 'create') {
 			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
 			if ($manualIdentity !== null) {
-				$seed = $manualIdentity->values();
+				$seed = $manualIdentity->getValues();
 				$identity = $this->normalizeKey($collection, $manualIdentity);
 			}
 		}
@@ -412,16 +417,6 @@ final class DirectusMutationBinder
 				continue;
 			}
 
-			if (! $item->isNew() && $item->identity !== null) {
-				$this->requireRelatedExists(
-					$targetCollection,
-					$item->identity,
-					$item->path,
-					$relationName,
-					$item->values === [] && $item->relations === [] ? 'assign' : 'update',
-				);
-			}
-
 			$childBound = $this->bindRelatedItem(
 				$session,
 				$projection,
@@ -582,6 +577,28 @@ final class DirectusMutationBinder
 		/** @var array<string, mixed>|null $previous */
 		$previous = null;
 
+		if (! $item->isNew() && $item->identity !== null) {
+			$previous = $this->findRow($collection, $item->identity);
+			if ($previous === null && $this->hasRelatedBody($item)) {
+				// Missing PK + payload => create with client-supplied identity.
+				$item = new RelatedItemInput(
+					$item->identity,
+					$item->values,
+					$item->relations,
+					$item->path,
+					forceNew: true,
+				);
+			} elseif ($previous === null && $requireExists) {
+				throw RestApiError::relatedNotFound(
+					$collection->getName(),
+					$item->identity->isComposite() ? $item->identity->getValues() : $item->identity->getValue(),
+					$relationName,
+					$item->path->toString(),
+					$existenceOperation,
+				);
+			}
+		}
+
 		if ($item->isNew()) {
 			$seed = $item->values;
 			if ($item->identity !== null) {
@@ -589,17 +606,6 @@ final class DirectusMutationBinder
 			}
 			$relatedSource = $projection->create($relationRef, $seed);
 		} else {
-			if ($item->identity !== null && $requireExists) {
-				$previous = $this->requireRelatedExists(
-					$collection,
-					$item->identity,
-					$item->path,
-					$relationName,
-					$existenceOperation,
-				);
-			} elseif ($item->identity !== null) {
-				$previous = $this->findRow($collection, $item->identity);
-			}
 			$seed = $previous ?? ($item->identity?->getValues() ?? []);
 			$relatedSource = $projection->existing($relationRef, $item->identity, $seed);
 		}
@@ -647,6 +653,11 @@ final class DirectusMutationBinder
 			path: $item->path,
 			related: $related,
 		);
+	}
+
+	private function hasRelatedBody(RelatedItemInput $item): bool
+	{
+		return $item->values !== [] || $item->relations !== [];
 	}
 
 	private function bindExistingRelatedObject(
@@ -860,7 +871,7 @@ final class DirectusMutationBinder
 
 		$row = $this->items->findByIdentity(
 			$collection,
-			new PrimaryKeyValue($collection, $identity->getValues()),
+			$identity,
 		);
 		$this->identityLookupCache[$cacheKey] = $row;
 
@@ -928,27 +939,12 @@ final class DirectusMutationBinder
 
 	private function normalizeKey(
 		CollectionInterface $collection,
-		PrimaryKeyValue|Key|string|int|array $identity,
+		Key|string|int|array $identity,
 	): Key {
 		if ($identity instanceof Key) {
 			return $identity;
 		}
 
-		if ($identity instanceof PrimaryKeyValue) {
-			/** @var non-empty-array<string, string|int|float|bool> $values */
-			$values = [];
-			foreach ($identity->values() as $field => $value) {
-				if (! is_string($value) && ! is_int($value) && ! is_float($value) && ! is_bool($value)) {
-					throw RestApiError::validationFailed([
-						(string) $field => ['Primary key values must be scalar.'],
-					]);
-				}
-				$values[(string) $field] = $value;
-			}
-
-			return new Key($collection, $values);
-		}
-
-		return $this->normalizeKey($collection, PrimaryKey::of($collection)->getValue($identity));
+		return PrimaryKey::of($collection)->getValue($identity);
 	}
 }

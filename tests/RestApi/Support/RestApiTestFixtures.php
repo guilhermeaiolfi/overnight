@@ -11,12 +11,11 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Mapper\ConversionGateway as DataConversionGateway;
-use ON\Mapper\ConversionGateway;
-use ON\Mapper\Exception\ConversionException;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\WireRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use ON\Data\Mapper\Exception\ConversionException;
+use ON\Data\Mapper\Mapping;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
@@ -42,7 +41,7 @@ use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -52,6 +51,8 @@ trait RestApiTestFixtures
 {
 	/** @var array<int, DataRuntime> */
 	protected array $itemRuntimes = [];
+
+	protected ?DataConversionGateway $conversionGateway = null;
 
 	private function noopEventDispatcher(): EventDispatcherInterface
 	{
@@ -366,6 +367,8 @@ trait RestApiTestFixtures
 	{
 		$gateway = DataConversionGateway::createDefault();
 		$gateway->getMapperManager()->register(UploadPassthroughFieldType::class);
+		$this->conversionGateway = $gateway;
+		Mapping::setDefaultGateway($gateway);
 
 		return (new CycleRuntimeFactory())->create(
 			$db->database(),
@@ -375,7 +378,9 @@ trait RestApiTestFixtures
 
 	protected function ensureConversionGateway(): void
 	{
-		ConversionGateway::setInstance(ConversionGateway::createDefault());
+		$gateway = $this->conversionGateway ?? DataConversionGateway::createDefault();
+		$this->conversionGateway = $gateway;
+		Mapping::setDefaultGateway($gateway);
 	}
 
 	protected function createDirectusReadActions(Registry $registry, CycleSqliteTestDatabase $db, ?RestApiConfig $config = null): object
@@ -404,12 +409,12 @@ trait RestApiTestFixtures
 
 			public function get(
 				CollectionInterface $collection,
-				PrimaryKeyValue|string $identity,
+				Key|string $identity,
 				?array $query = null,
 			): ?array {
 				try {
 					$response = $this->getAction()(
-						['collection' => $collection->getName(), 'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity],
+						['collection' => $collection->getName(), 'id' => $identity instanceof Key ? PrimaryKey::of($collection)->toUrlId($identity) : (string) $identity],
 						['query' => $query ?? []],
 						['dispatchEvents' => false]
 					);
@@ -513,7 +518,7 @@ trait RestApiTestFixtures
 
 			public function get(
 				string|CollectionInterface $collection,
-				PrimaryKeyValue|string $identity,
+				Key|string $identity,
 				?array $query = null,
 				array $options = []
 			): ?array {
@@ -528,7 +533,7 @@ trait RestApiTestFixtures
 					$response = $this->getAction()(
 						[
 							'collection' => $collection->getName(),
-							'id' => $identity instanceof PrimaryKeyValue ? $identity->toUrlId() : (string) $identity,
+							'id' => $identity instanceof Key ? PrimaryKey::of($collection)->toUrlId($identity) : (string) $identity,
 						],
 						['query' => $query ?? []],
 						$options,
@@ -585,7 +590,7 @@ trait RestApiTestFixtures
 			 */
 			public function update(
 				string|CollectionInterface $collection,
-				PrimaryKeyValue|string $identity,
+				Key|string $identity,
 				array $input,
 				array $options = []
 			): ?array {
@@ -608,7 +613,7 @@ trait RestApiTestFixtures
 
 			public function delete(
 				string|CollectionInterface $collection,
-				PrimaryKeyValue|string $identity,
+				Key|string $identity,
 				array $options = []
 			): bool {
 				$collection = $this->getCollection($collection);
@@ -639,10 +644,10 @@ trait RestApiTestFixtures
 			public function serialize(CollectionInterface $collection, array $phpRow): array
 			{
 				return map($phpRow)
-					->using(CollectionRowMapper::class, $collection)
+					->args($collection)
 					->from(PhpRepresentation::class)
 					->as(WireRepresentation::class)
-					->toArray();
+					->to([]);
 			}
 
 			private function listAction(): ListAction
@@ -680,13 +685,13 @@ trait RestApiTestFixtures
 
 				try {
 					return map($payload)
-						->using(CollectionRowMapper::class, $collection)
+						->args($collection)
 						->from(WireRepresentation::class)
 						->as(PhpRepresentation::class)
-						->toArray();
+						->to([]);
 				} catch (ConversionException $e) {
 					throw RestApiError::validationFailed([
-						$e->getField() ?? '_root' => [$e->getMessage()],
+						'_root' => [$e->getMessage()],
 					]);
 				}
 			}
@@ -833,7 +838,7 @@ trait RestApiTestFixtures
 		CollectionInterface|string $collection,
 		array $input,
 		string $mode = 'create',
-		PrimaryKeyValue|string|null $id = null,
+		Key|string|null $id = null,
 		array $files = [],
 	): array {
 		return $input;

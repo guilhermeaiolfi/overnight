@@ -10,9 +10,8 @@ use ON\Data\Key;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemCreated;
@@ -26,7 +25,6 @@ use ON\RestApi\Hook\RestHookTransaction;
 use ON\RestApi\Mutation\Event\MutationEventPlan;
 use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
 use ON\RestApi\Repository\ItemRepositoryInterface;
-use ON\RestApi\Support\PrimaryKeyValue;
 use Throwable;
 
 /**
@@ -76,7 +74,7 @@ final class MutationCoordinator
 	 */
 	public function update(
 		CollectionInterface $collection,
-		PrimaryKeyValue|string|int $identity,
+		Key|string|int $identity,
 		array $input,
 		array $files = [],
 		bool $dispatchEvents = true,
@@ -92,7 +90,7 @@ final class MutationCoordinator
 
 	public function delete(
 		CollectionInterface $collection,
-		PrimaryKeyValue|string|int $identity,
+		Key|string|int $identity,
 		bool $dispatchEvents = true,
 	): bool {
 		$session = $this->sessions->create();
@@ -128,7 +126,7 @@ final class MutationCoordinator
 	}
 
 	/**
-	 * @param list<array{identity: PrimaryKeyValue|string|int, input: array<string, mixed>}> $items
+	 * @param list<array{identity: Key|string|int, input: array<string, mixed>}> $items
 	 * @param class-string $output
 	 * @return list<array<string, mixed>>
 	 */
@@ -150,7 +148,7 @@ final class MutationCoordinator
 	}
 
 	/**
-	 * @param list<PrimaryKeyValue|string|int> $identities
+	 * @param list<Key|string|int> $identities
 	 */
 	public function batchDelete(
 		CollectionInterface $collection,
@@ -216,10 +214,10 @@ final class MutationCoordinator
 					$this->scheduleAfter($afterHooksTx, $plans[$index], $bound);
 				}
 				$results[] = map($row)
-					->using(CollectionRowMapper::class, $bound->collection)
+					->args($bound->collection)
 					->from(PhpRepresentation::class)
 					->as($output)
-					->toArray();
+					->to([]);
 			}
 
 			if ($dispatchEvents) {
@@ -397,7 +395,7 @@ final class MutationCoordinator
 		$key = $this->resolveKeyAfterFlush($session, $bound);
 		$row = $this->items->findByIdentity(
 			$bound->collection,
-			new PrimaryKeyValue($bound->collection, $key->getValues()),
+			$key,
 		);
 		if ($row === null) {
 			throw RestApiError::notFound();
@@ -443,24 +441,21 @@ final class MutationCoordinator
 			return $bound->identity;
 		}
 
-		$identity = $bound->state->getPrimaryKeyValue(false);
-		if ($identity !== null && $identity->isComplete()) {
-			/** @var non-empty-array<string, string|int|float|bool> $values */
-			$values = $identity->values();
-
-			return new Key($bound->collection, $values);
+		$identity = $bound->state->getKey(false);
+		if ($identity !== null) {
+			return $identity;
 		}
 
 		throw RestApiError::notFound();
 	}
 
-	private function requireIdentity(BoundMutation $bound): PrimaryKeyValue
+	private function requireIdentity(BoundMutation $bound): Key
 	{
 		if ($bound->identity instanceof Key) {
-			return new PrimaryKeyValue($bound->collection, $bound->identity->getValues());
+			return $bound->identity;
 		}
 
-		$identity = $bound->state->getPrimaryKeyValue(false);
+		$identity = $bound->state->getKey(false);
 		if ($identity === null) {
 			throw RestApiError::notFound();
 		}

@@ -18,7 +18,7 @@ This document describes how to define entities (collections) in the Overnight fr
 
 ## Registry - Entry Point
 
-The `Registry` class is the main entry point for defining collections (entities). In a running application, resolve it from the container (`Registry::class`). It is provided by `DefinitionRegistryProvider`, which emits `DataDefinitionConfigureEvent` on a cold cache miss and otherwise loads `data-definitions.php`.
+The `Registry` class is the main entry point for defining collections (entities). In a running application, resolve it from the container (`Registry::class`). It is provided by `DefinitionRegistryProvider`, which emits `DataDefinitionConfigureEvent` on a cold cache miss (or whenever the app is in debug mode) and otherwise loads `data-definitions.php`.
 
 ### Event-Based Registration (Recommended)
 
@@ -218,10 +218,10 @@ A field is marked Cycle `GeneratedField::ON_INSERT` only when `autoIncrement(tru
 
 ### Field type handler classes
 
-You can set `->type()` to a class implementing `FieldTypeInterface`. The generator reads `storageType()` for the Cycle column type:
+You can set `->type()` to a class implementing `ON\Data\Mapper\FieldTypeInterface`. The generator reads `getStorageType()` for the Cycle column type:
 
 ```php
-use ON\Mapper\Field\Handler\DateTimeFieldType;
+use ON\Data\Mapper\Field\DateTimeFieldType;
 
 $registry->collection('event')
     ->primaryKey('id')
@@ -234,24 +234,24 @@ $registry->collection('event')
 Handler-resolved `string` still respects `maxLength()`:
 
 ```php
-use ON\Mapper\Field\Handler\StringFieldType;
+use ON\Data\Mapper\Field\StringFieldType;
 
 ->field('code', 'string')->type(StringFieldType::class)->maxLength(64)->end()
 // Cycle column type: string(64)
 ```
 
-`storageType()` describes **DB encoding only** (`'string'`, `'int'`, `'datetime'`). It is not the Mapper registry key — register handlers with an explicit key via `MapperConfig::register()`. See [Mapper — Extension registration](mapper.md#extension-registration).
+`getStorageType()` describes **DB encoding only** (`'string'`, `'int'`, `'datetime'`). Register handlers via DataIntegration `DataMapperConfig` / `MapperManager::register()`.
 
 ### Enums and custom PHP types
 
-For backed enums and custom PHP classes, keep the ORM `->type()` as a Cycle column type (usually `'string'` or `'int'`) and register a Mapper handler for the PHP class:
+For backed enums and custom PHP classes, keep the ORM `->type()` as a Cycle column type (usually `'string'` or `'int'`) and register a Mapper field type for the PHP class:
 
 ```php
 // ORM definition
 ->field('status', 'string')->type('string')->maxLength(32)->end()
 
-// Mapper config (ConfigConfigureEvent)
-->register(StatusEnum::class, StatusEnumFieldType::class)
+// DataMapperConfig (ConfigConfigureEvent)
+->register(StatusEnumFieldType::class)
 ```
 
 Do not use the enum class name as `->type()` unless it is also a `FieldTypeInterface` handler class — otherwise schema compilation fails.
@@ -260,7 +260,7 @@ Do not use the enum class name as `->type()` unless it is also a `FieldTypeInter
 
 `CycleRegistryGenerator` resolves each field type as follows:
 
-1. If `getType()` is a `FieldTypeInterface` class → use `storageType()`.
+1. If `getType()` is a `FieldTypeInterface` class → use `getStorageType()`.
 2. If the type contains parameters (`string(32)`, `datetime(6)`) → validate the base type and pass through unchanged.
 3. If the type is a known Cycle column name → use it (`string` becomes `string(maxLength)`).
 4. Otherwise → throw `FieldException`.
@@ -380,7 +380,7 @@ $registry->collection('post')
 
 ### FirstOfMany
 
-`FirstOfManyRelation` is not supported by `CycleRegistryGenerator` (throws `UnsupportedDefinitionFeatureException`). RestApi may still use first-of-many semantics at the query layer. See [ON\Data Definition Architecture](ondata-cycle-schema-migration.md#firstofmany).
+`FirstOfManyRelation` is query-only in ON\Data (`persistencePlanner` is `null`). `CycleRegistryGenerator` skips relations without a persistence planner and does not approximate FirstOfMany as `hasMany`. RestApi/query loading still uses first-of-many semantics. See [ON\Data Definition Architecture](ondata-cycle-schema-migration.md#firstofmany).
 
 ### Relation Methods
 

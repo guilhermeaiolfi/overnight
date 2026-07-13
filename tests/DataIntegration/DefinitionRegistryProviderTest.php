@@ -91,13 +91,30 @@ final class DefinitionRegistryProviderTest extends TestCase
 		}
 		file_put_contents($cacheFile, "<?php\n\nreturn " . var_export($this->usersDefinitionArray('cached_users'), true) . ";\n");
 
-		$app = $this->createApplication(writeFiles: false);
+		$app = $this->createApplication(writeFiles: false, debug: false);
 		$registry = $app->ext('container')->getContainer()->get(Registry::class);
 
 		$this->assertSame(0, DataDefinitionProbeExtension::$configureCalls);
 		$this->assertSame(0, DataDefinitionProbeExtension::$doneCalls);
 		$this->assertTrue($registry->hasCollection('cached_users'));
 		$this->assertFalse($registry->hasCollection('users'));
+	}
+
+	public function testDebugModeIgnoresCachedDefinitionsAndRebuilds(): void
+	{
+		$cacheFile = $this->projectDir . '/var/cache/data-definitions.php';
+		$this->writeProjectFiles();
+		if (! is_dir(dirname($cacheFile))) {
+			mkdir(dirname($cacheFile), 0777, true);
+		}
+		file_put_contents($cacheFile, "<?php\n\nreturn " . var_export($this->usersDefinitionArray('cached_users'), true) . ";\n");
+
+		$app = $this->createApplication(writeFiles: false, debug: true);
+		$registry = $app->ext('container')->getContainer()->get(Registry::class);
+
+		$this->assertSame(1, DataDefinitionProbeExtension::$configureCalls);
+		$this->assertTrue($registry->hasCollection('users'));
+		$this->assertFalse($registry->hasCollection('cached_users'));
 	}
 
 	public function testFailingDefinitionListenerDoesNotWriteCache(): void
@@ -223,9 +240,10 @@ final class DefinitionRegistryProviderTest extends TestCase
 		bool $includeCache = false,
 		bool $includeMapperConfig = false,
 		array $extraExtensions = [],
+		bool $debug = true,
 	): Application {
 		if ($writeFiles) {
-			$this->writeProjectFiles($includeMapperConfig);
+			$this->writeProjectFiles($includeMapperConfig, $debug);
 		}
 
 		return new Application([
@@ -241,17 +259,18 @@ final class DefinitionRegistryProviderTest extends TestCase
 				DataDefinitionProbeExtension::class => [],
 				...$extraExtensions,
 			],
-			'debug' => true,
+			'debug' => $debug,
 		]);
 	}
 
-	private function writeProjectFiles(bool $includeMapperConfig = false): void
+	private function writeProjectFiles(bool $includeMapperConfig = false, bool $debug = true): void
 	{
 		if (! is_dir($this->projectDir . '/config')) {
 			mkdir($this->projectDir . '/config', 0777, true);
 		}
 
-		file_put_contents($this->projectDir . '/.env', "APP_DEBUG=true\nAPP_ENV=testing\n");
+		$debugFlag = $debug ? 'true' : 'false';
+		file_put_contents($this->projectDir . '/.env', "APP_DEBUG={$debugFlag}\nAPP_ENV=testing\n");
 
 		if (! $includeMapperConfig) {
 			return;

@@ -46,7 +46,6 @@ config/
 ├── local.php            # Local overrides (not committed to VCS)
 ├── database/all.php     # Module-level config
 ├── database/dev.php     # Module-level dev overrides
-├── orm.all.php          # ORM Registry definitions
 └── .../
 ```
 

@@ -12,6 +12,7 @@ use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\Support\PrimaryKey;
 use Throwable;
 
 /**
@@ -71,7 +72,7 @@ class RevisionAddon implements RestApiAddonInterface
 	public function onItemUpdate(ItemUpdating $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
-		$identity = $event->getPrimaryKeyValue();
+		$identity = $event->getKey();
 		$state = $event->getState();
 
 		if ($identity === null || $state === null || ! $this->shouldTrack($collectionName)) {
@@ -83,13 +84,19 @@ class RevisionAddon implements RestApiAddonInterface
 			$identity,
 		);
 
-		$this->writeRevision($collectionName, $identity->toUrlId(), 'update', $currentItem, $state->getData());
+		$this->writeRevision(
+			$collectionName,
+			PrimaryKey::of($event->getCollection())->toUrlId($identity),
+			'update',
+			$currentItem,
+			$state->getData(),
+		);
 	}
 
 	public function onItemDelete(ItemDeleting $event): void
 	{
 		$collectionName = $event->getCollection()->getName();
-		$identity = $event->getPrimaryKeyValue();
+		$identity = $event->getKey();
 
 		if ($identity === null || ! $this->shouldTrack($collectionName)) {
 			return;
@@ -100,7 +107,13 @@ class RevisionAddon implements RestApiAddonInterface
 			$identity,
 		);
 
-		$this->writeRevision($collectionName, $identity->toUrlId(), 'delete', $currentItem, null);
+		$this->writeRevision(
+			$collectionName,
+			PrimaryKey::of($event->getCollection())->toUrlId($identity),
+			'delete',
+			$currentItem,
+			null,
+		);
 	}
 
 	protected function registerCollectionHooks(CollectionInterface $collection): void

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Key;
 use ON\Event\HasEventNameInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemDeleted implements HasEventNameInterface
 {
@@ -31,14 +31,20 @@ class ItemDeleted implements HasEventNameInterface
 		return $this->collection;
 	}
 
-	public function getPrimaryKeyValue(): ?PrimaryKeyValue
+	public function getKey(): ?Key
 	{
-		return $this->state->getPrimaryKeyValue();
+		return $this->state->getKey();
 	}
 
-	public function getId(): ?PrimaryKeyValue
+	/** @deprecated Use getKey() */
+	public function getPrimaryKeyValue(): ?Key
 	{
-		return $this->getPrimaryKeyValue();
+		return $this->getKey();
+	}
+
+	public function getId(): ?Key
+	{
+		return $this->getKey();
 	}
 
 	public function getState(): MutationStateInterface

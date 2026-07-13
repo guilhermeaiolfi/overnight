@@ -42,6 +42,9 @@ final class ConversionGatewayFactory
 			}
 		);
 
+		// Prefer request adaptation over ObjectMapper for ServerRequestInterface roots.
+		$gateway->getMapperManager()->prepend(PsrRequestMapper::class);
+
 		$config = $this->config($container);
 		// MapperManager::prepend() unshifts, so apply declared prepends in reverse
 		// to preserve declaration order as runtime precedence (first prepended = first tried).

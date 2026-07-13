@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Key;
 use ON\Event\HasEventNameInterface;
 use ON\Event\PreventableEventInterface;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInterface, PreventableEventInterface
 {
@@ -18,7 +18,7 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 	public function __construct(
 		protected CollectionInterface $collection,
 		protected MutationStateInterface $state,
-		protected PrimaryKeyValue $identity,
+		protected Key $identity,
 		protected array $path = [],
 		protected ?MutationStateInterface $rootState = null,
 	) {
@@ -35,14 +35,20 @@ class ItemDeleting implements AuthorizationAwareEventInterface, HasEventNameInte
 		return $this->collection;
 	}
 
-	public function getPrimaryKeyValue(): PrimaryKeyValue
+	public function getKey(): Key
 	{
 		return $this->identity;
 	}
 
-	public function getId(): PrimaryKeyValue
+	/** @deprecated Use getKey() */
+	public function getPrimaryKeyValue(): Key
 	{
-		return $this->getPrimaryKeyValue();
+		return $this->getKey();
+	}
+
+	public function getId(): Key
+	{
+		return $this->getKey();
 	}
 
 	public function getState(): MutationStateInterface

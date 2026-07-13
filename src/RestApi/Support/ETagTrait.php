@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace ON\RestApi\Support;
 
 use ON\Data\Definition\Collection\CollectionInterface;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\WireRepresentation;
-use ON\Mapper\Structural\CollectionRowMapper;
+use ON\Data\Key;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Error\RestApiError;
 
 trait ETagTrait
@@ -18,7 +18,7 @@ trait ETagTrait
 		return $headers['If-Match'] ?? $headers['if-match'] ?? null;
 	}
 
-	protected function checkIfMatch(CollectionInterface $collection, PrimaryKeyValue $identity, ?string $ifMatch): void
+	protected function checkIfMatch(CollectionInterface $collection, Key $identity, ?string $ifMatch): void
 	{
 		if ($ifMatch === null || $ifMatch === '') {
 			return;
@@ -29,7 +29,7 @@ trait ETagTrait
 		}
 	}
 
-	protected function getItemETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): string
+	protected function getItemETag(CollectionInterface $collection, Key|string $identity): string
 	{
 		$current = $this->getItemForETag($collection, $identity);
 
@@ -39,10 +39,10 @@ trait ETagTrait
 
 		return $this->computeETag(json_encode(
 			map($current)
-				->using(CollectionRowMapper::class, $collection)
+				->args($collection)
 				->from(PhpRepresentation::class)
 				->as(WireRepresentation::class)
-				->toArray(),
+				->to([]),
 			JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE
 		));
 	}
@@ -52,5 +52,5 @@ trait ETagTrait
 		return 'W/"' . md5($jsonBody) . '"';
 	}
 
-	abstract protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array;
+	abstract protected function getItemForETag(CollectionInterface $collection, Key|string $identity): ?array;
 }

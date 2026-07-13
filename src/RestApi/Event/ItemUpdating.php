@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace ON\RestApi\Event;
 
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Key;
 use ON\RestApi\Mutation\MutationStateInterface;
-use ON\RestApi\Support\PrimaryKeyValue;
 
 class ItemUpdating extends ItemCreating
 {
 	public function __construct(
 		CollectionInterface $collection,
 		MutationStateInterface $state,
-		protected PrimaryKeyValue $identity,
+		protected Key $identity,
 		array $path = [],
 		?MutationStateInterface $rootState = null,
 	) {
@@ -25,13 +25,19 @@ class ItemUpdating extends ItemCreating
 		return 'restapi.item.updating';
 	}
 
-	public function getPrimaryKeyValue(): PrimaryKeyValue
+	public function getKey(): Key
 	{
 		return $this->identity;
 	}
 
-	public function getId(): PrimaryKeyValue
+	/** @deprecated Use getKey() */
+	public function getPrimaryKeyValue(): Key
 	{
-		return $this->getPrimaryKeyValue();
+		return $this->getKey();
+	}
+
+	public function getId(): Key
+	{
+		return $this->getKey();
 	}
 }

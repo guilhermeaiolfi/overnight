@@ -6,7 +6,7 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use ON\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\MutationCoordinator;
@@ -14,7 +14,7 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class BatchDeleteAction implements RestActionInterface
@@ -72,7 +72,7 @@ final class BatchDeleteAction implements RestActionInterface
 		return null;
 	}
 
-	protected function getItemForETag(CollectionInterface $collection, PrimaryKeyValue|string $identity): ?array
+	protected function getItemForETag(CollectionInterface $collection, Key|string $identity): ?array
 	{
 		return $this->items->findByIdentity(
 			$collection,

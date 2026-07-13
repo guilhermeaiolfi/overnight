@@ -9,10 +9,9 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
-use function ON\Mapper\map;
-use ON\Mapper\Representation\PhpRepresentation;
-use ON\Mapper\Representation\RepresentationInterface;
-use ON\Mapper\Structural\CollectionRowMapper;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\RepresentationInterface;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemGet;
@@ -22,7 +21,7 @@ use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Query\QueryContext;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\PrimaryKey;
-use ON\RestApi\Support\PrimaryKeyValue;
+use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class GetAction implements RestActionInterface
@@ -110,10 +109,10 @@ final class GetAction implements RestActionInterface
 	private function applyIdentity(
 		SelectQuery $query,
 		CollectionInterface $collection,
-		PrimaryKeyValue $identity,
+		Key $identity,
 	): void {
 		foreach (PrimaryKey::of($collection)->getFields() as $field) {
-			$query->where(x()->eq($query->field($field->getName()), $identity->value($field->getName())));
+			$query->where(x()->eq($query->field($field->getName()), $identity->getFieldValue($field->getName())));
 		}
 	}
 
@@ -132,10 +131,10 @@ final class GetAction implements RestActionInterface
 		}
 
 		return map($row)
-			->using(CollectionRowMapper::class, $collection)
+			->args($collection)
 			->from($from)
 			->as($to)
-			->toArray();
+			->to([]);
 	}
 
 	/**

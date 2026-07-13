@@ -48,8 +48,8 @@ Primary keys are declared at **collection** level: `->primaryKey('id')` or `->pr
 
 `DefinitionRegistryProvider` resolves `ON\Data\Definition\Registry` as follows:
 
-1. **Warm (cache hit)** — if `data-definitions.php` exists, load the exported array and construct `new Registry($definitions)`.
-2. **Cold (cache miss)** — create an empty `Registry`, emit `DataDefinitionConfigureEvent`, then write `$registry->all()` to the cache file and return a fresh `Registry` from that snapshot.
+1. **Warm (cache hit)** — if `data-definitions.php` exists and the app is **not** in debug mode, load the exported array and construct `new Registry($definitions)`.
+2. **Cold (cache miss or debug)** — create an empty `Registry`, emit `DataDefinitionConfigureEvent`, then write `$registry->all()` to the cache file and return a fresh `Registry` from that snapshot. In debug mode the cache file is ignored on read so definition listeners always run.
 
 Default cache path: `{project}/var/cache/data-definitions.php` (overridable via DataExtension options `cache_file` / `cache_path`).
 
@@ -86,23 +86,22 @@ It does **not** mark every primary-key field as generated. A plain `int` (or oth
 
 ### FirstOfMany
 
-`FirstOfManyRelation` is **unsupported** at the Cycle schema layer. Compiling one throws `UnsupportedDefinitionFeatureException`.
+`FirstOfManyRelation` is a query-only ON\Data relation (`persistencePlanner` is `null`). `CycleRegistryGenerator` skips any relation without a persistence planner so a shared registry can keep FirstOfMany for RestApi/query loading without failing Cycle compile.
 
-RestApi may still model first-of-many behavior at the **query / handler** layer (`FirstOfManyHandler`, ordering, single cardinality). That is a runtime concern outside Cycle schema compilation — do not approximate FirstOfMany as `hasMany` in the generator.
+Do not approximate FirstOfMany as `hasMany` in the Cycle generator — mutate the underlying has-many / child rows instead.
 
 ## RestApi and ONData queries
 
 RestApi list/get/aggregate flows now build ONData **`SelectQuery`** objects directly. Collection, field, and relation metadata also come from ON\Data (`Registry` / `CollectionInterface`).
 
-Primary-key helpers are RestApi-local value objects over ON\Data collections:
+Primary-key helpers for RestApi identity parsing / URL encoding:
 
 | Class | Role |
 |-------|------|
-| `ON\RestApi\Support\PrimaryKey` | Field/column names, extract from input/row, composite detection |
-| `ON\RestApi\Support\PrimaryKeyValue` | Concrete identity values for a collection |
-| `ON\RestApi\Support\PrimaryKeyCriteria` | Build concrete identity criteria for mutation writes |
+| `ON\Data\Key` | Concrete collection identity (canonical ON\Data value object) |
+| `ON\RestApi\Support\PrimaryKey` | Field/column names, extract from input/row, URL encode/decode |
 
-These are not part of the ON\Data package.
+`PrimaryKey` is a RestApi helper over `Key`; identity criteria are just `$key->getValues()`.
 
 ## Related docs
 
