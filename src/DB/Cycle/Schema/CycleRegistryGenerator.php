@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\DB\Cycle\Schema;
 
+use Cycle\ORM\Mapper\StdMapper;
 use Cycle\ORM\Schema\GeneratedField as CycleGeneratedField;
 use Cycle\Schema\Definition\Entity;
 use Cycle\Schema\Definition\Field as CycleField;
@@ -109,7 +110,10 @@ final class CycleRegistryGenerator implements GeneratorInterface
 	{
 		$entity->setRole($collection->getName());
 		$entity->setClass($collection->getEntity());
-		$entity->setMapper($collection->getMapper());
+		// ON\Data leaves mapper unset (null). Prefer StdMapper for classless/stdClass
+		// entities so dynamic properties remain writable, matching legacy Overnight behavior.
+		// Cycle's own Factory default (Mapper) wraps entities in EntityProxyTrait instead.
+		$entity->setMapper($collection->getMapper() ?? StdMapper::class);
 		$entity->setScope($collection->getScope());
 		$entity->setRepository($collection->getRepository());
 		$entity->setSource($collection->getSource());

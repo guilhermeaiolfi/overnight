@@ -87,6 +87,23 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$this->assertTrue($score->getOptions()->get(Column::OPT_CAST_DEFAULT));
 	}
 
+	public function testUnsetMapperDefaultsToStdMapper(): void
+	{
+		$registry = new DataRegistry();
+		$registry->collection('user')
+			->table('users')
+			->primaryKey('id')
+			->field('id', 'primary')->end()
+			->field('email', 'string')->end()
+			->end();
+
+		$this->assertNull($registry->getCollection('user')->getMapper());
+
+		$entity = $this->compile($registry)->getEntity('user');
+
+		$this->assertSame(StdMapper::class, $entity->getMapper());
+	}
+
 	public function testCompositePrimaryKey(): void
 	{
 		$registry = new DataRegistry();
