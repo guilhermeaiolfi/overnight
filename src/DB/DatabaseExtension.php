@@ -16,8 +16,10 @@ use ON\DB\Command\MigrateDownCommand;
 use ON\DB\Command\MigrateStatusCommand;
 use ON\DB\Command\MigrateUpCommand;
 use ON\DB\Container\CycleDatabaseFactory;
+use ON\DB\Container\CycleRegistryGeneratorFactory;
 use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
+use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
@@ -51,6 +53,7 @@ class DatabaseExtension extends AbstractExtension
 		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
 			$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 			$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
+			$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
 		});
 	}
 

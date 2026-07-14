@@ -19,8 +19,8 @@ use ON\Application;
 use ON\Clockwork\CycleDatabaseLogger;
 use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
+use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\DB\DatabaseConfig;
-use ON\ORM\Compiler\CycleRegistryGenerator;
 
 class CycleDatabaseFactory
 {

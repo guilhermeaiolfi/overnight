@@ -21,8 +21,8 @@ use ON\DataIntegration\Definition\DefinitionCache;
 use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
-use ON\ORM\Compiler\CycleRegistryGenerator;
-use ON\ORM\ORMExtension;
+use ON\DB\Cycle\Schema\CycleRegistryGenerator;
+use ON\DB\DatabaseExtension;
 use ON\RestApi\Support\PrimaryKey;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -116,7 +116,7 @@ final class CachedDefinitionRuntimeIntegrationTest extends TestCase
 			ConfigExtension::class => [],
 			ContainerExtension::class => [],
 			DataExtension::class => [],
-			ORMExtension::class => [],
+			DatabaseExtension::class => [],
 		];
 		if ($withProbe) {
 			$extensions[CachedDefinitionProbeExtension::class] = [];

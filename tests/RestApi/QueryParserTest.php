@@ -9,13 +9,9 @@ use ON\Data\Query\Condition\ComparisonCondition;
 use ON\Data\Query\Condition\ComparisonOperator;
 use ON\Data\Query\Expression\AggregateExpression;
 use ON\Data\Query\Expression\AggregateFunction;
-use ON\Data\Query\Expression\FieldRef;
 use ON\Data\Query\Expression\FunctionCallExpression;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
-use ON\Data\Query\Relation\LoadStrategy;
-use ON\Data\Query\Selection\SelectionTag;
-use ON\RestApi\Query\Parser\CmsQueryParser;
 use ON\RestApi\Query\QueryContext;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
@@ -143,61 +139,6 @@ final class QueryParserTest extends TestCase
 		$this->assertTrue($comments->isSelected());
 		$this->assertSame('published_comments', $context->getRelationResponseNames()['posts.comments'] ?? null);
 		$this->assertNotEmpty($comments->getConditions());
-	}
-
-	public function testCmsQueryLanguageMapsToSameSelectionAst(): void
-	{
-		$registry = new Registry();
-		$this->createFullSchema($registry);
-
-		$query = (new CmsQueryParser($registry))->parseQuery('post{id,!comments{body},~author{name},*}');
-		$explicitQuery = (new CmsQueryParser($registry))->parseQuery('post{id}');
-
-		$this->assertSame('post', $query->getCollection()->getName());
-		$this->assertContains('id', array_map(
-			static fn ($s) => $s->getExpression() instanceof FieldRef
-				? $s->getExpression()->getName()
-				: null,
-			$explicitQuery->getSelections()->getAll(),
-		));
-
-		$comments = $query->relation('comments');
-		$author = $query->relation('author');
-		$this->assertTrue($comments->isSelected());
-		$this->assertTrue($author->isSelected());
-		$this->assertSame(LoadStrategy::JOIN, $comments->getStrategy());
-		$this->assertSame(LoadStrategy::JOIN, $author->getStrategy());
-		$this->assertSame(['body'], $comments->getFields());
-		$this->assertSame(['name'], $author->getFields());
-	}
-
-	public function testCmsDottedRelationAndDirectusDottedRelationShareShape(): void
-	{
-		$registry = new Registry();
-		$this->createFullSchema($registry);
-
-		$cms = (new CmsQueryParser($registry))->parseQuery('post{id,comments{body}}');
-		$directus = $this->createQueryParser()->parse(
-			$registry->getCollection('post'),
-			['fields' => 'id,comments.body'],
-			new QueryContext(),
-		);
-
-		$this->assertContains('id', array_map(
-			static fn ($s) => $s->getExpression() instanceof FieldRef
-				? $s->getExpression()->getName()
-				: null,
-			$cms->getSelections()->getAll(),
-		));
-		$this->assertTrue($cms->relation('comments')->isSelected());
-		$this->assertSame(['body'], $cms->relation('comments')->getFields());
-		$this->assertTrue($directus->relation('comments')->isSelected());
-		$this->assertContains('id', array_map(
-			static fn ($s) => $s->getExpression() instanceof FieldRef
-				? $s->getExpression()->getName()
-				: null,
-			$directus->getSelections()->getByTag(SelectionTag::PUBLIC),
-		));
 	}
 
 	public function testDirectusParserHasNoManualTemporalSqlOrRelationKeyTraversal(): void
