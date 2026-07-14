@@ -56,9 +56,6 @@
       "bench:bootstrap:compare": "php benchmark/bootstrap_bench.php compare"
     },
     "autoload": {
-      "files": [
-        "src/Mapper/functions.php"
-      ],
       "psr-4": {
         "ON\\": "src/"
       }
