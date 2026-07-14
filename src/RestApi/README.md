@@ -94,6 +94,7 @@ Duplicate detection uses `ON\Data\Key` normalization (canonical PK field order),
 | Supported | Unsupported |
 |-----------|-------------|
 | Scalar `setValue` / `setData` | PK changes on existing items |
+| Hook-only `setMetadata` / `getMetadata` / `hasMetadata` (not flushed) | Relation membership / nested intent |
 | Hook-added scalar fields | Relation membership / relation-intent changes |
 | Explicit null scalars | Restoring removed Relation* events |
 

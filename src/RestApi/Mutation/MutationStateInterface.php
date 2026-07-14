@@ -26,4 +26,14 @@ interface MutationStateInterface
 	public function markReady(array $row): void;
 
 	public function getKey(bool $requireReady = true): ?Key;
+
+	/**
+	 * Hook-only bag that is never flushed to the representation.
+	 * Null is a valid stored value; use {@see hasMetadata()} to distinguish missing keys.
+	 */
+	public function setMetadata(string $key, mixed $value): void;
+
+	public function getMetadata(string $key, mixed $default = null): mixed;
+
+	public function hasMetadata(string $key): bool;
 }

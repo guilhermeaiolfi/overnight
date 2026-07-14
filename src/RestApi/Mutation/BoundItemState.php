@@ -47,6 +47,9 @@ final class BoundItemState implements MutationStateInterface
 	/** @var list<string> */
 	private array $pendingHookFields = [];
 
+	/** @var array<string, mixed> Hook-only bag; never written to the representation. */
+	private array $metadata = [];
+
 	public function __construct(
 		private readonly CollectionInterface $collection,
 		private object $representation,
@@ -189,6 +192,21 @@ final class BoundItemState implements MutationStateInterface
 
 		// Incomplete PK: allow a second look at the pending overlay only when not required ready.
 		return $requireReady ? null : PrimaryKey::of($this->collection)->extractFromInput($this->values);
+	}
+
+	public function setMetadata(string $key, mixed $value): void
+	{
+		$this->metadata[$key] = $value;
+	}
+
+	public function getMetadata(string $key, mixed $default = null): mixed
+	{
+		return array_key_exists($key, $this->metadata) ? $this->metadata[$key] : $default;
+	}
+
+	public function hasMetadata(string $key): bool
+	{
+		return array_key_exists($key, $this->metadata);
 	}
 
 	/**

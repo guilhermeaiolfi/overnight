@@ -16,11 +16,6 @@ use Psr\Http\Message\ServerRequestInterface;
  */
 final class PsrRequestMapper implements MapperInterface
 {
-	public function __construct(
-		private readonly ?ArrayPathExpander $pathExpander = null,
-	) {
-	}
-
 	public static function canMap(
 		mixed $source,
 		MappingOptions $options,
@@ -41,7 +36,7 @@ final class PsrRequestMapper implements MapperInterface
 			is_array($parsedBody) ? $parsedBody : [],
 		);
 
-		$payload = ($this->pathExpander ?? new ArrayPathExpander())->expand($payload);
+		$payload = ArrayPathExpander::expand($payload);
 
 		foreach ($payload as $name => $value) {
 			$context->write(

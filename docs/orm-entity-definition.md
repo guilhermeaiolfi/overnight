@@ -193,7 +193,7 @@ The `field()` method accepts an optional type as the second argument:
 
 ORM field `->type()` serves two roles:
 
-1. **Mapper resolution** — which `FieldTypeInterface` handler converts values between Storage, PHP, and Wire representations (see [Mapper](mapper.md)).
+1. **Mapper resolution** — which `ON\Data\Mapper\FieldTypeInterface` handler converts values between Storage, PHP, and Wire representations.
 2. **Cycle schema** — which physical column type `CycleRegistryGenerator` emits when compiling the ORM schema.
 
 ### Builtin string types

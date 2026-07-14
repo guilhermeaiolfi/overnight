@@ -8,6 +8,8 @@ use ON\Data\Definition\Registry;
 use ON\Data\Key;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleted;
+use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\Mutation\DirectusMutationBinder;
@@ -414,6 +416,40 @@ final class MutationHardeningTest extends TestCase
 		]);
 
 		$this->assertSame('Hooked', $created['name']);
+	}
+
+	public function testDeleteHookMetadataSurvivesFlushIncludingNull(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+
+		$seen = [
+			'has_null' => false,
+			'null_value' => 'sentinel',
+			'ids' => null,
+		];
+
+		RestHooks::for($registry->getCollection('tag'))
+			->on('delete.before', static function (ItemDeleting $event): void {
+				$event->getState()->setMetadata('pending_file_ids', [10, 20]);
+				$event->getState()->setMetadata('optional_note', null);
+			})
+			->on('delete.after', static function (ItemDeleted $event) use (&$seen): void {
+				$seen['has_null'] = $event->getState()->hasMetadata('optional_note');
+				$seen['null_value'] = $event->getState()->getMetadata('optional_note', 'missing');
+				$seen['ids'] = $event->getState()->getMetadata('pending_file_ids');
+			});
+
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $items);
+
+		$created = $service->create('tag', ['name' => 'temp-meta']);
+		$service->delete('tag', (string) $created['id']);
+
+		$this->assertTrue($seen['has_null']);
+		$this->assertNull($seen['null_value']);
+		$this->assertSame([10, 20], $seen['ids']);
 	}
 
 	public function testBeforeHookIdentityMutationOnExistingFails(): void
