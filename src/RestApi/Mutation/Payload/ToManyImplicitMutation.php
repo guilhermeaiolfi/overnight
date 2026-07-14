@@ -8,7 +8,7 @@ use ON\Data\Definition\Relation\RelationInterface;
 
 /**
  * Basic to-many array payload: desired final relation contents (implicit full set).
- * Omitted current members are unlinked, not deleted.
+ * Omitted current members are unlinked, unless the relation is exclusive (then deleted).
  */
 final readonly class ToManyImplicitMutation implements RelationMutation
 {

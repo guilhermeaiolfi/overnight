@@ -391,7 +391,7 @@ $registry->collection('post')
 | `nullable(bool)` | Allow nullable relation | `false` |
 | `innerKey(string)` | Key column on the **source** entity (the one defining the relation) | Generated |
 | `outerKey(string)` | Key column on the **target** entity (the related entity) | Generated |
-| `exclusive(bool)` | Exclusive relation (HasOne only) | `false` |
+| `exclusive(bool)` | Exclusive relation: remove from membership deletes the target row | `false` |
 | `getCardinality()` | Returns `'single'` or `'many'` | Varies by type |
 | `isJunction()` | Whether this is a M2M pivot relation | `false` |
 

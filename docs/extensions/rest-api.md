@@ -122,7 +122,7 @@ RestApiExtension::install($app, [
 { "children": [1, 3] }
 ```
 
-Implicit list = **final membership**. Listed existing items may be retained or newly assigned (when authorized). Omitted baseline members are **unlinked**, not deleted.
+Implicit list = **final membership**. Listed existing items may be retained or newly assigned (when authorized). Omitted baseline members are **unlinked**, not deleted — unless the relation is marked `exclusive(true)`, in which case omitted members are **deleted** (Directus-style `one_deselect_action: delete`).
 
 ```json
 {

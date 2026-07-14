@@ -42,6 +42,7 @@ use Throwable;
  * - Nested objects with a body (field values and/or nested relations) whose identity is
  *   missing are promoted to create with the client-supplied primary key (upsert-style).
  * - Explicit `update` / `delete` remain strict via relation-scope checks.
+ * - Exclusive has-many members omitted from an implicit array are deleted (not unlinked).
  *
  * Identity lookup cache: request-local (cleared per MutationCoordinator operation). It
  * memoizes DB existence reads only. Identities scheduled for Session::remove() in earlier
@@ -397,6 +398,7 @@ final class DirectusMutationBinder
 
 		$desired = [];
 		$bound = [];
+		$exclusiveDeleteIndex = 0;
 
 		foreach ($mutation->items as $item) {
 			$reused = null;
@@ -439,9 +441,77 @@ final class DirectusMutationBinder
 			}
 
 			$toMany->remove($existing);
+
+			// Exclusive O2M: omit means delete the child row (Directus one_deselect_action=delete).
+			if ($relation->isExclusive()) {
+				$deleteBound = $this->bindExclusiveImplicitRemoval(
+					$session,
+					$existing,
+					$targetCollection,
+					$mutation->path()->append('delete')->append($exclusiveDeleteIndex),
+				);
+				if ($deleteBound !== null) {
+					$bound[] = $deleteBound;
+					++$exclusiveDeleteIndex;
+				}
+			}
 		}
 
 		return $bound;
+	}
+
+	/**
+	 * Delete an omitted exclusive has-many member using the baseline representation
+	 * already tracked in the Session, so RestApi delete hooks still fire.
+	 *
+	 * Baseline identities from {@see RelationBaselineReader} are PK stubs; reload the
+	 * full row so delete.after hooks (e.g. file cleanup) still see fields like file_id.
+	 */
+	private function bindExclusiveImplicitRemoval(
+		Session $session,
+		object $existing,
+		CollectionInterface $collection,
+		PayloadPath $path,
+	): ?BoundMutation {
+		$record = $this->recordFor($session, $existing);
+		if (! $record instanceof RecordState || ! $record->hasKey()) {
+			return null;
+		}
+
+		$key = $record->getKey();
+		if ($key === null) {
+			return null;
+		}
+
+		$previous = $this->findRow($collection, $key);
+		if ($previous === null) {
+			return null;
+		}
+
+		foreach ($previous as $field => $value) {
+			$existing->{$field} = $value;
+		}
+
+		$session->remove($existing);
+		$this->markPendingRemoved($collection, $key);
+
+		return new BoundMutation(
+			operation: 'delete',
+			collection: $collection,
+			representation: $existing,
+			state: new BoundItemState(
+				$collection,
+				$existing,
+				$previous,
+				$previous,
+				true,
+				$path,
+				identityMutable: false,
+			),
+			mutation: new DirectusMutation([], [], $path),
+			identity: $key,
+			path: $path,
+		);
 	}
 
 	/**
