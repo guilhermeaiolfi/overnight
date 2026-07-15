@@ -20,11 +20,17 @@ use ON\RestApi\Support\PrimaryKey;
  * reloaded row into that overlay. Hooks never see {@see \ON\Data\ORM\Record\RecordState}.
  *
  * Supported before-hook mutations: scalar field setValue/setData (including fields
- * absent from the original payload). Removing a key from setData leaves the prior
- * representation value unchanged (not an explicit null).
+ * absent from the original payload). Newly introduced root or nested scalars are
+ * tracked via {@see pullPendingHookFields()} so the coordinator can project them
+ * onto the Session schema before sync/flush. Removing a key from setData leaves
+ * the prior representation value unchanged (not an explicit null).
  *
  * Unsupported: changing primary-key fields on existing items; mutating relation
  * membership / normalized relation intent (relation names are not scalar fields).
+ *
+ * Create vs update: use {@see isCreate()}. Do not infer newness from missing PK keys
+ * in {@see getData()} — the binder strips identity fields from the overlay for
+ * existing related items (e.g. images sent as `{id, sequence}` without `file_id`).
  */
 final class BoundItemState implements MutationStateInterface
 {
@@ -59,6 +65,7 @@ final class BoundItemState implements MutationStateInterface
 		private readonly PayloadPath $path = new PayloadPath([]),
 		array $fieldPaths = [],
 		private readonly bool $identityMutable = true,
+		private readonly bool $creating = true,
 	) {
 		$this->values = $values;
 		$this->row = $row;
@@ -158,6 +165,11 @@ final class BoundItemState implements MutationStateInterface
 		$this->writeField($column, $value);
 	}
 
+	public function isCreate(): bool
+	{
+		return $this->creating;
+	}
+
 	public function isReady(): bool
 	{
 		return $this->ready;
@@ -237,15 +249,27 @@ final class BoundItemState implements MutationStateInterface
 			$target = $this->relatedSource->getTargetObject();
 			$target->{$field} = $value;
 			$this->fieldPaths[$field] = $field;
-			if (! in_array($field, $this->pendingHookFields, true)) {
-				$this->pendingHookFields[] = $field;
-			}
+			$this->trackPendingHookField($field);
 
 			return;
 		}
 
+		// Root hook-added scalars (absent from the original payload) must be tracked so
+		// MutationCoordinator can project them onto the Session schema before sync/flush.
+		// Only root paths: nested BoundItemState is often constructed before setRelatedSource(),
+		// and those fields are already projected by the binder (or tracked via the nested branch).
 		$this->fieldPaths[$field] = $field;
 		$this->representation->{$field} = $value;
+		if ($this->path->isRoot()) {
+			$this->trackPendingHookField($field);
+		}
+	}
+
+	private function trackPendingHookField(string $field): void
+	{
+		if (! in_array($field, $this->pendingHookFields, true)) {
+			$this->pendingHookFields[] = $field;
+		}
 	}
 
 	/**

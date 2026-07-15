@@ -9,6 +9,7 @@ use Cycle\Database\DatabaseInterface;
 use DateTimeImmutable;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
+use Laminas\Diactoros\Stream;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
@@ -186,6 +187,64 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$this->assertSame(1, (int) $row['news_id']);
 	}
 
+
+	public function testPatchUpdateKeepingUnchangedImageMetadataDoesNotFail(): void
+	{
+		[, , $middleware, $db] = $this->createNewsArticleFixture();
+
+		// Admin serialize for unchanged images: id + metadata, no file_id.
+		$payload = [
+			'title' => 'Edited title only',
+			'slug' => 'existing-article',
+			'status' => 'draft',
+			'images' => [
+				[
+					'id' => 10,
+					'sequence' => 0,
+					'role' => 'image',
+					'alt_text' => null,
+					'caption' => null,
+				],
+			],
+		];
+
+		$stream = new Stream('php://temp', 'wb+');
+		$stream->write(json_encode($payload, JSON_THROW_ON_ERROR));
+		$stream->rewind();
+
+		$request = (new ServerRequest(
+			uri: '/items/news_article/1',
+			method: 'PATCH',
+			headers: ['Content-Type' => 'application/json'],
+		))->withBody($stream);
+
+		$response = $middleware->process(
+			$request,
+			new class () implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
+		$stmt = $db->database()->query('SELECT id, file_id, sequence, role FROM news_article_file WHERE news_id = 1');
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertNotFalse($row);
+		$this->assertSame(10, (int) $row['id']);
+		$this->assertSame(100, (int) $row['file_id']);
+		$this->assertSame(0, (int) $row['sequence']);
+		$this->assertSame('image', $row['role']);
+
+		$title = $db->database()->query('SELECT title FROM news_article WHERE id = 1')->fetch();
+		$this->assertSame('Edited title only', $title['title']);
+	}
+
 	private function createUploadedFile(string $filename): UploadedFileInterface
 	{
 		return new class ($filename) implements UploadedFileInterface {
@@ -237,7 +296,7 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			->field('slug', 'string')->type('string')->nullable(false)->end()
 			->field('status', 'string')->type('string')->nullable(false)->end()
 			->field('modifiedon', 'datetime')->type('datetime')->nullable(false)->end()
-			->hasMany('images', 'news_article_file')->innerKey('id')->outerKey('news_id')->end()
+			->hasMany('images', 'news_article_file')->innerKey('id')->outerKey('news_id')->exclusive(true)->end()
 			->end();
 
 		$registry->collection('news_article_file')
@@ -315,7 +374,9 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			->on('update.before', static function (ItemUpdating $event): void {
 				$state = $event->getState();
 				$data = $state->getData();
-				$data['createdon'] = $data['createdon'] ?? new DateTimeImmutable('2026-05-29 12:00:00');
+				if (array_key_exists('sequence', $data)) {
+					$data['sequence'] = max(0, (int) $data['sequence']);
+				}
 				$state->setData($data);
 			});
 

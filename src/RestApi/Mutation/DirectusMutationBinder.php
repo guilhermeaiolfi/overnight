@@ -128,7 +128,7 @@ final class DirectusMutationBinder
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
-		$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false);
+		$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false, creating: false);
 
 		return new BoundMutation(
 			operation: 'delete',
@@ -185,10 +185,13 @@ final class DirectusMutationBinder
 
 		/** @var list<PropertyRef> $propertyRefs */
 		$propertyRefs = [];
+		/** @var array<string, string> $fieldPaths */
+		$fieldPaths = [];
 		foreach (array_keys($values) as $fieldName) {
 			$name = (string) $fieldName;
 			if ($collection->hasField($name)) {
 				$propertyRefs[] = $source->field($name);
+				$fieldPaths[$name] = $name;
 			}
 		}
 
@@ -214,7 +217,9 @@ final class DirectusMutationBinder
 			$operation === 'update' ? $seed : null,
 			$operation === 'update',
 			$mutation->path,
+			$fieldPaths,
 			identityMutable: $operation === 'create',
+			creating: $operation === 'create',
 		);
 
 		return new BoundMutation(
@@ -507,6 +512,7 @@ final class DirectusMutationBinder
 				true,
 				$path,
 				identityMutable: false,
+				creating: false,
 			),
 			mutation: new DirectusMutation([], [], $path),
 			identity: $key,
@@ -622,6 +628,7 @@ final class DirectusMutationBinder
 				true,
 				$path,
 				identityMutable: false,
+				creating: false,
 			),
 			mutation: new DirectusMutation([], [], $path),
 			identity: $key,
@@ -710,6 +717,7 @@ final class DirectusMutationBinder
 			$item->path,
 			$fieldPaths,
 			identityMutable: $item->isNew(),
+			creating: $item->isNew(),
 		);
 		$state->setRelatedSource($relatedSource);
 
@@ -736,6 +744,16 @@ final class DirectusMutationBinder
 		CollectionInterface $collection,
 		RelatedItemInput $item,
 	): BoundMutation {
+		// Baseline identities are PK stubs. Reload the full row and mark it clean so
+		// re-sending unchanged metadata (common for exclusive hasMany keep-lists) does
+		// not schedule a no-op UPDATE that MySQL reports as 0 affected rows.
+		$previous = $item->identity !== null
+			? $this->findRow($collection, $item->identity)
+			: null;
+		if ($previous !== null) {
+			$this->hydrateExistingRelatedRepresentation($session, $representation, $collection, $previous);
+		}
+
 		if ($item->values === [] && $item->relations === []) {
 			return new BoundMutation(
 				operation: 'update',
@@ -745,10 +763,11 @@ final class DirectusMutationBinder
 					$collection,
 					$representation,
 					[],
-					null,
+					$previous,
 					true,
 					$item->path,
 					identityMutable: false,
+					creating: false,
 				),
 				mutation: new DirectusMutation([], [], $item->path),
 				identity: $item->identity,
@@ -797,16 +816,46 @@ final class DirectusMutationBinder
 				$collection,
 				$representation,
 				$item->values,
-				null,
+				$previous,
 				true,
 				$item->path,
 				identityMutable: false,
+				creating: false,
 			),
 			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
 			identity: $item->identity,
 			path: $item->path,
 			related: $related,
 		);
+	}
+
+	/**
+	 * @param array<string, mixed> $previous
+	 */
+	private function hydrateExistingRelatedRepresentation(
+		Session $session,
+		object $representation,
+		CollectionInterface $collection,
+		array $previous,
+	): void {
+		$hydrated = [];
+		foreach ($previous as $field => $value) {
+			$name = (string) $field;
+			if (! $collection->hasField($name)) {
+				continue;
+			}
+
+			$hydrated[$name] = $value;
+			$representation->{$name} = $value;
+		}
+
+		$record = $this->recordFor($session, $representation);
+		if (! $record instanceof RecordState) {
+			return;
+		}
+
+		$record->setValues($hydrated);
+		$record->markClean($record->getKey());
 	}
 
 	/**

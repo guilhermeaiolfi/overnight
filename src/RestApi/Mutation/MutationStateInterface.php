@@ -7,10 +7,23 @@ namespace ON\RestApi\Mutation;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
 
+/**
+ * Hook-facing mutation state for a single item (root or nested).
+ *
+ * Primary-key fields for existing items live in identity ({@see getKey()}), not in
+ * {@see getData()}. Never infer create vs update from {@code isset(getData()['id'])}.
+ * Use {@see isCreate()} instead.
+ */
 interface MutationStateInterface
 {
 	public function getCollection(): CollectionInterface;
 
+	/**
+	 * Pending scalar overlay only. For existing items, primary-key fields are omitted
+	 * here even when the client sent them — they are held as identity.
+	 *
+	 * @return array<string, mixed>
+	 */
 	public function getData(): array;
 
 	public function setData(array $data): void;
@@ -18,6 +31,12 @@ interface MutationStateInterface
 	public function getValue(string $column): mixed;
 
 	public function setValue(string $column, mixed $value): void;
+
+	/**
+	 * Whether this item is being created (vs updated / membership-linked / deleted).
+	 * Nested scalar identity refs and existing related objects are not creates.
+	 */
+	public function isCreate(): bool;
 
 	public function isReady(): bool;
 

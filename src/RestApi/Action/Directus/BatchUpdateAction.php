@@ -33,7 +33,8 @@ final class BatchUpdateAction implements RestActionInterface
 		private MutationCoordinator $mutations,
 		private ItemRepositoryInterface $items,
 		private RestApiConfig $config,
-		private ?FileUploadEventEmitter $fileUploadEventEmitter = null,
+		// Required (no `= null`): PHP-DI skips optional deps and would leave uploads unconverted.
+		private FileUploadEventEmitter $fileUploadEventEmitter,
 	) {
 	}
 
@@ -79,10 +80,10 @@ final class BatchUpdateAction implements RestActionInterface
 			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 			$this->checkIfMatch($collection, $identityValue, $this->getIfMatch($headers));
 
-			$input = $this->toPhpInput($collection, $item, $files, $options['input']);
-			if ($this->fileUploadEventEmitter !== null) {
-				$input = $this->fileUploadEventEmitter->processInput($collection, $input);
-			}
+			$input = $this->fileUploadEventEmitter->processInput(
+				$collection,
+				$this->toPhpInput($collection, $item, $files, $options['input']),
+			);
 
 			$batch[] = [
 				'identity' => $identityValue,

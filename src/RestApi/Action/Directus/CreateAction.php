@@ -26,7 +26,8 @@ final class CreateAction implements RestActionInterface
 		private Registry $registry,
 		private MutationCoordinator $mutations,
 		private RestApiConfig $config,
-		private ?FileUploadEventEmitter $fileUploadEventEmitter = null,
+		// Required (no `= null`): PHP-DI skips optional deps and would leave uploads unconverted.
+		private FileUploadEventEmitter $fileUploadEventEmitter,
 	) {
 	}
 
@@ -47,10 +48,7 @@ final class CreateAction implements RestActionInterface
 			foreach ($body as $item) {
 				$this->validate($collection, $item);
 				$input = $this->toPhpInput($collection, $item, $files, $options['input']);
-				if ($this->fileUploadEventEmitter !== null) {
-					$input = $this->fileUploadEventEmitter->processInput($collection, $input);
-				}
-				$inputs[] = $input;
+				$inputs[] = $this->fileUploadEventEmitter->processInput($collection, $input);
 			}
 
 			return [
@@ -79,10 +77,10 @@ final class CreateAction implements RestActionInterface
 		array $options,
 	): array {
 		$this->validate($collection, $item);
-		$input = $this->toPhpInput($collection, $item, $files, $options['input']);
-		if ($this->fileUploadEventEmitter !== null) {
-			$input = $this->fileUploadEventEmitter->processInput($collection, $input);
-		}
+		$input = $this->fileUploadEventEmitter->processInput(
+			$collection,
+			$this->toPhpInput($collection, $item, $files, $options['input']),
+		);
 
 		return $this->mutations->create(
 			$collection,

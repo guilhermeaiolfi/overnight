@@ -418,6 +418,68 @@ final class MutationHardeningTest extends TestCase
 		$this->assertSame('Hooked', $created['name']);
 	}
 
+	public function testBeforeHookCanPersistScalarAbsentFromCreatePayload(): void
+	{
+		$registry = new Registry();
+		$this->createUserCollection($registry);
+
+		$registry->collection('article')
+			->table('article')
+			->primaryKey('id')
+			->field('id', 'int')->type('int')->nullable(false)->autoIncrement(true)->end()
+			->field('title', 'string')->type('string')->nullable(false)->end()
+			->field('createdby_id', 'int')->type('int')->column('createdby')->nullable(false)->end()
+			->end();
+		$registry->getCollection('article')->belongsTo('createdby', 'user')
+			->innerKey('createdby_id')
+			->outerKey('id')
+			->end();
+
+		RestHooks::for($registry->getCollection('article'))
+			->on('create.before', static function (ItemCreating $event): void {
+				// Mirrors NewsRestSubscriber::forceArticleMetadata: admin serialize omits
+				// createdby_id, so the hook introduces a root scalar absent from the payload.
+				$event->getState()->setValue('createdby_id', 1);
+			});
+
+		$db = new CycleSqliteTestDatabase([
+			'user' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'name' => 'TEXT',
+					'email' => 'TEXT',
+					'password' => 'TEXT',
+				],
+				'rows' => [
+					['id' => 1, 'name' => 'Creator', 'email' => 'creator@test.com', 'password' => 'secret'],
+				],
+			],
+			'article' => [
+				'columns' => [
+					'id' => 'INTEGER PRIMARY KEY',
+					'title' => 'TEXT NOT NULL',
+					// No DEFAULT — missing projection must fail the same way MySQL does.
+					'createdby' => 'INTEGER NOT NULL',
+				],
+				'rows' => [],
+			],
+		]);
+
+		$items = $this->createItems($registry, $db);
+		$service = $this->createDirectusOperations($registry, $items);
+
+		$created = $service->create('article', [
+			'title' => 'Hooked metadata',
+		]);
+
+		$this->assertSame(1, (int) $created['createdby_id']);
+
+		$stmt = $db->database()->query('SELECT createdby FROM article WHERE id = ?', [(int) $created['id']]);
+		$row = $stmt->fetch();
+		$stmt->close();
+		$this->assertSame(1, (int) $row['createdby']);
+	}
+
 	public function testDeleteHookMetadataSurvivesFlushIncludingNull(): void
 	{
 		$registry = new Registry();

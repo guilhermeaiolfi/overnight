@@ -10,6 +10,7 @@ use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Mutation\FileUploadEventEmitter;
 use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Payload\MutationInputMerger;
 use ON\RestApi\RestApiConfig;
@@ -32,7 +33,8 @@ final class UpdateAction implements RestActionInterface
 		private MutationCoordinator $mutations,
 		private ItemRepositoryInterface $items,
 		private RestApiConfig $config,
-		private ?\ON\RestApi\Mutation\FileUploadEventEmitter $fileUploadEventEmitter = null,
+		// Required (no `= null`): PHP-DI skips optional deps and would leave uploads unconverted.
+		private FileUploadEventEmitter $fileUploadEventEmitter,
 	) {
 	}
 
@@ -52,10 +54,10 @@ final class UpdateAction implements RestActionInterface
 		$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
 		$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 
-		$input = $this->toPhpInput($collection, $body, $files, $options['input']);
-		if ($this->fileUploadEventEmitter !== null) {
-			$input = $this->fileUploadEventEmitter->processInput($collection, $input);
-		}
+		$input = $this->fileUploadEventEmitter->processInput(
+			$collection,
+			$this->toPhpInput($collection, $body, $files, $options['input']),
+		);
 		$result = $this->mutations->update(
 			$collection,
 			$identity,
