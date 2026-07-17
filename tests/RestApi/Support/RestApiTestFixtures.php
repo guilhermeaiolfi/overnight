@@ -633,7 +633,7 @@ trait RestApiTestFixtures
 
 				return new MutationCoordinator(
 					$sessions,
-					new DirectusMutationBinder($this->items, $sessions),
+					new DirectusMutationBinder($this->items, $this->runtime, $sessions),
 					new DirectusPayloadParser(),
 					$this->items,
 					$this->hookDispatcher,
@@ -781,7 +781,7 @@ trait RestApiTestFixtures
 
 				return new MutationCoordinator(
 					$sessions,
-					new DirectusMutationBinder($this->items, $sessions),
+					new DirectusMutationBinder($this->items, $this->runtime, $sessions),
 					new DirectusPayloadParser(),
 					$this->items,
 					$this->hookDispatcher,

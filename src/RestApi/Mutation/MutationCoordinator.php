@@ -364,27 +364,45 @@ final class MutationCoordinator
 			return;
 		}
 
-		$relatedSource = $bound->state->getRelatedSource();
-		if ($relatedSource !== null && ! $bound->path->isRoot()) {
-			$target = $relatedSource->getTargetObject();
-			$projection = $session->projection($target);
-			$source = $projection->from($bound->collection)->tracked();
-			$refs = [];
-			foreach ($pendingFields as $field) {
-				$refs[] = $source->field($field);
+		$target = $bound->representation;
+		$overlayFields = [];
+		foreach ($pendingFields as $field) {
+			if ($bound->collection->hasField($field)) {
+				$overlayFields[] = $field;
 			}
-			$projection->properties(...$refs)->end();
-
+		}
+		if ($overlayFields === []) {
 			return;
 		}
 
-		$projection = $session->projection($root->representation);
-		$source = $projection->from($root->collection)->tracked();
-		$refs = [];
-		foreach ($pendingFields as $field) {
-			$refs[] = $source->field($field);
+		// Already tracked (mutable load or early create sync): patch RecordState directly.
+		// Re-issuing create()/update() would adopt a second NEW record and leave the first
+		// incomplete row to flush (NOT NULL on hook-added columns).
+		$representationState = $session->getRepresentations()->get($target);
+		if ($representationState instanceof RepresentationState) {
+			$record = $representationState->getSingleRecord();
+			if ($record instanceof RecordState) {
+				foreach ($overlayFields as $field) {
+					$record->setValue($field, $target->{$field} ?? null);
+				}
+
+				return;
+			}
 		}
-		$projection->properties(...$refs)->end();
+
+		$fieldNames = $overlayFields;
+		$query = $this->runtime->query($bound->collection);
+		$refs = [];
+		foreach ($fieldNames as $field) {
+			$refs[] = $query->field($field);
+		}
+		$map = $query->select(...$refs)->projection();
+		if ($bound->operation === 'create') {
+			$session->create($target, $map);
+		} else {
+			$session->update($target, $map);
+		}
+		$session->sync($target);
 	}
 
 	/**
@@ -424,14 +442,9 @@ final class MutationCoordinator
 		}
 
 		$record = null;
-
-		try {
-			$state = $session->getRepresentations()->get($bound->representation);
-			if ($state instanceof RepresentationState) {
-				$record = $session->getRecords()->getFromRepresentation($state);
-			}
-		} catch (Throwable) {
-			$record = null;
+		$state = $session->getRepresentations()->get($bound->representation);
+		if ($state instanceof RepresentationState) {
+			$record = $state->getSingleRecord();
 		}
 		if ($record instanceof RecordState && $record->hasKey()) {
 			return $record->getKey();

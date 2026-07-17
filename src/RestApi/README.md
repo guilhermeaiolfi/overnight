@@ -16,15 +16,18 @@ Directus payload
       ToManyImplicitMutation /
       ToManyExplicitMutation
     → DirectusMutationBinder
-    → ON\Data Session and projections
+    → ON\Data Session save API (update/create/identify/remove)
+      + relation state (ToManyRelationState::full for implicit)
     → before-events
-    → Session::flush()
+    → Session::sync() + Session::flush()
     → after-events
     → ON\Data Query reload
     → Directus response
 ```
 
 Reads continue to use ON\Data `SelectQuery`. Writes use one Session path only — there is no MutationQueue fallback.
+
+Existing rows are loaded with `SelectQuery` + `mutable($session)` (schema comes from the query). Pure creates and field overlays use `SelectQuery::projection()`. Tracked shapes can be reused via `Session::schemaOf()`.
 
 ---
 
@@ -118,6 +121,7 @@ One flush uses the transactional command executor when available, so the batch i
 src/RestApi/Mutation/
 ├── MutationCoordinator.php      create/update/delete + batch*
 ├── DirectusMutationBinder.php   recursive Directus → Session binding
+├── MutationSchemaFactory.php    mutable loads + create/overlay projections
 ├── RelationBaselineReader.php   current membership via ON\Data queries
 ├── RelationBaseline.php         normalized identity baseline
 ├── SessionFactory.php

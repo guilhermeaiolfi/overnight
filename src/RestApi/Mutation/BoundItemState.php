@@ -6,8 +6,6 @@ namespace ON\RestApi\Mutation;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
-use ON\Data\ORM\Representation\Schema\Manual\PropertyRef;
-use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\Payload\PayloadPath;
 use ON\RestApi\Support\PrimaryKey;
@@ -20,10 +18,10 @@ use ON\RestApi\Support\PrimaryKey;
  * reloaded row into that overlay. Hooks never see {@see \ON\Data\ORM\Record\RecordState}.
  *
  * Supported before-hook mutations: scalar field setValue/setData (including fields
- * absent from the original payload). Newly introduced root or nested scalars are
- * tracked via {@see pullPendingHookFields()} so the coordinator can project them
- * onto the Session schema before sync/flush. Removing a key from setData leaves
- * the prior representation value unchanged (not an explicit null).
+ * absent from the original payload). Newly introduced scalars are tracked via
+ * {@see pullPendingHookFields()} so the coordinator can overlay them onto the
+ * Session schema before sync/flush. Removing a key from setData leaves the prior
+ * representation value unchanged (not an explicit null).
  *
  * Unsupported: changing primary-key fields on existing items; mutating relation
  * membership / normalized relation intent (relation names are not scalar fields).
@@ -47,8 +45,6 @@ final class BoundItemState implements MutationStateInterface
 
 	/** @var array<string, string> */
 	private array $fieldPaths = [];
-
-	private ?RelationRepresentationSource $relatedSource = null;
 
 	/** @var list<string> */
 	private array $pendingHookFields = [];
@@ -74,20 +70,7 @@ final class BoundItemState implements MutationStateInterface
 		$this->writeRepresentation($values);
 	}
 
-	public function setRelatedSource(RelationRepresentationSource $source): void
-	{
-		$this->relatedSource = $source;
-	}
-
-	public function getRelatedSource(): ?RelationRepresentationSource
-	{
-		return $this->relatedSource;
-	}
-
 	/**
-	 * Nested hook-added fields are projected onto the related identity object so
-	 * MANY-relation flattened aliases on the root do not collide on sourcePathKey.
-	 *
 	 * @return list<string>
 	 */
 	public function pullPendingHookFields(): array
@@ -96,26 +79,6 @@ final class BoundItemState implements MutationStateInterface
 		$this->pendingHookFields = [];
 
 		return $fields;
-	}
-
-	/**
-	 * @deprecated Use pullPendingHookFields(); kept for transitional callers.
-	 * @return list<PropertyRef>
-	 */
-	public function pullPendingPropertyRefs(): array
-	{
-		if ($this->relatedSource === null) {
-			return [];
-		}
-
-		$refs = [];
-		foreach ($this->pullPendingHookFields() as $field) {
-			$refs[] = $this->relatedSource->field($field)->as(
-				'__hook_' . str_replace('.', '_', $this->path->toString()) . '_' . $field
-			);
-		}
-
-		return $refs;
 	}
 
 	public function getCollection(): CollectionInterface
@@ -202,7 +165,6 @@ final class BoundItemState implements MutationStateInterface
 			return $key;
 		}
 
-		// Incomplete PK: allow a second look at the pending overlay only when not required ready.
 		return $requireReady ? null : PrimaryKey::of($this->collection)->extractFromInput($this->values);
 	}
 
@@ -243,26 +205,9 @@ final class BoundItemState implements MutationStateInterface
 			return;
 		}
 
-		// Nested items: binder already aliased known fields onto the root. Hook-added
-		// fields go onto the related identity object to avoid MANY sourcePath collisions.
-		if ($this->relatedSource !== null && ! $this->path->isRoot()) {
-			$target = $this->relatedSource->getTargetObject();
-			$target->{$field} = $value;
-			$this->fieldPaths[$field] = $field;
-			$this->trackPendingHookField($field);
-
-			return;
-		}
-
-		// Root hook-added scalars (absent from the original payload) must be tracked so
-		// MutationCoordinator can project them onto the Session schema before sync/flush.
-		// Only root paths: nested BoundItemState is often constructed before setRelatedSource(),
-		// and those fields are already projected by the binder (or tracked via the nested branch).
 		$this->fieldPaths[$field] = $field;
 		$this->representation->{$field} = $value;
-		if ($this->path->isRoot()) {
-			$this->trackPendingHookField($field);
-		}
+		$this->trackPendingHookField($field);
 	}
 
 	private function trackPendingHookField(string $field): void

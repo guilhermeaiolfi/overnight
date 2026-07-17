@@ -12,7 +12,6 @@ use ON\Data\ORM\Session;
 use function ON\Data\Query\x;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use stdClass;
-use Throwable;
 
 /**
  * Loads current represented relation membership through ON\Data mutable queries.
@@ -155,12 +154,7 @@ final class RelationBaselineReader
 			return null;
 		}
 
-		try {
-			$record = $session->getRecords()->getFromRepresentation($state);
-		} catch (Throwable) {
-			return null;
-		}
-
+		$record = $state->getSingleRecord();
 		if (! $record instanceof RecordState || ! $record->hasKey()) {
 			return null;
 		}

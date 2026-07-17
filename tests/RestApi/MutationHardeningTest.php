@@ -909,7 +909,7 @@ final class MutationHardeningTest extends TestCase
 
 		return new MutationCoordinator(
 			$sessions,
-			new DirectusMutationBinder($items, $sessions),
+			new DirectusMutationBinder($items, $runtime, $sessions),
 			new DirectusPayloadParser(),
 			$items,
 			$this->noopHookDispatcher($registry),

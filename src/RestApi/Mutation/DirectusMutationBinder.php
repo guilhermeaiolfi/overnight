@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\RelationCardinality;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Key;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Relation\ToManyRelationState;
 use ON\Data\ORM\Relation\ToOneRelationState;
-use ON\Data\ORM\Representation\Schema\Manual\Builder;
-use ON\Data\ORM\Representation\Schema\Manual\PropertyRef;
-use ON\Data\ORM\Representation\Schema\Manual\RelationRef;
-use ON\Data\ORM\Representation\Schema\Manual\RelationRepresentationSource;
-use ON\Data\ORM\Representation\Schema\Manual\RootRepresentationSource;
 use ON\Data\ORM\Representation\Schema\RepresentationSchema;
 use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
@@ -30,12 +27,13 @@ use ON\RestApi\Mutation\Payload\ToOneMutation;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
 use stdClass;
-use Throwable;
 
 /**
- * Binds Directus-normalized mutations onto ON\Data Session projections and relation state.
+ * Binds Directus-normalized mutations onto ON\Data Session save intents and relation state.
  *
- * Expresses membership intent only. ON\Data planners own FK / through-row persistence.
+ * Existing rows: mutable SelectQuery load into the mutation Session (schema from the query).
+ * Creates / field overlays: SelectQuery::projection() via MutationSchemaFactory.
+ * Membership: ToManyRelationState::full + remove for implicit; Session::remove for deletes.
  *
  * Missing related identities:
  * - Scalar / identity-only references still require the row to exist (RELATED_NOT_FOUND).
@@ -53,6 +51,7 @@ use Throwable;
 final class DirectusMutationBinder
 {
 	private readonly RelationBaselineReader $baselines;
+	private readonly MutationSchemaFactory $schemas;
 
 	/**
 	 * Committed-row snapshot for this coordinator operation.
@@ -70,8 +69,12 @@ final class DirectusMutationBinder
 
 	public function __construct(
 		private readonly ItemRepositoryInterface $items,
+		DataRuntime|MutationSchemaFactory $runtimeOrSchemas,
 		SessionFactory|RelationBaselineReader $sessionsOrBaselines,
 	) {
+		$this->schemas = $runtimeOrSchemas instanceof MutationSchemaFactory
+			? $runtimeOrSchemas
+			: new MutationSchemaFactory($runtimeOrSchemas, $items);
 		$this->baselines = $sessionsOrBaselines instanceof RelationBaselineReader
 			? $sessionsOrBaselines
 			: new RelationBaselineReader($items, $sessionsOrBaselines);
@@ -117,14 +120,7 @@ final class DirectusMutationBinder
 			throw RestApiError::notFound();
 		}
 
-		$representation = new stdClass();
-		foreach ($previous as $field => $value) {
-			$representation->{$field} = $value;
-		}
-
-		$projection = $session->projection($representation);
-		$source = $projection->from($collection)->existing($key, $previous);
-		$projection->properties($source->all())->end();
+		$representation = $this->schemas->loadMutable($session, $collection, $key);
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
@@ -137,6 +133,7 @@ final class DirectusMutationBinder
 			state: $state,
 			mutation: new DirectusMutation([], [], PayloadPath::root()),
 			identity: $key,
+			rootRecord: $this->requireRecord($session, $representation),
 		);
 	}
 
@@ -147,19 +144,46 @@ final class DirectusMutationBinder
 		string $operation,
 		?Key $identity,
 	): BoundMutation {
-		$representation = new stdClass();
 		$values = $mutation->values;
-		$seed = [];
+		/** @var array<string, mixed>|null $previous */
+		$previous = null;
+		/** @var array<string, string> $fieldPaths */
+		$fieldPaths = [];
 
-		if ($operation === 'create') {
-			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
-			if ($manualIdentity !== null) {
-				$seed = $manualIdentity->getValues();
-				$identity = $this->normalizeKey($collection, $manualIdentity);
+		foreach (array_keys($values) as $fieldName) {
+			$name = (string) $fieldName;
+			if (! $collection->hasField($name)) {
+				throw RestApiError::invalidField($name);
 			}
 		}
 
-		if ($operation === 'update') {
+		if ($operation === 'create') {
+			$representation = new stdClass();
+			$values = $this->schemas->toPhpValues($collection, $values);
+			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
+			if ($manualIdentity !== null) {
+				$identity = $this->normalizeKey($collection, $manualIdentity);
+				foreach ($manualIdentity->getValues() as $field => $value) {
+					$representation->{$field} = $value;
+				}
+			}
+
+			foreach ($values as $field => $value) {
+				$name = (string) $field;
+				$representation->{$name} = $value;
+				$fieldPaths[$name] = $name;
+			}
+
+			$fieldNames = array_keys($fieldPaths);
+			if ($identity !== null) {
+				foreach ($identity->getValues() as $field => $_) {
+					$fieldNames[] = (string) $field;
+				}
+			}
+			$map = $this->schemas->projectFields($collection, $fieldNames);
+			$session->create($representation, $map);
+			$session->sync($representation);
+		} else {
 			if ($identity === null) {
 				throw RestApiError::notFound();
 			}
@@ -167,54 +191,34 @@ final class DirectusMutationBinder
 			if ($previous === null) {
 				throw RestApiError::notFound();
 			}
-			$seed = $previous;
-		}
 
-		foreach ($values as $field => $value) {
-			$name = (string) $field;
-			if (! $collection->hasField($name)) {
-				throw RestApiError::invalidField($name);
-			}
-			$representation->{$name} = $value;
-		}
-
-		$projection = $session->projection($representation);
-		$source = $operation === 'create'
-			? $projection->from($collection)->create($seed)
-			: $projection->from($collection)->existing($identity, $seed);
-
-		/** @var list<PropertyRef> $propertyRefs */
-		$propertyRefs = [];
-		/** @var array<string, string> $fieldPaths */
-		$fieldPaths = [];
-		foreach (array_keys($values) as $fieldName) {
-			$name = (string) $fieldName;
-			if ($collection->hasField($name)) {
-				$propertyRefs[] = $source->field($name);
+			$values = $this->schemas->toPhpValues($collection, $values);
+			$loadFields = [];
+			foreach (array_keys($values) as $fieldName) {
+				$name = (string) $fieldName;
+				$loadFields[] = $name;
 				$fieldPaths[$name] = $name;
 			}
+
+			$representation = $this->schemas->loadMutable($session, $collection, $identity, $loadFields);
+			foreach ($values as $field => $value) {
+				$representation->{(string) $field} = $value;
+			}
 		}
 
+		$ownerRecord = $this->requireRecord($session, $representation);
 		$related = $this->bindRelations(
 			$session,
-			$projection,
-			$source,
 			$representation,
+			$ownerRecord,
 			$mutation->relations,
-			$propertyRefs,
 		);
-
-		if ($propertyRefs === []) {
-			$projection->properties($source->all())->end();
-		} else {
-			$projection->properties(...$propertyRefs)->end();
-		}
 
 		$state = new BoundItemState(
 			$collection,
 			$representation,
 			$values,
-			$operation === 'update' ? $seed : null,
+			$operation === 'update' ? $previous : null,
 			$operation === 'update',
 			$mutation->path,
 			$fieldPaths,
@@ -231,32 +235,27 @@ final class DirectusMutationBinder
 			identity: $identity,
 			path: $mutation->path,
 			related: $related,
-			rootRecord: $source->getTargetRecord(),
+			rootRecord: $ownerRecord,
 		);
 	}
 
 	/**
 	 * @param list<RelationMutation> $relations
-	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
 	private function bindRelations(
 		Session $session,
-		Builder $projection,
-		RootRepresentationSource|RelationRepresentationSource $source,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
 		array $relations,
-		array &$propertyRefs,
 	): array {
 		$bound = [];
 		foreach ($relations as $relationMutation) {
 			foreach ($this->bindRelationMutation(
 				$session,
-				$projection,
-				$source,
 				$ownerRepresentation,
+				$ownerRecord,
 				$relationMutation,
-				$propertyRefs,
 			) as $child) {
 				$bound[] = $child;
 			}
@@ -266,65 +265,50 @@ final class DirectusMutationBinder
 	}
 
 	/**
-	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
 	private function bindRelationMutation(
 		Session $session,
-		Builder $projection,
-		RootRepresentationSource|RelationRepresentationSource $source,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
 		RelationMutation $relationMutation,
-		array &$propertyRefs,
 	): array {
 		return match (true) {
 			$relationMutation instanceof ToOneMutation => array_values(array_filter([
 				$this->bindToOne(
 					$session,
-					$projection,
-					$source,
 					$ownerRepresentation,
+					$ownerRecord,
 					$relationMutation,
-					$propertyRefs,
 				),
 			])),
 			$relationMutation instanceof ToManyImplicitMutation => $this->bindToManyImplicit(
 				$session,
-				$projection,
-				$source,
 				$ownerRepresentation,
+				$ownerRecord,
 				$relationMutation,
-				$propertyRefs,
 			),
 			$relationMutation instanceof ToManyExplicitMutation => $this->bindToManyExplicit(
 				$session,
-				$projection,
-				$source,
 				$ownerRepresentation,
+				$ownerRecord,
 				$relationMutation,
-				$propertyRefs,
 			),
 			default => [],
 		};
 	}
 
-	/**
-	 * @param list<PropertyRef> $propertyRefs
-	 */
 	private function bindToOne(
 		Session $session,
-		Builder $projection,
-		RootRepresentationSource|RelationRepresentationSource $source,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
 		ToOneMutation $mutation,
-		array &$propertyRefs,
 	): ?BoundMutation {
 		$mutation->assertValid();
 		$relation = $mutation->relation();
-		$relationRef = $this->relationRef($source, $relation, $mutation->path());
 
 		if ($mutation->kind === ToOneKind::Clear) {
-			$this->clearToOne($session, $source->getTargetRecord(), $relation);
+			$this->clearToOne($session, $ownerRecord, $relation);
 
 			return null;
 		}
@@ -337,7 +321,7 @@ final class DirectusMutationBinder
 				$relation->getName(),
 				'assign',
 			);
-			$projection->existing($relationRef, $mutation->identity);
+			$this->assignToOneIdentity($session, $ownerRecord, $relation, $mutation->identity);
 
 			return null;
 		}
@@ -349,11 +333,11 @@ final class DirectusMutationBinder
 
 		return $this->bindRelatedItem(
 			$session,
-			$projection,
-			$relationRef,
 			$ownerRepresentation,
+			$ownerRecord,
+			$relation,
 			$item,
-			$propertyRefs,
+			cardinality: RelationCardinality::SINGLE,
 		);
 	}
 
@@ -377,22 +361,39 @@ final class DirectusMutationBinder
 		$toOne->clear();
 	}
 
+	private function assignToOneIdentity(
+		Session $session,
+		RecordState $ownerRecord,
+		RelationInterface $relation,
+		Key $identity,
+	): void {
+		$relationName = $relation->getName();
+		$targetCollection = $relation->getCollection();
+		$session->getRelations()->remove($ownerRecord, $relationName);
+
+		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
+		$target = $session->identify($targetCollection, $identity);
+		$toOne = new ToOneRelationState(
+			$ownerRecord,
+			$relationName,
+			new RepresentationSchema($targetCollection),
+			$baseline,
+		);
+		$session->getRelations()->add($toOne);
+		$toOne->set($target);
+	}
+
 	/**
-	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
 	private function bindToManyImplicit(
 		Session $session,
-		Builder $projection,
-		RootRepresentationSource|RelationRepresentationSource $source,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
 		ToManyImplicitMutation $mutation,
-		array &$propertyRefs,
 	): array {
 		$relation = $mutation->relation();
 		$relationName = $relation->getName();
-		$relationRef = $this->relationRef($source, $relation, $mutation->path());
-		$ownerRecord = $source->getTargetRecord();
 		$targetCollection = $relation->getCollection();
 		$relatedSchema = new RepresentationSchema($targetCollection);
 
@@ -426,11 +427,12 @@ final class DirectusMutationBinder
 
 			$childBound = $this->bindRelatedItem(
 				$session,
-				$projection,
-				$relationRef,
 				$ownerRepresentation,
+				$ownerRecord,
+				$relation,
 				$item,
-				$propertyRefs,
+				cardinality: RelationCardinality::MANY,
+				toMany: $toMany,
 			);
 			$bound[] = $childBound;
 			$desired[spl_object_id($childBound->representation)] = $childBound->representation;
@@ -447,7 +449,6 @@ final class DirectusMutationBinder
 
 			$toMany->remove($existing);
 
-			// Exclusive O2M: omit means delete the child row (Directus one_deselect_action=delete).
 			if ($relation->isExclusive()) {
 				$deleteBound = $this->bindExclusiveImplicitRemoval(
 					$session,
@@ -521,31 +522,35 @@ final class DirectusMutationBinder
 	}
 
 	/**
-	 * @param list<PropertyRef> $propertyRefs
 	 * @return list<BoundMutation>
 	 */
 	private function bindToManyExplicit(
 		Session $session,
-		Builder $projection,
-		RootRepresentationSource|RelationRepresentationSource $source,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
 		ToManyExplicitMutation $mutation,
-		array &$propertyRefs,
 	): array {
 		$relation = $mutation->relation();
-		$relationRef = $this->relationRef($source, $relation, $mutation->path());
-		$ownerRecord = $source->getTargetRecord();
 		$baseline = $this->baselines->loadToMany($session, $ownerRecord, $relation);
 		$bound = [];
+
+		$toMany = $session->getRelations()->getOrCreate(
+			$ownerRecord,
+			$relation->getName(),
+			RelationCardinality::MANY,
+			new RepresentationSchema($relation->getCollection()),
+		);
+		assert($toMany instanceof ToManyRelationState);
 
 		foreach ($mutation->create as $item) {
 			$bound[] = $this->bindRelatedItem(
 				$session,
-				$projection,
-				$relationRef,
 				$ownerRepresentation,
+				$ownerRecord,
+				$relation,
 				$item,
-				$propertyRefs,
+				cardinality: RelationCardinality::MANY,
+				toMany: $toMany,
 			);
 		}
 
@@ -559,13 +564,15 @@ final class DirectusMutationBinder
 			);
 			$bound[] = $this->bindRelatedItem(
 				$session,
-				$projection,
-				$relationRef,
 				$ownerRepresentation,
+				$ownerRecord,
+				$relation,
 				$item,
-				$propertyRefs,
+				cardinality: RelationCardinality::MANY,
+				toMany: $toMany,
 				requireExists: true,
 				existenceOperation: 'update',
+				linkRelation: false,
 			);
 		}
 
@@ -605,14 +612,7 @@ final class DirectusMutationBinder
 			'delete',
 		);
 
-		$representation = new stdClass();
-		foreach ($previous as $field => $value) {
-			$representation->{$field} = $value;
-		}
-
-		$childProjection = $session->projection($representation);
-		$childSource = $childProjection->from($collection)->existing($key, $previous);
-		$childProjection->properties($childSource->all())->end();
+		$representation = $this->schemas->loadMutable($session, $collection, $key);
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
@@ -636,28 +636,27 @@ final class DirectusMutationBinder
 		);
 	}
 
-	/**
-	 * @param list<PropertyRef> $propertyRefs
-	 */
 	private function bindRelatedItem(
 		Session $session,
-		Builder $projection,
-		RelationRef $relationRef,
 		object $ownerRepresentation,
+		RecordState $ownerRecord,
+		RelationInterface $relation,
 		RelatedItemInput $item,
-		array &$propertyRefs,
+		RelationCardinality $cardinality,
+		?ToManyRelationState $toMany = null,
 		bool $requireExists = true,
 		string $existenceOperation = 'reference',
+		bool $linkRelation = true,
 	): BoundMutation {
-		$collection = $relationRef->getDefinition()->getCollection();
-		$relationName = $relationRef->getName();
+		$collection = $relation->getCollection();
+		$relationName = $relation->getName();
 		/** @var array<string, mixed>|null $previous */
 		$previous = null;
+		$itemValues = $this->schemas->toPhpValues($collection, $item->values);
 
 		if (! $item->isNew() && $item->identity !== null) {
 			$previous = $this->findRow($collection, $item->identity);
 			if ($previous === null && $this->hasRelatedBody($item)) {
-				// Missing PK + payload => create with client-supplied identity.
 				$item = new RelatedItemInput(
 					$item->identity,
 					$item->values,
@@ -676,42 +675,71 @@ final class DirectusMutationBinder
 			}
 		}
 
+		/** @var array<string, string> $fieldPaths */
+		$fieldPaths = [];
+
 		if ($item->isNew()) {
-			$seed = $item->values;
+			$childObject = new stdClass();
+			$seedFields = [];
 			if ($item->identity !== null) {
-				$seed = $item->identity->getValues() + $seed;
+				foreach ($item->identity->getValues() as $field => $value) {
+					$childObject->{$field} = $value;
+					$seedFields[] = (string) $field;
+				}
 			}
-			$relatedSource = $projection->create($relationRef, $seed);
+			foreach ($itemValues as $field => $value) {
+				$name = (string) $field;
+				if (! $collection->hasField($name)) {
+					continue;
+				}
+				$childObject->{$name} = $value;
+				$fieldPaths[$name] = $name;
+				$seedFields[] = $name;
+			}
+
+			$map = $this->schemas->projectFields($collection, $seedFields);
+			$session->create($childObject, $map);
+			$session->sync($childObject);
 		} else {
-			$seed = $previous ?? ($item->identity?->getValues() ?? []);
-			$relatedSource = $projection->existing($relationRef, $item->identity, $seed);
+			$loadFields = [];
+			foreach (array_keys($itemValues) as $fieldName) {
+				$name = (string) $fieldName;
+				if ($collection->hasField($name)) {
+					$loadFields[] = $name;
+					$fieldPaths[$name] = $name;
+				}
+			}
+			assert($item->identity !== null);
+			$childObject = $this->schemas->loadMutable($session, $collection, $item->identity, $loadFields);
+			foreach ($itemValues as $field => $value) {
+				$name = (string) $field;
+				if ($collection->hasField($name)) {
+					$childObject->{$name} = $value;
+				}
+			}
 		}
 
-		$childObject = $relatedSource->getTargetObject();
-		$fieldPaths = [];
-		foreach ($item->values as $field => $value) {
-			$name = (string) $field;
-			if (! $collection->hasField($name)) {
-				continue;
-			}
-			$alias = $this->aliasFor($relationRef->getName(), $name, $item->path);
-			$fieldPaths[$name] = $alias;
-			$ownerRepresentation->{$alias} = $value;
-			$propertyRefs[] = $relatedSource->field($name)->as($alias);
+		if ($linkRelation) {
+			$this->attachRelated(
+				$session,
+				$ownerRecord,
+				$relation,
+				$cardinality,
+				$childObject,
+				$toMany,
+			);
 		}
 
 		$related = $this->bindNestedOnRelated(
 			$session,
-			$relatedSource,
 			$childObject,
-			$collection,
 			$item,
 		);
 
 		$state = new BoundItemState(
 			$collection,
-			$ownerRepresentation,
-			$item->values,
+			$childObject,
+			$itemValues,
 			$previous,
 			! $item->isNew(),
 			$item->path,
@@ -719,17 +747,17 @@ final class DirectusMutationBinder
 			identityMutable: $item->isNew(),
 			creating: $item->isNew(),
 		);
-		$state->setRelatedSource($relatedSource);
 
 		return new BoundMutation(
 			operation: $item->isNew() ? 'create' : 'update',
 			collection: $collection,
 			representation: $childObject,
 			state: $state,
-			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
+			mutation: new DirectusMutation($itemValues, $item->relations, $item->path),
 			identity: $item->identity,
 			path: $item->path,
 			related: $related,
+			rootRecord: $this->recordFor($session, $childObject),
 		);
 	}
 
@@ -744,15 +772,9 @@ final class DirectusMutationBinder
 		CollectionInterface $collection,
 		RelatedItemInput $item,
 	): BoundMutation {
-		// Baseline identities are PK stubs. Reload the full row and mark it clean so
-		// re-sending unchanged metadata (common for exclusive hasMany keep-lists) does
-		// not schedule a no-op UPDATE that MySQL reports as 0 affected rows.
 		$previous = $item->identity !== null
 			? $this->findRow($collection, $item->identity)
 			: null;
-		if ($previous !== null) {
-			$this->hydrateExistingRelatedRepresentation($session, $representation, $collection, $previous);
-		}
 
 		if ($item->values === [] && $item->relations === []) {
 			return new BoundMutation(
@@ -775,38 +797,31 @@ final class DirectusMutationBinder
 			);
 		}
 
-		foreach ($item->values as $field => $value) {
+		/** @var array<string, string> $fieldPaths */
+		$fieldPaths = [];
+		$itemValues = $this->schemas->toPhpValues($collection, $item->values);
+		$overlayFields = [];
+		foreach ($itemValues as $field => $value) {
 			$name = (string) $field;
-			if ($collection->hasField($name)) {
-				$representation->{$name} = $value;
+			if (! $collection->hasField($name)) {
+				continue;
 			}
+			$representation->{$name} = $value;
+			$fieldPaths[$name] = $name;
+			$overlayFields[] = $name;
 		}
 
-		$childProjection = $session->projection($representation);
-		$childSource = $childProjection->from($collection)->tracked();
-		$propertyRefs = [];
-		foreach (array_keys($item->values) as $fieldName) {
-			$name = (string) $fieldName;
-			if ($collection->hasField($name)) {
-				$propertyRefs[] = $childSource->field($name);
-			}
-		}
-		if ($propertyRefs !== []) {
-			$childProjection->properties(...$propertyRefs)->end();
+		if ($overlayFields !== []) {
+			$map = $this->schemas->projectFields($collection, $overlayFields);
+			$session->update($representation, $map);
+			$session->sync($representation);
 		}
 
-		$nestedPropertyRefs = [];
-		$related = $this->bindRelations(
+		$related = $this->bindNestedOnRelated(
 			$session,
-			$childProjection,
-			$childSource,
 			$representation,
-			$item->relations,
-			$nestedPropertyRefs,
+			$item,
 		);
-		if ($nestedPropertyRefs !== []) {
-			$childProjection->properties(...$nestedPropertyRefs)->end();
-		}
 
 		return new BoundMutation(
 			operation: 'update',
@@ -815,14 +830,15 @@ final class DirectusMutationBinder
 			state: new BoundItemState(
 				$collection,
 				$representation,
-				$item->values,
+				$itemValues,
 				$previous,
 				true,
 				$item->path,
+				$fieldPaths,
 				identityMutable: false,
 				creating: false,
 			),
-			mutation: new DirectusMutation($item->values, $item->relations, $item->path),
+			mutation: new DirectusMutation($itemValues, $item->relations, $item->path),
 			identity: $item->identity,
 			path: $item->path,
 			related: $related,
@@ -830,86 +846,61 @@ final class DirectusMutationBinder
 	}
 
 	/**
-	 * @param array<string, mixed> $previous
-	 */
-	private function hydrateExistingRelatedRepresentation(
-		Session $session,
-		object $representation,
-		CollectionInterface $collection,
-		array $previous,
-	): void {
-		$hydrated = [];
-		foreach ($previous as $field => $value) {
-			$name = (string) $field;
-			if (! $collection->hasField($name)) {
-				continue;
-			}
-
-			$hydrated[$name] = $value;
-			$representation->{$name} = $value;
-		}
-
-		$record = $this->recordFor($session, $representation);
-		if (! $record instanceof RecordState) {
-			return;
-		}
-
-		$record->setValues($hydrated);
-		$record->markClean($record->getKey());
-	}
-
-	/**
 	 * @return list<BoundMutation>
 	 */
 	private function bindNestedOnRelated(
 		Session $session,
-		RelationRepresentationSource $relatedSource,
 		object $childObject,
-		CollectionInterface $collection,
 		RelatedItemInput $item,
 	): array {
 		if ($item->relations === []) {
 			return [];
 		}
 
-		// Nested relations are bound on the related identity object so recursion
-		// uses RootRepresentationSource relation navigation without storage details.
-		$childProjection = $session->projection($childObject);
-		$childRoot = $childProjection->from($collection)->tracked();
-		$nestedPropertyRefs = [];
-		$bound = $this->bindRelations(
+		$childRecord = $this->requireRecord($session, $childObject);
+
+		return $this->bindRelations(
 			$session,
-			$childProjection,
-			$childRoot,
 			$childObject,
+			$childRecord,
 			$item->relations,
-			$nestedPropertyRefs,
 		);
-
-		if ($nestedPropertyRefs !== []) {
-			$childProjection->properties(...$nestedPropertyRefs)->end();
-		}
-
-		return $bound;
 	}
 
-	private function relationRef(
-		RootRepresentationSource|RelationRepresentationSource $source,
+	private function attachRelated(
+		Session $session,
+		RecordState $ownerRecord,
 		RelationInterface $relation,
-		PayloadPath $path,
-	): RelationRef {
-		if ($source instanceof RootRepresentationSource) {
-			$ref = $source->{$relation->getName()};
-			if (! $ref instanceof RelationRef) {
-				throw RestApiError::validationFailed([
-					$path->toString() => ['Unknown relation.'],
-				]);
-			}
+		RelationCardinality $cardinality,
+		object $childObject,
+		?ToManyRelationState $toMany,
+	): void {
+		$relationName = $relation->getName();
+		$relatedSchema = new RepresentationSchema($relation->getCollection());
 
-			return $ref;
+		if ($cardinality->isMany()) {
+			$state = $toMany ?? $session->getRelations()->getOrCreate(
+				$ownerRecord,
+				$relationName,
+				RelationCardinality::MANY,
+				$relatedSchema,
+			);
+			assert($state instanceof ToManyRelationState);
+			$state->add($childObject);
+
+			return;
 		}
 
-		return new RelationRef($source, $relation->getName(), $relation);
+		$session->getRelations()->remove($ownerRecord, $relationName);
+		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
+		$toOne = new ToOneRelationState(
+			$ownerRecord,
+			$relationName,
+			$relatedSchema,
+			$baseline,
+		);
+		$session->getRelations()->add($toOne);
+		$toOne->set($childObject);
 	}
 
 	private function assertInRelationScope(
@@ -929,7 +920,6 @@ final class DirectusMutationBinder
 			return;
 		}
 
-		// Distinguish missing globally vs present but out of scope.
 		$row = $this->findRow($relation->getCollection(), $identity);
 		if ($row === null) {
 			throw RestApiError::relatedNotFound(
@@ -1033,6 +1023,18 @@ final class DirectusMutationBinder
 		return false;
 	}
 
+	private function requireRecord(Session $session, object $representation): RecordState
+	{
+		$record = $this->recordFor($session, $representation);
+		if (! $record instanceof RecordState) {
+			throw RestApiError::validationFailed([
+				'_root' => ['Unable to resolve Session record for mutation binding.'],
+			]);
+		}
+
+		return $record;
+	}
+
 	private function recordFor(Session $session, object $representation): ?RecordState
 	{
 		$state = $session->getRepresentations()->get($representation);
@@ -1040,20 +1042,12 @@ final class DirectusMutationBinder
 			return null;
 		}
 
-		try {
-			$record = $session->getRecords()->getFromRepresentation($state);
-		} catch (Throwable) {
-			return null;
+		$record = $state->getSingleRecord();
+		if ($record instanceof RecordState) {
+			return $record;
 		}
 
-		return $record instanceof RecordState ? $record : null;
-	}
-
-	private function aliasFor(string $relationName, string $field, PayloadPath $path): string
-	{
-		$suffix = $path->toString() !== '' ? str_replace('.', '_', $path->toString()) : $relationName;
-
-		return '__rel_' . $suffix . '_' . $field;
+		return null;
 	}
 
 	private function normalizeKey(

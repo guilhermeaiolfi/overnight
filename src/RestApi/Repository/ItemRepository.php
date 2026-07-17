@@ -83,7 +83,7 @@ class ItemRepository implements ItemRepositoryInterface
 		try {
 			$session = new \ON\Data\ORM\Session($this->runtime->getCommandExecutor());
 			$sessions = new \ON\RestApi\Mutation\SessionFactory($this->runtime);
-			$binder = new \ON\RestApi\Mutation\DirectusMutationBinder($this, $sessions);
+			$binder = new \ON\RestApi\Mutation\DirectusMutationBinder($this, $this->runtime, $sessions);
 			$mutation = (new \ON\RestApi\Mutation\Payload\DirectusPayloadParser())->parse($collection, $input);
 			$bound = $binder->bindCreate($session, $collection, $mutation);
 			$session->sync($bound->representation);
@@ -92,7 +92,7 @@ class ItemRepository implements ItemRepositoryInterface
 			$representationState = $session->getRepresentations()->get($bound->representation);
 			$key = null;
 			if ($representationState instanceof \ON\Data\ORM\Representation\State\RepresentationState) {
-				$record = $session->getRecords()->getFromRepresentation($representationState);
+				$record = $representationState->getSingleRecord();
 				if ($record instanceof \ON\Data\ORM\Record\RecordState && $record->hasKey()) {
 					$key = $record->getKey();
 				}

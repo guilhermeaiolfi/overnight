@@ -24,7 +24,7 @@ final class MutationCoordinatorFactory
 
 		return new MutationCoordinator(
 			$sessions,
-			new DirectusMutationBinder($items, $sessions),
+			new DirectusMutationBinder($items, $runtime, $sessions),
 			new DirectusPayloadParser(),
 			$items,
 			$container->get(RestHookDispatcher::class),
