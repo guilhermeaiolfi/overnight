@@ -110,7 +110,7 @@ RestApiExtension::install($app, [
 **Writes** go through `MutationCoordinator`:
 
 1. **Parse** — `DirectusPayloadParser` → `ToOneMutation` / `ToManyImplicitMutation` / `ToManyExplicitMutation` (rejects duplicate related identities).
-2. **Bind** — `DirectusMutationBinder` registers Session save intents (`update` / `create` / `identify` / `remove`) and relation membership state, verifying related identities exist and scoping explicit update/delete to the current relation baseline. Existing rows are mutable-loaded into the mutation Session; creates use `SelectQuery::projection()`.
+2. **Bind** — `DirectusMutationBinder` registers Session save intents (`update` / `create` / `identify` / `remove`) and relation membership state, verifying related identities exist and scoping explicit update/delete to the current relation baseline. Existing rows are writable-loaded into the mutation Session; creates use `SelectQuery::projection()`.
 3. **Before-events** — parent then children; `preventDefault()` stops flush (no after-events).
 4. **Flush** — `Session::sync()` + `Session::flush()` (one transaction for batch endpoints).
 5. **After-events** — children then parent; skipped on rollback or prevention.
@@ -648,7 +648,7 @@ Relation connect/disconnect events are not part of the Session mutation path. Se
 ### How writes flow
 
 ```
-1. Parse + bind → BoundMutation tree on one Session (mutable load / create+projection / relation state)
+1. Parse + bind → BoundMutation tree on one Session (writable load / create+projection / relation state)
 2. Dispatch before-events (parent → child); reapply hook scalar mutations onto representations / RecordState
 3. Session::sync() + Session::flush()
 4. Reload roots via ON\Data Query; markReady(row) on state

@@ -31,7 +31,7 @@ use stdClass;
 /**
  * Binds Directus-normalized mutations onto ON\Data Session save intents and relation state.
  *
- * Existing rows: mutable SelectQuery load into the mutation Session (schema from the query).
+ * Existing rows: writable SelectQuery load into the mutation Session (schema from the query).
  * Creates / field overlays: SelectQuery::projection() via MutationSchemaFactory.
  * Membership: ToManyRelationState::full + remove for implicit; Session::remove for deletes.
  *
@@ -120,7 +120,7 @@ final class DirectusMutationBinder
 			throw RestApiError::notFound();
 		}
 
-		$representation = $this->schemas->loadMutable($session, $collection, $key);
+		$representation = $this->schemas->loadWritable($session, $collection, $key);
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
@@ -200,7 +200,7 @@ final class DirectusMutationBinder
 				$fieldPaths[$name] = $name;
 			}
 
-			$representation = $this->schemas->loadMutable($session, $collection, $identity, $loadFields);
+			$representation = $this->schemas->loadWritable($session, $collection, $identity, $loadFields);
 			foreach ($values as $field => $value) {
 				$representation->{(string) $field} = $value;
 			}
@@ -612,7 +612,7 @@ final class DirectusMutationBinder
 			'delete',
 		);
 
-		$representation = $this->schemas->loadMutable($session, $collection, $key);
+		$representation = $this->schemas->loadWritable($session, $collection, $key);
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
@@ -710,7 +710,7 @@ final class DirectusMutationBinder
 				}
 			}
 			assert($item->identity !== null);
-			$childObject = $this->schemas->loadMutable($session, $collection, $item->identity, $loadFields);
+			$childObject = $this->schemas->loadWritable($session, $collection, $item->identity, $loadFields);
 			foreach ($itemValues as $field => $value) {
 				$name = (string) $field;
 				if ($collection->hasField($name)) {

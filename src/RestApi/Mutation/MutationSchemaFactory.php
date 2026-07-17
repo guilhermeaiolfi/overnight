@@ -22,7 +22,7 @@ use stdClass;
 /**
  * Compiles RepresentationSchema shapes for RestApi Session writes.
  *
- * Prefer mutable SelectQuery loads for existing rows (schema comes from the query).
+ * Prefer writable SelectQuery loads for existing rows (schema comes from the query).
  * Use {@see projectFields()} only for creates and field overlays absent from a load select.
  */
 final class MutationSchemaFactory
@@ -57,11 +57,11 @@ final class MutationSchemaFactory
 	}
 
 	/**
-	 * Load an existing row into the mutation Session via mutable SelectQuery.
+	 * Load an existing row into the mutation Session via writable SelectQuery.
 	 *
 	 * @param list<string>|null $fieldNames null = all visible fields
 	 */
-	public function loadMutable(
+	public function loadWritable(
 		Session $session,
 		CollectionInterface $collection,
 		Key $identity,
@@ -79,7 +79,7 @@ final class MutationSchemaFactory
 
 		$object = $query
 			->to(stdClass::class)
-			->mutable($session)
+			->writable($session)
 			->fetchOne();
 
 		if (! is_object($object)) {

@@ -27,7 +27,7 @@ Directus payload
 
 Reads continue to use ON\Data `SelectQuery`. Writes use one Session path only — there is no MutationQueue fallback.
 
-Existing rows are loaded with `SelectQuery` + `mutable($session)` (schema comes from the query). Pure creates and field overlays use `SelectQuery::projection()`. Tracked shapes can be reused via `Session::schemaOf()`.
+Existing rows are loaded with `SelectQuery` + `writable($session)` (schema comes from the query). Pure creates and field overlays use `SelectQuery::projection()`. Tracked shapes can be reused via `Session::schemaOf()`.
 
 ---
 
@@ -75,7 +75,7 @@ Duplicate detection uses `ON\Data\Key` normalization (canonical PK field order),
 
 - RestApi expresses membership intent only (`add` / `remove` / `Session::remove`).
 - ON\Data planners own FK updates, through-row insert/delete, and generated-key ordering.
-- Relation baselines for implicit reconciliation and explicit scope load through ON\Data mutable queries (`RelationBaselineReader` → `RelationBaseline`), not through-table scans in RestApi.
+- Relation baselines for implicit reconciliation and explicit scope load through ON\Data writable queries (`RelationBaselineReader` → `RelationBaseline`), not through-table scans in RestApi.
 - Nested relation payloads bind recursively on the same Session.
 - First-of-many relations are read-only for mutations.
 - Request-local identity lookup cache is cleared per coordinator operation (shared across batch roots).
@@ -121,7 +121,7 @@ One flush uses the transactional command executor when available, so the batch i
 src/RestApi/Mutation/
 ├── MutationCoordinator.php      create/update/delete + batch*
 ├── DirectusMutationBinder.php   recursive Directus → Session binding
-├── MutationSchemaFactory.php    mutable loads + create/overlay projections
+├── MutationSchemaFactory.php    writable loads + create/overlay projections
 ├── RelationBaselineReader.php   current membership via ON\Data queries
 ├── RelationBaseline.php         normalized identity baseline
 ├── SessionFactory.php

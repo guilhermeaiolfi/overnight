@@ -14,7 +14,7 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use stdClass;
 
 /**
- * Loads current represented relation membership through ON\Data mutable queries.
+ * Loads current represented relation membership through ON\Data writable queries.
  *
  * The baseline query runs in an isolated Session so relation sync from the read
  * does not pollute the mutation Session. Identities are re-attached with identify().
@@ -112,7 +112,7 @@ final class RelationBaselineReader
 
 		$owner = $query
 			->to(stdClass::class)
-			->mutable($readSession)
+			->writable($readSession)
 			->fetchOne();
 
 		if (! is_object($owner)) {

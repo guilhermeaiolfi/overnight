@@ -7,11 +7,11 @@ namespace ON\RestApi\Mutation;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
-use function ON\Data\Mapper\map;
-use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\AuthState;
 use ON\RestApi\Event\ItemCreated;
@@ -375,7 +375,7 @@ final class MutationCoordinator
 			return;
 		}
 
-		// Already tracked (mutable load or early create sync): patch RecordState directly.
+		// Already tracked (writable load or early create sync): patch RecordState directly.
 		// Re-issuing create()/update() would adopt a second NEW record and leave the first
 		// incomplete row to flush (NOT NULL on hook-added columns).
 		$representationState = $session->getRepresentations()->get($target);
