@@ -137,6 +137,73 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$this->assertSame(1, (int) $row['news_id']);
 	}
 
+	public function testPatchUpdateReordersExistingImageAndCreatesNewWithUpload(): void
+	{
+		[, , $middleware, $db] = $this->createNewsArticleFixture();
+
+		$payload = [
+			'title' => 'Reordered article',
+			'slug' => 'reordered-article',
+			'status' => 'draft',
+			'images' => [
+				[
+					'id' => 10,
+					'sequence' => 1,
+					'role' => 'image',
+					'alt_text' => 'Reordered',
+					'caption' => 'Kept',
+				],
+				[
+					'sequence' => 0,
+					'role' => 'image',
+					'alt_text' => 'New cover',
+					'caption' => null,
+				],
+			],
+		];
+
+		$request = (new ServerRequest(
+			uri: '/items/news_article/1',
+			method: 'PATCH',
+			headers: ['Content-Type' => 'multipart/form-data; boundary=news-reorder-boundary'],
+		))
+			->withParsedBody(['data' => json_encode($payload, JSON_THROW_ON_ERROR)])
+			->withUploadedFiles([
+				'images' => [
+					1 => ['file_id' => $this->createUploadedFile('cover.jpg')],
+				],
+			]);
+
+		$response = $middleware->process(
+			$request,
+			new class () implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
+
+		$stmt = $db->database()->query(
+			'SELECT id, file_id, sequence, alt_text FROM news_article_file WHERE news_id = 1 ORDER BY sequence, id'
+		);
+		$rows = $stmt->fetchAll();
+		$stmt->close();
+
+		$this->assertCount(2, $rows);
+		$this->assertSame(0, (int) $rows[0]['sequence']);
+		$this->assertSame('New cover', $rows[0]['alt_text']);
+		$this->assertSame(501, (int) $rows[0]['file_id']);
+		$this->assertSame(1, (int) $rows[1]['sequence']);
+		$this->assertSame(10, (int) $rows[1]['id']);
+		$this->assertSame('Reordered', $rows[1]['alt_text']);
+	}
+
 	public function testPatchUpdateAcceptsFlatArrayPayloadWithCreateFileUploadKey(): void
 	{
 		[, , $middleware, $db] = $this->createNewsArticleFixture();

@@ -812,9 +812,20 @@ final class DirectusMutationBinder
 		}
 
 		if ($overlayFields !== []) {
-			$map = $this->schemas->projectFields($collection, $overlayFields);
-			$session->update($representation, $map);
-			$session->sync($representation);
+			$record = $this->recordFor($session, $representation);
+			if ($record instanceof RecordState) {
+				// Baseline members are Session::identify() PK stubs. Overlaying via
+				// update()+sync() no-ops when root-only projection maps fall through to
+				// graph attach on an already-tracked object. Write onto the tracked
+				// RecordState so flush emits UPDATE for sequence/title/alt overlays.
+				foreach ($overlayFields as $name) {
+					$record->setValue($name, $representation->{$name});
+				}
+			} else {
+				$map = $this->schemas->projectFields($collection, $overlayFields);
+				$session->update($representation, $map);
+				$session->sync($representation);
+			}
 		}
 
 		$related = $this->bindNestedOnRelated(
