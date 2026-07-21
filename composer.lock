@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "0178f611618fc251b27849039400c8e0",
+    "content-hash": "d2f9d13862107031a545c3796759cf65",
     "packages": [
         {
             "name": "cycle/database",
