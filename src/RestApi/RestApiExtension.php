@@ -23,7 +23,7 @@ use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
-use ON\Data\DataRuntime;
+use ON\RestApi\Container\DirectusQueryParserFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\MutationCoordinatorFactory;
@@ -69,13 +69,9 @@ class RestApiExtension extends AbstractExtension
 			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
 			\ON\RestApi\Mutation\MutationCoordinator::class => MutationCoordinatorFactory::class,
-			DirectusQueryParser::class => static function (ContainerInterface $container): DirectusQueryParser {
-				return new DirectusQueryParser($container->get(DataRuntime::class));
-			},
-			QueryParserInterface::class => static function (ContainerInterface $container): QueryParserInterface {
-				return $container->get(DirectusQueryParser::class);
-			},
+			DirectusQueryParser::class => DirectusQueryParserFactory::class,
 		]);
+		$event->containerConfig->addAlias(QueryParserInterface::class, DirectusQueryParser::class);
 	}
 
 	public function onPipelineReady(PipelineReadyEvent $event): void

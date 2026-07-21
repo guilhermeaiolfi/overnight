@@ -237,7 +237,7 @@ class ConfigExtension extends AbstractExtension
 
 	protected function saveCache(): void
 	{
-		if (! $this->cachePath || $this->options['debug']) {
+		if (! $this->cachePath) {
 			return;
 		}
 
@@ -253,10 +253,79 @@ class ConfigExtension extends AbstractExtension
 			}
 		}
 
-		$content = serialize([
-			'data' => $dataToCache,
-			'cacheExceptions' => $this->cacheExceptions,
-		]);
+		$skipped = [];
+		$dataToCache = $this->withoutNonSerializable($dataToCache, 'data', $skipped);
+		if ($skipped !== []) {
+			// Incomplete caches skip ConfigConfigureEvent on the next boot. Never write
+			// a partial snapshot — fail hard so Closures cannot hide in production.
+			throw new \RuntimeException(sprintf(
+				'Config cache cannot be written; non-serializable values at: %s. Use class-based factories/aliases instead of Closures.',
+				implode(', ', $skipped)
+			));
+		}
+
+		// Debug mode always uses a cold config path; still validate above so Closures fail loudly.
+		if ($this->options['debug']) {
+			return;
+		}
+
+		try {
+			$content = serialize([
+				'data' => $dataToCache,
+				'cacheExceptions' => $this->cacheExceptions,
+			]);
+		} catch (\Throwable $e) {
+			throw new \RuntimeException('Config cache write failed: ' . $e->getMessage(), 0, $e);
+		}
+
 		file_put_contents($this->cachePath, $content);
+	}
+
+	/**
+	 * Drop Closures and other non-serializable leaves so serialize() never crashes bootstrap.
+	 *
+	 * @param list<string> $skipped
+	 */
+	private function withoutNonSerializable(mixed $value, string $path, array &$skipped): mixed
+	{
+		if ($value instanceof Closure) {
+			$skipped[] = $path;
+
+			return null;
+		}
+
+		if (is_resource($value)) {
+			$skipped[] = $path;
+
+			return null;
+		}
+
+		if (is_array($value)) {
+			$result = [];
+			foreach ($value as $key => $item) {
+				$childPath = $path . '[' . (is_int($key) ? (string) $key : $key) . ']';
+				if ($item instanceof Closure || is_resource($item)) {
+					$skipped[] = $childPath;
+
+					continue;
+				}
+
+				$result[$key] = $this->withoutNonSerializable($item, $childPath, $skipped);
+			}
+
+			return $result;
+		}
+
+		if (is_object($value)) {
+			try {
+				serialize($value);
+			} catch (\Throwable) {
+				$skipped[] = $path;
+
+				return null;
+			}
+		}
+
+		return $value;
 	}
 }
