@@ -10,6 +10,7 @@ use DateTimeImmutable;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
+use ON\Data\Database\Cycle\CycleQueryExecutor;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
@@ -27,6 +28,7 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
+use Tests\ON\RestApi\Support\DelegatingRecordingCommandExecutor;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 #[RequiresPhpExtension('pdo_sqlite')]
@@ -312,6 +314,70 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$this->assertSame('Edited title only', $title['title']);
 	}
 
+	public function testPatchUnchangedNestedImageOverlayDoesNotEmitChildUpdateCommand(): void
+	{
+		[, , $middleware, $db, $recorder] = $this->createNewsArticleFixture(recordCommands: true);
+		$this->assertInstanceOf(DelegatingRecordingCommandExecutor::class, $recorder);
+
+		// Flat nested payload with identical child metadata — must not UPDATE news_article_file.
+		// MySQL without CLIENT_FOUND_ROWS returns affected_rows=0 for those no-op UPDATEs.
+		$payload = [
+			'title' => 'Edited title only',
+			'slug' => 'existing-article',
+			'status' => 'draft',
+			'images' => [
+				[
+					'id' => 10,
+					'sequence' => 0,
+					'role' => 'image',
+					'alt_text' => null,
+					'caption' => null,
+				],
+			],
+		];
+
+		$stream = new Stream('php://temp', 'wb+');
+		$stream->write(json_encode($payload, JSON_THROW_ON_ERROR));
+		$stream->rewind();
+
+		$request = (new ServerRequest(
+			uri: '/items/news_article/1',
+			method: 'PATCH',
+			headers: ['Content-Type' => 'application/json'],
+		))->withBody($stream);
+
+		$response = $middleware->process(
+			$request,
+			new class () implements RequestHandlerInterface {
+				public function handle(ServerRequestInterface $request): ResponseInterface
+				{
+					return new JsonResponse(['miss' => true]);
+				}
+			}
+		);
+
+		$response->getBody()->rewind();
+		$body = json_decode((string) $response->getBody(), true);
+
+		$this->assertSame(200, $response->getStatusCode(), (string) json_encode($body));
+		$this->assertSame(
+			[],
+			$recorder->getUpdateCommandsFor('news_article_file'),
+			'Unchanged flat nested overlays must not emit child UPDATEs (MySQL affected_rows=0).',
+		);
+		$this->assertNotEmpty(
+			$recorder->getUpdateCommandsFor('news_article'),
+			'Parent field changes should still flush an UPDATE.',
+		);
+
+		$row = $db->database()->query('SELECT id, file_id, sequence, role FROM news_article_file WHERE news_id = 1')->fetch();
+		$this->assertNotFalse($row);
+		$this->assertSame(10, (int) $row['id']);
+		$this->assertSame(100, (int) $row['file_id']);
+		$this->assertSame(0, (int) $row['sequence']);
+		$this->assertSame('image', $row['role']);
+	}
+
 	private function createUploadedFile(string $filename): UploadedFileInterface
 	{
 		return new class ($filename) implements UploadedFileInterface {
@@ -351,9 +417,9 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 	}
 
 	/**
-	 * @return array{0: Registry, 1: ItemRepository, 2: RestMiddleware, 3: CycleSqliteTestDatabase}
+	 * @return array{0: Registry, 1: ItemRepository, 2: RestMiddleware, 3: CycleSqliteTestDatabase, 4: ?DelegatingRecordingCommandExecutor}
 	 */
-	private function createNewsArticleFixture(): array
+	private function createNewsArticleFixture(bool $recordCommands = false): array
 	{
 		$registry = new Registry();
 		$registry->collection('news_article')
@@ -409,6 +475,16 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		]);
 
 		$runtime = $this->createDataRuntime($db);
+		$recorder = null;
+		if ($recordCommands) {
+			$this->ensureConversionGateway();
+			$recorder = new DelegatingRecordingCommandExecutor($runtime->getCommandExecutor());
+			$runtime = new DataRuntime(
+				new CycleQueryExecutor($db->database(), $this->conversionGateway),
+				$recorder,
+			);
+		}
+
 		$resolver = new class ($registry, $runtime, $db->database()) extends ItemRepository {
 			/** @var list<array{collection: string, input: array<string, mixed>}> */
 			public array $createCalls = [];
@@ -467,6 +543,6 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			['endpointUri' => '/items'],
 		);
 
-		return [$registry, $resolver, $middleware, $db];
+		return [$registry, $resolver, $middleware, $db, $recorder];
 	}
 }

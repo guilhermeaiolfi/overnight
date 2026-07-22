@@ -800,31 +800,39 @@ final class DirectusMutationBinder
 		/** @var array<string, string> $fieldPaths */
 		$fieldPaths = [];
 		$itemValues = $this->schemas->toPhpValues($collection, $item->values);
-		$overlayFields = [];
-		foreach ($itemValues as $field => $value) {
+		$loadFields = [];
+		foreach ($itemValues as $field => $_value) {
 			$name = (string) $field;
 			if (! $collection->hasField($name)) {
 				continue;
 			}
-			$representation->{$name} = $value;
+			$loadFields[] = $name;
 			$fieldPaths[$name] = $name;
-			$overlayFields[] = $name;
 		}
 
-		if ($overlayFields !== []) {
-			$record = $this->recordFor($session, $representation);
-			if ($record instanceof RecordState) {
-				// Baseline members are Session::identify() PK stubs. Overlaying via
-				// update()+sync() no-ops when root-only projection maps fall through to
-				// graph attach on an already-tracked object. Write onto the tracked
-				// RecordState so flush emits UPDATE for sequence/title/alt overlays.
-				foreach ($overlayFields as $name) {
-					$record->setValue($name, $representation->{$name});
+		if ($loadFields !== []) {
+			assert($item->identity !== null);
+			// Baseline members are Session::identify() PK stubs. update()+sync() no-ops
+			// on PK-only schemas, and RecordState::setValue always dirties missing fields —
+			// which emits no-op UPDATEs that MySQL reports as affected_rows=0.
+			// Hydrate writable fields (same as explicit/root update), absorb that snapshot
+			// as clean, then assign overlays so only real changes dirty the record.
+			$representation = $this->schemas->loadWritable(
+				$session,
+				$collection,
+				$item->identity,
+				$loadFields,
+			);
+			$record = $this->requireRecord($session, $representation);
+			if ($record->isDirty()) {
+				$record->markClean();
+			}
+
+			foreach ($itemValues as $field => $value) {
+				$name = (string) $field;
+				if ($collection->hasField($name)) {
+					$representation->{$name} = $value;
 				}
-			} else {
-				$map = $this->schemas->projectFields($collection, $overlayFields);
-				$session->update($representation, $map);
-				$session->sync($representation);
 			}
 		}
 
