@@ -32,7 +32,7 @@
         "laminas/laminas-stdlib": "^3.20",
         "mezzio/mezzio-helpers": "^5.18",
         "somnambulist/validation": "^1.13",
-        "guilhermeaiolfi/overnight-data": "^1.2"
+        "guilhermeaiolfi/overnight-data": "1.2.x-dev"
       },
       "require-dev": {
         "itsgoingd/clockwork": "^5.2",
@@ -60,9 +60,15 @@
         "ON\\": "src/"
       }
     },
-    "repositories": [{
-        "name": "overnight-data",
-        "type": "vcs",
-        "url": "https://github.com/guilhermeaiolfi/overnight-data.git"
-    }]
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../ondata",
+            "options": {
+                "symlink": true
+            }
+        }
+    ]
 }

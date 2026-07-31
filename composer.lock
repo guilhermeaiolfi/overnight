@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d2f9d13862107031a545c3796759cf65",
+    "content-hash": "84ea2c397d2ee502309b13d79479c996",
     "packages": [
         {
             "name": "cycle/database",
@@ -573,17 +573,11 @@
         },
         {
             "name": "guilhermeaiolfi/overnight-data",
-            "version": "v1.2.0",
-            "source": {
-                "type": "git",
-                "url": "https://github.com/guilhermeaiolfi/overnight-data.git",
-                "reference": "3f219899cb9916ebe1080b67f0725f73e8e978c2"
-            },
+            "version": "dev-master",
             "dist": {
-                "type": "zip",
-                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/3f219899cb9916ebe1080b67f0725f73e8e978c2",
-                "reference": "3f219899cb9916ebe1080b67f0725f73e8e978c2",
-                "shasum": ""
+                "type": "path",
+                "url": "../ondata",
+                "reference": "0d11545924f79ddc89df6d967fb15baabf471618"
             },
             "require": {
                 "cycle/database": "^2.16",
@@ -598,7 +592,7 @@
             "type": "library",
             "extra": {
                 "branch-alias": {
-                    "dev-master": "1.1.x-dev"
+                    "dev-master": "1.2.x-dev"
                 }
             },
             "autoload": {
@@ -663,11 +657,10 @@
                 "metadata",
                 "php"
             ],
-            "support": {
-                "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/v1.2.0",
-                "issues": "https://github.com/guilhermeaiolfi/overnight-data/issues"
-            },
-            "time": "2026-07-21T14:21:55+00:00"
+            "transport-options": {
+                "symlink": true,
+                "relative": true
+            }
         },
         {
             "name": "illuminate/collections",
@@ -4336,16 +4329,16 @@
         },
         {
             "name": "symfony/polyfill-php83",
-            "version": "v1.38.2",
+            "version": "v1.41.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/polyfill-php83.git",
-                "reference": "796a26abb75ce49f3a84433cd81bf1009d73d5f8"
+                "reference": "5ea99087fb99c273a9b9236ed4c31e78b16103c6"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/polyfill-php83/zipball/796a26abb75ce49f3a84433cd81bf1009d73d5f8",
-                "reference": "796a26abb75ce49f3a84433cd81bf1009d73d5f8",
+                "url": "https://api.github.com/repos/symfony/polyfill-php83/zipball/5ea99087fb99c273a9b9236ed4c31e78b16103c6",
+                "reference": "5ea99087fb99c273a9b9236ed4c31e78b16103c6",
                 "shasum": ""
             },
             "require": {
@@ -4392,7 +4385,7 @@
                 "shim"
             ],
             "support": {
-                "source": "https://github.com/symfony/polyfill-php83/tree/v1.38.2"
+                "source": "https://github.com/symfony/polyfill-php83/tree/v1.41.0"
             },
             "funding": [
                 {
@@ -4412,7 +4405,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-05-27T06:51:48+00:00"
+            "time": "2026-07-01T12:47:55+00:00"
         },
         {
             "name": "symfony/polyfill-php84",
@@ -9180,9 +9173,11 @@
         }
     ],
     "aliases": [],
-    "minimum-stability": "stable",
-    "stability-flags": {},
-    "prefer-stable": false,
+    "minimum-stability": "dev",
+    "stability-flags": {
+        "guilhermeaiolfi/overnight-data": 20
+    },
+    "prefer-stable": true,
     "prefer-lowest": false,
     "platform": {
         "php": ">=8.3"

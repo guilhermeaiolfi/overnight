@@ -539,6 +539,22 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame(2, $result['meta']['filter_count']);
 	}
 
+	public function testListWithBelongsToRelationFilterAndFilterCount(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($registry->getCollection('post'), $this->q($registry->getCollection('post'), [
+			'filter' => ['author.name' => ['_eq' => 'John']],
+			'meta' => ['total_count', 'filter_count'],
+		]));
+
+		$this->assertCount(2, $result['data']);
+		$this->assertSame(['PHP Tips', 'Draft Post'], array_column($result['data'], 'title'));
+		$this->assertSame(2, $result['meta']['filter_count']);
+	}
+
 	// -------------------------------------------------------------------------
 	// Get
 	// -------------------------------------------------------------------------

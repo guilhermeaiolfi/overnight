@@ -7,10 +7,9 @@ namespace ON\RestApi\Action\Directus;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use ON\Data\Query\SelectQuery;
-use function ON\Data\Query\x;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Query\SelectQuery;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Hook\RestHookDispatcher;
@@ -168,25 +167,12 @@ final class ListAction implements RestActionInterface
 
 	private function countAll(CollectionInterface $collection): int
 	{
-		$countQuery = $this->runtime->query($collection);
-		$row = $countQuery
-			->select(x()->count($countQuery->all())->as('aggregate_count'))
-			->fetchOne();
-
-		return (int) ($row['aggregate_count'] ?? 0);
+		return $this->runtime->query($collection)->count();
 	}
 
 	private function countFiltered(SelectQuery $query): int
 	{
-		$filtered = $this->runtime->query($query->getCollection());
-		foreach ($query->getConditions() as $condition) {
-			$filtered->where($condition->bindTo($filtered, from: $query));
-		}
-		$row = $filtered
-			->select(x()->count($filtered->all())->as('aggregate_count'))
-			->fetchOne();
-
-		return (int) ($row['aggregate_count'] ?? 0);
+		return $query->count();
 	}
 
 	/**
