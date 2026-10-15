@@ -108,7 +108,7 @@ final class RelationBaselineReader
 		}
 
 		$pkFields = $targetCollection->getPrimaryKey();
-		$query->relation($relation->getName())->fields(...$pkFields);
+		$query->relation($relation->getName())->select(...$pkFields);
 
 		$owner = $query
 			->to(stdClass::class)
