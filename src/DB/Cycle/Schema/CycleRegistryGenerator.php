@@ -18,6 +18,7 @@ use ON\Data\Definition\DefinitionInterface;
 use ON\Data\Definition\Exception\FieldException;
 use ON\Data\Definition\Field\Field;
 use ON\Data\Definition\Field\FieldInterface;
+use ON\Data\Definition\Plugin\CycleCollectionPlugin;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\HasManyRelation;
@@ -29,6 +30,7 @@ use ON\Data\Mapper\FieldTypeInterface;
 use ON\Data\Mapper\Resolution\LeafNodeResolution;
 use ON\DB\Cycle\Schema\Exception\CycleSchemaException;
 use ON\DB\Cycle\Schema\Exception\UnsupportedDefinitionFeatureException;
+use stdClass;
 
 /**
  * Compiles an ON\Data definition registry into a Cycle schema registry.
@@ -108,14 +110,15 @@ final class CycleRegistryGenerator implements GeneratorInterface
 
 	private function convertEntityBaseAttributes(CollectionInterface $collection, Entity $entity): void
 	{
+		$cycle = $collection->getPlugin(CycleCollectionPlugin::class);
 		$entity->setRole($collection->getName());
-		$entity->setClass($collection->getEntity());
+		$entity->setClass($cycle?->getEntity() ?? stdClass::class);
 		// ON\Data leaves mapper unset (null). Prefer StdMapper for classless/stdClass
 		// entities so dynamic properties remain writable, matching legacy Overnight behavior.
 		// Cycle's own Factory default (Mapper) wraps entities in EntityProxyTrait instead.
-		$entity->setMapper($collection->getMapper() ?? StdMapper::class);
-		$entity->setScope($collection->getScope());
-		$entity->setRepository($collection->getRepository());
+		$entity->setMapper($cycle?->getMapper() ?? StdMapper::class);
+		$entity->setScope($cycle?->getScope());
+		$entity->setRepository($cycle?->getRepository());
 		$entity->setSource($collection->getSource());
 		$entity->setDatabase($collection->getDatabase());
 		$entity->setTableName($collection->getTable());

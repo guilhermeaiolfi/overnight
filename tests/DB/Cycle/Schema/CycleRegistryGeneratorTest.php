@@ -8,6 +8,7 @@ use Cycle\Database\Config\DatabaseConfig;
 use Cycle\Database\Config\SQLite\MemoryConnectionConfig;
 use Cycle\Database\Config\SQLiteDriverConfig;
 use Cycle\Database\DatabaseManager;
+use Cycle\ORM\Mapper\Mapper;
 use Cycle\ORM\Mapper\StdMapper;
 use Cycle\ORM\Schema\GeneratedField as CycleGeneratedField;
 use Cycle\ORM\Select\Source;
@@ -18,6 +19,7 @@ use ON\Application;
 use ON\Config\ConfigExtension;
 use ON\Container\ContainerExtension;
 use ON\Data\Definition\Exception\FieldException;
+use ON\Data\Definition\Plugin\CycleCollectionPlugin;
 use ON\Data\Definition\Registry as DataRegistry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\M2MRelation;
@@ -40,10 +42,12 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$registry->collection('users')
 			->table('app_users')
 			->database('tenant')
+			->extend(CycleCollectionPlugin::class)
 			->entity(UserEntity::class)
-			->mapper(StdMapper::class)
+			->mapper(Mapper::class)
 			->repository(UserRepository::class)
 			->scope(UserScope::class)
+			->end()
 			->source(Source::class)
 			->primaryKey('id')
 			->field('id', 'primary')->autoIncrement(true)->end()
@@ -59,7 +63,7 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$this->assertSame(UserEntity::class, $entity->getClass());
 		$this->assertSame('tenant', $entity->getDatabase());
 		$this->assertSame('app_users', $entity->getTableName());
-		$this->assertSame(StdMapper::class, $entity->getMapper());
+		$this->assertSame(Mapper::class, $entity->getMapper());
 		$this->assertSame(UserRepository::class, $entity->getRepository());
 		$this->assertSame(UserScope::class, $entity->getScope());
 		$this->assertSame(Source::class, $entity->getSource());
@@ -97,11 +101,13 @@ final class CycleRegistryGeneratorTest extends TestCase
 			->field('email', 'string')->end()
 			->end();
 
-		$this->assertNull($registry->getCollection('user')->getMapper());
+		$this->assertNull($registry->getCollection('user')->getPlugin(CycleCollectionPlugin::class));
 
 		$entity = $this->compile($registry)->getEntity('user');
 
 		$this->assertSame(StdMapper::class, $entity->getMapper());
+		$this->assertSame(stdClass::class, $entity->getClass());
+		$this->assertNull($registry->getCollection('user')->getPlugin(CycleCollectionPlugin::class));
 	}
 
 	public function testCompositePrimaryKey(): void
@@ -344,8 +350,10 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$fluent->collection('user')
 			->table('users')
 			->database('default')
+			->extend(CycleCollectionPlugin::class)
 			->entity(stdClass::class)
 			->mapper(StdMapper::class)
+			->end()
 			->source(Source::class)
 			->primaryKey('id')
 			->field('id', 'primary')->end()

@@ -80,7 +80,9 @@ $registry->collection('user')
     ->field('name', 'string')->end()
     ->field('email', 'string')->end()
     ->table('users')                    // custom table name (optional)
-    ->entity(EntityClass::class)        // entity class (optional)
+    ->extend(\ON\Data\Definition\Plugin\CycleCollectionPlugin::class)
+        ->entity(EntityClass::class)
+        ->end()
     ->database('default')               // database name (optional)
     ->hidden(false)                     // hide from schema generation
     ->end();
@@ -93,11 +95,11 @@ $registry->collection('user')
 | `name(string)` | Collection name (used as role) | Required |
 | `primaryKey(string ...$fields)` | Declare primary key field name(s) | Required for most consumers |
 | `table(string)` | Database table name | Same as name |
-| `entity(string)` | Entity class name | `stdClass` |
 | `database(string)` | Database name | `"default"` |
-| `mapper(string)` | Mapper class | `Cycle\ORM\Mapper\StdMapper` |
 | `source(string)` | Source class | `ON\ORM\Select\Source` |
 | `hidden(bool)` | Hide from schema generation | `false` |
+
+Cycle-specific settings belong to `CycleCollectionPlugin`, entered with `extend()` and closed with `end()`. It provides `entity()`, `mapper()`, `repository()`, and `scope()`. The schema generator reads the plugin through `getPlugin()` and preserves it across registry export and restoration. With no plugin, the generated entity uses `stdClass` and `Cycle\ORM\Mapper\StdMapper`, with no custom repository or scope. Reading schema metadata does not attach a plugin to the collection.
 
 Composite keys:
 
