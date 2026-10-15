@@ -258,9 +258,30 @@ final class SqlRestResolverTest extends TestCase
 		}
 
 		$this->assertNotNull($phpTips, 'Expected to find "PHP Tips" post');
+		$this->assertSame(1, $phpTips['id']);
 		$this->assertArrayHasKey('comments', $phpTips);
 		$this->assertCount(2, $phpTips['comments']);
 		$this->assertArrayHasKey('body', $phpTips['comments'][0]);
+	}
+
+	public function testRelationOnlyFieldSelectionDoesNotExposeRootPrimaryKey(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$collection = $registry->getCollection('user');
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($collection, [
+			'fields' => 'posts.title',
+			'filter' => ['id' => ['_eq' => 1]],
+		]);
+
+		$this->assertCount(1, $result['data']);
+		$this->assertSame(['posts'], array_keys($result['data'][0]));
+		$this->assertEqualsCanonicalizing([
+			['title' => 'PHP Tips'],
+			['title' => 'Draft Post'],
+		], $result['data'][0]['posts']);
 	}
 
 	public function testListWithDeeplyNestedRelationLoading(): void

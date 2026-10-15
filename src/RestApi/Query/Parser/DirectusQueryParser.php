@@ -6,6 +6,8 @@ namespace ON\RestApi\Query\Parser;
 
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Field\FieldInterface;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Query\Condition\ConditionInterface;
 use ON\Data\Query\Expression\ValueExpressionInterface;
@@ -15,12 +17,12 @@ use ON\Data\Query\QueryFunction\Standard\Temporal\Hour;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
 use ON\Data\Query\Relation\RelationRef;
-use ON\Data\Query\SelectQuery;
 use ON\Data\Query\Selection\SelectionTag;
+use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
-use ON\RestApi\Query\Directus\DirectusParameterParser;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Directus\DirectusFunctionParser;
+use ON\RestApi\Query\Directus\DirectusParameterParser;
 use ON\RestApi\Query\QueryContext;
 use Throwable;
 
@@ -196,18 +198,12 @@ final class DirectusQueryParser implements QueryParserInterface
 				$expressions = array_map(fn (string $name) => $query->field($name), array_values(array_unique($rootFields)));
 				$query->select(...$expressions);
 			} elseif ($relationPaths !== []) {
-				$pkExpressions = [];
-				foreach ($this->primaryKeyFields($collection) as $field) {
-					$pkExpressions[] = $query->field($field->getName());
-				}
-				if ($pkExpressions !== []) {
-					$query->select(...$pkExpressions);
-				}
+				$query->getSelections()->clear();
 			}
 			$this->requirePrimaryKeys($query, $collection, null);
 		} else {
 			if ($rootFields !== []) {
-				$relationRef->fields(...array_values(array_unique($rootFields)));
+				$relationRef->select(...array_values(array_unique($rootFields)));
 			} else {
 				$relationRef->load();
 			}
@@ -315,7 +311,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 		if ($sorts !== []) {
 			// FirstOfMany ordering is definition-owned; selection-level orderBy is rejected by ondata.
-			if (! $rel->getDefinition() instanceof \ON\Data\Definition\Relation\FirstOfManyRelation) {
+			if (! $rel->getDefinition() instanceof FirstOfManyRelation) {
 				$rel->orderBy(...$sorts);
 			}
 		}
@@ -725,21 +721,25 @@ final class DirectusQueryParser implements QueryParserInterface
 			return;
 		}
 
-		// Default * already exposes PKs publicly. Only require INTERNAL when an explicit
-		// select() omitted them — and never retag an already-public PK (that would strip it).
+		// Default * already exposes PKs in public output. Only require INTERNAL when an
+		// explicit select() omitted them — and never retag an already-visible PK (INTERNAL
+		// opts out of place and would strip it from the response).
 		$hasExplicitSelect = $query->getSelections()->getByTag(SelectionTag::DEFAULT) === [];
 		if (! $hasExplicitSelect) {
 			return;
 		}
 
-		$publicKeys = [];
-		foreach ($query->getSelections()->getByTag(SelectionTag::PUBLIC) as $selection) {
-			$publicKeys[$selection->getSelectionKey()] = true;
+		$visibleKeys = [];
+		foreach ($query->getSelections()->getAll() as $selection) {
+			if ($selection->hasTag(SelectionTag::INTERNAL)) {
+				continue;
+			}
+			$visibleKeys[$selection->getSelectionKey()] = true;
 		}
 
 		foreach ($this->primaryKeyFields($collection) as $field) {
 			$ref = $query->field($field->getName());
-			if (isset($publicKeys[$ref->getSelectionKey()])) {
+			if (isset($visibleKeys[$ref->getSelectionKey()])) {
 				continue;
 			}
 			$query->require($ref, SelectionTag::INTERNAL);
@@ -747,7 +747,7 @@ final class DirectusQueryParser implements QueryParserInterface
 	}
 
 	/**
-	 * @return list<\ON\Data\Definition\Field\FieldInterface>
+	 * @return list<FieldInterface>
 	 */
 	private function primaryKeyFields(CollectionInterface $collection): array
 	{
@@ -882,5 +882,4 @@ final class DirectusQueryParser implements QueryParserInterface
 	{
 		return $scope === '' ? $name : $scope . '.' . $name;
 	}
-
 }
