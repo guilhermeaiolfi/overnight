@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RateLimit;
 
 use DateTimeImmutable;
+use function hash;
 use function max;
 use ON\Cache\CacheInterface;
 use function time;
@@ -13,13 +14,13 @@ class CacheRateLimiter implements RateLimiterInterface
 {
 	public function __construct(
 		protected CacheInterface $cache,
-		protected string $prefix = 'ratelimit:'
+		protected string $prefix = 'ratelimit_'
 	) {
 	}
 
 	public function attempt(string $key, int $maxAttempts = 60, int $windowSeconds = 60): RateLimitResult
 	{
-		$cacheKey = $this->prefix . $key;
+		$cacheKey = $this->formatKey($key);
 		$data = $this->cache->get($cacheKey);
 
 		if ($data === null) {
@@ -45,7 +46,7 @@ class CacheRateLimiter implements RateLimiterInterface
 
 	public function peek(string $key, int $maxAttempts = 60, int $windowSeconds = 60): RateLimitResult
 	{
-		$cacheKey = $this->prefix . $key;
+		$cacheKey = $this->formatKey($key);
 		$data = $this->cache->get($cacheKey);
 
 		if ($data === null || time() - $data['start'] >= $windowSeconds) {
@@ -65,6 +66,11 @@ class CacheRateLimiter implements RateLimiterInterface
 
 	public function reset(string $key): void
 	{
-		$this->cache->remove($this->prefix . $key);
+		$this->cache->remove($this->formatKey($key));
+	}
+
+	private function formatKey(string $key): string
+	{
+		return hash('sha256', strlen($this->prefix) . ':' . $this->prefix . $key);
 	}
 }

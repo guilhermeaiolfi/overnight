@@ -240,10 +240,11 @@ final class MaintenanceMiddlewareTest extends TestCase
 		$this->assertSame(200, $response->getStatusCode());
 	}
 
-	public function testDetectsIpFromXForwardedFor(): void
+	public function testDetectsIpFromXForwardedForWhenProxyIsTrusted(): void
 	{
 		$this->app->setMaintenanceMode(true);
 		$this->setAllowedIps('203.0.113.50');
+		$this->config->set('maintenance.trusted_proxies', ['127.0.0.1', '10.0.0.1']);
 		$request = $this->createRequestWithIp('127.0.0.1', '203.0.113.50, 10.0.0.1');
 
 		$middleware = $this->createMiddleware();
@@ -252,10 +253,36 @@ final class MaintenanceMiddlewareTest extends TestCase
 		$this->assertSame(200, $response->getStatusCode());
 	}
 
-	public function testDetectsIpFromXRealIp(): void
+	public function testIgnoresXForwardedForWhenNoTrustedProxiesConfigured(): void
 	{
 		$this->app->setMaintenanceMode(true);
 		$this->setAllowedIps('203.0.113.50');
+		$request = $this->createRequestWithIp('198.51.100.10', '203.0.113.50');
+
+		$middleware = $this->createMiddleware();
+		$response = $middleware->process($request, $this->requestHandler);
+
+		$this->assertSame(503, $response->getStatusCode());
+	}
+
+	public function testStopsReadingForwardedForAtTheFirstUntrustedProxy(): void
+	{
+		$this->app->setMaintenanceMode(true);
+		$this->setAllowedIps('203.0.113.50');
+		$this->config->set('maintenance.trusted_proxies', ['127.0.0.1']);
+		$request = $this->createRequestWithIp('127.0.0.1', '203.0.113.50, 198.51.100.99');
+
+		$middleware = $this->createMiddleware();
+		$response = $middleware->process($request, $this->requestHandler);
+
+		$this->assertSame(503, $response->getStatusCode());
+	}
+
+	public function testDetectsIpFromXRealIpWhenProxyIsTrusted(): void
+	{
+		$this->app->setMaintenanceMode(true);
+		$this->setAllowedIps('203.0.113.50');
+		$this->config->set('maintenance.trusted_proxies', '127.0.0.1');
 
 		$serverParams = [
 			'REMOTE_ADDR' => '127.0.0.1',
@@ -268,6 +295,37 @@ final class MaintenanceMiddlewareTest extends TestCase
 		$response = $middleware->process($request, $this->requestHandler);
 
 		$this->assertSame(200, $response->getStatusCode());
+	}
+
+	public function testIgnoresXRealIpWhenRemoteAddrIsUntrusted(): void
+	{
+		$this->app->setMaintenanceMode(true);
+		$this->setAllowedIps('203.0.113.50');
+		$this->config->set('maintenance.trusted_proxies', '10.0.0.1');
+
+		$serverParams = [
+			'REMOTE_ADDR' => '198.51.100.5',
+			'HTTP_X_REAL_IP' => '203.0.113.50',
+		];
+		$request = $this->createMock(ServerRequestInterface::class);
+		$request->method('getServerParams')->willReturn($serverParams);
+
+		$middleware = $this->createMiddleware();
+		$response = $middleware->process($request, $this->requestHandler);
+
+		$this->assertSame(503, $response->getStatusCode());
+	}
+
+	public function testRejectsMalformedCidrBits(): void
+	{
+		$this->app->setMaintenanceMode(true);
+		$request = $this->createRequestWithIp('192.168.1.50');
+
+		foreach (['192.168.1.0/', '192.168.1.0/abc', '192.168.1.0/-1', '192.168.1.0/33', '192.168.1.0/24/16'] as $badCidr) {
+			$this->setAllowedIps($badCidr);
+			$response = $this->createMiddleware()->process($request, $this->requestHandler);
+			$this->assertSame(503, $response->getStatusCode(), "Expected 503 for malformed CIDR {$badCidr}");
+		}
 	}
 
 	public function testHandlesEmptyWhitelist(): void

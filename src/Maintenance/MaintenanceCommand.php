@@ -6,12 +6,10 @@ namespace ON\Maintenance;
 
 use ON\Application;
 use Symfony\Component\Console\Command\Command;
-use Symfony\Component\Console\Descriptor\ApplicationDescription;
 use Symfony\Component\Console\Helper\FormatterHelper;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Symfony\Component\Console\Style\SymfonyStyle;
 
 class MaintenanceCommand extends Command
 {
@@ -28,15 +26,13 @@ class MaintenanceCommand extends Command
 		$this
 			->setName('on:maintenance')
 			->setDefinition([
-				new InputArgument('onoff', InputArgument::REQUIRED, 'ON/OFF', null, fn () => array_keys((new ApplicationDescription($this->getApplication()))->getCommands())),
+				new InputArgument('onoff', InputArgument::REQUIRED, 'ON/OFF', null, ['on', 'off']),
 			])
 			->setDescription('Turn ON/OFF the maintenance mode');
-		;
 	}
 
 	protected function execute(InputInterface $input, OutputInterface $output): int
 	{
-		//$io = new SymfonyStyle($input, $output);
 		$formatter = new FormatterHelper();
 
 		$onoff = $input->getArgument("onoff");
@@ -59,44 +55,34 @@ class MaintenanceCommand extends Command
 
 	public function updateEnv(array $data = []): void
 	{
-		if (! count($data)) {
+		if ($data === []) {
 			return;
 		}
 
-		$pattern = '/([^\=]*)\=[^\n]*/';
-
 		$envFile = '.env';
-		$lines = file($envFile);
-		$newLines = [];
-		foreach ($lines as $line) {
-			preg_match($pattern, $line, $matches);
-
-			$key = trim($matches[1]);
-
-			if (! count($matches)) {
-				$newLines[] = $line;
-
+		$lines = is_file($envFile) ? (file($envFile) ?: []) : [];
+		$updated = [];
+		foreach ($lines as $index => $line) {
+			if (preg_match('/^[ \t]*(?:export[ \t]+)?([a-z_][a-z0-9_]*)[ \t]*=/i', $line, $matches) !== 1) {
 				continue;
 			}
 
-			if (! key_exists($key, $data)) {
-				$newLines[] = $line;
-
-				continue;
-			}
-
-			$line = $key . "={$data[$key]}\n";
-			$newLines[] = $line;
-			if (isset($data[$key])) {
-				unset($data[$key]);
+			$key = $matches[1];
+			if (array_key_exists($key, $data)) {
+				$lines[$index] = $key . "={$data[$key]}\n";
+				$updated[$key] = true;
 			}
 		}
 
-		foreach ($data as $key => $value) {
-			$newLines[] = $key . "={$value}\n";
+		$content = implode('', $lines);
+		$remaining = array_diff_key($data, $updated);
+		if ($remaining !== [] && $content !== '' && ! str_ends_with($content, "\n")) {
+			$content .= "\n";
+		}
+		foreach ($remaining as $key => $value) {
+			$content .= $key . "={$value}\n";
 		}
 
-		$newContent = implode('', $newLines);
-		file_put_contents($envFile, $newContent);
+		file_put_contents($envFile, $content);
 	}
 }

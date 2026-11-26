@@ -59,6 +59,9 @@ EOT;
 			$message .= "; stack trace:\n\n" . $this->prepareStackTrace($e);
 		}
 
+		$response = $response
+			->withHeader('Content-Type', 'text/plain; charset=utf-8')
+			->withHeader('X-Content-Type-Options', 'nosniff');
 		$response->getBody()->write($message);
 
 		return $response;

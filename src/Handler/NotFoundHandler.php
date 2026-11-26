@@ -35,7 +35,7 @@ class NotFoundHandler implements RequestHandlerInterface
 			return $this->generatePlainTextResponse($request);
 		}
 
-		return $this->app->processForward($this->path, $request);
+		return $this->app->processForward($this->path, $request, 'GET');
 	}
 
 	/**
@@ -43,7 +43,9 @@ class NotFoundHandler implements RequestHandlerInterface
 	 */
 	private function generatePlainTextResponse(ServerRequestInterface $request): ResponseInterface
 	{
-		$response = $this->responseFactory->createResponse(StatusCodeInterface::STATUS_NOT_FOUND);
+		$response = $this->responseFactory->createResponse(StatusCodeInterface::STATUS_NOT_FOUND)
+			->withHeader('Content-Type', 'text/plain; charset=utf-8')
+			->withHeader('X-Content-Type-Options', 'nosniff');
 		$response->getBody()
 			->write(sprintf(
 				'Cannot %s %s',

@@ -37,12 +37,15 @@ class WhoopsPageHandlerFactory
 {
 	public function __invoke(ContainerInterface $container): PrettyPageHandler
 	{
-		$config = $container->has(AppConfig::class) ? $container->get(AppConfig::class) : [];
-		$config = $config->get('whoops') ?? [];
+		$config = $container->has(AppConfig::class) ? $container->get(AppConfig::class) : null;
+		$whoopsConfig = $config instanceof AppConfig ? ($config->get('whoops') ?? []) : [];
+		if (! is_array($whoopsConfig) && ! $whoopsConfig instanceof ArrayAccess) {
+			$whoopsConfig = [];
+		}
 
 		$pageHandler = new PrettyPageHandler();
 
-		$this->injectEditor($pageHandler, $config, $container);
+		$this->injectEditor($pageHandler, $whoopsConfig, $container);
 
 		return $pageHandler;
 	}

@@ -8,11 +8,13 @@ use function dirname;
 use function is_dir;
 use function mkdir;
 use ON\Session\Native\NativeSession;
+use ON\Session\SessionConfig;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use PHPUnit\Framework\TestCase;
 use function session_destroy;
 use function session_status;
+use SessionHandlerInterface;
 
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState(false)]
@@ -160,5 +162,66 @@ class NativeSessionTest extends TestCase
 
 		$this->assertTrue($session->close());
 		$this->assertSame(PHP_SESSION_NONE, session_status());
+	}
+
+	public function testRegenerationDeletesTheOldIdThroughTheRegisteredSessionHandler(): void
+	{
+		$handler = new class () implements SessionHandlerInterface {
+			public array $deletedIds = [];
+
+			public function open(string $path, string $name): bool
+			{
+				return true;
+			}
+
+			public function close(): bool
+			{
+				return true;
+			}
+
+			public function read(string $id): string
+			{
+				return '';
+			}
+
+			public function write(string $id, string $data): bool
+			{
+				return true;
+			}
+
+			public function destroy(string $id): bool
+			{
+				$this->deletedIds[] = $id;
+
+				return true;
+			}
+
+			public function gc(int $maxLifetime): int
+			{
+				return 0;
+			}
+		};
+		session_set_save_handler($handler);
+		$session = $this->createSession(['save_path' => 'application-session-store']);
+		$session->set('key', 'value');
+		$originalId = $session->getId();
+
+		$this->assertTrue($session->regenerateId(true));
+		$this->assertNotSame($originalId, $session->getId());
+		$this->assertSame('value', $session->get('key'));
+		$this->assertSame([$originalId], $handler->deletedIds);
+		$session->destroy();
+	}
+
+	public function testSessionDefaultsAllowCookieOptionOverrides(): void
+	{
+		$config = new SessionConfig(['options' => ['cookie_samesite' => 'Strict']]);
+
+		$this->assertSame([
+			'use_strict_mode' => true,
+			'use_only_cookies' => true,
+			'cookie_httponly' => true,
+			'cookie_samesite' => 'Strict',
+		], $config->get('options'));
 	}
 }
