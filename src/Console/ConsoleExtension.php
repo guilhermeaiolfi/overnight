@@ -28,8 +28,6 @@ class ConsoleExtension extends AbstractExtension
 	protected ?ContainerInterface $container = null;
 
 	protected array $q = [
-		ClearCacheCommand::class,
-		RoutesCommand::class,
 		ServeCommand::class,
 	];
 
@@ -37,11 +35,25 @@ class ConsoleExtension extends AbstractExtension
 		protected Application $app,
 		protected array $options = []
 	) {
+		$this->consoleApp = new ConsoleApplication();
+	}
+
+	public function getConsoleApp(): ConsoleApplication
+	{
+		return $this->consoleApp ??= new ConsoleApplication();
 	}
 
 	public function register(Init $init): void
 	{
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
+
+		if ($this->app->hasExtension('cache') && ! in_array(ClearCacheCommand::class, $this->q, true)) {
+			$this->q[] = ClearCacheCommand::class;
+		}
+
+		if ($this->app->hasExtension('router') && ! in_array(RoutesCommand::class, $this->q, true)) {
+			$this->q[] = RoutesCommand::class;
+		}
 
 		if ($this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
@@ -50,7 +62,7 @@ class ConsoleExtension extends AbstractExtension
 
 	public function start(InitContext $context): void
 	{
-		$this->consoleApp = new ConsoleApplication();
+		$this->getConsoleApp();
 
 		$context->emit(new ConsoleReadyEvent($this));
 	}
@@ -75,7 +87,7 @@ class ConsoleExtension extends AbstractExtension
 		if (isset($this->container)) {
 			$executor = $this->container->get(ExecutorInterface::class);
 			$command->setExecutor($executor);
-			$this->consoleApp->add($command);
+			$this->getConsoleApp()->add($command);
 		} else {
 			$this->q[] = $command;
 		}
@@ -104,18 +116,21 @@ class ConsoleExtension extends AbstractExtension
 			throw new Exception('Console commands requiring services need the container extension to be ready.');
 		}
 
+		$consoleApp = $this->getConsoleApp();
 		$executor = $this->container->get(ExecutorInterface::class);
-		foreach ($this->q as $command) {
+		foreach ($this->q as $index => $command) {
 			if ($command instanceof OvernightCommand) {
 				$command->setExecutor($executor);
-				$this->consoleApp->add($command);
+				$consoleApp->add($command);
 			} elseif ($command instanceof Command) {
-				$this->consoleApp->add($command);
+				$consoleApp->add($command);
 			} elseif (is_string($command)) {
-				$this->consoleApp->add($this->container->get($command));
+				$consoleApp->add($this->container->get($command));
 			} else {
-				throw new Exception("Unrecognized command type: {$command}");
+				throw new Exception("Unrecognized command type: " . get_debug_type($command));
 			}
+
+			unset($this->q[$index]);
 		}
 	}
 
@@ -123,6 +138,6 @@ class ConsoleExtension extends AbstractExtension
 	{
 		$this->flush();
 
-		$this->consoleApp->run();
+		return $this->getConsoleApp()->run();
 	}
 }

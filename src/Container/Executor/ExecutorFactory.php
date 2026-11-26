@@ -20,8 +20,8 @@ class ExecutorFactory
 			new TypeHintResolver(),
 			new NumericArrayResolver(),
 			new AssociativeArrayResolver(),
-			new DefaultValueResolver(),
 			new TypeHintContainerResolver($container),
+			new DefaultValueResolver(),
 		]);
 		$executor = new Executor($parameterResolver, $container);
 

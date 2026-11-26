@@ -96,7 +96,7 @@ class Router implements RouterInterface
 	/**
 	 * Cache file path relative to the project directory.
 	 */
-	private string $cacheFile = 'data/cache/fastroute.php.cache';
+	private ?string $cacheFile = 'data/cache/fastroute.php.cache';
 
 	/** @var callable(array|object): Dispatcher|null A factory callback that can return a dispatcher. */
 	private $dispatcherCallback;
@@ -165,8 +165,9 @@ class Router implements RouterInterface
 			return;
 		}
 
-		$this->cacheEnabled = $config->get("cache_enabled", false);
-		$this->cacheFile = $config->get("cache_file", false);
+		$this->cacheEnabled = (bool) $config->get("cache_enabled", false);
+		$cacheFile = $config->get("cache_file", null);
+		$this->cacheFile = is_string($cacheFile) && $cacheFile !== '' ? $cacheFile : null;
 		$this->basepath = $config->get("baseHref", null);
 
 		if ($this->basepath === null) {
@@ -175,7 +176,7 @@ class Router implements RouterInterface
 
 		$this->basepath = Router::normalizePath($this->basepath);
 
-		if ($this->cacheEnabled) {
+		if ($this->cacheEnabled && $this->cacheFile !== null) {
 			$this->loadDispatchData();
 		}
 	}
@@ -188,7 +189,13 @@ class Router implements RouterInterface
 		$dispatchData = $this->getDispatchData();
 
 		$path = rawurldecode($request->getUri()->getPath());
-		$path = str_replace($this->basepath, "", $path);
+		if ($this->basepath !== null && $this->basepath !== '') {
+			if ($path === $this->basepath) {
+				$path = '/';
+			} elseif (str_starts_with($path, $this->basepath . '/')) {
+				$path = substr($path, strlen($this->basepath));
+			}
+		}
 
 		$method = $request->getMethod();
 		$dispatcher = $this->getDispatcher($dispatchData);
@@ -474,7 +481,7 @@ class Router implements RouterInterface
 
 		$dispatchData = (array) $this->collection->getData();
 
-		if ($this->cacheEnabled) {
+		if ($this->cacheEnabled && $this->cacheFile !== null) {
 			$this->cacheDispatchData($dispatchData);
 		}
 
@@ -489,10 +496,18 @@ class Router implements RouterInterface
 	 */
 	private function loadDispatchData(): void
 	{
+		if ($this->cacheFile === null) {
+			return;
+		}
+
 		set_error_handler(static function (): void {
 		}, E_WARNING); // suppress php warnings
-		$dispatchData = include $this->cacheFile;
-		restore_error_handler();
+
+		try {
+			$dispatchData = include $this->cacheFile;
+		} finally {
+			restore_error_handler();
+		}
 
 		// Cache file does not exist
 		if (false === $dispatchData) {
@@ -523,13 +538,19 @@ class Router implements RouterInterface
 	 */
 	private function cacheDispatchData(array $dispatchData)
 	{
+		if ($this->cacheFile === null) {
+			return false;
+		}
+
 		$cacheDir = dirname($this->cacheFile);
 
 		if (! is_dir($cacheDir)) {
-			throw new InvalidCacheDirectoryException(sprintf(
-				'The cache directory "%s" does not exist',
-				$cacheDir
-			));
+			if (! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+				throw new InvalidCacheDirectoryException(sprintf(
+					'The cache directory "%s" does not exist',
+					$cacheDir
+				));
+			}
 		}
 
 		if (! is_writable($cacheDir)) {
@@ -546,10 +567,32 @@ class Router implements RouterInterface
 			));
 		}
 
-		return file_put_contents(
-			$this->cacheFile,
-			sprintf(self::CACHE_TEMPLATE, var_export($dispatchData, true))
-		);
+		$content = sprintf(self::CACHE_TEMPLATE, var_export($dispatchData, true));
+		$tempFile = tempnam($cacheDir, 'fastroute_');
+		if ($tempFile === false) {
+			return false;
+		}
+
+		$bytes = file_put_contents($tempFile, $content, LOCK_EX);
+		if ($bytes !== strlen($content)) {
+			@unlink($tempFile);
+
+			return false;
+		}
+
+		@chmod($tempFile, 0644);
+
+		if (! @rename($tempFile, $this->cacheFile)) {
+			@unlink($tempFile);
+
+			return false;
+		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->cacheFile, true);
+		}
+
+		return $bytes;
 	}
 
 	/** @param FastRouteFoundResult $result */

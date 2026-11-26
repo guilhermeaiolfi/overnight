@@ -10,11 +10,11 @@ use Psr\Container\ContainerInterface;
 
 class RouterFactory
 {
-	public function __invoke(ContainerInterface $c)
+	public function __invoke(ContainerInterface $c): Router
 	{
 		$config = $c->has(RouterConfig::class)
-		? $c->get(RouterConfig::class)
-		: [];
+			? $c->get(RouterConfig::class)
+			: new RouterConfig();
 
 		return new Router($config);
 	}
