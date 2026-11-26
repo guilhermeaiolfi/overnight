@@ -18,6 +18,10 @@ use ON\FS\Path;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ReflectionFunction;
+use RuntimeException;
+use stdClass;
+use Throwable;
+use UnitEnum;
 
 class ConfigExtension extends AbstractExtension
 {
@@ -206,16 +210,24 @@ class ConfigExtension extends AbstractExtension
 
 	protected function loadCache(): bool
 	{
-		if ($this->cachePath && file_exists($this->cachePath) && ! $this->options["debug"]) {
-			$content = file_get_contents($this->cachePath);
-			if ($content) {
-				$cache = unserialize($content);
-				if (is_array($cache) && isset($cache['data'])) {
-					$this->data = $cache['data'];
-					$this->cacheExceptions = $cache['cacheExceptions'] ?? [];
+		if ($this->cachePath && is_file($this->cachePath) && ! $this->options["debug"]) {
+			$prefix = @file_get_contents($this->cachePath, false, null, 0, 6);
+			if ($prefix !== "<?php\n") {
+				return false;
+			}
 
-					return true;
-				}
+			try {
+				$cache = @include $this->cachePath;
+			} catch (Throwable) {
+				return false;
+			}
+			if (is_array($cache) && isset($cache['data']) && is_array($cache['data'])) {
+				$this->data = $cache['data'];
+				$this->cacheExceptions = isset($cache['cacheExceptions']) && is_array($cache['cacheExceptions'])
+					? $cache['cacheExceptions']
+					: [];
+
+				return true;
 			}
 		}
 
@@ -241,11 +253,6 @@ class ConfigExtension extends AbstractExtension
 			return;
 		}
 
-		$dir = dirname($this->cachePath);
-		if (! is_dir($dir)) {
-			mkdir($dir, 0777, true);
-		}
-
 		$dataToCache = $this->data;
 		foreach ($dataToCache as $key => $value) {
 			if (is_object($value) && ! ($value instanceof Config)) {
@@ -254,11 +261,11 @@ class ConfigExtension extends AbstractExtension
 		}
 
 		$skipped = [];
-		$dataToCache = $this->withoutNonSerializable($dataToCache, 'data', $skipped);
+		$this->findNonExportableValues($dataToCache, 'data', $skipped);
 		if ($skipped !== []) {
 			// Incomplete caches skip ConfigConfigureEvent on the next boot. Never write
 			// a partial snapshot — fail hard so Closures cannot hide in production.
-			throw new \RuntimeException(sprintf(
+			throw new RuntimeException(sprintf(
 				'Config cache cannot be written; non-serializable values at: %s. Use class-based factories/aliases instead of Closures.',
 				implode(', ', $skipped)
 			));
@@ -269,63 +276,67 @@ class ConfigExtension extends AbstractExtension
 			return;
 		}
 
-		try {
-			$content = serialize([
-				'data' => $dataToCache,
-				'cacheExceptions' => $this->cacheExceptions,
-			]);
-		} catch (\Throwable $e) {
-			throw new \RuntimeException('Config cache write failed: ' . $e->getMessage(), 0, $e);
+		$dir = dirname($this->cachePath);
+		if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
+			throw new RuntimeException(sprintf('Unable to create config cache directory "%s".', $dir));
 		}
 
-		file_put_contents($this->cachePath, $content);
+		try {
+			$content = "<?php\n\nreturn " . var_export([
+				'data' => $dataToCache,
+				'cacheExceptions' => $this->cacheExceptions,
+			], true) . ";\n";
+		} catch (Throwable $e) {
+			throw new RuntimeException('Config cache write failed: ' . $e->getMessage(), 0, $e);
+		}
+
+		$tmpFile = $this->cachePath . '.' . uniqid('', true) . '.tmp';
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to write temporary config cache file "%s".', $tmpFile));
+		}
+
+		if (! @rename($tmpFile, $this->cachePath)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to move config cache file into place at "%s".', $this->cachePath));
+		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->cachePath, true);
+		}
 	}
 
 	/**
-	 * Drop Closures and other non-serializable leaves so serialize() never crashes bootstrap.
-	 *
 	 * @param list<string> $skipped
 	 */
-	private function withoutNonSerializable(mixed $value, string $path, array &$skipped): mixed
+	private function findNonExportableValues(mixed $value, string $path, array &$skipped, int $depth = 0): void
 	{
-		if ($value instanceof Closure) {
+		if (is_resource($value) || $depth > 256) {
 			$skipped[] = $path;
 
-			return null;
+			return;
 		}
 
-		if (is_resource($value)) {
-			$skipped[] = $path;
-
-			return null;
-		}
-
-		if (is_array($value)) {
-			$result = [];
-			foreach ($value as $key => $item) {
-				$childPath = $path . '[' . (is_int($key) ? (string) $key : $key) . ']';
-				if ($item instanceof Closure || is_resource($item)) {
-					$skipped[] = $childPath;
-
-					continue;
-				}
-
-				$result[$key] = $this->withoutNonSerializable($item, $childPath, $skipped);
-			}
-
-			return $result;
+		if ($value instanceof UnitEnum) {
+			return;
 		}
 
 		if (is_object($value)) {
-			try {
-				serialize($value);
-			} catch (\Throwable) {
+			if (! $value instanceof stdClass && ! is_callable([$value::class, '__set_state'])) {
 				$skipped[] = $path;
 
-				return null;
+				return;
 			}
+			$value = (array) $value;
 		}
 
-		return $value;
+		if (is_array($value)) {
+			foreach ($value as $key => $child) {
+				$name = str_replace("\0", ' ', (string) $key);
+				$this->findNonExportableValues($child, "{$path}[{$name}]", $skipped, $depth + 1);
+			}
+		}
 	}
 }

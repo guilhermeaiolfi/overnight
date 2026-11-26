@@ -108,6 +108,7 @@ final class CacheExtensionTest extends TestCase
 		$configCache = $this->projectDir . '/var/cache/config.php';
 		$lifecycleCache = $this->projectDir . '/var/cache/app_lifecycle.php';
 		$ormSchemaCache = $this->projectDir . '/var/cache/cycle.schema.php';
+		$ormNamedSchemaCache = $this->projectDir . '/var/cache/cycle.schema.default.php';
 		$autoWiringCache = $this->projectDir . '/var/cache/autowiring.php';
 		$containerCache = $this->projectDir . '/var/cache/container/CompiledContainer.php';
 		$fileRoutingCache = $this->projectDir . '/var/cache/filerouting/page.meta.php';
@@ -119,6 +120,7 @@ final class CacheExtensionTest extends TestCase
 			$configCache,
 			$lifecycleCache,
 			$ormSchemaCache,
+			$ormNamedSchemaCache,
 			$autoWiringCache,
 			$containerCache,
 			$fileRoutingCache,
@@ -149,6 +151,7 @@ final class CacheExtensionTest extends TestCase
 		$this->assertFileDoesNotExist($configCache);
 		$this->assertFileDoesNotExist($lifecycleCache);
 		$this->assertFileDoesNotExist($ormSchemaCache);
+		$this->assertFileDoesNotExist($ormNamedSchemaCache);
 		$this->assertFileDoesNotExist($autoWiringCache);
 		$this->assertFileDoesNotExist($containerCache);
 		$this->assertFileDoesNotExist($fileRoutingCache);

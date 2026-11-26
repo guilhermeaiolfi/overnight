@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Discovery\DiscoverInterface;
+use ON\Discovery\DiscoveryItems;
 use ON\Discovery\DiscoveryLocation;
 use Symfony\Component\Finder\Finder;
 
@@ -14,13 +15,10 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 	{
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		if (! file_exists($cacheFile)) {
-			return $discover;
+		$data = $this->readCacheFile($cacheFile);
+		if ($data !== null) {
+			$discover->addData(new DiscoveryItems($data->filterByLocation($location)));
 		}
-
-		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
-		$discover->addData($data);
 
 		return $discover;
 	}
@@ -29,7 +27,7 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 	{
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		return file_exists($cacheFile);
+		return ! isset($this->unreadableCacheFiles[$cacheFile]) && is_file($cacheFile);
 	}
 
 	public function update(array $discovers, DiscoveryLocation $location): void
@@ -54,8 +52,7 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 	{
 		if (! $this->hasCache($discover, $location)) {
 			$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
-			@mkdir(dirname($cacheFile), 0777, true);
-			file_put_contents($cacheFile, serialize($discover->getData()));
+			$this->writeCacheFile($cacheFile, new DiscoveryItems($discover->getData()->filterByLocation($location)));
 
 			return true;
 		}

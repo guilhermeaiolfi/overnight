@@ -31,7 +31,7 @@ final class DefinitionsWarmupCommand extends Command
 	protected function execute(InputInterface $input, OutputInterface $output): int
 	{
 		$this->cache->clear();
-		$this->provider->__invoke($this->container);
+		$this->provider->warm($this->container);
 		$output->writeln('ON\Data definitions cache warmed.');
 
 		return Command::SUCCESS;

@@ -11,6 +11,7 @@ use ON\Extension\AutoWiringExtension;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionClass;
 
 final class AutoWiringExtensionTest extends TestCase
 {
@@ -100,6 +101,7 @@ final class AutoWiringExtensionTest extends TestCase
 		], false);
 
 		$this->assertFileExists($cacheFile);
+		$this->assertSame([], glob($cacheFile . '.*.tmp') ?: []);
 		$cache = include $cacheFile;
 
 		$this->assertIsArray($cache);
@@ -178,6 +180,46 @@ final class AutoWiringExtensionTest extends TestCase
 			],
 			'debug' => false,
 		]);
+	}
+
+	public function testSkipsAutoWiringExtensionAndSubclassesDuringScanToPreventRecursion(): void
+	{
+		$otherExtension = $this->writeModuleExtension('NormalModuleExtension');
+
+		// Place a subclass of AutoWiringExtension inside the scanned directory
+		$suffix = 'SubAuto' . bin2hex(random_bytes(4));
+		$namespace = "Tests\\ON\\Extension\\AutoWiringFixtures\\{$suffix}";
+		$subClass = "{$namespace}\\CustomAutoWiringExtension";
+		file_put_contents(
+			$this->projectDir . '/modules/CustomAutoWiringExtension.php',
+			<<<PHP
+<?php
+
+declare(strict_types=1);
+
+namespace {$namespace};
+
+use ON\Extension\AutoWiringExtension;
+
+final class CustomAutoWiringExtension extends AutoWiringExtension
+{
+}
+PHP
+		);
+
+		$app = $this->createApplication([
+			'scan_paths' => [
+				'modules',
+				dirname((new ReflectionClass(AutoWiringExtension::class))->getFileName()),
+			],
+			'exclude' => [
+				'*/src/Extension/AbstractExtension.php',
+			],
+			'cache' => false,
+		]);
+
+		$this->assertTrue($app->hasExtension($otherExtension));
+		$this->assertFalse($app->hasExtension($subClass));
 	}
 
 	/**

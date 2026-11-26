@@ -16,6 +16,7 @@ use ON\Init\InitContext;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use ReflectionClass;
+use RuntimeException;
 
 class AutoWiringExtension extends AbstractExtension
 {
@@ -69,6 +70,10 @@ class AutoWiringExtension extends AbstractExtension
 	private function installDiscoveredExtensions(): void
 	{
 		foreach ($this->discoverExtensions() as $extensionClass => $filepath) {
+			if ($extensionClass === self::class || is_a($extensionClass, self::class, true)) {
+				continue;
+			}
+
 			if (! class_exists($extensionClass, false)) {
 				require_once $filepath;
 			}
@@ -194,6 +199,10 @@ class AutoWiringExtension extends AbstractExtension
 	 */
 	private function isInstallableExtension(string $class, string $filepath): bool
 	{
+		if ($class === self::class || is_a($class, self::class, true)) {
+			return false;
+		}
+
 		if (! class_exists($class, false)) {
 			require_once $filepath;
 		}
@@ -205,6 +214,8 @@ class AutoWiringExtension extends AbstractExtension
 		$reflection = new ReflectionClass($class);
 
 		return ! $reflection->isAbstract()
+			&& $reflection->getName() !== self::class
+			&& ! $reflection->isSubclassOf(self::class)
 			&& $reflection->implementsInterface(ExtensionInterface::class);
 	}
 
@@ -270,8 +281,8 @@ class AutoWiringExtension extends AbstractExtension
 	private function writeCache(string $cacheKey, array $extensions): void
 	{
 		$cacheDir = dirname($this->cacheFile);
-		if (! is_dir($cacheDir)) {
-			mkdir($cacheDir, 0777, true);
+		if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+			throw new RuntimeException(sprintf('Unable to create auto-wiring cache directory "%s".', $cacheDir));
 		}
 
 		$cache = is_file($this->cacheFile) ? include $this->cacheFile : [];
@@ -281,6 +292,23 @@ class AutoWiringExtension extends AbstractExtension
 
 		$cache[$cacheKey] = $extensions;
 
-		file_put_contents($this->cacheFile, "<?php\n\nreturn " . var_export($cache, true) . ";\n");
+		$content = "<?php\n\nreturn " . var_export($cache, true) . ";\n";
+		$tmpFile = $this->cacheFile . '.' . uniqid('', true) . '.tmp';
+
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to write temporary auto-wiring cache file "%s".', $tmpFile));
+		}
+
+		if (! @rename($tmpFile, $this->cacheFile)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to move auto-wiring cache file into place at "%s".', $this->cacheFile));
+		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->cacheFile, true);
+		}
 	}
 }

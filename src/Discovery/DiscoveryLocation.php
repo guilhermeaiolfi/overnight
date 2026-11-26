@@ -13,4 +13,16 @@ class DiscoveryLocation
 	) {
 
 	}
+
+	/**
+	 * @param array{name: string, pattern: array<mixed>, strategy: string} $data
+	 */
+	public static function __set_state(array $data): self
+	{
+		return new self(
+			$data['name'],
+			$data['pattern'],
+			$data['strategy'],
+		);
+	}
 }

@@ -20,13 +20,24 @@ final class DefinitionRegistryProvider
 			return new Registry($cache->load());
 		}
 
-		$registry = new Registry();
+		return $this->build($app, $app->isDebug() ? null : $cache);
+	}
 
+	public function warm(ContainerInterface $container): Registry
+	{
+		return $this->build(
+			$container->get(Application::class),
+			$container->get(DefinitionCache::class),
+		);
+	}
+
+	private function build(Application $app, ?DefinitionCache $cache): Registry
+	{
+		$registry = new Registry();
 		$app->init()->emit(new DataDefinitionConfigureEvent($registry));
 
 		$definitions = $registry->all();
-
-		$cache->write($definitions);
+		$cache?->write($definitions);
 
 		return new Registry($definitions);
 	}

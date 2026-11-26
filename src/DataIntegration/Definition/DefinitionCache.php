@@ -47,7 +47,7 @@ final class DefinitionCache
 	public function write(array $definitions): void
 	{
 		$directory = dirname($this->file);
-		if (! is_dir($directory) && ! mkdir($directory, 0777, true) && ! is_dir($directory)) {
+		if (! is_dir($directory) && ! @mkdir($directory, 0755, true) && ! is_dir($directory)) {
 			throw new RuntimeException(sprintf('Unable to create definition cache directory "%s".', $directory));
 		}
 
@@ -63,12 +63,20 @@ final class DefinitionCache
 
 			throw new RuntimeException(sprintf('Unable to move definition cache file into place at "%s".', $this->file));
 		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->file, true);
+		}
 	}
 
 	public function clear(): void
 	{
-		if ($this->exists()) {
-			unlink($this->file);
+		if (! @unlink($this->file) && is_file($this->file)) {
+			throw new RuntimeException(sprintf('Unable to remove definition cache file "%s".', $this->file));
+		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->file, true);
 		}
 	}
 }

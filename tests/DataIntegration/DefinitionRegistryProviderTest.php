@@ -65,7 +65,7 @@ final class DefinitionRegistryProviderTest extends TestCase
 
 	public function testColdBuildDispatchesBuildEventWritesCacheAndReturnsRestoredRegistry(): void
 	{
-		$app = $this->createApplication();
+		$app = $this->createApplication(debug: false);
 		$container = $app->ext('container')->getContainer();
 
 		$registry = $container->get(Registry::class);
@@ -100,14 +100,15 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertFalse($registry->hasCollection('users'));
 	}
 
-	public function testDebugModeIgnoresCachedDefinitionsAndRebuilds(): void
+	public function testDebugModeIgnoresCachedDefinitionsAndRebuildsWithoutOverwritingCache(): void
 	{
 		$cacheFile = $this->projectDir . '/var/cache/data-definitions.php';
 		$this->writeProjectFiles();
 		if (! is_dir(dirname($cacheFile))) {
 			mkdir(dirname($cacheFile), 0777, true);
 		}
-		file_put_contents($cacheFile, "<?php\n\nreturn " . var_export($this->usersDefinitionArray('cached_users'), true) . ";\n");
+		$originalContent = "<?php\n\nreturn " . var_export($this->usersDefinitionArray('cached_users'), true) . ";\n";
+		file_put_contents($cacheFile, $originalContent);
 
 		$app = $this->createApplication(writeFiles: false, debug: true);
 		$registry = $app->ext('container')->getContainer()->get(Registry::class);
@@ -115,6 +116,36 @@ final class DefinitionRegistryProviderTest extends TestCase
 		$this->assertSame(1, DataDefinitionProbeExtension::$configureCalls);
 		$this->assertTrue($registry->hasCollection('users'));
 		$this->assertFalse($registry->hasCollection('cached_users'));
+		$this->assertSame($originalContent, file_get_contents($cacheFile));
+	}
+
+	public function testDebugModeDoesNotWriteCacheFileOnColdBuild(): void
+	{
+		$app = $this->createApplication(debug: true);
+		$container = $app->ext('container')->getContainer();
+		$cache = $container->get(DefinitionCache::class);
+
+		$registry = $container->get(Registry::class);
+
+		$this->assertTrue($registry->hasCollection('users'));
+		$this->assertFileDoesNotExist($cache->getFile());
+	}
+
+	public function testDefinitionCacheClearIsIdempotentWhenFileDoesNotExist(): void
+	{
+		$this->writeProjectFiles();
+		$cache = new DefinitionCache($this->projectDir . '/var/cache/data-definitions.php');
+
+		$cache->clear();
+		$cache->write($this->usersDefinitionArray('users'));
+		$this->assertTrue($cache->exists());
+
+		$cache->clear();
+		$this->assertFalse($cache->exists());
+
+		// Second clear must not warn or throw
+		$cache->clear();
+		$this->assertFalse($cache->exists());
 	}
 
 	public function testFailingDefinitionListenerDoesNotWriteCache(): void
@@ -194,7 +225,7 @@ final class DefinitionRegistryProviderTest extends TestCase
 
 	public function testCacheClearerClearsContainerManagedDefinitionCache(): void
 	{
-		$app = $this->createApplication(includeCache: true);
+		$app = $this->createApplication(includeCache: true, debug: false);
 		$container = $app->ext('container')->getContainer();
 		$cache = $container->get(DefinitionCache::class);
 
