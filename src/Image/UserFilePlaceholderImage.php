@@ -23,11 +23,12 @@ final class UserFilePlaceholderImage implements PlaceholderImageInterface
 	public function getResponse(ImageManager $imageManager, string $token, ImageRequest $imageRequest): ResponseInterface
 	{
 		$request = $imageRequest->withSourceFilePath($this->getPath());
+		$serverRequest = $imageManager->getCurrentRequest();
 
 		return match (strtolower($imageRequest->getTemplate())) {
-			'original' => $imageManager->getOriginalImageResponse($this->getPath()),
-			'download' => $imageManager->getDownloadResponse($this->getPath()),
-			default => $imageManager->getCachedImageResponse($token, $request),
+			'original' => $imageManager->getOriginalImageResponse($this->getPath(), $serverRequest),
+			'download' => $imageManager->getDownloadResponse($this->getPath(), $serverRequest),
+			default => $imageManager->getCachedImageResponse($token, $request, $serverRequest),
 		};
 	}
 

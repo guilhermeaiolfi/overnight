@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Image;
 
 use Intervention\Image\Interfaces\ModifierInterface;
+use InvalidArgumentException;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\StreamFactory;
@@ -29,6 +30,8 @@ class ImageManager implements MiddlewareInterface
 
 	private ?string $signatureKey = null;
 
+	private ?ServerRequestInterface $currentRequest = null;
+
 	/**
 	 * @var list<DirectoryPathInterface>|null
 	 */
@@ -44,13 +47,21 @@ class ImageManager implements MiddlewareInterface
 		protected ?ImageCacheInterface $imageCache = null,
 		protected ?PlaceholderImageInterface $placeholderImage = null
 	) {
-		$signatureKey = $imageCfg->get('key', $_ENV['APP_SALT'] ?? '');
+		$configuredKey = $imageCfg->get('key');
+		if (! is_string($configuredKey) || trim($configuredKey) === '') {
+			$configuredKey = isset($_ENV['APP_SALT']) && is_string($_ENV['APP_SALT']) ? $_ENV['APP_SALT'] : '';
+		}
+		$this->signatureKey = trim($configuredKey) !== '' ? $configuredKey : null;
 
 		if (! isset($encrypter)) {
-			$this->encrypter = new OpenSSL($signatureKey);
-		}
+			if ($this->signatureKey === null) {
+				throw new RuntimeException(
+					'No image signing key configured. Set "key" in ImageConfig or APP_SALT in the environment.'
+				);
+			}
 
-		$this->signatureKey = $signatureKey;
+			$this->encrypter = new OpenSSL($this->signatureKey);
+		}
 
 		if (! isset($imageCache)) {
 			$this->imageCache = new FileSystem($imageCfg, $this->paths->get('public'));
@@ -59,21 +70,21 @@ class ImageManager implements MiddlewareInterface
 		$this->placeholderImage ??= new DefaultPlaceholderImage($imageCfg, $this->imageCache);
 	}
 
+	public function getCurrentRequest(): ?ServerRequestInterface
+	{
+		return $this->currentRequest;
+	}
+
 	public function getUri(string $sourceFilePath, string $template, mixed $options = null): string
 	{
-
-		if ($this->signatureKey === null) {
-			throw new RuntimeException('No signature key provided!'.
-			' You must instantiate the middleware or assign the key as third argument');
-		}
-
 		$imageRequest = new ImageRequest($sourceFilePath, $template, $options);
 		$token = $this->encrypter->encrypt($imageRequest);
-		//$token = chunk_split((string) $token, self::MAX_FILENAME_LENGTH, '/');
-		//$token = str_replace('/.', './', $token); //create folders for images
+		if ($token === null || $token === '') {
+			throw new RuntimeException('Failed to encrypt image request.');
+		}
 
 		if (! $this->imageExists($sourceFilePath)) {
-			return $this->placeholderImage->getUri($this, (string) $token, $imageRequest);
+			return $this->placeholderImage->getUri($this, $token, $imageRequest);
 		}
 
 		return $this->imageCache->get($sourceFilePath, $token)->getUri();
@@ -89,79 +100,78 @@ class ImageManager implements MiddlewareInterface
 	 */
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$response = null;
+		$imageBasePath = '/' . trim($this->imageCfg->getPublicImagesUri(), '/') . '/';
+		$uri = $request->getUri();
+		$path = $uri->getPath();
 
-		$imageBasePath = '/' . $this->imageCfg->getPublicImagesUri() . '/';
-		if (strpos($request->getHeaderLine('Accept'), 'image/') === false) {
-			$response = $handler->handle($request);
-		} else {
-			$uri = $request->getUri();
-			$path = $uri->getPath();
-
-
-			// if the path is not in the images folder, ignore, we shouldn't handle
-			if (strpos($path, $imageBasePath) === false) {
-				return $handler->handle($request);
-			}
-
-			[$basePath, $token] = explode($imageBasePath, $path, 2);
-
-			if ($extensionPos = strrpos($token, '.')) {
-				$token = substr($token, 0, $extensionPos);
-			}
-
-			$token = $this->imageCache->extractToken($token);
-
-			$imageRequest = $this->encrypter->decrypt($token);
-
-			if (! $imageRequest) {
-				$response = $handler->handle($request);
-			} else {
-				$response = $this->getResponse($token, $imageRequest);
-			}
+		// if the path is not in the images folder, ignore, we shouldn't handle
+		if (! str_contains($path, $imageBasePath)) {
+			return $handler->handle($request);
 		}
 
-		return $response;
+		[, $token] = explode($imageBasePath, $path, 2);
+
+		if ($extensionPos = strrpos($token, '.')) {
+			$token = substr($token, 0, $extensionPos);
+		}
+
+		$token = $this->imageCache->extractToken($token);
+
+		$imageRequest = $this->encrypter->decrypt($token);
+
+		if (! $imageRequest) {
+			return $handler->handle($request);
+		}
+
+		if (! $this->isAcceptableRequest($request, $imageRequest)) {
+			return $handler->handle($request);
+		}
+
+		$previousRequest = $this->currentRequest;
+		$this->currentRequest = $request;
+
+		try {
+			return $this->getResponse($token, $imageRequest, $request);
+		} finally {
+			$this->currentRequest = $previousRequest;
+		}
 	}
 
 	/**
 	 * Get HTTP response of either original image file or
 	 * template applied file.
-	 *
-	 * @param  string $template
-	 * @param  string $filename
-	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getResponse(string $token, ImageRequest $imageRequest): ResponseInterface
-	{
+	public function getResponse(
+		string $token,
+		ImageRequest $imageRequest,
+		?ServerRequestInterface $request = null
+	): ResponseInterface {
 		if ($this->getConcreteImagePath($imageRequest->getSourceFilePath()) === null) {
 			return $this->placeholderImage->getResponse($this, $token, $imageRequest);
 		}
 
 		switch (strtolower($imageRequest->getTemplate())) {
 			case 'original':
-				return $this->getOriginalImageResponse($imageRequest->getSourceFilePath());
+				return $this->getOriginalImageResponse($imageRequest->getSourceFilePath(), $request);
 
 			case 'download':
-				return $this->getDownloadResponse($imageRequest->getSourceFilePath());
+				return $this->getDownloadResponse($imageRequest->getSourceFilePath(), $request);
 
 			default:
-				return $this->getCachedImageResponse($token, $imageRequest);
+				return $this->getCachedImageResponse($token, $imageRequest, $request);
 		}
 	}
 
 	/**
 	 * Get HTTP response of template applied image file
-	 *
-	 * @param  string $template
-	 * @param  string $filename
-	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getCachedImageResponse(string $token, ImageRequest $imageRequest): ResponseInterface
-	{
+	public function getCachedImageResponse(
+		string $token,
+		ImageRequest $imageRequest,
+		?ServerRequestInterface $request = null
+	): ResponseInterface {
 		$template = $this->getTemplate($imageRequest->getTemplate(), $imageRequest->getOptions());
 		$sourceFile = $this->getConcreteImagePath($imageRequest->getSourceFilePath());
-
 
 		if (! $sourceFile) {
 			return new EmptyResponse(404);
@@ -173,95 +183,127 @@ class ImageManager implements MiddlewareInterface
 		$asset = $this->imageCache->create($token, $template, $sourceFile);
 		$content = (string) file_get_contents($asset->getFile()->getAbsolutePath());
 
-		return $this->buildResponse($content);
+		return $this->buildResponse($content, null, $request);
 	}
 
 	/**
 	 * Get HTTP response of original image file
-	 *
-	 * @param  string $filename
-	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getOriginalImageResponse(string $filename): ResponseInterface
-	{
+	public function getOriginalImageResponse(
+		string $filename,
+		?ServerRequestInterface $request = null
+	): ResponseInterface {
 		$sourceFile = $this->getConcreteImagePath($filename);
 		if ($sourceFile === null) {
 			return new EmptyResponse(404);
 		}
 
-		return $this->buildResponse((string) file_get_contents($sourceFile->getAbsolutePath()));
+		return $this->buildResponse((string) file_get_contents($sourceFile->getAbsolutePath()), null, $request);
 	}
 
 	/**
 	 * Get HTTP response of original image as download
-	 *
-	 * @param  string $filename
-	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	public function getDownloadResponse(string $filename): ResponseInterface
-	{
-		$response = $this->getOriginalImageResponse($filename);
+	public function getDownloadResponse(
+		string $filename,
+		?ServerRequestInterface $request = null
+	): ResponseInterface {
+		$response = $this->getOriginalImageResponse($filename, $request);
+		if ($response->getStatusCode() === 404) {
+			return $response;
+		}
+
+		$safeFilename = $this->sanitizeDownloadFilename($filename);
 
 		return $response->withHeader(
 			'Content-Disposition',
-			'attachment; filename=' . basename($filename)
+			'attachment; filename="' . $safeFilename . '"'
 		);
 	}
 
 	/**
 	 * Returns corresponding template object from given template name
-	 *
-	 * @param  string $template
-	 * @return mixed
 	 */
 	protected function getTemplate(string $template, mixed $options = null): ResponseInterface|callable|ModifierInterface
 	{
-		$template = $this->imageCfg->get("templates.{$template}");
+		$templates = $this->imageCfg->get('templates', []);
+		$templateConfig = is_array($templates) ? ($templates[$template] ?? null) : null;
 
 		switch (true) {
 			// closure template found
-			case is_callable($template):
-				return $template;
+			case is_callable($templateConfig):
+				return $templateConfig;
 
 				// filter template found
-			case class_exists($template):
-				if (isset($options)) {
-					return new $template($options);
+			case is_string($templateConfig) && class_exists($templateConfig):
+				if ($templateConfig === CustomTemplate::class) {
+					$maxWidth = (int) $this->imageCfg->get('maxWidth', CustomTemplate::DEFAULT_MAX_DIMENSION);
+					$maxHeight = (int) $this->imageCfg->get('maxHeight', CustomTemplate::DEFAULT_MAX_DIMENSION);
+
+					return new CustomTemplate(is_string($options) ? $options : null, $maxWidth, $maxHeight);
 				}
 
-				return new $template(null);
+				if (isset($options)) {
+					return new $templateConfig($options);
+				}
 
+				return new $templateConfig(null);
 
 			default:
 				// template not found
 				return new EmptyResponse(404);
-
-				break;
 		}
 	}
 
 	/**
-	 * Returns full image path from given filename
-	 *
-	 * @param  string $filename
-	 * @return string
+	 * Returns full image path from given filename strictly within configured source roots.
 	 */
 	protected function getConcreteImagePath(string $filename): ?FilePathInterface
 	{
-		$normalizedFilename = (string) $filename;
-		if (Path::isAbsoluteString($normalizedFilename)) {
-			$imagePath = PathFile::from($normalizedFilename);
-			if (file_exists($imagePath->getAbsolutePath()) && is_file($imagePath->getAbsolutePath())) {
-				return $imagePath;
+		if ($filename === '' || str_contains($filename, "\0")) {
+			return null;
+		}
+
+		if (
+			Path::isAbsoluteString($filename)
+			|| str_starts_with($filename, '/')
+			|| str_starts_with($filename, '\\')
+			|| preg_match('/^[A-Za-z]:/', $filename) === 1
+		) {
+			return null;
+		}
+
+		$normalizedSlashes = str_replace('\\', '/', $filename);
+		foreach (explode('/', $normalizedSlashes) as $segment) {
+			if ($segment === '..') {
+				return null;
 			}
 		}
 
-		$sanitizedFilename = str_replace('..', '', $normalizedFilename);
 		foreach ($this->getSourceRoots() as $root) {
-			$imagePath = PathFile::from($sanitizedFilename, $root);
-			if (file_exists($imagePath->getAbsolutePath()) && is_file($imagePath->getAbsolutePath())) {
-				return $imagePath;
+			$realRoot = realpath($root->getAbsolutePath());
+			if ($realRoot === false || ! is_dir($realRoot)) {
+				continue;
 			}
+
+			$realRootPrefix = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
+
+			try {
+				$imagePath = PathFile::from($filename, $root);
+			} catch (InvalidArgumentException) {
+				continue;
+			}
+
+			$realCandidate = realpath($imagePath->getAbsolutePath());
+			if ($realCandidate === false || ! is_file($realCandidate)) {
+				continue;
+			}
+
+			if (! $this->isPathWithinRoot($realCandidate, $realRootPrefix)) {
+				continue;
+			}
+
+			return $imagePath;
 		}
 
 		return null;
@@ -327,24 +369,29 @@ class ImageManager implements MiddlewareInterface
 
 	/**
 	 * Builds HTTP response from given image data
-	 *
-	 * @param  string $content
-	 * @return Psr\Http\Message\ResponseInterface;
 	 */
-	protected function buildResponse(string $content, ?string $mime = null): ResponseInterface
-	{
+	protected function buildResponse(
+		string $content,
+		?string $mime = null,
+		?ServerRequestInterface $request = null
+	): ResponseInterface {
 		// define mime type
-		$mime ??= finfo_buffer(finfo_open(FILEINFO_MIME_TYPE), $content);
+		if ($mime === null) {
+			$finfo = finfo_open(FILEINFO_MIME_TYPE);
+			$detectedMime = $finfo !== false ? finfo_buffer($finfo, $content) : false;
+			$mime = is_string($detectedMime) && $detectedMime !== '' ? $detectedMime : 'application/octet-stream';
+		}
 
-		// respond with 304 not modified if browser has the image cached
-		$etag = md5($content);
-		$not_modified = isset($_SERVER['HTTP_IF_NONE_MATCH']) && $_SERVER['HTTP_IF_NONE_MATCH'] == $etag;
+		$activeRequest = $request ?? $this->currentRequest;
+		$etag = '"' . md5($content) . '"';
+		$ifNoneMatch = $activeRequest?->getHeaderLine('If-None-Match') ?? '';
+		$cacheMaxAge = (int) $this->imageCfg->get('cache.lifetime', 0) * 60;
 
-		if ($not_modified) {
+		if (self::matchesIfNoneMatch($ifNoneMatch, $etag)) {
 			return (new Response())
 				->withStatus(304)
 				->withHeader('ETag', $etag)
-				->withHeader('Cache-Control', 'max-age=' . ($this->imageCfg->get("cache.lifetime") * 60) . ', public');
+				->withHeader('Cache-Control', 'max-age=' . $cacheMaxAge . ', public');
 		}
 
 		// return http response
@@ -355,9 +402,69 @@ class ImageManager implements MiddlewareInterface
 		return $response
 			->withHeader('Content-Type', $mime)
 			->withHeader('ETag', $etag)
-			->withHeader('Cache-Control', 'max-age=' . ($this->imageCfg->get("cache.lifetime") * 60) . ', public')
+			->withHeader('Cache-Control', 'max-age=' . $cacheMaxAge . ', public')
 			->withBody($body)
 			->withHeader('Content-Length', (string) strlen($content));
+	}
 
+	public static function matchesIfNoneMatch(string $ifNoneMatchHeader, string $etag): bool
+	{
+		$header = trim($ifNoneMatchHeader);
+		if ($header === '') {
+			return false;
+		}
+
+		if ($header === '*') {
+			return true;
+		}
+
+		foreach (explode(',', $header) as $candidate) {
+			$candidate = trim($candidate);
+			if (str_starts_with($candidate, 'W/')) {
+				$candidate = substr($candidate, 2);
+			}
+
+			if ($candidate !== '' && hash_equals($etag, $candidate)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
+
+	protected function isAcceptableRequest(ServerRequestInterface $request, ImageRequest $imageRequest): bool
+	{
+		if (strtolower($imageRequest->getTemplate()) === 'download') {
+			return true;
+		}
+
+		$accept = strtolower(trim($request->getHeaderLine('Accept')));
+		if ($accept === '') {
+			return true;
+		}
+
+		return str_contains($accept, 'image/') || str_contains($accept, '*/*');
+	}
+
+	protected function sanitizeDownloadFilename(string $filename): string
+	{
+		$safeFilename = basename(str_replace('\\', '/', $filename));
+		$safeFilename = str_replace(['"', "\r", "\n", "\0", ';'], '', $safeFilename);
+		$safeFilename = preg_replace('/[\x00-\x1F\x7F]/', '', $safeFilename) ?? '';
+
+		if ($safeFilename === '' || $safeFilename === '.' || $safeFilename === '..') {
+			return 'download';
+		}
+
+		return $safeFilename;
+	}
+
+	private function isPathWithinRoot(string $realCandidate, string $realRootPrefix): bool
+	{
+		if (DIRECTORY_SEPARATOR === '\\') {
+			return stripos($realCandidate, $realRootPrefix) === 0;
+		}
+
+		return str_starts_with($realCandidate, $realRootPrefix);
 	}
 }

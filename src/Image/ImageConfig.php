@@ -50,7 +50,7 @@ class ImageConfig extends Config
 	{
 		$configured = $this->publicImagesDir;
 		if ($configured instanceof DirectoryPathInterface) {
-			return trim(str_replace('\\', '/', $configured->getPath()), '/');
+			return trim(str_replace('\\', '/', $configured->getAbsolutePath()), '/');
 		}
 
 		return trim(str_replace('\\', '/', (string) $configured), '/');
