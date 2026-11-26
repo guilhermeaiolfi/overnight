@@ -7,7 +7,9 @@ namespace Tests\ON\DataIntegration;
 use Cycle\Database\Config\DatabaseConfig as CycleDatabaseConfig;
 use Cycle\Database\Config\SQLite\MemoryConnectionConfig;
 use Cycle\Database\Config\SQLiteDriverConfig;
+use Cycle\Database\DatabaseInterface as CycleDatabaseInterface;
 use Cycle\Database\DatabaseManager as CycleDatabaseManager;
+use Cycle\Database\Driver\DriverInterface;
 use ON\Application;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Registry;
@@ -17,6 +19,7 @@ use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use RuntimeException;
 
 final class DataRuntimeFactoryTest extends TestCase
 {
@@ -58,7 +61,7 @@ final class DataRuntimeFactoryTest extends TestCase
 					Application::class => $app,
 					DatabaseManager::class => $dbManager,
 					ConversionGateway::class => $gateway,
-					default => throw new \RuntimeException("Unexpected service {$id}"),
+					default => throw new RuntimeException("Unexpected service {$id}"),
 				};
 			}
 		);
@@ -82,5 +85,36 @@ final class DataRuntimeFactoryTest extends TestCase
 			['id' => 1, 'name' => 'alpha'],
 			['id' => 2, 'name' => 'beta'],
 		], $rows);
+	}
+
+	public function testConnectionFromCycleDatabasePreservesTablePrefix(): void
+	{
+		$cycleManager = new CycleDatabaseManager(new CycleDatabaseConfig([
+			'default' => 'default',
+			'databases' => [
+				'default' => ['connection' => 'sqlite', 'prefix' => 'app_'],
+			],
+			'connections' => [
+				'sqlite' => new SQLiteDriverConfig(
+					connection: new MemoryConnectionConfig()
+				),
+			],
+		]));
+
+		$connection = DataRuntimeFactory::connectionFromCycleDatabase($cycleManager->database('default'));
+
+		$this->assertSame('app_', $connection->tablePrefix());
+	}
+
+	public function testConnectionFromCycleDatabaseRejectsUnsupportedDriver(): void
+	{
+		$driver = $this->createMock(DriverInterface::class);
+		$database = $this->createMock(CycleDatabaseInterface::class);
+		$database->method('getDriver')->willReturn($driver);
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('DataRuntime requires a Cycle PDO driver');
+
+		DataRuntimeFactory::connectionFromCycleDatabase($database);
 	}
 }

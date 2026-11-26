@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use On\Config\Config;
+use ON\Config\Config;
 
 class DatabaseConfig extends Config
 {
@@ -58,7 +58,7 @@ class DatabaseConfig extends Config
 
 	public function getDefault()
 	{
-		if ($this->hasDefault()) {
+		if (! $this->hasDefault()) {
 			return null;
 		}
 		$name = $this->get('default');

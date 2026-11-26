@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Plates\Exception;
+namespace ON\View\Plates\Exception;
 
 use Psr\Container\ContainerExceptionInterface;
 use RuntimeException;

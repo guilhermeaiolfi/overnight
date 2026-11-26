@@ -21,6 +21,7 @@ use RuntimeException;
 class MainPage
 {
 	protected string $layout;
+	protected ?string $activeLayout = null;
 	protected FileRoutingCache $fileRoutingCache;
 
 	public function __construct(
@@ -58,36 +59,49 @@ class MainPage
 			'_pageContext' => $page_context,
 		];
 
-		if (isset($php_file)) {
-			[$return, $controller_data] = $this->includeControllerFile($php_file, $page_context, $page_meta);
-			if ($return !== 1 && $return !== null) {
-				return $return;
+		$previousLayout = $this->layout;
+		$this->activeLayout = null;
+
+		try {
+			if (isset($php_file)) {
+				[$return, $controller_data] = $this->includeControllerFile($php_file, $page_context, $page_meta);
+				if ($return !== 1 && $return !== null) {
+					return $return;
+				}
+				$data = array_merge($data, $controller_data);
 			}
-			$data = array_merge($data, $controller_data);
+
+			if (! isset($data['_title']) && isset($page_meta['title']) && is_string($page_meta['title'])) {
+				$data['_title'] = $page_meta['title'];
+			}
+
+			$data = $this->processAddons($page_context, $data);
+
+			$data['_templateFileName'] = $template_file;
+			$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file, true);
+			$data['_templateLang'] = $template_lang;
+
+			$resolvedLayout = $this->activeLayout ?? $this->layout;
+			if ($this->activeLayout === null && $this->layout === $previousLayout && is_string($data['_layout'] ?? null) && $data['_layout'] !== '') {
+				$resolvedLayout = $data['_layout'];
+			}
+			$data['_layout'] = $resolvedLayout;
+
+			return ViewResult::for('success', $data);
+		} finally {
+			$this->activeLayout = null;
+			$this->layout = $previousLayout;
 		}
-
-		if (! isset($data['_title']) && isset($page_meta['title']) && is_string($page_meta['title'])) {
-			$data['_title'] = $page_meta['title'];
-		}
-
-		$data = $this->processAddons($page_context, $data);
-
-		$data['_templateFileName'] = $template_file;
-		$data['_templateName'] = $this->fileRoutingCache->getTemplateName($template_file, true);
-		$data['_templateLang'] = $template_lang;
-
-		return ViewResult::for('success', $data);
 	}
 
 	protected function includeControllerFile(string $php_file, array $pageContext = [], array $pageMeta = []): array
 	{
+		$obLevel = ob_get_level();
 		$include = function (string $php_file, array $pageContext, array $pageMeta): array {
 			$page = $this;
 			$defined_vars = array_flip(array_keys(get_defined_vars()));
 
-			ob_start();
 			$return = include $php_file;
-			ob_end_clean();
 
 			$data = array_diff_key(get_defined_vars(), $defined_vars, [
 				'defined_vars' => true,
@@ -97,7 +111,15 @@ class MainPage
 			return [$return, $data];
 		};
 
-		return $include->call($this, $php_file, $pageContext, $pageMeta);
+		ob_start();
+
+		try {
+			return $include->call($this, $php_file, $pageContext, $pageMeta);
+		} finally {
+			while (ob_get_level() > $obLevel) {
+				ob_end_clean();
+			}
+		}
 	}
 
 	protected function processAddons(array $pageContext, array $data): array
@@ -122,7 +144,7 @@ class MainPage
 
 	protected function setLayout(string $layout): void
 	{
-		$this->layout = $layout;
+		$this->activeLayout = $layout;
 	}
 
 	public function successView(array $data): ResponseInterface
@@ -130,8 +152,11 @@ class MainPage
 		$template_file = $data['_templateFileName'] ?? '';
 		$template_name = $data['_templateName']
 			?? str_replace([".phtml", ".php"], "", $template_file);
+		$layout = is_string($data['_layout'] ?? null) && $data['_layout'] !== ''
+			? $data['_layout']
+			: $this->layout;
 
-		return new HtmlResponse($this->viewManager->render($data, $template_name, $this->layout));
+		return new HtmlResponse($this->viewManager->render($data, $template_name, $layout));
 	}
 
 	public function getContainer(): ?ContainerInterface

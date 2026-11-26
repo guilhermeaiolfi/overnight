@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Logging;
 
-use On\Config\Config;
+use ON\Config\Config;
 
 class LoggingConfig extends Config
 {

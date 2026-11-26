@@ -5,17 +5,19 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi\Support;
 
 use ON\Container\Executor\ExecutorInterface;
-use ON\Data\Database\Cycle\CycleRuntimeFactory;
+use ON\Data\Database\SqlRuntimeFactory;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Key;
 use ON\Data\Mapper\ConversionGateway as DataConversionGateway;
 use ON\Data\Mapper\Exception\ConversionException;
-use ON\Data\Mapper\Mapping;
 use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Mapping;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\Mapper\Representation\WireRepresentation;
+use ON\DataIntegration\Container\DataRuntimeFactory;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
 use ON\RestApi\Action\Directus\BatchUpdateAction;
 use ON\RestApi\Action\Directus\CreateAction;
@@ -41,7 +43,6 @@ use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\PrimaryKey;
-use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -370,8 +371,8 @@ trait RestApiTestFixtures
 		$this->conversionGateway = $gateway;
 		Mapping::setDefaultGateway($gateway);
 
-		return (new CycleRuntimeFactory())->create(
-			$db->database(),
+		return (new SqlRuntimeFactory())->create(
+			DataRuntimeFactory::connectionFromCycleDatabase($db->database()),
 			$gateway,
 		);
 	}

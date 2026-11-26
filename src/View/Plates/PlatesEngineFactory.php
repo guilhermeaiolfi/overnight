@@ -12,7 +12,7 @@ use function is_array;
 use function is_numeric;
 use League\Plates\Engine as PlatesEngine;
 use League\Plates\Extension\ExtensionInterface;
-use ON\Plates\Exception\InvalidExtensionException;
+use ON\View\Plates\Exception\InvalidExtensionException;
 use ON\View\Plates\Extension\EscaperExtension;
 use ON\View\Plates\Extension\EscaperExtensionFactory;
 use ON\View\ViewConfig;
@@ -140,9 +140,9 @@ class PlatesEngineFactory
 	 *
 	 * If anything else is provided, an exception is raised.
 	 *
-	 * @throws Exception\InvalidExtensionException For non-string,
+	 * @throws InvalidExtensionException For non-string,
 	 *     non-extension $extension values.
-	 * @throws Exception\InvalidExtensionException For string $extension values
+	 * @throws InvalidExtensionException For string $extension values
 	 *     that do not resolve to an extension instance.
 	 */
 	private function injectExtension(
