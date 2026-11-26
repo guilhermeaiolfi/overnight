@@ -7,9 +7,11 @@ namespace Tests\ON\GraphQL;
 use GraphQL\Error\DebugFlag;
 use GraphQL\GraphQL;
 use ON\Data\Definition\Registry;
+use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\SqlResolver;
 use ON\Validation\CollectionValidator;
+use PDO;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\GraphQL\Support\GraphQLTestFixtures;
@@ -241,6 +243,7 @@ final class GraphQLSQLResolverTest extends TestCase
 	public function testUpdateMutation(): void
 	{
 		$this->createUserCollection($this->registry);
+		$this->registry->getCollection('user')->fields->get('email')->validation('required|email');
 		$database = $this->createTestDatabase();
 		$resolver = new SqlResolver($this->registry, $database);
 
@@ -274,6 +277,76 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayNotHasKey('errors', $data);
 		$this->assertSame('Johnny', $data['data']['user_by_id']['name']);
 		$this->assertSame('john@test.com', $data['data']['user_by_id']['email']);
+	}
+
+	public function testSingleAndManyRelationsCanShareTheSameForeignKey(): void
+	{
+		$this->createFullSchema($this->registry);
+		$this->registry->getCollection('user')->hasOne('featuredPost', 'post')
+			->innerKey('id')->outerKey('user_id')->end();
+
+		$resolver = new SqlResolver($this->registry, $this->createFullDatabase());
+		$schema = (new GraphQLRegistryGenerator($this->registry, $resolver))->generate();
+
+		$result = GraphQL::executeQuery($schema, '{ user_by_id(id: "1") { featuredPost { id } posts { id } } }')
+			->toArray();
+
+		$this->assertArrayNotHasKey('errors', $result);
+		$this->assertSame(1, $result['data']['user_by_id']['featuredPost']['id']);
+		$this->assertSame([1, 2], array_column($result['data']['user_by_id']['posts'], 'id'));
+	}
+
+	public function testNestedCreateRollsBackWhenAChildWriteFailsInsideAnExistingTransaction(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$database = $this->createTestDatabase();
+		$connection = $database->getConnection();
+		$connection->exec('CREATE UNIQUE INDEX post_title ON post (title)');
+		$connection->beginTransaction();
+		$connection->exec("INSERT INTO user (name) VALUES ('Other change')");
+
+		try {
+			$resolver = new SqlResolver($this->registry, $database);
+			$resolver->resolveNestedCreate(
+				$this->registry->getCollection('user'),
+				['name' => 'New user'],
+				['posts' => [['title' => 'New post'], ['title' => 'Post 1']]],
+			);
+			$this->fail('The duplicate title must reject the nested write.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('DUPLICATE', $error->getExtensions()['code']);
+			$this->assertTrue($connection->inTransaction());
+			$this->assertSame(
+				['John', 'Jane', 'Other change'],
+				$connection->query('SELECT name FROM user ORDER BY id')->fetchAll(PDO::FETCH_COLUMN)
+			);
+			$this->assertSame(3, (int) $connection->query('SELECT COUNT(*) FROM post')->fetchColumn());
+		} finally {
+			$connection->rollBack();
+		}
+	}
+
+	public function testNestedCreateValidatesChildFieldsBeforeSavingTheParent(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$post = $this->registry->getCollection('post');
+		$post->fields->get('title')->validation('required');
+		$post->fields->get('user_id')->validation('required');
+
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+		$schema = (new GraphQLRegistryGenerator($this->registry, $resolver))->generate();
+		$query = 'mutation { create_user(input: { name: "Alex", posts: [{}] }) { id } }';
+
+		$result = GraphQL::executeQuery($schema, $query)->toArray();
+		$this->assertSame('VALIDATION_ERROR', $result['errors'][0]['extensions']['code']);
+		$this->assertSame(['posts.0.title'], array_keys($result['errors'][0]['extensions']['validationErrors']));
+		$this->assertSame(2, (int) $database->getConnection()->query('SELECT COUNT(*) FROM user')->fetchColumn());
+
+		$query = 'mutation { create_user(input: { name: "Alex", posts: [{ title: "New post" }] }) { posts { title } } }';
+		$result = GraphQL::executeQuery($schema, $query)->toArray();
+		$this->assertArrayNotHasKey('errors', $result);
+		$this->assertSame([['title' => 'New post']], $result['data']['create_user']['posts']);
 	}
 
 	public function testCreateDuplicateReturnsStructuredError(): void

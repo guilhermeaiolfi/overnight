@@ -13,6 +13,7 @@ use ON\GraphQL\DataLoader\GenericDataLoader;
 use ON\GraphQL\Error\GraphQLUserError;
 use PDO;
 use PDOException;
+use Throwable;
 
 class SqlResolver implements GraphQLResolverInterface
 {
@@ -20,7 +21,9 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function __construct(
 		protected Registry $ormRegistry,
-		protected DatabaseInterface $database
+		protected DatabaseInterface $database,
+		protected int $defaultLimit = 100,
+		protected int $maxLimit = 1000,
 	) {
 		$this->dataLoader = new GenericDataLoader($ormRegistry);
 	}
@@ -30,11 +33,10 @@ class SqlResolver implements GraphQLResolverInterface
 		$table = $collection->getTable();
 		$where = $this->buildWhereClause($collection, $args);
 		$orderBy = $this->buildOrderBy($collection, $args);
-
-		$limit = isset($args['limit']) ? ' LIMIT ' . (int) $args['limit'] : '';
-		$offset = isset($args['offset']) ? ' OFFSET ' . (int) $args['offset'] : '';
+		$pagination = $this->buildPaginationClause($args);
 
 		$quotedTable = $this->quoteIdentifier($table);
+		$selectColumns = $this->buildSelectColumns($collection);
 
 		$countSql = "SELECT COUNT(*) as cnt FROM {$quotedTable} {$where}";
 		$values = $this->extractFilterValues($collection, $args);
@@ -44,7 +46,7 @@ class SqlResolver implements GraphQLResolverInterface
 		$countRow = $countStmt->fetch(PDO::FETCH_OBJ);
 		$totalCount = $countRow ? (int) $countRow->cnt : 0;
 
-		$sql = "SELECT * FROM {$quotedTable} {$where} {$orderBy}{$limit}{$offset}";
+		$sql = "SELECT {$selectColumns} FROM {$quotedTable} {$where} {$orderBy}{$pagination}";
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute($values);
 		$items = $stmt->fetchAll(PDO::FETCH_OBJ) ?: [];
@@ -62,7 +64,8 @@ class SqlResolver implements GraphQLResolverInterface
 
 		$quotedTable = $this->quoteIdentifier($table);
 		$quotedPk = $this->quoteIdentifier($pkColumn);
-		$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedPk} = ?";
+		$selectColumns = $this->buildSelectColumns($collection);
+		$sql = "SELECT {$selectColumns} FROM {$quotedTable} WHERE {$quotedPk} = ?";
 
 		$stmt = $this->database->getConnection()->prepare($sql);
 		$stmt->execute([$id]);
@@ -72,41 +75,24 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveCreate(Collection $collection, array $input): ?object
 	{
-		try {
-			$table = $collection->getTable();
-
-			$columns = array_keys($input);
-			$quotedColumns = array_map(fn (string $col) => $this->quoteIdentifier($col), $columns);
-			$placeholders = array_fill(0, count($columns), '?');
-
-			$quotedTable = $this->quoteIdentifier($table);
-			$sql = sprintf(
-				'INSERT INTO %s (%s) VALUES (%s)',
-				$quotedTable,
-				implode(', ', $quotedColumns),
-				implode(', ', $placeholders)
-			);
-
-			$stmt = $this->database->getConnection()->prepare($sql);
-			$stmt->execute(array_values($input));
-
-			$lastId = $this->database->getConnection()->lastInsertId();
-
-			return $this->resolveById($collection, (string) $lastId);
-		} catch (PDOException $e) {
-			throw $this->convertDatabaseError($e, $collection);
-		}
+		return $this->insertRecord($collection, $input);
 	}
 
 	public function resolveUpdate(Collection $collection, string $id, array $input): ?object
 	{
+		$columnData = $this->filterWritableInput($collection, $input);
+
+		if ($columnData === []) {
+			return $this->resolveById($collection, $id);
+		}
+
 		try {
 			$table = $collection->getTable();
 			$pkColumn = $this->getPrimaryKeyColumn($collection);
 
 			$sets = [];
-			foreach (array_keys($input) as $column) {
-				$sets[] = $this->quoteIdentifier($column) . " = ?";
+			foreach (array_keys($columnData) as $column) {
+				$sets[] = $this->quoteIdentifier($column) . ' = ?';
 			}
 
 			$quotedTable = $this->quoteIdentifier($table);
@@ -118,7 +104,7 @@ class SqlResolver implements GraphQLResolverInterface
 				$quotedPk
 			);
 
-			$values = array_values($input);
+			$values = array_values($columnData);
 			$values[] = $id;
 
 			$stmt = $this->database->getConnection()->prepare($sql);
@@ -159,15 +145,20 @@ class SqlResolver implements GraphQLResolverInterface
 	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
 	{
 		$connection = $this->database->getConnection();
+		$savepoint = null;
+		if ($connection->inTransaction()) {
+			$savepoint = 'graphql_' . bin2hex(random_bytes(8));
+			$connection->exec("SAVEPOINT {$savepoint}");
+		} else {
+			$connection->beginTransaction();
+		}
 
 		try {
-			$connection->beginTransaction();
-
 			// Create the parent record
-			$parent = $this->resolveCreate($collection, $input);
+			$parent = $this->insertRecord($collection, $input);
 
 			if ($parent === null) {
-				$connection->rollBack();
+				$this->rollbackNestedCreate($connection, $savepoint);
 
 				return null;
 			}
@@ -184,6 +175,10 @@ class SqlResolver implements GraphQLResolverInterface
 				$relation = $collection->relations->get($relationName);
 				$targetCollection = $relation->getCollection();
 
+				if ($targetCollection->isHidden()) {
+					continue;
+				}
+
 				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
 				$innerKeyColumn = $relation->getInnerField()->getColumn();
 				$outerKeyColumn = $relation->getOuterField()->getColumn();
@@ -191,31 +186,63 @@ class SqlResolver implements GraphQLResolverInterface
 
 				if ($relation->getCardinality()->isMany()) {
 					foreach ($relationData as $childInput) {
-						$childInput[$outerKeyColumn] = $parentKeyValue;
-						$this->resolveCreate($targetCollection, $childInput);
+						if (! is_array($childInput)) {
+							continue;
+						}
+						$this->insertRecord($targetCollection, $childInput, [$outerKeyColumn => $parentKeyValue]);
 					}
-				} else {
-					$relationData[$outerKeyColumn] = $parentKeyValue;
-					$this->resolveCreate($targetCollection, $relationData);
+				} elseif (is_array($relationData)) {
+					$this->insertRecord($targetCollection, $relationData, [$outerKeyColumn => $parentKeyValue]);
 				}
 			}
 
-			$connection->commit();
-
-			// Re-fetch the parent to get fresh data
-			return $this->resolveById($collection, (string) $parentId);
-		} catch (PDOException $e) {
-			if ($connection->inTransaction()) {
-				$connection->rollBack();
+			// Re-fetch the parent before committing, so a failed read rolls back as well.
+			$parent = $this->resolveById($collection, (string) $parentId);
+			if ($savepoint === null) {
+				$connection->commit();
+			} else {
+				$connection->exec("RELEASE SAVEPOINT {$savepoint}");
 			}
 
-			throw $this->convertDatabaseError($e, $collection);
+			return $parent;
+		} catch (Throwable $e) {
+			$this->rollbackNestedCreate($connection, $savepoint);
+
+			if ($e instanceof GraphQLUserError) {
+				throw $e;
+			}
+
+			if ($e instanceof PDOException) {
+				throw $this->convertDatabaseError($e, $collection);
+			}
+
+			throw $e;
+		}
+	}
+
+	private function rollbackNestedCreate(PDO $connection, ?string $savepoint): void
+	{
+		if (! $connection->inTransaction()) {
+			return;
+		}
+
+		if ($savepoint === null) {
+			$connection->rollBack();
+		} else {
+			$connection->exec("ROLLBACK TO SAVEPOINT {$savepoint}");
+			$connection->exec("RELEASE SAVEPOINT {$savepoint}");
 		}
 	}
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
 	{
 		$collection = $relation->getCollection();
+		$isSingle = $relation->getCardinality()->isSingle();
+
+		if ($collection->isHidden()) {
+			return $isSingle ? null : [];
+		}
+
 		$collectionName = $collection->getName();
 		$innerKey = $relation->getInnerField()->getColumn();
 		$outerKey = $relation->getOuterField()->getColumn();
@@ -226,15 +253,15 @@ class SqlResolver implements GraphQLResolverInterface
 			: ($source->{$innerKey} ?? null);
 
 		if ($sourceId === null) {
-			return $relation->getCardinality()->isSingle() ? null : [];
+			return $isSingle ? null : [];
 		}
 
 		$table = $collection->getTable();
-		$isSingle = $relation->getCardinality()->isSingle();
+		$cardinality = $isSingle ? 'single' : 'many';
+		$entityKey = $collectionName . ':' . $outerKey . ':' . $cardinality;
+		$selectColumns = $this->buildSelectColumns($collection, [$outerKey]);
 
-		$entityKey = $collectionName . ':' . $outerKey;
-
-		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $outerKey, $isSingle) {
+		return $this->dataLoader->load($entityKey, $sourceId, function (array $batchKeys) use ($table, $outerKey, $isSingle, $selectColumns) {
 			$placeholders = implode(', ', array_fill(0, count($batchKeys), '?'));
 			$flatKeys = [];
 			foreach ($batchKeys as $keySet) {
@@ -243,7 +270,7 @@ class SqlResolver implements GraphQLResolverInterface
 
 			$quotedTable = $this->quoteIdentifier($table);
 			$quotedOuterKey = $this->quoteIdentifier($outerKey);
-			$sql = "SELECT * FROM {$quotedTable} WHERE {$quotedOuterKey} IN ({$placeholders})";
+			$sql = "SELECT {$selectColumns} FROM {$quotedTable} WHERE {$quotedOuterKey} IN ({$placeholders})";
 			$stmt = $this->database->getConnection()->prepare($sql);
 			$stmt->execute($flatKeys);
 
@@ -253,13 +280,13 @@ class SqlResolver implements GraphQLResolverInterface
 			foreach ($allResults as $row) {
 				$key = $row->{$outerKey} ?? null;
 				if ($key !== null) {
-					$grouped[$key][] = $row;
+					$grouped[(string) $key][] = $row;
 				}
 			}
 
 			$results = [];
 			foreach ($flatKeys as $i => $keyValue) {
-				$rows = $grouped[$keyValue] ?? [];
+				$rows = $grouped[(string) $keyValue] ?? [];
 				if ($isSingle) {
 					$results[$i] = $rows[0] ?? null;
 				} else {
@@ -276,6 +303,152 @@ class SqlResolver implements GraphQLResolverInterface
 		$this->dataLoader->clear();
 	}
 
+	/**
+	 * @param array<string, mixed> $forcedColumns Column name => value enforced internally (e.g. parent FK on nested create)
+	 */
+	protected function insertRecord(Collection $collection, array $input, array $forcedColumns = []): ?object
+	{
+		$columnData = $this->filterWritableInput($collection, $input);
+
+		foreach ($forcedColumns as $column => $value) {
+			$columnData[$column] = $value;
+		}
+
+		if ($columnData === []) {
+			throw new GraphQLUserError('No valid fields provided.', 'INVALID_INPUT');
+		}
+
+		try {
+			$table = $collection->getTable();
+			$columns = array_keys($columnData);
+			$quotedColumns = array_map(fn (string $col) => $this->quoteIdentifier($col), $columns);
+			$placeholders = array_fill(0, count($columns), '?');
+
+			$quotedTable = $this->quoteIdentifier($table);
+			$sql = sprintf(
+				'INSERT INTO %s (%s) VALUES (%s)',
+				$quotedTable,
+				implode(', ', $quotedColumns),
+				implode(', ', $placeholders)
+			);
+
+			$stmt = $this->database->getConnection()->prepare($sql);
+			$stmt->execute(array_values($columnData));
+
+			$lastId = $this->database->getConnection()->lastInsertId();
+
+			return $this->resolveById($collection, (string) $lastId);
+		} catch (PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
+		}
+	}
+
+	/**
+	 * Whitelist input keys strictly against non-hidden, non-PK collection fields
+	 * and map each field name to its backing database column.
+	 *
+	 * @return array<string, mixed>
+	 */
+	protected function filterWritableInput(Collection $collection, array $input): array
+	{
+		$columnData = [];
+
+		foreach ($input as $fieldName => $value) {
+			if (! is_string($fieldName) || ! $collection->fields->has($fieldName)) {
+				continue;
+			}
+
+			$field = $collection->fields->get($fieldName);
+			if ($field->isPrimaryKey() || $field->isHidden()) {
+				continue;
+			}
+
+			$columnData[$field->getColumn()] = $value;
+		}
+
+		return $columnData;
+	}
+
+	/**
+	 * Build an explicit SELECT column list containing only non-hidden fields
+	 * plus relation inner keys and any extra required columns (e.g. relation outerKey).
+	 *
+	 * @param list<string> $extraColumns
+	 */
+	protected function buildSelectColumns(Collection $collection, array $extraColumns = []): string
+	{
+		$columns = [];
+
+		foreach ($collection->fields as $field) {
+			if (! $field->isHidden()) {
+				$columns[$field->getColumn()] = true;
+			}
+		}
+
+		foreach ($collection->relations as $relation) {
+			$target = $this->ormRegistry->getCollection($relation->getCollectionName());
+			if ($target !== null && $target->isHidden()) {
+				continue;
+			}
+
+			foreach ($relation->getInnerKeys() as $innerKeyName) {
+				if ($collection->fields->has($innerKeyName)) {
+					$columns[$collection->fields->get($innerKeyName)->getColumn()] = true;
+				}
+			}
+		}
+
+		foreach ($extraColumns as $extra) {
+			if ($extra !== '') {
+				$columns[$extra] = true;
+			}
+		}
+
+		if ($columns === []) {
+			$columns[$this->getPrimaryKeyColumn($collection)] = true;
+		}
+
+		return implode(', ', array_map(
+			fn (string $col) => $this->quoteIdentifier($col),
+			array_keys($columns)
+		));
+	}
+
+	protected function buildPaginationClause(array $args): string
+	{
+		$limit = null;
+
+		if (isset($args['limit'])) {
+			$limit = max(0, (int) $args['limit']);
+			if ($this->maxLimit > 0) {
+				$limit = min($limit, $this->maxLimit);
+			}
+		} elseif ($this->defaultLimit > 0) {
+			$limit = $this->maxLimit > 0
+				? min($this->defaultLimit, $this->maxLimit)
+				: $this->defaultLimit;
+		} elseif ($this->maxLimit > 0) {
+			$limit = $this->maxLimit;
+		}
+
+		$offset = isset($args['offset']) ? max(0, (int) $args['offset']) : null;
+
+		// SQLite and MySQL reject OFFSET without LIMIT
+		if ($offset !== null && $limit === null) {
+			$limit = PHP_INT_MAX;
+		}
+
+		$clause = '';
+		if ($limit !== null) {
+			$clause .= ' LIMIT ' . $limit;
+		}
+		if ($offset !== null) {
+			$clause .= ' OFFSET ' . $offset;
+		}
+
+		return $clause;
+	}
+
 	protected function quoteIdentifier(string $identifier): string
 	{
 		$sanitized = preg_replace('/[^a-zA-Z0-9_.]/', '', $identifier);
@@ -287,7 +460,7 @@ class SqlResolver implements GraphQLResolverInterface
 	{
 		$fields = [];
 		foreach ($collection->fields as $name => $field) {
-			if (! $field->isPrimaryKey() && $field->isFilterable()) {
+			if (! $field->isPrimaryKey() && ! $field->isHidden() && $field->isFilterable()) {
 				$fields[$name] = $field;
 			}
 		}
@@ -320,12 +493,15 @@ class SqlResolver implements GraphQLResolverInterface
 		$sort = $args['sort'] ?? null;
 		$order = $args['order'] ?? 'ASC';
 
-		if ($sort === null) {
+		if (! is_string($sort) || $sort === '') {
 			return '';
 		}
 
 		$validFields = [];
 		foreach ($collection->fields as $name => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
 			$validFields[$name] = $field->getColumn();
 		}
 
@@ -334,9 +510,9 @@ class SqlResolver implements GraphQLResolverInterface
 		}
 
 		$column = $validFields[$sort];
-		$order = strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
+		$order = is_string($order) && strtoupper($order) === 'DESC' ? 'DESC' : 'ASC';
 
-		return "ORDER BY " . $this->quoteIdentifier($column) . " {$order}";
+		return 'ORDER BY ' . $this->quoteIdentifier($column) . " {$order}";
 	}
 
 	protected function extractFilterValues(Collection $collection, array $args): array
@@ -360,7 +536,7 @@ class SqlResolver implements GraphQLResolverInterface
 			return $pk->getColumn();
 		}
 
-		if (\is_array($pk) && ! empty($pk)) {
+		if (is_array($pk) && ! empty($pk)) {
 			return $pk[0]->getColumn();
 		}
 
@@ -370,7 +546,6 @@ class SqlResolver implements GraphQLResolverInterface
 	protected function convertDatabaseError(PDOException $e, Collection $collection): GraphQLUserError
 	{
 		$message = $e->getMessage();
-		$code = $e->getCode();
 
 		// Detect common database errors
 		if (str_contains($message, 'UNIQUE constraint') || str_contains($message, 'Duplicate entry')) {
@@ -379,11 +554,12 @@ class SqlResolver implements GraphQLResolverInterface
 				return new GraphQLUserError(
 					"A record with this {$matches[1]} already exists.",
 					'DUPLICATE',
-					$matches[1]
+					$matches[1],
+					$e
 				);
 			}
 
-			return new GraphQLUserError('A record with these values already exists.', 'DUPLICATE');
+			return new GraphQLUserError('A record with these values already exists.', 'DUPLICATE', null, $e);
 		}
 
 		if (str_contains($message, 'NOT NULL constraint') || str_contains($message, 'cannot be null')) {
@@ -391,15 +567,16 @@ class SqlResolver implements GraphQLResolverInterface
 				return new GraphQLUserError(
 					"The field {$matches[1]} is required.",
 					'REQUIRED_FIELD',
-					$matches[1]
+					$matches[1],
+					$e
 				);
 			}
 
-			return new GraphQLUserError('A required field is missing.', 'REQUIRED_FIELD');
+			return new GraphQLUserError('A required field is missing.', 'REQUIRED_FIELD', null, $e);
 		}
 
 		if (str_contains($message, 'FOREIGN KEY constraint')) {
-			return new GraphQLUserError('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION');
+			return new GraphQLUserError('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION', null, $e);
 		}
 
 		return new GraphQLUserError('Database operation failed.', 'DATABASE_ERROR', null, $e);

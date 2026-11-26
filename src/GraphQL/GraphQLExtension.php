@@ -50,6 +50,9 @@ class GraphQLExtension extends AbstractExtension
 		$allowIntrospection = $this->options['introspection'] ?? $debug;
 		$maxDepth = $this->options['maxDepth'] ?? 10;
 		$maxComplexity = $this->options['maxComplexity'] ?? 100;
+		$maxBatchSize = (int) ($this->options['maxBatchSize'] ?? 10);
+		$maxMultipartPathDepth = (int) ($this->options['maxMultipartPathDepth'] ?? 10);
+		$authorizer = $this->options['authorizer'] ?? null;
 
 		// Build the resolver based on config
 		$resolver = $this->buildResolver($container);
@@ -64,8 +67,8 @@ class GraphQLExtension extends AbstractExtension
 			$this->options['validationLang'] ?? 'en',
 		);
 		$generator = $debug
-			? new GraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator)
-			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator);
+			? new GraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator, $authorizer)
+			: new CachedGraphQLRegistryGenerator($registry, $resolver, $eventsExt->eventDispatcher, $validator, $authorizer);
 		$schema = $generator->generate();
 
 		// Wire up per-request cleanup via event
@@ -81,7 +84,9 @@ class GraphQLExtension extends AbstractExtension
 			$allowIntrospection,
 			$maxDepth,
 			$maxComplexity,
-			$eventsExt->eventDispatcher
+			$eventsExt->eventDispatcher,
+			$maxBatchSize,
+			$maxMultipartPathDepth,
 		);
 
 		// Add rate limiting if the extension is installed
@@ -122,23 +127,26 @@ class GraphQLExtension extends AbstractExtension
 			return null;
 		}
 
+		$defaultLimit = (int) ($this->options['defaultLimit'] ?? 100);
+		$maxLimit = (int) ($this->options['maxLimit'] ?? 1000);
+
 		if ($resolverType === 'sql') {
-			return new SqlResolver($registry, $database);
+			return new SqlResolver($registry, $database, $defaultLimit, $maxLimit);
 		}
 
 		if ($resolverType === 'cycle') {
 			$orm = $database->getResource();
 
-			return new CycleResolver($orm, $registry);
+			return new CycleResolver($orm, $registry, $defaultLimit, $maxLimit);
 		}
 
 		// Auto-detect based on database class
 		if ($database instanceof CycleDatabase) {
 			$orm = $database->getResource();
 
-			return new CycleResolver($orm, $registry);
+			return new CycleResolver($orm, $registry, $defaultLimit, $maxLimit);
 		}
 
-		return new SqlResolver($registry, $database);
+		return new SqlResolver($registry, $database, $defaultLimit, $maxLimit);
 	}
 }

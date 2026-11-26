@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
+use GraphQL\GraphQL;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Schema;
 use ON\Data\Definition\Collection\Collection;
@@ -549,5 +550,76 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$this->assertContains('draft', $enumValues);
 		$this->assertContains('published', $enumValues);
 		$this->assertContains('archived', $enumValues);
+	}
+
+	public function testRelationsToHiddenCollectionsAreOmittedFromInputAndOutput(): void
+	{
+		$this->registry->collection('profile')
+			->primaryKey('id')
+			->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->hidden(true)
+			->end();
+		$this->registry->collection('user')
+			->primaryKey('id')
+			->field('id', 'int')->end()
+			->field('name', 'string')->end()
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')->end()
+			->end();
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$create = $schema->getMutationType()->getField('create_user');
+
+		$this->assertArrayNotHasKey('profile', $create->getType()->getFields());
+		$this->assertArrayNotHasKey('profile', $create->args[0]->getType()->getWrappedType()->getFields());
+	}
+
+	public function testEnumsWithTheSameFieldNameKeepTheirCollectionValues(): void
+	{
+		$this->registry->collection('post')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('status', 'string')->metadata('enum', ['draft'])->end()
+			->end();
+		$this->registry->collection('ticket')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('status', 'string')->metadata('enum', ['open'])->end()
+			->end();
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$schema->assertValid();
+
+		$this->assertSame('draft', $schema->getType('PostStatusEnum')->getValues()[0]->value);
+		$this->assertSame('open', $schema->getType('TicketStatusEnum')->getValues()[0]->value);
+	}
+
+	public function testAuthorizationRunsBeforeCustomRelationResolvers(): void
+	{
+		$this->registry->collection('profile')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->end();
+		$resolved = false;
+		$this->registry->collection('user')
+			->primaryKey('id')->field('id', 'int')->end()
+			->metadata('gql::resolver::findById', static fn () => (object) ['id' => 1])
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')
+			->metadata('gql::resolver', static function () use (&$resolved): object {
+				$resolved = true;
+
+				return (object) ['id' => 2];
+			})
+			->end()
+			->end();
+		$generator = new GraphQLRegistryGenerator(
+			$this->registry,
+			authorizer: static fn (Collection $collection, string $operation): bool => $operation !== 'relation',
+		);
+
+		$result = GraphQL::executeQuery($generator->generate(), '{ user_by_id(id: "1") { id profile { id } } }')
+			->toArray();
+
+		$this->assertSame(['id' => 1, 'profile' => null], $result['data']['user_by_id']);
+		$this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code']);
+		$this->assertFalse($resolved);
 	}
 }

@@ -6,7 +6,6 @@ namespace ON\GraphQL\DataLoader;
 
 use GraphQL\Deferred;
 use function ksort;
-use ON\Data\Definition\Field\FieldInterface;
 use ON\Data\Definition\Registry;
 
 class GenericDataLoader
@@ -25,31 +24,26 @@ class GenericDataLoader
 	{
 		$key = $this->normalizeKey($entity, $keys);
 
-		if (isset($this->cache[$key])) {
+		if (array_key_exists($key, $this->cache)) {
 			return $this->cache[$key];
 		}
 
 		$this->pendingKeysByEntity[$entity][$key] = true;
 
-		return new Deferred(function () use ($entity, $keys, $key, $loaderFn) {
+		return new Deferred(function () use ($entity, $key, $loaderFn) {
 			$items = $this->loadPendingBatch($entity, $loaderFn);
 
-			$normalized = $this->normalizeKey($entity, $keys);
-
-			return $items[$normalized] ?? null;
+			return $items[$key] ?? null;
 		});
 	}
 
 	public function loadMany(string $entity, array $keys, callable $loaderFn): mixed
 	{
-		$deferredResults = [];
-
 		foreach ($keys as $key) {
-			$result = $this->load($entity, $key, $loaderFn);
-			$deferredResults[$this->normalizeKey($entity, $key)] = $result;
+			$this->load($entity, $key, $loaderFn);
 		}
 
-		return new Deferred(function () use ($entity, $loaderFn, $deferredResults, $keys) {
+		return new Deferred(function () use ($entity, $loaderFn, $keys) {
 			$items = $this->loadPendingBatch($entity, $loaderFn);
 
 			$results = [];
@@ -104,10 +98,13 @@ class GenericDataLoader
 
 	public function clearEntity(string $entity): void
 	{
-		$keys = $this->pendingKeysByEntity[$entity] ?? [];
-		foreach (array_keys($keys) as $key) {
-			unset($this->cache[$key]);
+		$prefix = $entity . "\0";
+		foreach (array_keys($this->cache) as $cacheKey) {
+			if (str_starts_with($cacheKey, $prefix)) {
+				unset($this->cache[$cacheKey]);
+			}
 		}
+
 		unset($this->pendingKeysByEntity[$entity]);
 	}
 
@@ -159,86 +156,60 @@ class GenericDataLoader
 
 	public function normalizeKey(string $entity, array|int|string $keys): string
 	{
-		if (! is_array($keys)) {
-			$keys = ['id' => $keys];
-		}
-
 		$pkColumns = $this->getPrimaryKeyColumns($entity);
 
-		if (count($pkColumns) === 1 && isset($keys['id'])) {
-			return "{$entity}:{$keys['id']}";
-		}
-
-		$sorted = [];
-		foreach ($pkColumns as $col) {
-			if (array_key_exists($col, $keys)) {
-				$sorted[$col] = $keys[$col];
+		if (! is_array($keys)) {
+			$pkColumn = $pkColumns[0] ?? 'id';
+			$normalized = [$pkColumn => (string) $keys];
+		} else {
+			$sorted = [];
+			foreach ($pkColumns as $col) {
+				if (array_key_exists($col, $keys)) {
+					$sorted[$col] = is_scalar($keys[$col]) ? (string) $keys[$col] : $keys[$col];
+				}
 			}
+
+			if ($sorted === []) {
+				foreach ($keys as $col => $value) {
+					$sorted[$col] = is_scalar($value) ? (string) $value : $value;
+				}
+			}
+
+			ksort($sorted);
+			$normalized = $sorted;
 		}
 
-		if (empty($sorted)) {
-			$sorted = $keys;
-		}
+		return $this->encodeKey($entity, $normalized);
+	}
 
-		ksort($sorted);
-
-		$parts = [];
-		foreach ($sorted as $col => $value) {
-			$parts[] = $col . ':' . $value;
-		}
-
-		return $entity . ':' . implode(':', $parts);
+	protected function encodeKey(string $entity, array $normalizedKeys): string
+	{
+		return $entity . "\0" . json_encode($normalizedKeys, JSON_THROW_ON_ERROR);
 	}
 
 	protected function decodeKey(string $entity, string $key): array
 	{
-		$pkColumns = $this->getPrimaryKeyColumns($entity);
-		$remainder = substr($key, strlen($entity) + 1);
-		$parts = explode(':', $remainder);
-
-		// Single PK: key is either "value" or "col:value"
-		if (count($pkColumns) === 1) {
-			$pkColumn = $pkColumns[0];
-			$value = count($parts) === 1 ? $parts[0] : $parts[1];
-
-			return [
-				'entity' => $entity,
-				'keys' => [$pkColumn => $value],
-			];
-		}
-
-		// Composite PK: pairs of "col:value"
-		$keys = [];
-		for ($i = 0; $i < count($parts); $i += 2) {
-			if (isset($parts[$i + 1])) {
-				$keys[$parts[$i]] = $parts[$i + 1];
-			}
-		}
+		$payload = substr($key, strlen($entity) + 1);
+		$decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
 
 		return [
 			'entity' => $entity,
-			'keys' => $keys,
+			'keys' => is_array($decoded) ? $decoded : [],
 		];
 	}
 
 	protected function getPrimaryKeyColumns(string $entity): array
 	{
-		if (! isset($this->registry->collections[$entity])) {
+		if (! $this->registry->hasCollection($entity)) {
 			return ['id'];
 		}
 
 		$collection = $this->registry->getCollection($entity);
 
-		$pk = $collection->getPrimaryKeyFields();
-
-		if ($pk instanceof FieldInterface) {
-			return [$pk->getColumn()];
+		if ($collection === null || ! $collection->hasPrimaryKey()) {
+			return ['id'];
 		}
 
-		if (is_array($pk)) {
-			return array_map(fn ($field) => $field->getColumn(), $pk);
-		}
-
-		return ['id'];
+		return $collection->getPrimaryKeyColumns();
 	}
 }

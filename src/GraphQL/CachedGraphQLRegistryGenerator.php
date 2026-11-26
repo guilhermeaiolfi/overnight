@@ -53,11 +53,32 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 			$parts[] = $collection->isHidden() ? '1' : '0';
 
 			foreach ($collection->fields as $name => $field) {
-				$parts[] = $name . ':' . $field->getType() . ':' . ($field->isRequired() ? 'r' : 'o');
+				$enumMetadata = $field->metadata('enum');
+				$enumPart = is_array($enumMetadata) ? json_encode($enumMetadata) : '';
+				$overrideType = (string) ($field->metadata('gql::type') ?? '');
+
+				$parts[] = implode(':', [
+					$name,
+					$field->getColumn(),
+					$field->getType(),
+					$field->isPrimaryKey() ? 'pk' : 'npk',
+					$field->isRequired() ? 'r' : 'o',
+					$field->isNullable() ? 'n' : 'nn',
+					$field->isHidden() ? 'h' : 'v',
+					$field->isFilterable() ? 'f' : 'nf',
+					$enumPart,
+					$overrideType,
+				]);
 			}
 
 			foreach ($collection->relations as $name => $relation) {
-				$parts[] = 'rel:' . $name . ':' . $relation->getCollectionName();
+				$parts[] = implode(':', [
+					'rel',
+					$name,
+					$relation->getCollectionName(),
+					$relation->getCardinality()->name,
+					$relation->isJunction() ? 'j' : 'nj',
+				]);
 			}
 		}
 
