@@ -20,6 +20,7 @@ use ON\Data\Definition\Field\Field;
 use ON\Data\Definition\Field\FieldInterface;
 use ON\Data\Definition\Plugin\CycleCollectionPlugin;
 use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\BelongsToRelation;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\HasManyRelation;
 use ON\Data\Definition\Relation\HasOneRelation;
@@ -309,6 +310,10 @@ final class CycleRegistryGenerator implements GeneratorInterface
 
 		if ($relation instanceof M2MRelation) {
 			return 'manyToMany';
+		}
+
+		if ($relation instanceof BelongsToRelation) {
+			return 'belongsTo';
 		}
 
 		if ($relation instanceof HasOneRelation) {

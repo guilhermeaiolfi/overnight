@@ -10,10 +10,11 @@ use DateTimeImmutable;
 use Laminas\Diactoros\Response\JsonResponse;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
-use ON\Data\Database\Cycle\CycleQueryExecutor;
+use ON\Data\Database\Sql\SqlQueryExecutor;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\DataIntegration\Container\DataRuntimeFactory;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemUpdating;
@@ -256,7 +257,6 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 		$this->assertSame(1, (int) $row['news_id']);
 	}
 
-
 	public function testPatchUpdateKeepingUnchangedImageMetadataDoesNotFail(): void
 	{
 		[, , $middleware, $db] = $this->createNewsArticleFixture();
@@ -480,8 +480,12 @@ final class NewsArticleMultipartUpdateTest extends TestCase
 			$this->ensureConversionGateway();
 			$recorder = new DelegatingRecordingCommandExecutor($runtime->getCommandExecutor());
 			$runtime = new DataRuntime(
-				new CycleQueryExecutor($db->database(), $this->conversionGateway),
+				new SqlQueryExecutor(
+					DataRuntimeFactory::connectionFromCycleDatabase($db->database()),
+					$this->conversionGateway,
+				),
 				$recorder,
+				$this->conversionGateway,
 			);
 		}
 
