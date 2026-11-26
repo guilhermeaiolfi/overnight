@@ -260,27 +260,18 @@ class ImageManager implements MiddlewareInterface
 	 */
 	protected function getConcreteImagePath(string $filename): ?FilePathInterface
 	{
-		if ($filename === '' || str_contains($filename, "\0")) {
+		$filename = str_replace('\\', '/', $filename);
+		if (! $this->isRelativeSourcePath($filename)) {
 			return null;
 		}
 
-		if (
-			Path::isAbsoluteString($filename)
-			|| str_starts_with($filename, '/')
-			|| str_starts_with($filename, '\\')
-			|| preg_match('/^[A-Za-z]:/', $filename) === 1
-		) {
+		$filename = str_replace(DIRECTORY_SEPARATOR, '/', Path::normalize($filename));
+		[$roots, $relativeFilename] = $this->getSourceLocation($filename);
+		if (! $this->isRelativeSourcePath($relativeFilename)) {
 			return null;
 		}
 
-		$normalizedSlashes = str_replace('\\', '/', $filename);
-		foreach (explode('/', $normalizedSlashes) as $segment) {
-			if ($segment === '..') {
-				return null;
-			}
-		}
-
-		foreach ($this->getSourceRoots() as $root) {
+		foreach ($roots as $root) {
 			$realRoot = realpath($root->getAbsolutePath());
 			if ($realRoot === false || ! is_dir($realRoot)) {
 				continue;
@@ -289,7 +280,7 @@ class ImageManager implements MiddlewareInterface
 			$realRootPrefix = rtrim($realRoot, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR;
 
 			try {
-				$imagePath = PathFile::from($filename, $root);
+				$imagePath = PathFile::from($relativeFilename, $root);
 			} catch (InvalidArgumentException) {
 				continue;
 			}
@@ -307,6 +298,39 @@ class ImageManager implements MiddlewareInterface
 		}
 
 		return null;
+	}
+
+	private function isRelativeSourcePath(string $filename): bool
+	{
+		return $filename !== ''
+			&& ! str_contains($filename, "\0")
+			&& ! str_starts_with($filename, '/')
+			&& preg_match('/^[A-Za-z]:/', $filename) !== 1
+			&& ! in_array('..', explode('/', $filename), true);
+	}
+
+	/**
+	 * @return array{list<DirectoryPathInterface>, string}
+	 */
+	private function getSourceLocation(string $filename): array
+	{
+		$aliases = $this->imageCfg->get('sourceAliases', []);
+		if (is_array($aliases)) {
+			foreach ($aliases as $alias => $directory) {
+				if (! is_string($alias) || $alias === '' || ! is_string($directory) || trim($directory) === '') {
+					continue;
+				}
+
+				$prefix = $alias . '/';
+				if (str_starts_with($filename, $prefix)) {
+					$directory = $this->resolveSourceRoot($directory, $this->paths->get('project'));
+
+					return [[$directory], substr($filename, strlen($prefix))];
+				}
+			}
+		}
+
+		return [$this->getSourceRoots(), $filename];
 	}
 
 	/**
