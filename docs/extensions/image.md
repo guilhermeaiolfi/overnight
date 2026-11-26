@@ -69,7 +69,6 @@ Configuration is managed via `ImageConfig`:
 // config/image.php
 use ON\Image\ImageConfig;
 use ON\Image\Encrypter\OpenSSL;
-use ON\Image\Modifier\CoverModifier;
 
 return [
     ImageConfig::class => [

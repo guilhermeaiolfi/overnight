@@ -4,61 +4,77 @@ Overnight supports multiple database backends through Cycle ORM.
 
 ## Configuration
 
-```php
-use ON\Db\DatabaseConfig;
-use ON\DatabaseExtension;
+Register `ON\DB\DatabaseExtension` in `config/extensions.php` (or via `$app->install(DatabaseExtension::class, [])`) and configure connections on `ON\DB\DatabaseConfig`:
 
+```php
+use ON\DB\DatabaseConfig;
+use ON\DB\DatabaseExtension;
+
+// Register the extension (typically in config/extensions.php)
+$app->install(DatabaseExtension::class, []);
+
+// Configure databases via DatabaseConfig (signature: $name, $dsn, $attributes = [], $username = '', $password = '', ...)
 $config = new DatabaseConfig();
 
 // MySQL
-$config->addDatabase('default', 'mysql:host=localhost;dbname=myapp', 'root', 'password');
+$config->addDatabase('default', 'mysql:host=localhost;dbname=myapp', [], 'root', 'password');
 
 // PostgreSQL
-$config->addDatabase('default', 'pgsql:host=localhost;dbname=myapp', 'user', 'pass');
+$config->addDatabase('default', 'pgsql:host=localhost;dbname=myapp', [], 'user', 'pass');
 
 // SQLite
 $config->addDatabase('default', 'sqlite:' . __DIR__ . '/database.db');
 
-// Multiple databases
-$config->addDatabase('users', 'mysql:host=localhost;dbname=users', 'root', '');
-$config->addDatabase('orders', 'mysql:host=localhost;dbname=orders', 'root', '');
+// Multiple databases (named arguments also work)
+$config->addDatabase(
+    name: 'users',
+    dsn: 'mysql:host=localhost;dbname=users',
+    username: 'root',
+    password: '',
+);
+$config->addDatabase(
+    name: 'orders',
+    dsn: 'mysql:host=localhost;dbname=orders',
+    username: 'root',
+    password: '',
+);
 
 $config->setDefault('default');
-
-$app->install(new DatabaseExtension($config));
 ```
 
 ## Cycle ORM
 
 ### Entity Definition
 
+Overnight defines entities through the sole `ON\Data\Definition\Registry` (registered via `DataDefinitionConfigureEvent`) rather than `Cycle\Annotated` attributes. `ON\DB\Cycle\Schema\CycleRegistryGenerator` compiles the registry into a Cycle ORM schema automatically.
+
 ```php
-use Cycle\Annotated\Annotation as ORM;
+use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
+use ON\Extension\AbstractExtension;
+use ON\Init\Init;
 
-#[ORM\Entity]
-class User
+final class AppDefinitionsExtension extends AbstractExtension
 {
-    #[ORM\Column(type: 'int')]
-    #[ORM\PrimaryKey]
-    #[ORM\AutoIncrement]
-    public ?int $id = null;
-
-    #[ORM\Column(type: 'string')]
-    public string $name;
-
-    #[ORM\Column(type: 'string', unique: true)]
-    public string $email;
-
-    #[ORM\Column(type: 'string', nullable: true)]
-    public ?string $password = null;
-
-    #[ORM\Column(type: 'datetime')]
-    public \DateTime $createdAt;
-
-    #[ORM\Relation\HasMany(target: Post::class)]
-    public array $posts = [];
+    public function register(Init $init): void
+    {
+        $init->on(DataDefinitionConfigureEvent::class, function (DataDefinitionConfigureEvent $event): void {
+            $event->registry
+                ->collection('user')
+                ->table('users')
+                ->primaryKey('id')
+                ->field('id', 'int')->autoIncrement(true)->end()
+                ->field('name', 'string')->validation('required|max:255')->end()
+                ->field('email', 'string')->unique(true)->validation('required|email')->end()
+                ->field('password', 'string')->nullable(true)->hidden(true)->end()
+                ->field('created_at', 'datetime')->end()
+                ->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
+                ->end();
+        });
+    }
 }
 ```
+
+See [ORM Entity Definition](../orm-entity-definition.md) and [ON\Data Definition Architecture](../ondata-cycle-schema-migration.md) for the full fluent API, `CycleCollectionPlugin`, and caching details.
 
 ### Repository Pattern
 
@@ -109,23 +125,19 @@ class UserRepository
 
 ### Relations
 
+Define relations on collections using the ON\Data fluent builder (`innerKey` on the source collection, `outerKey` on the target collection):
+
 ```php
-#[ORM\Entity]
-class Post
-{
-    #[ORM\Column(type: 'int')]
-    #[ORM\PrimaryKey]
-    public ?int $id = null;
-
-    #[ORM\Column(type: 'string')]
-    public string $title;
-
-    #[ORM\Column(type: 'text')]
-    public string $content;
-
-    #[ORM\Relation\BelongsTo(target: User::class)]
-    public ?User $user = null;
-}
+$event->registry
+    ->collection('post')
+    ->table('posts')
+    ->primaryKey('id')
+    ->field('id', 'int')->autoIncrement(true)->end()
+    ->field('title', 'string')->end()
+    ->field('content', 'text')->end()
+    ->field('user_id', 'int')->end()
+    ->belongsTo('user', 'user')->innerKey('user_id')->outerKey('id')->end()
+    ->end();
 ```
 
 ## Queries
@@ -300,7 +312,9 @@ $db->execute('UPDATE users SET active = 0 WHERE id > ?', [100]);
 ## Database Manager
 
 ```php
-$manager = $app->ext('db');
+use ON\DB\DatabaseManager;
+
+$manager = $app->container->get(DatabaseManager::class);
 
 // Get default database
 $db = $manager->getDatabase();
@@ -308,14 +322,14 @@ $db = $manager->getDatabase();
 // Get named database
 $usersDb = $manager->getDatabase('users');
 
-// Get PDO connection
-$pdo = $manager->getDatabaseConnection();
+// Get underlying connection (Cycle DatabaseManager or PDO)
+$connection = $manager->getDatabaseConnection();
 ```
 
 ## Best Practices
 
 1. **Use repositories** - Encapsulate data access logic
-2. **Define entities clearly** - Use annotations for schema
+2. **Define entities clearly** - Register collections on `ON\Data\Definition\Registry` via `DataDefinitionConfigureEvent`
 3. **Run migrations** - Never modify schema directly in production
 4. **Use transactions** - Wrap multi-table operations
 5. **Index wisely** - Add indexes for frequent queries

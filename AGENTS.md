@@ -25,7 +25,7 @@ php vendor/bin/phpunit --coverage-text
 ## Architecture
 
 - **Namespace**: `ON\` for source (`src/`), `Tests\ON\` for tests (`tests/`)
-- **PHP version**: 8.1+
+- **PHP version**: 8.3+
 - **Framework type**: PSR-7/PSR-15 compliant PHP library with extension-based architecture
 - **Entry point**: `src/Application.php` — loads extensions, manages lifecycle
 
@@ -37,19 +37,22 @@ src/
 ├── Auth/                        # Authentication & authorization
 ├── Cache/                       # Symfony Cache wrapper
 ├── Clockwork/                   # Debug profiler integration
-├── CMS/                         # Built-in CMS (DataHandler, QueryParser)
 ├── Config/                      # Configuration system with Scanner
 ├── Console/                     # Symfony Console integration
 ├── Container/                   # PHP-DI based DI container
+├── DataIntegration/             # ON\Data registry provider, definition cache & mapper wiring
 ├── DB/                          # Database abstraction (DatabaseManager, CycleDatabase, PdoDatabase)
 ├── Discovery/                   # Attribute-based class discovery
 ├── Event/                       # League Event integration
 ├── Extension/                   # AbstractExtension base class
+├── FileRouting/                 # File-based directory routing
 ├── GraphQL/                     # GraphQL schema generation & CRUD
-├── Middleware/                   # PSR-15 pipeline
-├── ORM/                         # Cycle ORM wrapper with custom definition system
-├── Mapper/                      # Value conversion (representations, field handlers, map()->to())
+├── Maintenance/                 # Maintenance mode
+├── Middleware/                  # PSR-15 pipeline
+├── RateLimit/                   # Rate limiting
+├── RestApi/                     # Auto-generated Directus-style REST API endpoints
 ├── Router/                      # FastRoute integration
+├── Validation/                  # Collection validation (somnambulist/validation)
 ├── View/                        # Template engines (Plates built-in, Latte extension)
 └── ...
 ```
