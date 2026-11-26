@@ -58,22 +58,29 @@ class AttributesDiscoverer implements DiscoverInterface
 
 	public function discover(SplFileInfo $file, DiscoveryLocation $location): void
 	{
-		$classes = $this->classFinder->getClassesInFile($file->getRealPath());
+		$realPath = $file->getRealPath();
+		if ($realPath === false) {
+			return;
+		}
+
+		// Remove stale references loaded from cache once per file before scanning its classes
+		$this->items->removeFromFile($realPath);
+
+		$classes = $this->classFinder->getClassesInFile($realPath);
 		foreach ($classes as $className) {
 			if (preg_match('/(.*)(Page|Controller)$/', $className)) {
 				$class = new ReflectionClass($className);
-
-				// remove current references loaded from cache
-				$this->items->removeFromFile($file->getRealPath());
 
 				$attributes = $this->reader->extractData($class);
 
 				if (count($attributes) > 0) {
 					$item = new DiscoveryItem($attributes, $location);
-					$item->setFile($file->getRealPath());
+					$item->setFile($realPath);
 					$item->setClassName($class->getName());
+					$item->setDirty(true);
 
 					$this->items->add($item);
+					$this->dirty = true;
 				}
 			}
 		}

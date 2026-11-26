@@ -6,16 +6,20 @@ namespace Tests\ON\Config;
 
 use FilesystemIterator;
 use ON\Application;
+use ON\Config\AppConfig;
 use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
+use ON\Discovery\CacheAdapter\AggressiveCacheAdapter;
+use ON\Discovery\DiscoveryLocation;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use stdClass;
 
 final class ConfigExtensionCacheTest extends TestCase
 {
@@ -77,12 +81,83 @@ final class ConfigExtensionCacheTest extends TestCase
 		]);
 
 		$this->assertFileExists($cacheFile);
-		$cache = unserialize((string) file_get_contents($cacheFile));
+		$raw = (string) file_get_contents($cacheFile);
+		$this->assertStringStartsWith("<?php\n\nreturn ", $raw);
+		$this->assertSame([], glob($cacheFile . '.*.tmp') ?: []);
+
+		$cache = require $cacheFile;
 		$this->assertIsArray($cache);
 		$this->assertSame(
 			SerialFactory::class,
 			$cache['data'][ContainerConfig::class]['definitions']['factories']['demo_service'] ?? null,
 		);
+
+		// Verify warm boot loads from the PHP cache file cleanly
+		Application::$instance = null;
+		$warmApp = new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [
+				ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false],
+			],
+			'debug' => false,
+		]);
+
+		$this->assertSame(
+			SerialFactory::class,
+			$warmApp->ext('config')->get(ContainerConfig::class)->get('definitions.factories.demo_service'),
+		);
+	}
+
+	public function testSaveCacheRejectsObjectsWithoutSetState(): void
+	{
+		$cacheFile = $this->projectDir . '/var/cache/config.php';
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('non-serializable values');
+
+		try {
+			new Application([
+				'paths' => ['project' => $this->projectDir],
+				'extensions' => [
+					ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false],
+					ExtensionWithNonExportableObject::class => [],
+				],
+				'debug' => false,
+			]);
+		} finally {
+			$this->assertFileDoesNotExist($cacheFile);
+		}
+	}
+
+	public function testSaveCacheRoundTripsDiscoveryLocationObjects(): void
+	{
+		$cacheFile = $this->projectDir . '/var/cache/config.php';
+
+		new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [
+				ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false],
+				ExtensionWithDiscoveryLocation::class => [],
+			],
+			'debug' => false,
+		]);
+
+		$this->assertFileExists($cacheFile);
+
+		Application::$instance = null;
+		$warmApp = new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [
+				ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false],
+			],
+			'debug' => false,
+		]);
+
+		$locations = $warmApp->ext('config')->get(AppConfig::class)->get('discovery.locations');
+		$this->assertIsArray($locations);
+		$this->assertCount(1, $locations);
+		$this->assertInstanceOf(DiscoveryLocation::class, $locations[0]);
+		$this->assertSame('app', $locations[0]->name);
 	}
 
 	public function testDebugModeStillThrowsWhenFactoryClosuresArePresent(): void
@@ -128,7 +203,7 @@ final class ExtensionWithClosureFactory extends AbstractExtension
 	{
 		$init->on(ConfigConfigureEvent::class, static function (ConfigConfigureEvent $event): void {
 			$event->config->get(ContainerConfig::class)->addFactories([
-				'demo_service' => static fn (): object => new \stdClass(),
+				'demo_service' => static fn (): object => new stdClass(),
 			]);
 		});
 	}
@@ -150,6 +225,35 @@ final class SerialFactory
 {
 	public function __invoke(): object
 	{
-		return new \stdClass();
+		return new stdClass();
+	}
+}
+
+final class NonExportableValue
+{
+	public function __construct(public string $label = 'nope')
+	{
+	}
+}
+
+final class ExtensionWithNonExportableObject extends AbstractExtension
+{
+	public function register(Init $init): void
+	{
+		$init->on(ConfigConfigureEvent::class, static function (ConfigConfigureEvent $event): void {
+			$event->config->get(AppConfig::class)->set('bad_object', new NonExportableValue());
+		});
+	}
+}
+
+final class ExtensionWithDiscoveryLocation extends AbstractExtension
+{
+	public function register(Init $init): void
+	{
+		$init->on(ConfigConfigureEvent::class, static function (ConfigConfigureEvent $event): void {
+			$event->config->get(AppConfig::class)->set('discovery.locations', [
+				new DiscoveryLocation('app', ['src'], AggressiveCacheAdapter::class),
+			]);
+		});
 	}
 }

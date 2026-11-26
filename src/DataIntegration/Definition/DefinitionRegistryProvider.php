@@ -26,6 +26,24 @@ final class DefinitionRegistryProvider
 
 		$definitions = $registry->all();
 
+		if (! $app->isDebug()) {
+			$cache->write($definitions);
+		}
+
+		return new Registry($definitions);
+	}
+
+	public function warm(ContainerInterface $container): Registry
+	{
+		$app = $container->get(Application::class);
+		$cache = $container->get(DefinitionCache::class);
+
+		$registry = new Registry();
+
+		$app->init()->emit(new DataDefinitionConfigureEvent($registry));
+
+		$definitions = $registry->all();
+
 		$cache->write($definitions);
 
 		return new Registry($definitions);

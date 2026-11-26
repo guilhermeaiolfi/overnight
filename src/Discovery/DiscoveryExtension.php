@@ -101,8 +101,11 @@ class DiscoveryExtension extends AbstractExtension
 
 			foreach ($this->discovers as $discover) {
 				$this->cache->save($discover, $location);
-				$discover->apply();
 			}
+		}
+
+		foreach ($this->discovers as $discover) {
+			$discover->apply();
 		}
 		// we are now fully ready
 	}

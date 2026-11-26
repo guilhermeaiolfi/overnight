@@ -153,6 +153,20 @@ class Route
 	}
 
 	/**
+	 * @param array{path: string, middleware: mixed, methods?: ?list<string>, name?: ?string, options?: array<mixed>} $data
+	 */
+	public static function __set_state(array $data): self
+	{
+		return new self(
+			$data['path'],
+			$data['middleware'],
+			$data['methods'] ?? self::HTTP_METHOD_ANY,
+			$data['name'] ?? null,
+			$data['options'] ?? [],
+		);
+	}
+
+	/**
 	 * Validate the provided HTTP method names.
 	 *
 	 * Validates, and then normalizes to upper case.

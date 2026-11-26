@@ -4,14 +4,31 @@ declare(strict_types=1);
 
 namespace ON\Discovery\CacheAdapter;
 
+use InvalidArgumentException;
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Console\Attribute\ConsoleCommand;
 use ON\Discovery\DiscoverInterface;
+use ON\Discovery\DiscoveryItem;
+use ON\Discovery\DiscoveryItems;
 use ON\Discovery\DiscoveryLocation;
+use ON\Event\Attribute\EventHandler;
 use ON\FS\Path;
+use ON\Router\Attribute\Route;
+use RuntimeException;
 
 abstract class AbstractCacheAdapter implements CacheAdapterInterface
 {
+	/** @var list<class-string> */
+	protected const DEFAULT_ALLOWED_CLASSES = [
+		DiscoveryItems::class,
+		DiscoveryItem::class,
+		DiscoveryLocation::class,
+		Route::class,
+		EventHandler::class,
+		ConsoleCommand::class,
+	];
+
 	public function __construct(
 		protected AppConfig $appCfg,
 		protected Application $app
@@ -30,8 +47,67 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		if (file_exists($cacheFile)) {
-			unlink($cacheFile);
+		if (is_file($cacheFile)) {
+			@unlink($cacheFile);
+		}
+	}
+
+	/**
+	 * @return list<class-string>
+	 */
+	protected function getAllowedClasses(): array
+	{
+		$extra = $this->appCfg->get('discovery.cache_allowed_classes', []);
+		if (! is_array($extra)) {
+			$extra = [];
+		}
+
+		$extra = array_values(array_filter(
+			$extra,
+			static fn (mixed $class): bool => is_string($class) && $class !== ''
+		));
+
+		return array_values(array_unique([
+			...self::DEFAULT_ALLOWED_CLASSES,
+			...$extra,
+		]));
+	}
+
+	protected function readCacheFile(string $cacheFile): ?DiscoveryItems
+	{
+		if (! is_file($cacheFile)) {
+			return null;
+		}
+
+		$raw = @file_get_contents($cacheFile);
+		if ($raw === false || $raw === '') {
+			return null;
+		}
+
+		$data = @unserialize($raw, ['allowed_classes' => $this->getAllowedClasses()]);
+		if (! $data instanceof DiscoveryItems) {
+			return null;
+		}
+
+		return $data;
+	}
+
+	protected function writeCacheFile(string $cacheFile, DiscoveryItems $data): void
+	{
+		$cacheDir = dirname($cacheFile);
+		if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+			throw new RuntimeException(sprintf('Unable to create discovery cache directory "%s".', $cacheDir));
+		}
+
+		$tmpFile = $cacheFile . '.' . uniqid('', true) . '.tmp';
+		if (file_put_contents($tmpFile, serialize($data), LOCK_EX) === false) {
+			throw new RuntimeException(sprintf('Unable to write temporary discovery cache file "%s".', $tmpFile));
+		}
+
+		if (! @rename($tmpFile, $cacheFile)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to move discovery cache file into place at "%s".', $cacheFile));
 		}
 	}
 
@@ -48,12 +124,33 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 		return rtrim($basePath, '/\\') . DIRECTORY_SEPARATOR . $this->classNameToFilename(get_class($discover), $location);
 	}
 
-	protected function classNameToFilename(string $className, DiscoveryLocation $location)
+	protected function classNameToFilename(string $className, DiscoveryLocation $location): string
 	{
+		$safeName = $this->sanitizeLocationName($location->name);
 		$filename = str_replace([' ', '\\'], '_', $className);
-		$filename .= "." . $location->name;
+		$filename .= "." . $safeName;
 		$filename .= '.cache.php';
 
 		return $filename;
+	}
+
+	protected function sanitizeLocationName(string $name): string
+	{
+		if (
+			trim($name) === ''
+			|| $name === '.'
+			|| str_contains($name, '/')
+			|| str_contains($name, '\\')
+			|| str_contains($name, '..')
+			|| str_contains($name, "\0")
+			|| preg_match('/[\x00-\x1f]/', $name) === 1
+		) {
+			throw new InvalidArgumentException(sprintf(
+				'Invalid discovery location name "%s": path separators and traversal segments are not allowed.',
+				$name
+			));
+		}
+
+		return $name;
 	}
 }

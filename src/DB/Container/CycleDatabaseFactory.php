@@ -18,16 +18,20 @@ use Cycle\Schema\Registry as CycleRegistry;
 use ON\Application;
 use ON\Clockwork\CycleDatabaseLogger;
 use ON\Data\Definition\Registry;
+use ON\Data\Mapper\ConversionGateway;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\DB\DatabaseConfig;
+use Psr\Container\ContainerInterface;
+use RuntimeException;
 
 class CycleDatabaseFactory
 {
 	protected string $cacheFile;
 
 	public function __construct(
-		protected Application $app
+		protected Application $app,
+		protected ?ContainerInterface $container = null,
 	) {
 	}
 
@@ -36,7 +40,8 @@ class CycleDatabaseFactory
 		Registry $registry,
 		string $name
 	): CycleDatabase {
-		$this->cacheFile = $this->app->paths->get('cache')->append('cycle.schema.php')->getAbsolutePath();
+		$safeName = $this->sanitizeDatabaseName($name);
+		$this->cacheFile = $this->app->paths->get('cache')->append("cycle.schema.{$safeName}.php")->getAbsolutePath();
 
 		$manager = new CycleDatabase($name, $dbCfg);
 
@@ -48,7 +53,7 @@ class CycleDatabaseFactory
 			$manager->setSchema(new Schema($schema));
 		}
 
-		if ($_ENV["APP_DEBUG"]) {
+		if ($this->app->isDebug()) {
 			$logger = new CycleDatabaseLogger();
 			$dbal->setLogger($logger);
 		}
@@ -56,9 +61,18 @@ class CycleDatabaseFactory
 		return $manager;
 	}
 
+	protected function sanitizeDatabaseName(string $name): string
+	{
+		$safeName = preg_replace('/[^a-zA-Z0-9._-]/', '_', $name) ?? '';
+		$safeName = preg_replace('/\.{2,}/', '_', $safeName) ?? '';
+		$safeName = trim($safeName, '.');
+
+		return $safeName !== '' ? $safeName : 'default';
+	}
+
 	protected function isCacheClean(Registry $registry): bool
 	{
-		if (! file_exists($this->cacheFile)) {
+		if (! is_file($this->cacheFile)) {
 			return false;
 		} elseif (! $this->app->isDebug()) {
 			return true;
@@ -78,13 +92,26 @@ class CycleDatabaseFactory
 	protected function saveCache(array $schema): void
 	{
 		$dir = dirname($this->cacheFile);
-		if (! is_dir($dir)) {
-			mkdir($dir, 0777, true);
+		if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
+			throw new RuntimeException(sprintf('Unable to create Cycle schema cache directory "%s".', $dir));
 		}
 
-		$tmpFile = $this->cacheFile . '.tmp';
-		file_put_contents($tmpFile, serialize($schema), LOCK_EX);
-		rename($tmpFile, $this->cacheFile);
+		$tmpFile = $this->cacheFile . '.' . uniqid('', true) . '.tmp';
+		$content = "<?php\n\nreturn " . var_export($schema, true) . ";\n";
+
+		if (file_put_contents($tmpFile, $content, LOCK_EX) === false) {
+			throw new RuntimeException(sprintf('Unable to write temporary Cycle schema cache file "%s".', $tmpFile));
+		}
+
+		if (! @rename($tmpFile, $this->cacheFile)) {
+			@unlink($tmpFile);
+
+			throw new RuntimeException(sprintf('Unable to move Cycle schema cache file into place at "%s".', $this->cacheFile));
+		}
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($this->cacheFile, true);
+		}
 	}
 
 	protected function readCache(Registry $registry, $dbal): ?array
@@ -93,7 +120,7 @@ class CycleDatabaseFactory
 			return $this->compileSchema($registry, $dbal);
 		}
 
-		$cached = @unserialize((string) file_get_contents($this->cacheFile));
+		$cached = include $this->cacheFile;
 		if (is_array($cached)) {
 			return $cached;
 		}
@@ -105,7 +132,7 @@ class CycleDatabaseFactory
 	{
 		$cycleRegistry = new CycleRegistry($dbal);
 		$schema = (new Compiler())->compile($cycleRegistry, [
-			new CycleRegistryGenerator($registry),
+			new CycleRegistryGenerator($registry, $this->resolveConversionGateway()),
 			new GenerateRelations(),
 			new GenerateModifiers(),
 			new ValidateEntities(),
@@ -119,5 +146,22 @@ class CycleDatabaseFactory
 		$this->saveCache($schema);
 
 		return $schema;
+	}
+
+	protected function resolveConversionGateway(): ?ConversionGateway
+	{
+		$container = $this->container;
+		if ($container === null && $this->app->hasExtension('container')) {
+			$container = $this->app->ext('container')->getContainer();
+		}
+
+		if ($container !== null && $container->has(ConversionGateway::class)) {
+			$gateway = $container->get(ConversionGateway::class);
+			if ($gateway instanceof ConversionGateway) {
+				return $gateway;
+			}
+		}
+
+		return null;
 	}
 }

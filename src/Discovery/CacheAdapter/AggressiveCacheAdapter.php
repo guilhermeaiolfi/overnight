@@ -14,13 +14,10 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 	{
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		if (! file_exists($cacheFile)) {
-			return $discover;
+		$data = $this->readCacheFile($cacheFile);
+		if ($data !== null) {
+			$discover->addData($data);
 		}
-
-		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
-		$discover->addData($data);
 
 		return $discover;
 	}
@@ -54,8 +51,7 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 	{
 		if (! $this->hasCache($discover, $location)) {
 			$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
-			@mkdir(dirname($cacheFile), 0777, true);
-			file_put_contents($cacheFile, serialize($discover->getData()));
+			$this->writeCacheFile($cacheFile, $discover->getData());
 
 			return true;
 		}

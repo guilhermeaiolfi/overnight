@@ -14,13 +14,10 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 	{
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		if (! file_exists($cacheFile)) {
-			return $discover;
+		$data = $this->readCacheFile($cacheFile);
+		if ($data !== null) {
+			$discover->addData($data);
 		}
-
-		$data = file_get_contents($cacheFile);
-		$data = unserialize($data);
-		$discover->addData($data);
 
 		return $discover;
 	}
@@ -57,13 +54,9 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 	{
 		if ($this->isDirty($discover, $location)) {
 			$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
-			$cacheDir = dirname($cacheFile);
-			if (! is_dir($cacheDir)) {
-				@mkdir($cacheDir, 0777, true);
-			}
-			file_put_contents($cacheFile, serialize($discover->getData()));
+			$this->writeCacheFile($cacheFile, $discover->getData());
 
-			foreach ($discover->getData() as $item) {
+			foreach ($discover->getData()->filterByLocation($location) as $item) {
 				$item->setDirty(false);
 			}
 
@@ -98,14 +91,17 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 
 	protected function oldest(array $discovers, DiscoveryLocation $location): float
 	{
-		$oldest = 0;
+		$oldest = null;
 		foreach ($discovers as $discover) {
 			$timestamp = $this->getTimestamp($discover, $location);
-			if ($oldest == 0 || $oldest > $timestamp) {
+			if ($timestamp == 0) {
+				return 0;
+			}
+			if ($oldest === null || $timestamp < $oldest) {
 				$oldest = $timestamp;
 			}
 		}
 
-		return $oldest;
+		return $oldest ?? 0;
 	}
 }

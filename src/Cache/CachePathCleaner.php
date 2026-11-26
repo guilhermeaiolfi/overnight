@@ -45,7 +45,7 @@ final class CachePathCleaner
 			return;
 		}
 
-		@mkdir($realDirectory, 0777, true);
+		@mkdir($realDirectory, 0755, true);
 
 		if (! self::removeGeneratedTombstone($tombstone)) {
 			self::removeDirectory($tombstone);
@@ -58,7 +58,11 @@ final class CachePathCleaner
 			return;
 		}
 
-		unlink($file);
+		@unlink($file);
+
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($file, true);
+		}
 	}
 
 	private static function removeDirectoryContents(string $directory): void
@@ -69,8 +73,16 @@ final class CachePathCleaner
 		);
 
 		foreach ($items as $item) {
-			if ($item->isDir()) {
+			if ($item->isDir() && ! $item->isLink()) {
 				rmdir($item->getPathname());
+
+				continue;
+			}
+
+			if ($item->isLink() && DIRECTORY_SEPARATOR === '\\' && is_dir($item->getPathname())) {
+				if (! @rmdir($item->getPathname())) {
+					unlink($item->getPathname());
+				}
 
 				continue;
 			}
@@ -100,9 +112,13 @@ final class CachePathCleaner
 			return false;
 		}
 
-		$command = DIRECTORY_SEPARATOR === '\\'
-			? ['cmd.exe', '/d', '/c', 'rmdir', '/s', '/q', $realDirectory]
-			: ['rm', '-rf', '--', $realDirectory];
+		// Never invoke cmd.exe on Windows (avoids metacharacter injection via & / % in paths);
+		// fall back to pure-PHP directory removal instead.
+		if (DIRECTORY_SEPARATOR === '\\') {
+			return false;
+		}
+
+		$command = ['rm', '-rf', '--', $realDirectory];
 
 		$process = @proc_open($command, [
 			0 => ['pipe', 'r'],

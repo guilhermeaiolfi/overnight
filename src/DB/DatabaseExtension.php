@@ -67,7 +67,11 @@ class DatabaseExtension extends AbstractExtension
 			name: 'orm-schema',
 			label: 'ORM schema',
 			clear: function (): void {
+				$cacheDir = $this->app->paths->get('cache')->getAbsolutePath();
 				CachePathCleaner::removeFile($this->app->paths->get('cache')->append('cycle.schema.php')->getAbsolutePath());
+				foreach (glob(rtrim($cacheDir, '/\\') . DIRECTORY_SEPARATOR . 'cycle.schema.*.php') ?: [] as $file) {
+					CachePathCleaner::removeFile($file);
+				}
 			},
 			priority: 75,
 			description: 'Clears cached Cycle ORM schema.'
