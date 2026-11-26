@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\GraphQL;
 
 use GraphQL\Type\Schema;
+use ON\GraphQL\Resolver\NestedCreateRelations;
 
 class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 {
@@ -51,6 +52,8 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 		foreach ($this->ormRegistry->getCollections() as $collection) {
 			$parts[] = $collection->getName();
 			$parts[] = $collection->isHidden() ? '1' : '0';
+			$usesBuiltInNestedCreate = $this->usesBuiltInNestedCreate($collection);
+			$parts[] = $usesBuiltInNestedCreate ? 'default-create' : 'custom-create';
 
 			foreach ($collection->fields as $name => $field) {
 				$enumMetadata = $field->metadata('enum');
@@ -76,6 +79,8 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 					'rel',
 					$name,
 					$relation->getCollectionName(),
+					$relation::class,
+					! $usesBuiltInNestedCreate || NestedCreateRelations::supports($relation) ? 'create' : 'read-only',
 					$relation->getCardinality()->name,
 					$relation->isJunction() ? 'j' : 'nj',
 				]);

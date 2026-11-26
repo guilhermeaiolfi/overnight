@@ -6,14 +6,19 @@ namespace Tests\ON\GraphQL;
 
 use GraphQL\Error\DebugFlag;
 use GraphQL\GraphQL;
+use Laminas\Diactoros\ServerRequest;
+use Laminas\Diactoros\Stream;
 use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\GraphQLRegistryGenerator;
+use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\SqlResolver;
 use ON\Validation\CollectionValidator;
 use PDO;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Server\RequestHandlerInterface;
 use Tests\ON\GraphQL\Support\GraphQLTestFixtures;
 use Tests\ON\GraphQL\Support\SqliteTestDatabase;
 
@@ -294,6 +299,118 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayNotHasKey('errors', $result);
 		$this->assertSame(1, $result['data']['user_by_id']['featuredPost']['id']);
 		$this->assertSame([1, 2], array_column($result['data']['user_by_id']['posts'], 'id'));
+	}
+
+	public function testNestedCreateRejectsDerivedRelationsWithoutChangingEitherTable(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$user = $this->registry->getCollection('user');
+		$user->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')
+			->innerKey('id')
+			->outerKey('user_id')
+			->orderBy(['id' => 'desc'])
+			->end();
+		$database = $this->createTestDatabase();
+		$resolver = new SqlResolver($this->registry, $database);
+
+		try {
+			$resolver->resolveNestedCreate($user, ['name' => 'Alex'], ['latest_post' => ['title' => 'Post 4']]);
+			$this->fail('The derived relation must reject the nested create.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('INVALID_INPUT', $error->getExtensions()['code']);
+		}
+
+		$connection = $database->getConnection();
+		$this->assertSame(2, (int) $connection->query('SELECT COUNT(*) FROM user')->fetchColumn());
+		$this->assertSame(3, (int) $connection->query('SELECT COUNT(*) FROM post')->fetchColumn());
+	}
+
+	public function testNestedCreateRollsBackWhenTheDeclaredSourceKeyIsNull(): void
+	{
+		$this->registry->collection('document')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('title', 'string')->end()
+			->field('external_id', 'int')->nullable(true)->end()
+			->hasMany('notes', 'note')->innerKey('external_id')->outerKey('document_external_id')->end()
+			->end();
+		$this->registry->collection('note')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('text', 'string')->end()
+			->field('document_external_id', 'int')->nullable(true)->end()
+			->end();
+
+		$database = new SqliteTestDatabase([
+			'document' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'title' => 'TEXT', 'external_id' => 'INTEGER'],
+				'rows' => [],
+			],
+			'note' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'text' => 'TEXT', 'document_external_id' => 'INTEGER'],
+				'rows' => [],
+			],
+		]);
+		$resolver = new SqlResolver($this->registry, $database);
+
+		try {
+			$resolver->resolveNestedCreate(
+				$this->registry->getCollection('document'),
+				['title' => 'Document'],
+				['notes' => [['text' => 'Note']]],
+			);
+			$this->fail('The note requires the declared parent relation key.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('INVALID_INPUT', $error->getExtensions()['code']);
+		}
+
+		$this->assertSame(0, (int) $database->getConnection()->query('SELECT COUNT(*) FROM document')->fetchColumn());
+		$this->assertSame(0, (int) $database->getConnection()->query('SELECT COUNT(*) FROM note')->fetchColumn());
+	}
+
+	public function testBatchReadsSeeRelationChangesMadeByEarlierOperations(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$this->registry->getCollection('post')->belongsTo('author', 'user')->innerKey('user_id')->outerKey('id')->end();
+
+		$database = $this->createTestDatabase();
+		$database->getConnection()->exec("INSERT INTO post (id, user_id, title) VALUES (4, 3, 'Imported post')");
+		$resolver = new SqlResolver($this->registry, $database);
+		$middleware = new GraphQLMiddleware((new GraphQLRegistryGenerator($this->registry, $resolver))->generate());
+
+		$userPosts = '{ user_by_id(id: "1") { posts { title } } }';
+		$postAuthor = '{ post_by_id(id: "4") { author { name } } }';
+		$queries = [
+			$userPosts,
+			'mutation { create_post(input: { user_id: 1, title: "New post" }) { id } }',
+			$userPosts,
+			'mutation { update_post(id: "5", input: { title: "Renamed post" }) { id } }',
+			$userPosts,
+			'mutation { delete_post(id: "5") { id } }',
+			$userPosts,
+			$postAuthor,
+			'mutation { create_user(input: { name: "Alex", posts: [{ title: "First post" }] }) { id } }',
+			$postAuthor,
+		];
+
+		$body = new Stream('php://temp', 'w+');
+		$body->write(json_encode(array_map(static fn (string $query) => ['query' => $query], $queries), JSON_THROW_ON_ERROR));
+		$body->rewind();
+		$request = (new ServerRequest())->withMethod('POST')
+			->withHeader('Content-Type', 'application/json')
+			->withBody($body);
+		$response = $middleware->process($request, $this->createStub(RequestHandlerInterface::class));
+		$this->assertSame(200, $response->getStatusCode());
+		$results = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR);
+		foreach ($results as $result) {
+			$this->assertArrayNotHasKey('errors', $result, json_encode($result, JSON_THROW_ON_ERROR));
+		}
+		$posts = static fn (int $operation): array => array_column($results[$operation]['data']['user_by_id']['posts'], 'title');
+		$this->assertSame(['Post 1', 'Post 2'], $posts(0));
+		$this->assertSame(['Post 1', 'Post 2', 'New post'], $posts(2));
+		$this->assertSame(['Post 1', 'Post 2', 'Renamed post'], $posts(4));
+		$this->assertSame(['Post 1', 'Post 2'], $posts(6));
+		$this->assertNull($results[7]['data']['post_by_id']['author']);
+		$this->assertSame('Alex', $results[9]['data']['post_by_id']['author']['name']);
 	}
 
 	public function testNestedCreateRollsBackWhenAChildWriteFailsInsideAnExistingTransaction(): void

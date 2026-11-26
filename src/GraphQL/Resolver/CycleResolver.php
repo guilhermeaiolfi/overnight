@@ -150,12 +150,13 @@ class CycleResolver implements GraphQLResolverInterface
 
 	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
 	{
+		$relations = NestedCreateRelations::resolve($collection, $nestedInput);
 		$created = [];
 
 		try {
 			$database = $this->orm->getSource($collection->getName())->getDatabase();
 
-			return $database->transaction(function () use ($collection, $input, $nestedInput, $database, &$created): object {
+			return $database->transaction(function () use ($collection, $input, $nestedInput, $relations, $database, &$created): object {
 				$entity = $created[] = $this->makeEntity($collection, $input);
 				$em = new EntityManager($this->orm);
 				$em->persist($entity);
@@ -163,17 +164,9 @@ class CycleResolver implements GraphQLResolverInterface
 
 				$childrenEm = new EntityManager($this->orm);
 
-				foreach ($nestedInput as $relationName => $relationData) {
-					if (! $collection->relations->has($relationName)) {
-						continue;
-					}
-
-					$relation = $collection->relations->get($relationName);
+				foreach ($relations as $relationName => $relation) {
+					$relationData = $nestedInput[$relationName];
 					$targetCollection = $relation->getCollection();
-
-					if ($targetCollection->isHidden()) {
-						continue;
-					}
 
 					$targetDatabase = $this->orm->getSource($targetCollection->getName())->getDatabase();
 					if ($database->getDriver() !== $targetDatabase->getDriver()) {
@@ -189,6 +182,9 @@ class CycleResolver implements GraphQLResolverInterface
 					foreach ($children as $childInput) {
 						if (! is_array($childInput)) {
 							continue;
+						}
+						if ($parentKeyValue === null) {
+							throw new GraphQLUserError('Nested create requires a parent relation key.', 'INVALID_INPUT', $relation->getName());
 						}
 						$child = $created[] = $this->makeEntity($targetCollection, $childInput, [$outerKey => $parentKeyValue]);
 						$childrenEm->persist($child);

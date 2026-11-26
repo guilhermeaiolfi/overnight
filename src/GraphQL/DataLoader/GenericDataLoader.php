@@ -92,8 +92,14 @@ class GenericDataLoader
 
 	public function clear(): void
 	{
-		$this->cache = [];
+		$this->clearResults();
 		$this->pendingKeysByEntity = [];
+	}
+
+	/** Keep already queued deferred reads when a write invalidates their cached results. */
+	public function clearResults(): void
+	{
+		$this->cache = [];
 	}
 
 	public function clearEntity(string $entity): void

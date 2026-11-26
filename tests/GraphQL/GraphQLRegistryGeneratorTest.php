@@ -9,7 +9,10 @@ use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Schema;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Definition\Relation\RelationInterface;
+use ON\GraphQL\CachedGraphQLRegistryGenerator;
 use ON\GraphQL\Event\BeforeMutation;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
@@ -572,6 +575,65 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 
 		$this->assertArrayNotHasKey('profile', $create->getType()->getFields());
 		$this->assertArrayNotHasKey('profile', $create->args[0]->getType()->getWrappedType()->getFields());
+	}
+
+	public function testGeneratedNestedCreateInputsOnlyExposeOwnedRelations(): void
+	{
+		$this->registry->collection('post')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->field('title', 'string')->end()
+			->end();
+		$this->registry->collection('profile')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->end();
+		$this->registry->collection('department')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('name', 'string')->end()
+			->end();
+		$this->registry->collection('membership')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->field('department_id', 'int')->end()
+			->end();
+		$user = $this->registry->collection('user')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('department_id', 'int')->nullable(true)->end()
+			->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')->end()
+			->belongsTo('department', 'department')->innerKey('department_id')->outerKey('id')->end();
+		$user->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')->innerKey('id')->outerKey('user_id')->orderBy(['id' => 'desc'])->end();
+		$user->relation('departments', M2MRelation::class)
+			->collection('department')->innerKey('id')->outerKey('id')
+			->through('membership')->innerKey('user_id')->outerKey('department_id')->end()
+			->end();
+
+		$generator = new CachedGraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+		$create = $schema->getMutationType()->getField('create_user');
+		$inputFields = $create->args[0]->getType()->getWrappedType()->getFields();
+		$outputFields = $create->getType()->getFields();
+
+		$this->assertArrayHasKey('posts', $inputFields);
+		$this->assertArrayHasKey('profile', $inputFields);
+		foreach (['department', 'latest_post', 'departments'] as $readOnlyRelation) {
+			$this->assertArrayNotHasKey($readOnlyRelation, $inputFields);
+			$this->assertArrayHasKey($readOnlyRelation, $outputFields);
+		}
+
+		$user->metadata('gql::resolver::create', static fn (array $args) => (object) [
+			'id' => 10,
+			'department_id' => strlen($args['input']['department']['name']),
+		]);
+		$schema = $generator->generate();
+		$result = GraphQL::executeQuery(
+			$schema,
+			'mutation { create_user(input: { department: { name: "Sales" } }) { department_id } }'
+		)->toArray();
+
+		$this->assertSame(['data' => ['create_user' => ['department_id' => 5]]], $result);
 	}
 
 	public function testEnumsWithTheSameFieldNameKeepTheirCollectionValues(): void

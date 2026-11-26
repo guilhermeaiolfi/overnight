@@ -117,6 +117,28 @@ final class GraphQLCycleResolverTest extends TestCase
 		}
 	}
 
+	public function testNestedCreateRejectsBelongsToWithoutChangingEitherTable(): void
+	{
+		$collection = $this->registry->getCollection('task');
+		$this->registry->getCollection('project')->fields->get('id')->type('int');
+		$collection->belongsTo('project', 'project')->innerKey('project_id')->outerKey('id')->end();
+
+		try {
+			$this->resolver->resolveNestedCreate(
+				$collection,
+				['title' => 'Temporary', 'project_id' => 1],
+				['project' => ['title' => 'Parent']],
+			);
+			$this->fail('A belongs-to relation must reject the nested create.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('INVALID_INPUT', $error->getExtensions()['code']);
+		}
+
+		$database = $this->databaseManager->database();
+		$this->assertSame([], $database->select('title')->from('project')->fetchAll());
+		$this->assertSame([], $database->select('title')->from('task')->fetchAll());
+	}
+
 	public function testCreateSelectsTheCollectionRoleWhenTwoRolesUseDefaultEntities(): void
 	{
 		$task = $this->resolver->resolveCreate($this->registry->getCollection('task'), [

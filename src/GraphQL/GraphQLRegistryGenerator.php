@@ -18,7 +18,10 @@ use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\Event\AfterMutation;
 use ON\GraphQL\Event\BeforeMutation;
+use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\GraphQL\Resolver\NestedCreateRelations;
+use ON\GraphQL\Resolver\SqlResolver;
 use ON\GraphQL\Type\UploadType;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
@@ -413,7 +416,12 @@ class GraphQLRegistryGenerator
 
 		// Add nested relation fields for create input types (not update)
 		if (! $forUpdate) {
+			$usesBuiltInNestedCreate = $this->usesBuiltInNestedCreate($collection);
 			foreach ($collection->relations as $relationName => $relation) {
+				if ($usesBuiltInNestedCreate && ! NestedCreateRelations::supports($relation)) {
+					continue;
+				}
+
 				$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
 
 				if (! $targetCollection instanceof Collection || $targetCollection->isHidden()) {
@@ -443,6 +451,12 @@ class GraphQLRegistryGenerator
 		$this->inputTypes[$typeName] = $inputType;
 
 		return $inputType;
+	}
+
+	protected function usesBuiltInNestedCreate(Collection $collection): bool
+	{
+		return $collection->metadata('gql::resolver::create') === null
+			&& ($this->resolver === null || $this->resolver instanceof SqlResolver || $this->resolver instanceof CycleResolver);
 	}
 
 	protected function buildMutationFields(): array
