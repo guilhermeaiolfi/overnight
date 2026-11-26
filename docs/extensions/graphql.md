@@ -762,6 +762,8 @@ $registry->collection("user")
     ->end();
 ```
 
+For a custom create resolver, GraphQL applies the configured policy to the parent and each requested child before invoking application code. If the resolver changes a relationship or writes additional records, it must authorize and validate the final values before saving them. The built-in SQL and Cycle resolvers check each child after assigning its parent key, within the write transaction.
+
 ### Field-Level Overrides
 
 ```php

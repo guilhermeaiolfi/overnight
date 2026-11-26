@@ -62,6 +62,9 @@ final class DirectusPayloadParser
 
 			$relation = $collection->relations->get($name);
 			$relationPath = $path->append($name);
+			if ($relation->getCollection()->isHidden()) {
+				throw RestApiError::invalidField($relationPath->toString());
+			}
 			if ($relation instanceof FirstOfManyRelation) {
 				throw RestApiError::validationFailed([
 					$relationPath->toString() => ['First-of-many relations are read-only for mutations.'],

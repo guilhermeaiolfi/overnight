@@ -9,6 +9,7 @@ use Exception;
 use League\Event\ListenerPriority;
 use ON\Config\Scanner\ReflectionAnalyzableInterface;
 use ReflectionMethod;
+use ReflectionNamedType;
 
 #[Attribute(Attribute::IS_REPEATABLE | Attribute::TARGET_CLASS | Attribute::TARGET_METHOD)]
 class EventHandler implements ReflectionAnalyzableInterface
@@ -32,12 +33,12 @@ class EventHandler implements ReflectionAnalyzableInterface
 
 	public function getOnce(): bool
 	{
-		return $this->once;
+		return (bool) $this->once;
 	}
 
 	public function getPriority(): int
 	{
-		return $this->priority;
+		return $this->priority ?? ListenerPriority::NORMAL;
 	}
 
 	public function setName(string $name): void
@@ -69,7 +70,9 @@ class EventHandler implements ReflectionAnalyzableInterface
 		$parameters = $methodReflector->getParameters();
 		$params = [];
 		foreach ($parameters as $parameter) {
-			$params[] = [$parameter->getName(), $parameter->getType()->getName()];
+			$type = $parameter->getType();
+			$typeName = $type instanceof ReflectionNamedType ? $type->getName() : null;
+			$params[] = [$parameter->getName(), $typeName];
 		}
 
 		$this->__parameters = $params;

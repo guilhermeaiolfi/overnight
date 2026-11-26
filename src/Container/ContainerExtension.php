@@ -140,12 +140,17 @@ class ContainerExtension extends AbstractExtension
 			$this->cache_path = $this->app->paths->get('cache')->append('container')->getAbsolutePath();
 		}
 
-		if ($config->get("enable_cache", false)) {
+		$enableCache = (bool) $config->get("enable_cache", false);
+		$write_proxies_to_file = (bool) $config->get("write_proxies", true);
+
+		if ($enableCache || $write_proxies_to_file) {
 			$this->ensureCachePathExists($this->cache_path);
+		}
+
+		if ($enableCache) {
 			$builder->enableCompilation($this->cache_path);
 		}
 
-		$write_proxies_to_file = $config->get("write_proxies", true);
 		$builder->writeProxiesToFile($write_proxies_to_file, $this->cache_path);
 
 		// Always register runtime definitions with the builder. Compiled containers

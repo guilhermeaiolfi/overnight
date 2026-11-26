@@ -23,6 +23,7 @@ use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
+use ON\RestApi\Addon\SchemaAddon;
 use ON\RestApi\Container\DirectusQueryParserFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
@@ -32,6 +33,7 @@ use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
+use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Query\Parser\DirectusQueryParser;
 use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Repository\ItemRepository;
@@ -65,12 +67,12 @@ class RestApiExtension extends AbstractExtension
 	{
 		$event->containerConfig->addFactories([
 			ItemRepository::class => ItemRepositoryFactory::class,
-			ItemRepositoryInterface::class => ItemRepositoryFactory::class,
 			FileUploadEventEmitter::class => FileUploadEventEmitterFactory::class,
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
-			\ON\RestApi\Mutation\MutationCoordinator::class => MutationCoordinatorFactory::class,
+			MutationCoordinator::class => MutationCoordinatorFactory::class,
 			DirectusQueryParser::class => DirectusQueryParserFactory::class,
 		]);
+		$event->containerConfig->addAlias(ItemRepositoryInterface::class, ItemRepository::class);
 		$event->containerConfig->addAlias(QueryParserInterface::class, DirectusQueryParser::class);
 	}
 
@@ -223,7 +225,7 @@ class RestApiExtension extends AbstractExtension
 			$addon->register($addonOptions);
 
 			if ($addon instanceof MiddlewareInterface) {
-				$this->app->pipe($apiEndpointPath, $addon, 12);
+				$this->app->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
 			}
 		}
 	}

@@ -18,11 +18,12 @@ class LatteRendererFactory
 
 		$latte->addExtension(new SectionLatteExtension());
 
-		if (isset($config["latte"]["tempDirectory"])) {
-			$latte->setTempDirectory($config["latte"]["tempDirectory"] ?? []);
+		if (isset($config['latte']['tempDirectory']) && is_string($config['latte']['tempDirectory']) && $config['latte']['tempDirectory'] !== '') {
+			$latte->setTempDirectory($config['latte']['tempDirectory']);
 		}
 
-		$latte->setAutoRefresh($config["latte"]["autorefresh"]);
+		$autoRefresh = filter_var($config['latte']['autorefresh'] ?? false, FILTER_VALIDATE_BOOLEAN);
+		$latte->setAutoRefresh($autoRefresh);
 
 		$renderer = new LatteRenderer($config, $latte, $app, $c);
 

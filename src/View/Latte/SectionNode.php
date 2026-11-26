@@ -35,8 +35,8 @@ class SectionNode extends StatementNode
 			. 'if (isset($__sections[$ʟ_section_' . $id . ']) && is_array($__sections[$ʟ_section_' . $id . '])) {'
 			. 'if (($__sections[$ʟ_section_' . $id . '][\'type\'] ?? null) === \'text\') {'
 			. 'echo $__sections[$ʟ_section_' . $id . '][\'content\'] ?? null;'
-			. '} elseif (($__sections[$ʟ_section_' . $id . '][\'type\'] ?? null) === \'file\') {'
-			. '$this->createTemplate($__sections[$ʟ_section_' . $id . '][\'content\'], get_defined_vars(), \'include\')->render();'
+			. '} elseif (($__sections[$ʟ_section_' . $id . '][\'type\'] ?? null) === \'file\' && is_string($__sections[$ʟ_section_' . $id . '][\'content\'] ?? null)) {'
+			. '$this->createTemplate($__sections[$ʟ_section_' . $id . '][\'content\'], array_diff_key(get_defined_vars(), [\'__sections\' => true, \'ʟ_section_' . $id . '\' => true]), \'include\')->render();'
 			. '}'
 			. '} %line',
 			$this->name,

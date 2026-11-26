@@ -13,6 +13,8 @@ class RestApiConfig extends Config
 	public string $cycleDatabase = 'default';
 	public int $defaultLimit = 100;
 	public int $maxLimit = 1000;
+	public int $maxRelationDepth = 5;
+	public int $maxFilterDepth = 8;
 	public int $rateLimit = 100;
 	public int $rateLimitWindow = 60;
 	public string $filesCollection = 'directus_files';

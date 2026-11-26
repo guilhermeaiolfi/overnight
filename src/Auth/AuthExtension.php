@@ -47,9 +47,8 @@ class AuthExtension extends AbstractExtension
 
 	public function onPipelineReady(): void
 	{
-		$this->app->pipe("/", SecurityMiddleware::class, 1);
+		$this->app->pipe('/', SecurityMiddleware::class, 50);
 
-		$this->app->pipe("/", AuthorizationMiddleware::class, 1);
-
+		$this->app->pipe('/', AuthorizationMiddleware::class, 40);
 	}
 }

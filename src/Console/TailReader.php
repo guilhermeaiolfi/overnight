@@ -6,6 +6,7 @@ namespace ON\Console;
 
 use Closure;
 use Fiber;
+use RuntimeException;
 
 readonly class TailReader
 {
@@ -13,31 +14,52 @@ readonly class TailReader
 	{
 		$format ??= fn (string $text) => $text;
 
-		$handle = fopen($path, "r");
+		$handle = @fopen($path, "r");
+		if ($handle === false) {
+			throw new RuntimeException(sprintf('Unable to open file "%s" for reading.', $path));
+		}
 
-		fseek($handle, -1, SEEK_END);
-		$offset = ftell($handle);
-
-		/** @phpstan-ignore-next-line */
-		while (true) {
-			if (Fiber::getCurrent() !== null) {
-				Fiber::suspend();
+		try {
+			fseek($handle, 0, SEEK_END);
+			$offset = ftell($handle);
+			if ($offset === false) {
+				$offset = 0;
 			}
 
-			fseek($handle, -1, SEEK_END);
-			$newOffset = ftell($handle);
+			/** @phpstan-ignore-next-line */
+			while (true) {
+				if (Fiber::getCurrent() !== null) {
+					Fiber::suspend();
+				}
 
-			if ($newOffset <= $offset) {
-				continue;
+				clearstatcache(true, $path);
+				fseek($handle, 0, SEEK_END);
+				$newOffset = ftell($handle);
+
+				if ($newOffset === false || $newOffset <= $offset) {
+					if ($newOffset !== false && $newOffset < $offset) {
+						$offset = $newOffset;
+					}
+					usleep(100_000);
+
+					continue;
+				}
+
+				fseek($handle, $offset);
+
+				$chunk = fread($handle, $newOffset - $offset);
+				if ($chunk !== false) {
+					$output = ltrim($chunk);
+					if ($output !== '') {
+						fwrite(STDOUT, $format($output) . PHP_EOL);
+					}
+				}
+
+				$offset = $newOffset;
+				usleep(100_000);
 			}
-
-			fseek($handle, $offset);
-
-			$output = ltrim(fread($handle, $newOffset - $offset));
-
-			fwrite(STDOUT, $format($output) . PHP_EOL);
-
-			$offset = $newOffset;
+		} finally {
+			fclose($handle);
 		}
 	}
 }

@@ -4,21 +4,30 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
+use GraphQL\GraphQL;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Schema;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Registry;
+use ON\Data\Definition\Relation\FirstOfManyRelation;
+use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Definition\Relation\RelationInterface;
+use ON\GraphQL\CachedGraphQLRegistryGenerator;
 use ON\GraphQL\Event\BeforeMutation;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\GraphQL\Resolver\SqlResolver;
+use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use RuntimeException;
 use stdClass;
+use Tests\ON\GraphQL\Support\GraphQLTestFixtures;
 
 final class GraphQLRegistryGeneratorTest extends TestCase
 {
+	use GraphQLTestFixtures;
+
 	private Registry $registry;
 
 	protected function setUp(): void
@@ -549,5 +558,242 @@ final class GraphQLRegistryGeneratorTest extends TestCase
 		$this->assertContains('draft', $enumValues);
 		$this->assertContains('published', $enumValues);
 		$this->assertContains('archived', $enumValues);
+	}
+
+	public function testRelationsToHiddenCollectionsAreOmittedFromInputAndOutput(): void
+	{
+		$this->registry->collection('profile')
+			->primaryKey('id')
+			->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->hidden(true)
+			->end();
+		$this->registry->collection('user')
+			->primaryKey('id')
+			->field('id', 'int')->end()
+			->field('name', 'string')->end()
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')->end()
+			->end();
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$create = $schema->getMutationType()->getField('create_user');
+
+		$this->assertArrayNotHasKey('profile', $create->getType()->getFields());
+		$this->assertArrayNotHasKey('profile', $create->args[0]->getType()->getWrappedType()->getFields());
+	}
+
+	public function testGeneratedNestedCreateInputsOnlyExposeOwnedRelations(): void
+	{
+		$this->registry->collection('post')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->field('title', 'string')->end()
+			->end();
+		$this->registry->collection('profile')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->end();
+		$this->registry->collection('department')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('name', 'string')->end()
+			->end();
+		$this->registry->collection('membership')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->field('department_id', 'int')->end()
+			->end();
+		$user = $this->registry->collection('user')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('department_id', 'int')->nullable(true)->end()
+			->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')->end()
+			->belongsTo('department', 'department')->innerKey('department_id')->outerKey('id')->end();
+		$user->relation('latest_post', FirstOfManyRelation::class)
+			->collection('post')->innerKey('id')->outerKey('user_id')->orderBy(['id' => 'desc'])->end();
+		$user->relation('departments', M2MRelation::class)
+			->collection('department')->innerKey('id')->outerKey('id')
+			->through('membership')->innerKey('user_id')->outerKey('department_id')->end()
+			->end();
+
+		$generator = new CachedGraphQLRegistryGenerator($this->registry);
+		$schema = $generator->generate();
+		$create = $schema->getMutationType()->getField('create_user');
+		$inputFields = $create->args[0]->getType()->getWrappedType()->getFields();
+		$outputFields = $create->getType()->getFields();
+
+		$this->assertArrayHasKey('posts', $inputFields);
+		$this->assertArrayHasKey('profile', $inputFields);
+		foreach (['department', 'latest_post', 'departments'] as $readOnlyRelation) {
+			$this->assertArrayNotHasKey($readOnlyRelation, $inputFields);
+			$this->assertArrayHasKey($readOnlyRelation, $outputFields);
+		}
+
+		$user->metadata('gql::resolver::create', static fn (array $args) => (object) [
+			'id' => 10,
+			'department_id' => strlen($args['input']['department']['name']),
+		]);
+		$schema = $generator->generate();
+		$result = GraphQL::executeQuery(
+			$schema,
+			'mutation { create_user(input: { department: { name: "Sales" } }) { department_id } }'
+		)->toArray();
+
+		$this->assertSame(['data' => ['create_user' => ['department_id' => 5]]], $result);
+	}
+
+	public function testEnumsWithTheSameFieldNameKeepTheirCollectionValues(): void
+	{
+		$this->registry->collection('post')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('status', 'string')->metadata('enum', ['draft'])->end()
+			->end();
+		$this->registry->collection('ticket')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('status', 'string')->metadata('enum', ['open'])->end()
+			->end();
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$schema->assertValid();
+
+		$this->assertSame('draft', $schema->getType('PostStatusEnum')->getValues()[0]->value);
+		$this->assertSame('open', $schema->getType('TicketStatusEnum')->getValues()[0]->value);
+	}
+
+	public function testAuthorizationRunsBeforeCustomRelationResolvers(): void
+	{
+		$this->registry->collection('profile')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('user_id', 'int')->end()
+			->end();
+		$resolved = false;
+		$this->registry->collection('user')
+			->primaryKey('id')->field('id', 'int')->end()
+			->metadata('gql::resolver::findById', static fn () => (object) ['id' => 1])
+			->hasOne('profile', 'profile')->innerKey('id')->outerKey('user_id')
+			->metadata('gql::resolver', static function () use (&$resolved): object {
+				$resolved = true;
+
+				return (object) ['id' => 2];
+			})
+			->end()
+			->end();
+		$generator = new GraphQLRegistryGenerator(
+			$this->registry,
+			authorizer: static fn (Collection $collection, string $operation): bool => $operation !== 'relation',
+		);
+
+		$result = GraphQL::executeQuery($generator->generate(), '{ user_by_id(id: "1") { id profile { id } } }')
+			->toArray();
+
+		$this->assertSame(['id' => 1, 'profile' => null], $result['data']['user_by_id']);
+		$this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code']);
+		$this->assertFalse($resolved);
+	}
+
+	public function testEnumAllocationPreservesValuesAcrossGeneratedNameCollisions(): void
+	{
+		foreach ([
+			'user' => ['status', 'active'],
+			'ticket' => ['status', 'open'],
+			'article' => ['userStatus', 'published'],
+			'StatusEnum' => ['stage', 'live'],
+			'summary' => ['flag', 'on'],
+			'FlagEnum' => ['kind', 'example'],
+		] as $name => [$field, $value]) {
+			$this->registry->collection($name)
+				->primaryKey('id')->field('id', 'int')->end()
+				->field($field, 'string')->nullable(true)->metadata('enum', [$value])->end()
+				->end();
+		}
+
+		$schema = (new GraphQLRegistryGenerator($this->registry))->generate();
+		$schema->assertValid();
+
+		$userStatus = $schema->getType('User')->getField('status')->getType();
+		$articleStatus = $schema->getType('Article')->getField('userStatus')->getType();
+		$summaryFlag = $schema->getType('Summary')->getField('flag')->getType();
+		$this->assertSame('active', $userStatus->getValues()[0]->value);
+		$this->assertSame('published', $articleStatus->getValues()[0]->value);
+		$this->assertSame('on', $summaryFlag->getValues()[0]->value);
+		$this->assertNotSame($userStatus->name, $articleStatus->name);
+		$this->assertNotSame('FlagEnum', $summaryFlag->name);
+	}
+
+	public function testCachedSchemaSupportsKeylessCustomRelationsAndArrayContexts(): void
+	{
+		$this->createUserCollection($this->registry);
+		$this->createPostCollection($this->registry);
+		$user = $this->registry->getCollection('user');
+		$user->metadata('gql::resolver::findById', static fn (): object => (object) ['id' => 1]);
+		$user->hasMany('posts', 'post')->metadata(
+			'gql::resolver',
+			static fn ($source, array $args, array $context): array => [(object) ['title' => $context['title']]],
+		)->end();
+
+		$schema = (new CachedGraphQLRegistryGenerator($this->registry))->generate();
+		$inputFields = $schema->getMutationType()->getField('create_user')->args[0]->getType()->getWrappedType()->getFields();
+		$this->assertArrayNotHasKey('posts', $inputFields);
+		$result = GraphQL::executeQuery(
+			$schema,
+			'{ user_by_id(id: "1") { posts { title } } }',
+			contextValue: ['title' => 'Post from custom resolver'],
+		)->toArray();
+		$this->assertSame(['data' => ['user_by_id' => ['posts' => [['title' => 'Post from custom resolver']]]]], $result);
+	}
+
+	#[RequiresPhpExtension('pdo_sqlite')]
+	public function testBuiltInChildAuthorizationRunsWithTheEffectiveParentKey(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$database = $this->createTestDatabase();
+		$connection = $database->getConnection();
+		$parentKeys = [];
+		$schema = (new GraphQLRegistryGenerator(
+			$this->registry,
+			new SqlResolver($this->registry, $database),
+			authorizer: static function (Collection $collection, string $operation, array $args, array $context) use (&$parentKeys): bool {
+				if ($collection->getName() !== 'post' || $operation !== 'create') {
+					return true;
+				}
+
+				$parentKeys[] = $args['input']['user_id'] ?? null;
+
+				return $context['allowChild'];
+			},
+		))->generate();
+		$source = 'mutation { create_user(input: { name: "Taylor", posts: [{ title: "Note" }] }) { id } }';
+
+		$denied = GraphQL::executeQuery($schema, $source, contextValue: ['allowChild' => false])->toArray();
+		$this->assertSame('FORBIDDEN', $denied['errors'][0]['extensions']['code']);
+		$this->assertSame(2, (int) $connection->query('SELECT COUNT(*) FROM user')->fetchColumn());
+		$this->assertSame(3, (int) $connection->query('SELECT COUNT(*) FROM post')->fetchColumn());
+
+		$allowed = GraphQL::executeQuery($schema, $source, contextValue: ['allowChild' => true])->toArray();
+		$this->assertSame(['data' => ['create_user' => ['id' => 3]]], $allowed);
+		$this->assertSame([3, 3], array_map('intval', $parentKeys));
+		$this->assertSame(3, (int) $connection->query("SELECT user_id FROM post WHERE title = 'Note'")->fetchColumn());
+	}
+
+	public function testCustomCreateAuthorizesRequestedChildrenBeforeCallingApplicationCode(): void
+	{
+		$this->createUserWithPostsRelation($this->registry);
+		$user = $this->registry->getCollection('user');
+		$called = false;
+		$user->metadata('gql::resolver::create', static function () use (&$called): object {
+			$called = true;
+
+			return (object) ['id' => 5];
+		});
+		$schema = (new GraphQLRegistryGenerator(
+			$this->registry,
+			authorizer: static fn (Collection $collection, string $operation): bool => $collection->getName() !== 'post' || $operation !== 'create',
+		))->generate();
+
+		$result = GraphQL::executeQuery(
+			$schema,
+			'mutation { create_user(input: { name: "Taylor", posts: [{ title: "Note" }] }) { id } }',
+		)->toArray();
+		$this->assertSame('FORBIDDEN', $result['errors'][0]['extensions']['code']);
+		$this->assertFalse($called);
 	}
 }

@@ -21,24 +21,30 @@ final class NotFoundHandlerTest extends TestCase
 	{
 		$forwarded = new HtmlResponse('custom 404');
 		$app = new class ($forwarded) extends Application {
+			public ?string $forwardedMethod = null;
+
 			public function __construct(private ResponseInterface $response)
 			{
 			}
 
 			public function processForward($path, $request, $method = null): ResponseInterface
 			{
+				$this->forwardedMethod = $method;
+
 				return $this->response;
 			}
 		};
 
 		$handler = new NotFoundHandler($app, '/404', new ResponseFactory());
 		$request = (new ServerRequest())
+			->withMethod('POST')
 			->withUri(new Uri('/missing'))
 			->withAttribute(OutputTypeMiddleware::class, 'html');
 
 		$response = $handler->handle($request);
 
 		$this->assertSame('custom 404', (string) $response->getBody());
+		$this->assertSame('GET', $app->forwardedMethod);
 	}
 
 	public function testDoesNotForwardAgainWhenAlreadyOn404Path(): void
@@ -64,5 +70,7 @@ final class NotFoundHandlerTest extends TestCase
 
 		$this->assertSame(404, $response->getStatusCode());
 		$this->assertSame('Cannot GET /404', (string) $response->getBody());
+		$this->assertSame('text/plain; charset=utf-8', $response->getHeaderLine('Content-Type'));
+		$this->assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
 	}
 }

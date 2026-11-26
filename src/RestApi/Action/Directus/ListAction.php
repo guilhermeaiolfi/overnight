@@ -200,10 +200,6 @@ final class ListAction implements RestActionInterface
 
 	private function createContext(): QueryContext
 	{
-		return new QueryContext(
-			defaultLimit: (int) $this->config->get('defaultLimit', 100),
-			maxLimit: (int) $this->config->get('maxLimit', 1000),
-			dynamicVariables: $this->config->get('dynamicVariables', []),
-		);
+		return QueryContext::fromConfig($this->config);
 	}
 }

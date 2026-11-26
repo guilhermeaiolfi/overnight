@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Clockwork;
 
-use function clock;
 use Clockwork\Support\Vanilla\Clockwork;
 use Laminas\Stdlib\ArrayUtils;
+use Monolog\Logger;
 use ON\Application;
 use ON\Benchmark;
 use ON\Clockwork\DataSource\ExtensionProfilerDataSource;
@@ -25,23 +25,26 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 {
 	public const ID = 'clockwork';
 
-	protected Clockwork $clockwork;
-	protected ContainerInterface $container;
+	protected ?Clockwork $clockwork = null;
+	protected ?ContainerInterface $container = null;
 
 	public function __construct(
 		protected Application $app,
 		protected array $options = []
 	) {
-		if (! function_exists('clock')) {
-			$settings = ArrayUtils::merge($this->getOptions(), $options);
-			$basePath = rtrim(Router::detectBaseUrl(), '/');
-			$settings["api"] = ($basePath === '' ? '' : $basePath) . "/__clockwork/";
-			$this->clockwork = Clockwork::init($settings);
-			clock()->event("Booting")->begin();
-		} else {
-			$this->clockwork = clock();
+		if (! filter_var($options['force'] ?? $options['enable'] ?? $this->app->isDebug(), FILTER_VALIDATE_BOOLEAN)) {
+			return;
 		}
 
+		$settings = ArrayUtils::merge($this->getOptions(), $options);
+		$settings['api'] = rtrim(Router::detectBaseUrl(), '/') . '/__clockwork/';
+		$this->clockwork = Clockwork::init($settings);
+		$this->clockwork->event('Booting')->begin();
+	}
+
+	public function isActive(): bool
+	{
+		return $this->clockwork !== null;
 	}
 
 	public function getOptions(): array
@@ -57,25 +60,40 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function register(Init $init): void
 	{
+		if (! $this->isActive()) {
+			return;
+		}
+
 		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 		$init->on(PipelineReadyEvent::class, function (): void {
 			$this->injectMiddleware();
 		});
-
 	}
 
 	public function injectMiddleware(): void
 	{
+		if ($this->clockwork === null) {
+			return;
+		}
+
 		$this->app->pipe("/", ClockworkMiddleware::class, 900);
 	}
 
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
+		if ($this->clockwork === null) {
+			return;
+		}
+
 		$container = $this->container = $event->container;
 		$container->set(Clockwork::class, $this->clockwork);
-		$logger = $container->get(LoggerInterface::class);
-		$loggerDataSource = new PsrLoggerDataSource($logger);
-		$this->clockwork->addDataSource($loggerDataSource);
+		if ($container->has(LoggerInterface::class)) {
+			$logger = $container->get(LoggerInterface::class);
+			if ($logger instanceof Logger) {
+				$loggerDataSource = new PsrLoggerDataSource($logger);
+				$this->clockwork->addDataSource($loggerDataSource);
+			}
+		}
 		$this->clockwork->addDataSource(new ExtensionProfilerDataSource($this->app->extensionProfiler()));
 	}
 
@@ -87,15 +105,22 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function onRun($event)
 	{
-		clock()->event('Booting')->end();
-		clock()->event('Run')->begin();
+		if ($this->clockwork === null) {
+			return;
+		}
+
+		$this->clockwork->event('Booting')->end();
+		$this->clockwork->event('Run')->begin();
 		$this->showBenchmarkTable();
 	}
 
 	public function onEnd($event)
 	{
-		clock()->event('Run')->end();
+		if ($this->clockwork === null) {
+			return;
+		}
 
+		$this->clockwork->event('Run')->end();
 	}
 
 	public static function getSubscribedEvents(): array
@@ -113,7 +138,11 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 
 	public function showBenchmarkTable()
 	{
-		$benchmark = clock()->userData('benchmark')
+		if ($this->clockwork === null) {
+			return;
+		}
+
+		$benchmark = $this->clockwork->userData('benchmark')
 		->title('Benchmark');
 
 		$values = [];

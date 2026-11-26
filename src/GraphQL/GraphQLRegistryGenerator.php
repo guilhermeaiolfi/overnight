@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace ON\GraphQL;
 
+use Closure;
 use GraphQL\Type\Definition\EnumType;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\NonNull;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
+use LogicException;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Field\Field;
 use ON\Data\Definition\Registry;
@@ -17,11 +19,15 @@ use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\Event\AfterMutation;
 use ON\GraphQL\Event\BeforeMutation;
+use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
+use ON\GraphQL\Resolver\NestedCreateRelations;
+use ON\GraphQL\Resolver\SqlResolver;
 use ON\GraphQL\Type\UploadType;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use ReflectionMethod;
 use RuntimeException;
 
 class GraphQLRegistryGenerator
@@ -29,16 +35,21 @@ class GraphQLRegistryGenerator
 	protected array $types = [];
 	protected array $inputTypes = [];
 	protected array $enumTypes = [];
+	/** @var array<string, array<string, string>> */
+	protected array $enumNames = [];
 	protected static ?UploadType $uploadType = null;
 	protected CollectionValidator $validator;
+	protected ?Closure $authorizer = null;
 
 	public function __construct(
 		protected Registry $ormRegistry,
 		protected ?GraphQLResolverInterface $resolver = null,
 		protected ?EventDispatcherInterface $eventDispatcher = null,
 		?CollectionValidator $validator = null,
+		?callable $authorizer = null,
 	) {
 		$this->validator = $validator ?? new CollectionValidator();
+		$this->authorizer = $authorizer !== null ? $authorizer(...) : null;
 	}
 
 	public function generate(): Schema
@@ -46,6 +57,7 @@ class GraphQLRegistryGenerator
 		$this->types = [];
 		$this->inputTypes = [];
 		$this->enumTypes = [];
+		$this->enumNames = $this->allocateEnumNames();
 
 		$this->buildTypes();
 		$queryFields = $this->buildQueryFields();
@@ -73,7 +85,7 @@ class GraphQLRegistryGenerator
 		return new Schema([
 			'query' => $queryType,
 			'mutation' => $mutationType,
-			'typeLoader' => fn (string $name) => $this->types[$name] ?? $this->inputTypes[$name] ?? null,
+			'typeLoader' => fn (string $name) => $this->types[$name] ?? $this->inputTypes[$name] ?? $this->enumTypes[$name] ?? null,
 		]);
 	}
 
@@ -104,6 +116,10 @@ class GraphQLRegistryGenerator
 		}
 
 		foreach ($collection->relations as $relationName => $relation) {
+			$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
+			if ($targetCollection !== null && $targetCollection->isHidden()) {
+				continue;
+			}
 			$fields[$relationName] = $this->convertRelation($relation);
 		}
 
@@ -131,7 +147,7 @@ class GraphQLRegistryGenerator
 			'description' => $field->getDescription() ?? $field->getColumn(),
 			'resolve' => $resolver !== null
 				? $this->wrapResolver($resolver)
-				: fn ($source) => $source->{$field->getColumn()} ?? null,
+				: fn ($source) => $source->{$field->getColumn()} ?? $source->{$field->getName()} ?? null,
 		];
 	}
 
@@ -154,27 +170,30 @@ class GraphQLRegistryGenerator
 		}
 
 		$resolver = $relation->metadata('gql::resolver');
+		$customResolver = $resolver !== null ? $this->wrapResolver($resolver) : null;
 
 		return [
 			'type' => $type,
-			'resolve' => $resolver !== null
-				? $this->wrapResolver($resolver)
-				: function ($source, $args, $context = null, $info = null) use ($relation) {
-					if ($this->resolver !== null) {
-						return $this->resolver->resolveRelation($source, $relation);
-					}
-					// Fallback: property access using relation name
-					$property = $relation->getName();
-					$value = $source->{$property} ?? null;
-					if ($relation->getCardinality()->isSingle()) {
-						return is_array($value) ? ($value[0] ?? null) : $value;
-					}
-					if ($relation->getCardinality()->isMany() && is_array($value)) {
-						return $value;
-					}
+			'resolve' => function ($source, array $args = [], mixed $context = null) use ($relation, $customResolver) {
+				$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
+				if ($targetCollection instanceof Collection) {
+					$this->authorize($targetCollection, 'relation', $args, $context);
+				}
 
-					return $value;
-				},
+				if ($customResolver !== null) {
+					return $customResolver($source, $args, $context);
+				}
+				if ($this->resolver !== null) {
+					return $this->resolver->resolveRelation($source, $relation);
+				}
+
+				$property = $relation->getName();
+				$value = $source->{$property} ?? null;
+
+				return $relation->getCardinality()->isSingle() && is_array($value)
+					? ($value[0] ?? null)
+					: $value;
+			},
 		];
 	}
 
@@ -183,7 +202,7 @@ class GraphQLRegistryGenerator
 		$collection = $this->ormRegistry->getCollection($collectionName);
 		$typeName = $this->getTypeName($collectionName);
 
-		if (! $collection) {
+		if (! $collection || $collection->isHidden()) {
 			return new ObjectType(['name' => $typeName, 'fields' => []]);
 		}
 
@@ -196,7 +215,7 @@ class GraphQLRegistryGenerator
 
 	protected function wrapResolver(callable $resolver, bool $includeSource = true): callable
 	{
-		return function ($source, array $args = [], ?object $context = null) use ($resolver, $includeSource) {
+		return function ($source, array $args = [], mixed $context = null) use ($resolver, $includeSource) {
 			$params = $includeSource ? [$source, $args] : [$args];
 			$params[] = $context;
 
@@ -233,10 +252,71 @@ class GraphQLRegistryGenerator
 		return $graphqlType;
 	}
 
+	/**
+	 * @return array<string, array<string, string>>
+	 */
+	private function allocateEnumNames(): array
+	{
+		$reserved = array_fill_keys(['Query', 'Mutation', 'Upload', 'String', 'Int', 'Float', 'Boolean', 'ID'], true);
+		$candidates = [];
+		$counts = [];
+
+		foreach ($this->ormRegistry->getCollections() as $collection) {
+			if ($collection->isHidden()) {
+				continue;
+			}
+
+			$name = $collection->getName();
+			$type = $this->getTypeName($name);
+			foreach (['', 'Connection', 'Input', 'UpdateInput', 'NestedInput'] as $suffix) {
+				$reserved[$type . $suffix] = true;
+			}
+
+			foreach ($collection->relations as $relation) {
+				$reserved[$this->getTypeName($relation->getCollectionName())] = true;
+			}
+
+			foreach ($collection->fields as $field) {
+				if ($field->isHidden() || ! is_array($field->metadata('enum'))) {
+					continue;
+				}
+
+				$fieldName = $field->getName();
+				$short = ucfirst($fieldName) . 'Enum';
+				$candidates[] = [$name, $fieldName, $short, $type . $short];
+				$counts[$short] = ($counts[$short] ?? 0) + 1;
+			}
+		}
+
+		usort($candidates, static fn (array $left, array $right): int => [$left[0], $left[1]] <=> [$right[0], $right[1]]);
+		$names = [];
+		$qualified = [];
+		foreach ($candidates as [$collection, $field, $short, $long]) {
+			if ($counts[$short] === 1 && ! isset($reserved[$short])) {
+				$names[$collection][$field] = $short;
+				$reserved[$short] = true;
+			} else {
+				$qualified[] = [$collection, $field, $long];
+			}
+		}
+
+		foreach ($qualified as [$collection, $field, $preferred]) {
+			$name = $preferred;
+			for ($suffix = 2; isset($reserved[$name]); $suffix++) {
+				$name = $preferred . $suffix;
+			}
+			$names[$collection][$field] = $name;
+			$reserved[$name] = true;
+		}
+
+		return $names;
+	}
+
 	protected function buildEnumType(Field $field, array $values): EnumType
 	{
-		// Use field name + collection context for unique enum name
-		$enumName = ucfirst($field->getName()) . 'Enum';
+		$fieldName = $field->getName();
+		$collectionName = $field->getParent()->getName();
+		$enumName = $this->enumNames[$collectionName][$fieldName];
 
 		if (isset($this->enumTypes[$enumName])) {
 			return $this->enumTypes[$enumName];
@@ -244,7 +324,7 @@ class GraphQLRegistryGenerator
 
 		$enumValues = [];
 		foreach ($values as $value) {
-			$enumValues[strtoupper(str_replace([' ', '-'], '_', $value))] = ['value' => $value];
+			$enumValues[strtoupper(str_replace([' ', '-'], '_', (string) $value))] = ['value' => $value];
 		}
 
 		$enumType = new EnumType([
@@ -304,10 +384,12 @@ class GraphQLRegistryGenerator
 				'type' => $connectionType,
 				'args' => $this->buildQueryArgs($collection),
 				'resolve' => $findAllResolver !== null
-					? $this->wrapResolver($findAllResolver, false)
+					? $this->wrapCollectionResolver($collection, 'findAll', $findAllResolver)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						$this->authorize($collection, 'findAll', $args ?? [], $context);
+
 						if ($this->resolver === null) {
-							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface to GraphQLRegistryGenerator.');
 						}
 
 						return $this->resolver->resolveCollection($collection, $args ?? []);
@@ -319,10 +401,12 @@ class GraphQLRegistryGenerator
 				'type' => $type,
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $findByIdResolver !== null
-					? $this->wrapResolver($findByIdResolver, false)
+					? $this->wrapCollectionResolver($collection, 'findById', $findByIdResolver)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						$this->authorize($collection, 'findById', $args ?? [], $context);
+
 						if ($this->resolver === null) {
-							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface or use GraphQLRegistryGenerator::withDatabase().');
+							throw new RuntimeException('No resolver configured. Pass a GraphQLResolverInterface to GraphQLRegistryGenerator.');
 						}
 
 						return $this->resolver->resolveById($collection, $args['id'] ?? '');
@@ -361,11 +445,15 @@ class GraphQLRegistryGenerator
 
 		// Add nested relation fields for create input types (not update)
 		if (! $forUpdate) {
+			$usesBuiltInNestedCreate = $this->usesBuiltInNestedCreate($collection);
 			foreach ($collection->relations as $relationName => $relation) {
-				$targetCollectionName = $relation->getCollectionName();
-				$targetCollection = $relation->getCollection();
+				if ($usesBuiltInNestedCreate && ! NestedCreateRelations::supports($relation)) {
+					continue;
+				}
 
-				if ($targetCollection === null) {
+				$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
+
+				if (! $targetCollection instanceof Collection || $targetCollection->isHidden()) {
 					continue;
 				}
 
@@ -394,6 +482,23 @@ class GraphQLRegistryGenerator
 		return $inputType;
 	}
 
+	protected function usesBuiltInNestedCreate(Collection $collection): bool
+	{
+		return $collection->metadata('gql::resolver::create') === null
+			&& ($this->resolver === null || $this->builtInNestedCreateResolver() !== null);
+	}
+
+	private function builtInNestedCreateResolver(): SqlResolver|CycleResolver|null
+	{
+		if (! $this->resolver instanceof SqlResolver && ! $this->resolver instanceof CycleResolver) {
+			return null;
+		}
+
+		$declaringClass = (new ReflectionMethod($this->resolver, 'resolveNestedCreate'))->getDeclaringClass()->getName();
+
+		return in_array($declaringClass, [SqlResolver::class, CycleResolver::class], true) ? $this->resolver : null;
+	}
+
 	protected function buildMutationFields(): array
 	{
 		$fields = [];
@@ -413,8 +518,10 @@ class GraphQLRegistryGenerator
 				'type' => $type,
 				'args' => ['input' => Type::nonNull($createInputType)],
 				'resolve' => $createResolver !== null
-					? $this->wrapResolver($createResolver, false)
+					? $this->wrapCollectionResolver($collection, 'create', $createResolver)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						$this->authorize($collection, 'create', $args ?? [], $context);
+
 						if ($this->resolver === null) {
 							throw new RuntimeException('No resolver configured.');
 						}
@@ -422,6 +529,10 @@ class GraphQLRegistryGenerator
 						[$scalarInput, $nestedInput] = $this->separateNestedInput($collection, $input);
 
 						$this->validateInput($collection, $scalarInput);
+						$builtInResolver = $this->builtInNestedCreateResolver();
+						if ($builtInResolver === null) {
+							$this->validateNestedInput($collection, $nestedInput, $context);
+						}
 
 						// Dispatch before event — listeners can modify input (e.g., process file uploads)
 						if ($this->eventDispatcher !== null) {
@@ -430,9 +541,19 @@ class GraphQLRegistryGenerator
 							$scalarInput = $event->getInput();
 						}
 
-						$result = empty($nestedInput)
-							? $this->resolver->resolveCreate($collection, $scalarInput)
-							: $this->resolver->resolveNestedCreate($collection, $scalarInput, $nestedInput);
+						if ($nestedInput === []) {
+							$result = $this->resolver->resolveCreate($collection, $scalarInput);
+						} elseif ($builtInResolver !== null) {
+							$result = $builtInResolver->resolveNestedCreateWithChildPreparation(
+								$collection,
+								$scalarInput,
+								$nestedInput,
+								fn (string $relationName, int|string $index, RelationInterface $relation, array $effectiveInput)
+									=> $this->validateEffectiveChild($relationName, $index, $relation, $effectiveInput, $context),
+							);
+						} else {
+							$result = $this->resolver->resolveNestedCreate($collection, $scalarInput, $nestedInput);
+						}
 
 						// Dispatch after event
 						if ($this->eventDispatcher !== null) {
@@ -451,13 +572,15 @@ class GraphQLRegistryGenerator
 					'input' => Type::nonNull($updateInputType),
 				],
 				'resolve' => $updateResolver !== null
-					? $this->wrapResolver($updateResolver, false)
+					? $this->wrapCollectionResolver($collection, 'update', $updateResolver)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						$this->authorize($collection, 'update', $args ?? [], $context);
+
 						if ($this->resolver === null) {
 							throw new RuntimeException('No resolver configured.');
 						}
 						$input = $args['input'] ?? [];
-						$this->validateInput($collection, $input);
+						$this->validateInput($collection, $input, partial: true);
 
 						if ($this->eventDispatcher !== null) {
 							$event = new BeforeMutation($collection, 'update', $input);
@@ -480,8 +603,10 @@ class GraphQLRegistryGenerator
 				'type' => $type,
 				'args' => ['id' => Type::nonNull(Type::id())],
 				'resolve' => $deleteResolver !== null
-					? $this->wrapResolver($deleteResolver, false)
+					? $this->wrapCollectionResolver($collection, 'delete', $deleteResolver)
 					: function ($root, $args, $context = null, $info = null) use ($collection) {
+						$this->authorize($collection, 'delete', $args ?? [], $context);
+
 						if ($this->resolver === null) {
 							throw new RuntimeException('No resolver configured.');
 						}
@@ -586,11 +711,15 @@ class GraphQLRegistryGenerator
 
 		$relationNames = [];
 		foreach ($collection->relations as $name => $relation) {
+			$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
+			if ($targetCollection !== null && $targetCollection->isHidden()) {
+				continue;
+			}
 			$relationNames[$name] = true;
 		}
 
 		foreach ($input as $key => $value) {
-			if (isset($relationNames[$key]) && (is_array($value))) {
+			if (isset($relationNames[$key]) && is_array($value)) {
 				$nestedInput[$key] = $value;
 			} else {
 				$scalarInput[$key] = $value;
@@ -604,12 +733,136 @@ class GraphQLRegistryGenerator
 	 * Validate input against field validation rules defined on the collection.
 	 * Throws GraphQLUserError if validation fails.
 	 */
-	protected function validateInput(Collection $collection, array $input): void
+	protected function validateInput(Collection $collection, array $input, bool $partial = false): void
 	{
 		try {
-			$this->validator->validate($collection, $input, skipPrimaryKey: true);
+			$this->validator->validate($collection, $input, partial: $partial, skipPrimaryKey: true);
 		} catch (ValidationFailedException $e) {
 			throw GraphQLUserError::validationFailed($e->getErrors());
+		}
+	}
+
+	/**
+	 * Validate nested child inputs against each target collection's validation rules.
+	 */
+	protected function validateNestedInput(
+		Collection $collection,
+		array $nestedInput,
+		mixed $context,
+		bool $validate = true,
+	): void {
+		$allErrors = [];
+
+		foreach ($nestedInput as $relationName => $relationData) {
+			if (! $collection->relations->has($relationName)) {
+				continue;
+			}
+
+			$relation = $collection->relations->get($relationName);
+			$targetCollection = $this->ormRegistry->getCollection($relation->getCollectionName());
+
+			if (! $targetCollection instanceof Collection || $targetCollection->isHidden()) {
+				continue;
+			}
+
+			$isMany = $relation->getCardinality()->isMany();
+			$children = $isMany ? $relationData : [$relationData];
+			foreach ($children as $index => $childInput) {
+				if (! is_array($childInput)) {
+					continue;
+				}
+				$this->authorize($targetCollection, 'create', ['input' => $childInput], $context);
+
+				if ($validate) {
+					try {
+						$outerKeys = $relation->getOuterKeys();
+					} catch (LogicException) {
+						$outerKeys = [];
+					}
+					$this->collectNestedValidationErrors(
+						$targetCollection,
+						$childInput,
+						$outerKeys,
+						$isMany ? "{$relationName}.{$index}" : $relationName,
+						$allErrors,
+					);
+				}
+			}
+		}
+
+		if ($allErrors !== []) {
+			throw GraphQLUserError::validationFailed($allErrors);
+		}
+	}
+
+	private function validateEffectiveChild(
+		string $relationName,
+		int|string $index,
+		RelationInterface $relation,
+		array $input,
+		mixed $context,
+	): void {
+		$target = $this->ormRegistry->getCollection($relation->getCollectionName());
+		if (! $target instanceof Collection || $target->isHidden()) {
+			throw new GraphQLUserError('Nested create is not supported for this relation.', 'INVALID_INPUT', $relationName);
+		}
+
+		$this->authorize($target, 'create', ['input' => $input], $context);
+
+		$errors = [];
+		$prefix = $relation->getCardinality()->isMany() ? "{$relationName}.{$index}" : $relationName;
+		$this->collectNestedValidationErrors($target, $input, [], $prefix, $errors);
+		if ($errors !== []) {
+			throw GraphQLUserError::validationFailed($errors);
+		}
+	}
+
+	/**
+	 * @param array<string, array<int, string>> $allErrors
+	 */
+	protected function collectNestedValidationErrors(
+		Collection $targetCollection,
+		array $childInput,
+		array $outerFieldNames,
+		string $prefix,
+		array &$allErrors,
+	): void {
+		try {
+			$this->validator->validate($targetCollection, $childInput, partial: false, skipPrimaryKey: true);
+		} catch (ValidationFailedException $e) {
+			foreach ($e->getErrors() as $field => $messages) {
+				// The parent sets the relation's outerKey FK after creating the parent row
+				if (in_array($field, $outerFieldNames, true) && ! array_key_exists($field, $childInput)) {
+					continue;
+				}
+				$allErrors["{$prefix}.{$field}"] = $messages;
+			}
+		}
+	}
+
+	protected function wrapCollectionResolver(Collection $collection, string $operation, callable $resolver): callable
+	{
+		return function ($source, array $args = [], mixed $context = null) use ($collection, $operation, $resolver) {
+			$this->authorize($collection, $operation, $args, $context);
+			if ($operation === 'create' && is_array($args['input'] ?? null)) {
+				[, $nestedInput] = $this->separateNestedInput($collection, $args['input']);
+				// The application resolver owns checks against the final values it persists.
+				$this->validateNestedInput($collection, $nestedInput, $context, validate: false);
+			}
+
+			return $resolver($args, $context);
+		};
+	}
+
+	protected function authorize(Collection $collection, string $operation, array $args, mixed $context): void
+	{
+		if ($this->authorizer !== null && ($this->authorizer)($collection, $operation, $args, $context) !== true) {
+			throw new GraphQLUserError('Access denied.', 'FORBIDDEN');
+		}
+
+		$collectionAuthorizer = $collection->metadata('gql::authorize');
+		if ($collectionAuthorizer !== null && (! is_callable($collectionAuthorizer) || $collectionAuthorizer($collection, $operation, $args, $context) !== true)) {
+			throw new GraphQLUserError('Access denied.', 'FORBIDDEN');
 		}
 	}
 }

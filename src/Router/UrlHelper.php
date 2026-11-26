@@ -46,8 +46,8 @@ class UrlHelper implements RenderContextAwareHelperInterface
 			"relative" => true,
 			"fragment" => null,
 			"absolute" => false,
-			"port" => 80,
-			"scheme" => "http",
+			"port" => null,
+			"scheme" => null,
 		];
 
 		$options = array_merge($defaultOptions, $options);
@@ -81,7 +81,7 @@ class UrlHelper implements RenderContextAwareHelperInterface
 			$path = $routeName;
 		}
 
-		$uri = $this->request->getUri()->withPath($this->router->getBasePath() . "/" . ltrim($path, "\\/"));
+		$uri = $this->request->getUri()->withPath($this->getBasePath() . "/" . ltrim($path, "\\/"));
 
 		$queryParams = array_diff_key($routeParams, $params);
 		if (count($queryParams) > 0) {
@@ -98,21 +98,21 @@ class UrlHelper implements RenderContextAwareHelperInterface
 		}
 
 		if (! $options["absolute"]) {
-			$uri = $uri->withHost("");
-		}
-
-		if ($options["scheme"] != "http") {
-			$uri = $uri->withScheme($options["scheme"]);
-		} elseif ($options["absolute"]) {
-			$uri = $uri->withScheme('http');
+			$uri = $uri
+				->withScheme('')
+				->withUserInfo('')
+				->withHost('')
+				->withPort(null);
 		} else {
-			$uri = $uri->withScheme('');
-		}
+			$originalScheme = $uri->getScheme();
+			$scheme = $options["scheme"] ?? ($originalScheme !== '' ? $originalScheme : 'http');
+			$uri = $uri->withScheme($scheme);
 
-		if ($options["port"] != 80) {
-			$uri = $uri->withPort($options["port"]);
-		} else {
-			$uri = $uri->withPort(80);
+			if ($options["port"] !== null) {
+				$uri = $uri->withPort((int) $options["port"]);
+			} elseif ($options["scheme"] !== null && $options["scheme"] !== $originalScheme) {
+				$uri = $uri->withPort(null);
+			}
 		}
 
 		return (string) $uri;

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Router\Middleware;
 
+use Closure;
 use Fig\Http\Message\RequestMethodInterface as RequestMethod;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
@@ -45,7 +46,7 @@ class ImplicitHeadMiddleware implements MiddlewareInterface
 {
 	public const FORWARDED_HTTP_METHOD_ATTRIBUTE = 'forwarded_http_method';
 
-	private StreamFactoryInterface $streamFactory;
+	private Closure|StreamFactoryInterface $streamFactory;
 
 	/**
 	 * @param (callable(): StreamInterface)|StreamFactoryInterface $streamFactory A factory capable of returning
@@ -54,7 +55,9 @@ class ImplicitHeadMiddleware implements MiddlewareInterface
 	 */
 	public function __construct(private RouterInterface $router, callable|StreamFactoryInterface $streamFactory)
 	{
-		$this->streamFactory = $streamFactory;
+		$this->streamFactory = $streamFactory instanceof StreamFactoryInterface
+			? $streamFactory
+			: Closure::fromCallable($streamFactory);
 	}
 
 	/**
@@ -97,6 +100,10 @@ class ImplicitHeadMiddleware implements MiddlewareInterface
 				->withMethod(RequestMethod::METHOD_GET)
 		);
 
-		return $response->withBody($this->streamFactory->createStream());
+		$stream = $this->streamFactory instanceof StreamFactoryInterface
+			? $this->streamFactory->createStream()
+			: ($this->streamFactory)();
+
+		return $response->withBody($stream);
 	}
 }
