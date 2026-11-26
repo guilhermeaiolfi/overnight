@@ -10,6 +10,8 @@ use Somnambulist\Components\Validation\Factory as ValidationFactory;
 
 final class CollectionValidator
 {
+	private ?ValidationFactory $factory = null;
+
 	/**
 	 * @param array<string, string> $defaultMessages
 	 */
@@ -57,13 +59,8 @@ final class CollectionValidator
 			return;
 		}
 
-		$factory = new ValidationFactory();
-		$validation = $factory->make($input, $rules);
+		$validation = $this->factory()->make($input, $rules);
 		$validation->setLanguage($this->lang);
-
-		if ($this->defaultMessages !== []) {
-			$validation->messages()->add($this->lang, $this->defaultMessages);
-		}
 
 		if ($messages !== []) {
 			$validation->messages()->add($this->lang, $messages);
@@ -74,6 +71,21 @@ final class CollectionValidator
 		if ($validation->fails()) {
 			throw ValidationFailedException::fromErrors($this->normalizeErrors($validation->errors()));
 		}
+	}
+
+	private function factory(): ValidationFactory
+	{
+		if ($this->factory !== null) {
+			return $this->factory;
+		}
+
+		$this->factory = new ValidationFactory();
+
+		if ($this->defaultMessages !== []) {
+			$this->factory->messages()->add($this->lang, $this->defaultMessages);
+		}
+
+		return $this->factory;
 	}
 
 	/**
