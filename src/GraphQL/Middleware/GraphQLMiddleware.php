@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace ON\GraphQL\Middleware;
 
 use GraphQL\Error\DebugFlag;
+use GraphQL\Error\SyntaxError;
 use GraphQL\GraphQL;
+use GraphQL\Language\Parser;
 use GraphQL\Type\Schema;
+use GraphQL\Utils\AST;
 use GraphQL\Validator\DocumentValidator;
 use GraphQL\Validator\Rules\DisableIntrospection;
 use GraphQL\Validator\Rules\QueryComplexity;
@@ -17,62 +20,252 @@ use ON\GraphQL\GraphQLContext;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
+use Psr\Http\Message\UploadedFileInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 
 class GraphQLMiddleware implements MiddlewareInterface
 {
+	private const INVALID_OPERATION_NAME = 'Invalid "operationName". Expected a GraphQL name.';
+
 	public function __construct(
 		protected Schema $schema,
 		protected bool $debug = false,
-		protected bool $allowIntrospection = true,
+		protected bool $allowIntrospection = false,
 		protected int $maxDepth = 10,
 		protected int $maxComplexity = 100,
-		protected ?EventDispatcherInterface $eventDispatcher = null
+		protected ?EventDispatcherInterface $eventDispatcher = null,
+		protected int $maxBatchSize = 10,
+		protected int $maxMultipartPathDepth = 10,
 	) {
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$method = $request->getMethod();
-		$contentType = $request->getHeaderLine('Content-Type');
+		$method = strtoupper($request->getMethod());
+		$contentType = strtolower(trim(explode(';', $request->getHeaderLine('Content-Type'), 2)[0]));
 
-		$isGraphQL = $method === 'GET'
-			|| ($method === 'POST' && str_contains($contentType, 'application/json'))
-			|| ($method === 'POST' && str_contains($contentType, 'multipart/form-data'));
+		$isJsonPost = $method === 'POST' && $contentType === 'application/json';
+		$isMultipartPost = $method === 'POST' && $contentType === 'multipart/form-data';
+		$isGraphQL = $method === 'GET' || $isJsonPost || $isMultipartPost;
 
 		if (! $isGraphQL) {
 			return $handler->handle($request);
 		}
 
-		// Check for batch queries (JSON array)
-		if ($method === 'POST' && str_contains($contentType, 'application/json')) {
-			$rawBody = (string) $request->getBody();
-			$decoded = json_decode($rawBody, true);
+		if ($isJsonPost) {
+			return $this->processJsonPost($request);
+		}
 
-			if (is_array($decoded) && isset($decoded[0])) {
-				$results = [];
+		if ($isMultipartPost) {
+			return $this->processMultipartPost($request);
+		}
+
+		return $this->processGet($request);
+	}
+
+	protected function processJsonPost(ServerRequestInterface $request): ResponseInterface
+	{
+		$rawBody = (string) $request->getBody();
+
+		if (trim($rawBody) === '') {
+			return $this->errorResponse('Invalid JSON request body.', 400);
+		}
+
+		$decoded = json_decode($rawBody, true);
+		if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decoded)) {
+			return $this->errorResponse('Invalid JSON request body.', 400);
+		}
+
+		// Batch query (JSON array)
+		if (array_is_list($decoded)) {
+			if ($decoded === []) {
+				return $this->errorResponse('Batch request must contain at least one operation.', 400);
+			}
+
+			if ($this->maxBatchSize > 0 && count($decoded) > $this->maxBatchSize) {
+				return $this->errorResponse(
+					sprintf('Batch size exceeds maximum allowed (%d).', $this->maxBatchSize),
+					400
+				);
+			}
+
+			$results = [];
+
+			try {
 				foreach ($decoded as $operation) {
+					if (! is_array($operation)) {
+						$results[] = ['errors' => [['message' => 'Invalid batch operation.']]];
+
+						continue;
+					}
+
+					$operationName = $operation['operationName'] ?? null;
+					if (! $this->isValidOperationName($operationName)) {
+						$results[] = ['errors' => [['message' => self::INVALID_OPERATION_NAME]]];
+
+						continue;
+					}
+
 					$results[] = $this->executeSingleQuery(
 						$request,
-						$operation['query'] ?? null,
+						isset($operation['query']) && is_string($operation['query']) ? $operation['query'] : null,
 						$operation['variables'] ?? null,
-						$operation['operationName'] ?? null
+						$operationName
 					);
 				}
-
+			} finally {
 				$this->dispatchComplete($results);
+			}
 
-				return new JsonResponse($results);
+			return new JsonResponse($results);
+		}
+
+		// Single JSON operation (using already-decoded body; never reads stream twice)
+		$query = isset($decoded['query']) && is_string($decoded['query']) ? $decoded['query'] : null;
+		$variables = $decoded['variables'] ?? null;
+		$operationName = $decoded['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
+
+		$result = [];
+
+		try {
+			$result = $this->executeSingleQuery($request, $query, $variables, $operationName);
+		} finally {
+			$this->dispatchComplete($result);
+		}
+
+		return new JsonResponse($result);
+	}
+
+	protected function processGet(ServerRequestInterface $request): ResponseInterface
+	{
+		$params = $request->getQueryParams();
+		$query = isset($params['query']) && is_string($params['query']) ? $params['query'] : null;
+		$operationName = $params['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
+		$variables = null;
+
+		if (isset($params['variables'])) {
+			if (is_string($params['variables'])) {
+				$decodedVars = json_decode($params['variables'], true);
+				if (json_last_error() !== JSON_ERROR_NONE || ($decodedVars !== null && ! is_array($decodedVars))) {
+					return $this->errorResponse('Invalid JSON in "variables" query parameter.', 400);
+				}
+				$variables = $decodedVars;
+			} elseif (is_array($params['variables'])) {
+				$variables = $params['variables'];
+			} else {
+				return $this->errorResponse('Invalid "variables" query parameter.', 400);
 			}
 		}
 
-		// Single query
-		$result = $this->executeGraphQL($request);
+		$result = [];
 
-		$this->dispatchComplete($result);
+		try {
+			if ($query !== null && trim($query) !== '') {
+				try {
+					$operation = AST::getOperationAST(Parser::parse($query), $operationName);
+				} catch (SyntaxError) {
+					// Let GraphQL format syntax errors as part of its normal validation.
+					$operation = null;
+				}
+
+				if ($operation !== null && $operation->operation !== 'query') {
+					$result = ['errors' => [['message' => sprintf('Operation "%s" is not allowed over HTTP GET.', $operation->operation)]]];
+
+					return new JsonResponse($result, 405, ['Allow' => 'POST']);
+				}
+			}
+
+			$result = $this->executeSingleQuery($request, $query, $variables, $operationName);
+		} finally {
+			$this->dispatchComplete($result);
+		}
 
 		return new JsonResponse($result);
+	}
+
+	protected function processMultipartPost(ServerRequestInterface $request): ResponseInterface
+	{
+		$parsedBody = $request->getParsedBody();
+		if (! is_array($parsedBody)) {
+			return $this->errorResponse('Invalid multipart request body.', 400);
+		}
+
+		if (! isset($parsedBody['operations']) || ! is_string($parsedBody['operations'])) {
+			return $this->errorResponse('Missing or invalid multipart "operations" field.', 400);
+		}
+
+		$operations = json_decode($parsedBody['operations'], true);
+		if (json_last_error() !== JSON_ERROR_NONE || ! is_array($operations) || array_is_list($operations)) {
+			return $this->errorResponse('Invalid JSON in multipart "operations" field.', 400);
+		}
+
+		$map = [];
+		if (array_key_exists('map', $parsedBody)) {
+			if (! is_string($parsedBody['map'])) {
+				return $this->errorResponse('Invalid multipart "map" field.', 400);
+			}
+			$decodedMap = json_decode($parsedBody['map'], true);
+			if (json_last_error() !== JSON_ERROR_NONE || ! is_array($decodedMap)) {
+				return $this->errorResponse('Invalid JSON in multipart "map" field.', 400);
+			}
+			$map = $decodedMap;
+		}
+
+		$uploadedFiles = $request->getUploadedFiles();
+
+		$query = isset($operations['query']) && is_string($operations['query']) ? $operations['query'] : null;
+		$variables = $operations['variables'] ?? null;
+		if ($variables !== null && ! is_array($variables)) {
+			return $this->errorResponse('Invalid "variables" in multipart "operations" field.', 400);
+		}
+		$operationName = $operations['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
+
+		foreach ($map as $fileKey => $paths) {
+			if (! is_array($paths)) {
+				return $this->errorResponse('Invalid multipart "map" entry: paths must be an array.', 400);
+			}
+
+			$file = $uploadedFiles[$fileKey] ?? null;
+			if (! $file instanceof UploadedFileInterface) {
+				return $this->errorResponse('Missing or invalid multipart file.', 400);
+			}
+
+			foreach ($paths as $path) {
+				if (! is_string($path) || ! $this->isValidMultipartPath($path)) {
+					return $this->errorResponse('Invalid multipart file path.', 400);
+				}
+
+				$variables = $this->injectFileIntoVariables($variables, $path, $file);
+				if ($variables === null) {
+					return $this->errorResponse('Multipart files must replace null variable values.', 400);
+				}
+			}
+		}
+
+		$result = [];
+
+		try {
+			$result = $this->executeSingleQuery($request, $query, $variables, $operationName);
+		} finally {
+			$this->dispatchComplete($result);
+		}
+
+		return new JsonResponse($result);
+	}
+
+	private function isValidOperationName(mixed $name): bool
+	{
+		return $name === null || (is_string($name) && preg_match('/^[_A-Za-z][_0-9A-Za-z]*$/D', $name) === 1);
 	}
 
 	protected function dispatchComplete(array $result): void
@@ -82,49 +275,13 @@ class GraphQLMiddleware implements MiddlewareInterface
 		}
 	}
 
-	protected function executeGraphQL(ServerRequestInterface $request): array
-	{
-		if ($request->getMethod() === 'GET') {
-			$params = $request->getQueryParams();
-			$query = $params['query'] ?? null;
-			$variables = isset($params['variables']) ? json_decode($params['variables'], true) : null;
-			$operationName = $params['operationName'] ?? null;
-		} elseif (str_contains($request->getHeaderLine('Content-Type'), 'multipart/form-data')) {
-			$parsedBody = $request->getParsedBody();
-			$operations = json_decode($parsedBody['operations'] ?? '{}', true);
-			$map = json_decode($parsedBody['map'] ?? '{}', true);
-			$uploadedFiles = $request->getUploadedFiles();
-
-			$query = $operations['query'] ?? null;
-			$variables = $operations['variables'] ?? null;
-			$operationName = $operations['operationName'] ?? null;
-
-			foreach ($map as $fileKey => $paths) {
-				$file = $uploadedFiles[$fileKey] ?? null;
-				if ($file === null) {
-					continue;
-				}
-				foreach ($paths as $path) {
-					$variables = $this->injectFileIntoVariables($variables, $path, $file);
-				}
-			}
-		} else {
-			$body = json_decode((string) $request->getBody(), true) ?? [];
-			$query = $body['query'] ?? null;
-			$variables = $body['variables'] ?? null;
-			$operationName = $body['operationName'] ?? null;
-		}
-
-		return $this->executeSingleQuery($request, $query, $variables, $operationName);
-	}
-
 	protected function executeSingleQuery(
 		ServerRequestInterface $request,
 		?string $query,
 		mixed $variables,
 		?string $operationName
 	): array {
-		if (! $query) {
+		if ($query === null || trim($query) === '') {
 			return ['errors' => [['message' => 'No query provided']]];
 		}
 
@@ -166,6 +323,31 @@ class GraphQLMiddleware implements MiddlewareInterface
 		return $result->toArray($debugFlag);
 	}
 
+	protected function isValidMultipartPath(string $path): bool
+	{
+		if (! str_starts_with($path, 'variables.')) {
+			return false;
+		}
+
+		$relative = substr($path, strlen('variables.'));
+		if ($relative === '') {
+			return false;
+		}
+
+		$segments = explode('.', $relative);
+		if ($this->maxMultipartPathDepth > 0 && count($segments) > $this->maxMultipartPathDepth) {
+			return false;
+		}
+
+		foreach ($segments as $segment) {
+			if ($segment === '') {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
 	/**
 	 * Inject an uploaded file into the variables array at the given dot-notation path.
 	 * Path format: "variables.avatar" or "variables.input.photo"
@@ -173,25 +355,37 @@ class GraphQLMiddleware implements MiddlewareInterface
 	protected function injectFileIntoVariables(?array $variables, string $path, mixed $file): ?array
 	{
 		if ($variables === null) {
-			$variables = [];
+			return null;
 		}
 
-		// Path starts with "variables." — strip it
-		$path = preg_replace('/^variables\./', '', $path);
-		$keys = explode('.', $path);
+		$relative = substr($path, strlen('variables.'));
+		$keys = explode('.', $relative);
 
 		$current = &$variables;
+		$lastIndex = count($keys) - 1;
 		foreach ($keys as $i => $key) {
-			if ($i === count($keys) - 1) {
+			if (! array_key_exists($key, $current)) {
+				return null;
+			}
+
+			if ($i === $lastIndex) {
+				if ($current[$key] !== null) {
+					return null;
+				}
 				$current[$key] = $file;
 			} else {
-				if (! isset($current[$key]) || ! is_array($current[$key])) {
-					$current[$key] = [];
+				if (! is_array($current[$key])) {
+					return null;
 				}
 				$current = &$current[$key];
 			}
 		}
 
 		return $variables;
+	}
+
+	protected function errorResponse(string $message, int $status): JsonResponse
+	{
+		return new JsonResponse(['errors' => [['message' => $message]]], $status);
 	}
 }
