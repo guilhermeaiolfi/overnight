@@ -18,9 +18,9 @@ final class PathRegistryTest extends TestCase
 			'project' => 'C:\\tmp\\overnight-app',
 		]);
 
-		$this->assertSame('C:\\tmp\\overnight-app', $paths->get('project')->getAbsolutePath());
-		$this->assertSame('C:\\tmp\\overnight-app\\var\\cache', $paths->get('cache')->getAbsolutePath());
-		$this->assertSame('C:\\tmp\\overnight-app\\public', $paths->get('public')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app', $paths->get('project')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/var/cache', $paths->get('cache')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/public', $paths->get('public')->getAbsolutePath());
 	}
 
 	public function testPathObjectsCanRenderRelativeAndAppend(): void
@@ -30,8 +30,8 @@ final class PathRegistryTest extends TestCase
 		]);
 
 		$this->assertSame('.', $paths->get('project')->getRelativePath());
-		$this->assertSame('var\\cache', $paths->get('cache')->getRelativePath());
-		$this->assertSame('var\\cache\\filerouting', $paths->get('cache')->append('filerouting')->getRelativePath());
+		$this->assertNativePath('var/cache', $paths->get('cache')->getRelativePath());
+		$this->assertNativePath('var/cache/filerouting', $paths->get('cache')->append('filerouting')->getRelativePath());
 	}
 
 	public function testDirectoryPathsCreateImmutableFileAndDirectoryChildren(): void
@@ -40,11 +40,11 @@ final class PathRegistryTest extends TestCase
 		$file = $root->withDirectory('images')->withFile('cover.jpg');
 
 		$this->assertInstanceOf(PathFile::class, $file);
-		$this->assertSame('C:\\tmp\\overnight-app\\public', $root->getAbsolutePath());
-		$this->assertSame('C:\\tmp\\overnight-app\\public\\images\\cover.jpg', $file->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/public', $root->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/public/images/cover.jpg', $file->getAbsolutePath());
 		$this->assertSame('cover.jpg', $file->getFilename());
 		$this->assertSame('jpg', $file->getExtension());
-		$this->assertSame('C:\\tmp\\overnight-app\\public\\images', $file->getParent()->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/public/images', $file->getParent()->getAbsolutePath());
 	}
 
 	public function testAllowsVarOverrideToDriveCacheDefault(): void
@@ -54,8 +54,8 @@ final class PathRegistryTest extends TestCase
 			'var' => 'runtime',
 		]);
 
-		$this->assertSame('C:\\tmp\\overnight-app\\runtime', $paths->get('var')->getAbsolutePath());
-		$this->assertSame('C:\\tmp\\overnight-app\\runtime\\cache', $paths->get('cache')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/runtime', $paths->get('var')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/runtime/cache', $paths->get('cache')->getAbsolutePath());
 	}
 
 	public function testStandalonePathCanBeRegistered(): void
@@ -65,6 +65,11 @@ final class PathRegistryTest extends TestCase
 		]);
 		$paths->set('uploads', Path::from('var/uploads'));
 
-		$this->assertSame('C:\\tmp\\overnight-app\\var\\uploads', $paths->get('uploads')->getAbsolutePath());
+		$this->assertNativePath('C:/tmp/overnight-app/var/uploads', $paths->get('uploads')->getAbsolutePath());
+	}
+
+	private function assertNativePath(string $expected, string $actual): void
+	{
+		$this->assertSame(str_replace('/', DIRECTORY_SEPARATOR, $expected), $actual);
 	}
 }
