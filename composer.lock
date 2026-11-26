@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "84ea2c397d2ee502309b13d79479c996",
+    "content-hash": "2d196c7f024d38b8977cb3bfb7f7c9a2",
     "packages": [
         {
             "name": "cycle/database",
@@ -577,10 +577,9 @@
             "dist": {
                 "type": "path",
                 "url": "../ondata",
-                "reference": "0d11545924f79ddc89df6d967fb15baabf471618"
+                "reference": "622961bbcf082e420cd903d5e7b16f0cd2679d1d"
             },
             "require": {
-                "cycle/database": "^2.16",
                 "php": ">=8.3"
             },
             "require-dev": {
