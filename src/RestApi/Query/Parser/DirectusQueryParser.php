@@ -19,10 +19,12 @@ use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
 use ON\Data\Query\Relation\RelationRef;
 use ON\Data\Query\Selection\SelectionTag;
 use ON\Data\Query\SelectQuery;
+use ON\Data\Query\Sort\Sort;
 use function ON\Data\Query\x;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Query\Directus\DirectusFunctionParser;
 use ON\RestApi\Query\Directus\DirectusParameterParser;
+use ON\RestApi\Query\Directus\LiteralLike;
 use ON\RestApi\Query\QueryContext;
 use Throwable;
 
@@ -53,22 +55,25 @@ final class DirectusQueryParser implements QueryParserInterface
 	): SelectQuery {
 		$query = $this->runtime->query($collection);
 
-		$aliases = $this->parameters->normalizeAliases($parameters['alias'] ?? []);
-		$deep = is_array($parameters['deep'] ?? null) ? $parameters['deep'] : [];
+		$aliases = $this->parameters->normalizeAliases($parameters['alias'] ?? null);
+		$deep = $this->parameters->objectValue($parameters['deep'] ?? null, 'deep');
+		$this->validateDeepRelations($collection, $deep, $aliases, '', $context);
 
-		$aggregates = is_array($parameters['aggregate'] ?? null) ? $parameters['aggregate'] : [];
-		if ($aggregates !== []) {
-			$this->applyAggregateQuery($query, $collection, $parameters, $context, $aliases);
-
-			return $query;
+		$aggregates = $this->parameters->objectValue($parameters['aggregate'] ?? null, 'aggregate');
+		$groupFields = $this->parameters->parseArrayValue($parameters['groupBy'] ?? null, 'groupBy');
+		if ($aggregates !== [] || $groupFields !== []) {
+			$this->applyAggregateQuery($query, $collection, $aggregates, $groupFields, $context);
+			// Retain grouping order for aggregate requests while checking any requested sort fields.
+			$this->sortExpressions($query, $collection, $parameters['sort'] ?? null, 'sort');
+		} else {
+			$this->applySelection($query, $collection, $parameters['fields'] ?? null, $aliases, $deep, '', $context);
+			$this->applySort($query, $collection, $parameters['sort'] ?? null);
 		}
 
-		$this->applySelection($query, $collection, $parameters['fields'] ?? null, $aliases, $deep, '', $context);
 		$this->applyFilter($query, $collection, $parameters['filter'] ?? [], $aliases, '', $context);
 		$this->applySearch($query, $collection, $parameters['search'] ?? null);
-		$this->applySort($query, $collection, $parameters['sort'] ?? null, $context);
 		$this->applyPagination($query, $parameters, $context);
-		$context->setMeta($this->parameters->parseArrayValue($parameters['meta'] ?? []));
+		$context->setMeta($this->parameters->parseArrayValue($parameters['meta'] ?? [], 'meta'));
 
 		return $query;
 	}
@@ -76,31 +81,32 @@ final class DirectusQueryParser implements QueryParserInterface
 	private function applyAggregateQuery(
 		SelectQuery $query,
 		CollectionInterface $collection,
-		array $parameters,
+		array $aggregates,
+		array $groupFields,
 		QueryContext $context,
-		array $aliases,
 	): void {
 		$aggregateMeta = [];
 		$selects = [];
 
 		$groupByMeta = [];
-		foreach ($this->parameters->parseArrayValue($parameters['groupBy'] ?? []) as $field) {
+		foreach ($groupFields as $field) {
 			$field = (string) $field;
 			if ($field === '') {
 				continue;
 			}
 			$alias = $this->functions->alias($field);
-			$expression = $this->valueExpression($query, $collection, $field, $context);
+			$expression = $this->valueExpression($query, $collection, $field);
 			$selects[] = $expression->as($alias);
 			$groupByMeta[] = ['responseName' => $field, 'alias' => $alias];
 			$query->groupBy($expression);
+			$query->orderBy($expression->asc());
 		}
 
-		foreach ($parameters['aggregate'] as $function => $fields) {
-			foreach ($this->parameters->parseArrayValue($fields) as $field) {
+		foreach ($aggregates as $function => $fields) {
+			foreach ($this->parameters->parseArrayValue($fields, 'aggregate') as $field) {
 				$field = (string) $field;
 				$alias = preg_replace('/[^a-zA-Z0-9_]/', '_', (string) $function . '_' . $field);
-				$selects[] = $this->aggregateExpression($query, $collection, (string) $function, $field, $context)->as($alias);
+				$selects[] = $this->aggregateExpression($query, $collection, (string) $function, $field)->as($alias);
 				$aggregateMeta[] = [
 					'function' => (string) $function,
 					'field' => $field,
@@ -113,11 +119,9 @@ final class DirectusQueryParser implements QueryParserInterface
 			$query->select(...$selects);
 		}
 
-		$this->applyFilter($query, $collection, $parameters['filter'] ?? [], $aliases, '', $context);
-		$this->applySearch($query, $collection, $parameters['search'] ?? null);
 		$context->setAggregates($aggregateMeta);
 		$context->setGroupBy($groupByMeta);
-		$context->setMeta($this->parameters->parseArrayValue($parameters['meta'] ?? []));
+		$context->setAggregate($aggregateMeta !== [] || $groupByMeta !== []);
 	}
 
 	private function applySelection(
@@ -160,19 +164,19 @@ final class DirectusQueryParser implements QueryParserInterface
 			return;
 		}
 
+		$selectAll = in_array('*', $fieldPaths, true);
 		$rootFields = [];
 		$relationPaths = [];
 		foreach ($fieldPaths as $path) {
-			if ($path === '') {
+			if ($path === '' || $path === '*') {
 				continue;
 			}
 
 			[$first, $rest] = array_pad(explode('.', $path, 2), 2, null);
 			if ($rest === null) {
 				if ($collection->fields->has($first)) {
-					if (! $collection->fields->get($first)->isHidden()) {
-						$rootFields[] = $first;
-					}
+					$this->requireVisibleField($collection, $first);
+					$rootFields[] = $first;
 
 					continue;
 				}
@@ -194,15 +198,15 @@ final class DirectusQueryParser implements QueryParserInterface
 		}
 
 		if ($relationRef === null) {
-			if ($rootFields !== []) {
+			if (! $selectAll && $rootFields !== []) {
 				$expressions = array_map(fn (string $name) => $query->field($name), array_values(array_unique($rootFields)));
 				$query->select(...$expressions);
-			} elseif ($relationPaths !== []) {
+			} elseif (! $selectAll && $relationPaths !== []) {
 				$query->getSelections()->clear();
 			}
 			$this->requirePrimaryKeys($query, $collection, null);
 		} else {
-			if ($rootFields !== []) {
+			if (! $selectAll && $rootFields !== []) {
 				$relationRef->select(...array_values(array_unique($rootFields)));
 			} else {
 				$relationRef->load();
@@ -239,6 +243,7 @@ final class DirectusQueryParser implements QueryParserInterface
 		QueryContext $context,
 		?RelationRef $parentRelation,
 	): void {
+		$this->assertRelationDepth($scope, $context);
 		$relationName = $this->relationName($collection, $responseName, $aliases, $scope);
 		if ($relationName === null) {
 			throw RestApiError::invalidField($responseName);
@@ -246,9 +251,6 @@ final class DirectusQueryParser implements QueryParserInterface
 
 		$relation = $collection->relations->get($relationName);
 		$targetCollection = $relation->getCollection();
-		if ($targetCollection === null) {
-			throw RestApiError::invalidField($responseName);
-		}
 
 		$relationPath = $this->joinScope($scope, $relationName);
 		if ($responseName !== $relationName) {
@@ -259,7 +261,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			? $query->relation($relationName)
 			: $parentRelation->relation($relationName);
 
-		$relationDeep = is_array($deep[$responseName] ?? null) ? $deep[$responseName] : [];
+		$relationDeep = $deep[$responseName] ?? [];
 		$childScope = $this->joinScope($scope, $responseName);
 
 		if (isset($relationDeep['_aggregate']) || isset($relationDeep['_groupBy'])) {
@@ -291,50 +293,44 @@ final class DirectusQueryParser implements QueryParserInterface
 			}
 		}
 
-		if (isset($deep['_search']) && $deep['_search'] !== null && $deep['_search'] !== '') {
-			$searchConditions = $this->searchConditions($rel, $targetCollection, (string) $deep['_search']);
-			if ($searchConditions !== null) {
-				$rel->where($searchConditions);
-			}
+		$searchConditions = $this->searchConditions($rel, $targetCollection, $deep['_search'] ?? null);
+		if ($searchConditions !== null) {
+			$rel->where($searchConditions);
 		}
 
-		$sorts = [];
-		foreach ($this->parameters->parseArrayValue($deep['_sort'] ?? null) as $item) {
-			$item = trim((string) $item);
-			if ($item === '') {
-				continue;
-			}
-			$desc = str_starts_with($item, '-');
-			$field = $desc ? substr($item, 1) : $item;
-			$expression = $this->relationValueExpression($rel, $targetCollection, $field, $context);
-			$sorts[] = $desc ? $expression->desc() : $expression->asc();
+		$sorts = $this->sortExpressions($rel, $targetCollection, $deep['_sort'] ?? null, '_sort');
+		$hasPagination = isset($deep['_limit']) || isset($deep['_offset']) || isset($deep['_page']);
+		$pagination = $hasPagination ? $this->pagination($deep, $context, '_') : null;
+		$definition = $rel->getDefinition();
+		if ($definition instanceof FirstOfManyRelation) {
+			// The loader picks exactly one row using the definition's order.
+			return;
 		}
+
 		if ($sorts !== []) {
-			// FirstOfMany ordering is definition-owned; selection-level orderBy is rejected by ondata.
-			if (! $rel->getDefinition() instanceof FirstOfManyRelation) {
-				$rel->orderBy(...$sorts);
-			}
+			$rel->orderBy(...$sorts);
 		}
 
-		if (isset($deep['_limit']) || isset($deep['_offset']) || isset($deep['_page'])) {
-			$limit = isset($deep['_limit']) ? (int) $deep['_limit'] : $context->defaultLimit;
-			$limit = min(max(1, $limit), $context->maxLimit);
-			$offset = isset($deep['_offset']) ? max(0, (int) $deep['_offset']) : 0;
-			if (isset($deep['_page'])) {
-				$offset = (max(1, (int) $deep['_page']) - 1) * $limit;
-			}
+		// ON Data's junction loader does not apply per-parent selection pagination.
+		if ($definition->isJunction() || ($pagination === null && ! $definition->getCardinality()->isMany())) {
+			return;
+		}
+
+		[$limit, $offset] = $pagination ?? $this->pagination([], $context, '_');
+		if ($sorts === []) {
+			$sorts = array_map(
+				fn (FieldInterface $pk) => $rel->field($pk->getName())->asc(),
+				$targetCollection->getPrimaryKeyFields(),
+			);
 			if ($sorts === []) {
-				foreach ($targetCollection->getPrimaryKeyFields() as $pk) {
-					$sorts[] = $rel->field($pk->getName())->asc();
-				}
-				if ($sorts !== []) {
-					$rel->orderBy(...$sorts);
-				}
+				throw DirectusParameterParser::invalidParameter($scope, 'requires a sort field for relation pagination');
 			}
-			$rel->limit($limit);
-			if ($offset > 0) {
-				$rel->offset($offset);
-			}
+			$rel->orderBy(...$sorts);
+		}
+
+		$rel->limit($limit);
+		if ($offset > 0) {
+			$rel->offset($offset);
 		}
 	}
 
@@ -363,39 +359,34 @@ final class DirectusQueryParser implements QueryParserInterface
 		string $scope,
 		QueryContext $context,
 		?RelationRef $relationSource,
+		int $depth = 1,
 	): array {
-		if (! is_array($filters) || $filters === []) {
+		$filters = $this->parameters->objectValue($filters, 'filter');
+		if ($filters === []) {
 			return [];
+		}
+		if ($depth > $context->maxFilterDepth) {
+			throw DirectusParameterParser::invalidParameter('filter', 'exceeds the configured nesting depth');
 		}
 
 		$nodes = [];
 		foreach ($filters as $key => $value) {
-			if (
-				is_string($key)
-				&& str_contains($key, '.')
-				&& $this->relationName($collection, $key, $aliases, $scope) === null
-			) {
-				[$relationKey, $nestedKey] = explode('.', $key, 2);
-				$value = [$nestedKey => $value];
-				$key = $relationKey;
+			if (! is_string($key) || ! is_array($value)) {
+				throw DirectusParameterParser::invalidParameter('filter', 'must map field names to filter objects');
 			}
-
 			if ($key === '_and' || $key === '_or') {
-				if (! is_array($value)) {
-					continue;
-				}
-
 				$children = [];
 				foreach ($value as $group) {
-					$childConditions = $this->buildConditions($rootQuery, $collection, $group, $aliases, $scope, $context, $relationSource);
-					if ($childConditions === []) {
-						continue;
+					if (! is_array($group)) {
+						throw DirectusParameterParser::invalidParameter($key, 'must contain filter objects');
 					}
-					$children[] = count($childConditions) === 1
-						? $childConditions[0]
-						: x()->and(...$childConditions);
+					$childConditions = $this->buildConditions($rootQuery, $collection, $group, $aliases, $scope, $context, $relationSource, $depth + 1);
+					if ($childConditions !== []) {
+						$children[] = count($childConditions) === 1
+							? $childConditions[0]
+							: x()->and(...$childConditions);
+					}
 				}
-
 				if ($children !== []) {
 					$nodes[] = $key === '_and' ? x()->and(...$children) : x()->or(...$children);
 				}
@@ -403,51 +394,39 @@ final class DirectusQueryParser implements QueryParserInterface
 				continue;
 			}
 
-			if (! is_string($key) || ! is_array($value)) {
-				continue;
+			if (str_contains($key, '.') && $this->relationName($collection, $key, $aliases, $scope) === null) {
+				[$key, $nestedKey] = explode('.', $key, 2);
+				$value = [$nestedKey => $value];
 			}
 
 			$relationName = $this->relationName($collection, $key, $aliases, $scope);
 			if ($relationName !== null && ! $this->isOperatorArray($value)) {
+				$this->assertRelationDepth($scope, $context);
 				$relation = $collection->relations->get($relationName);
-				$targetCollection = $relation->getCollection();
-				if ($targetCollection === null) {
-					continue;
+				if ($relation instanceof FirstOfManyRelation) {
+					throw DirectusParameterParser::invalidParameter($key, 'does not support filtering by a first-of-many relation');
 				}
 
-				$exists = $this->buildRelationExists(
+				$nodes[] = $this->buildRelationExists(
 					$rootQuery,
-					$collection,
 					$relation,
 					$value,
 					$aliases,
 					$this->joinScope($scope, $key),
 					$context,
 					$relationSource,
+					$depth + 1,
 				);
-				if ($exists !== null) {
-					$nodes[] = $exists;
-				}
 
 				continue;
 			}
 
+			$left = $this->valueExpression($relationSource ?? $rootQuery, $collection, $key, filter: true);
 			foreach ($value as $operator => $operand) {
 				if (! is_string($operator)) {
-					continue;
+					throw DirectusParameterParser::invalidParameter($key, 'must map filter operators to operands');
 				}
-				$condition = $this->buildOperatorCondition(
-					$rootQuery,
-					$collection,
-					$key,
-					$operator,
-					$operand,
-					$context,
-					$relationSource,
-				);
-				if ($condition !== null) {
-					$nodes[] = $condition;
-				}
+				$nodes[] = $this->buildOperatorCondition($left, $operator, $operand, $context);
 			}
 		}
 
@@ -456,35 +435,24 @@ final class DirectusQueryParser implements QueryParserInterface
 
 	private function buildRelationExists(
 		SelectQuery $rootQuery,
-		CollectionInterface $sourceCollection,
 		RelationInterface $relation,
 		array $nestedFilter,
 		array $aliases,
 		string $scope,
 		QueryContext $context,
 		?RelationRef $parentRelation,
-	): ?ConditionInterface {
+		int $depth,
+	): ConditionInterface {
 		$targetCollection = $relation->getCollection();
-		if ($targetCollection === null) {
-			return null;
-		}
-
 		$query = $parentRelation?->getQuery() ?? $rootQuery;
-		$relationRef = $parentRelation !== null
-			? $parentRelation->relation($relation->getName())
-			: $query->relation($relation->getName());
+		$relationRef = $parentRelation === null
+			? $query->relation($relation->getName())
+			: $parentRelation->relation($relation->getName());
 
 		$related = $query->relatedQuery(
 			$relationRef,
-			function (SelectQuery $target) use ($targetCollection, $nestedFilter, $aliases, $scope, $context): void {
-				$conditions = $this->buildConditionsOnRelated(
-					$target,
-					$targetCollection,
-					$nestedFilter,
-					$aliases,
-					$scope,
-					$context,
-				);
+			function (SelectQuery $target) use ($targetCollection, $nestedFilter, $aliases, $scope, $context, $depth): void {
+				$conditions = $this->buildConditions($target, $targetCollection, $nestedFilter, $aliases, $scope, $context, null, $depth);
 				if ($conditions !== []) {
 					$target->where(...$conditions);
 				}
@@ -494,146 +462,93 @@ final class DirectusQueryParser implements QueryParserInterface
 		return x()->exists($related);
 	}
 
-	/**
-	 * @return list<ConditionInterface>
-	 */
-	private function buildConditionsOnRelated(
-		SelectQuery $related,
-		CollectionInterface $collection,
-		mixed $filters,
-		array $aliases,
-		string $scope,
-		QueryContext $context,
-	): array {
-		if (! is_array($filters) || $filters === []) {
-			return [];
-		}
-
-		$nodes = [];
-		foreach ($filters as $key => $value) {
-			if (
-				is_string($key)
-				&& str_contains($key, '.')
-				&& $this->relationName($collection, $key, $aliases, $scope) === null
-			) {
-				[$relationKey, $nestedKey] = explode('.', $key, 2);
-				$value = [$nestedKey => $value];
-				$key = $relationKey;
-			}
-
-			if ($key === '_and' || $key === '_or') {
-				if (! is_array($value)) {
-					continue;
-				}
-				$children = [];
-				foreach ($value as $group) {
-					$childConditions = $this->buildConditionsOnRelated($related, $collection, $group, $aliases, $scope, $context);
-					if ($childConditions === []) {
-						continue;
-					}
-					$children[] = count($childConditions) === 1
-						? $childConditions[0]
-						: x()->and(...$childConditions);
-				}
-				if ($children !== []) {
-					$nodes[] = $key === '_and' ? x()->and(...$children) : x()->or(...$children);
-				}
-
-				continue;
-			}
-
-			if (! is_string($key) || ! is_array($value)) {
-				continue;
-			}
-
-			$relationName = $this->relationName($collection, $key, $aliases, $scope);
-			if ($relationName !== null && ! $this->isOperatorArray($value)) {
-				$relation = $collection->relations->get($relationName);
-				$exists = $this->buildRelationExists(
-					$related,
-					$collection,
-					$relation,
-					$value,
-					$aliases,
-					$this->joinScope($scope, $key),
-					$context,
-					null,
-				);
-				if ($exists !== null) {
-					$nodes[] = $exists;
-				}
-
-				continue;
-			}
-
-			foreach ($value as $operator => $operand) {
-				if (! is_string($operator)) {
-					continue;
-				}
-				$condition = $this->buildOperatorCondition($related, $collection, $key, $operator, $operand, $context, null);
-				if ($condition !== null) {
-					$nodes[] = $condition;
-				}
-			}
-		}
-
-		return $nodes;
-	}
-
 	private function buildOperatorCondition(
-		SelectQuery $query,
-		CollectionInterface $collection,
-		string $field,
+		ValueExpressionInterface $left,
 		string $operator,
 		mixed $operand,
 		QueryContext $context,
-		?RelationRef $relationSource,
-	): ?ConditionInterface {
-		$left = $relationSource !== null
-			? $this->relationValueExpression($relationSource, $collection, $field, $context)
-			: $this->valueExpression($query, $collection, $field, $context);
+	): ConditionInterface {
+		if ($operator === '_in' || $operator === '_nin') {
+			return $this->inCondition($left, $operand, $operator, $context);
+		}
+		if ($operator === '_between' || $operator === '_nbetween') {
+			return $this->betweenCondition($left, $operand, $operator, $context);
+		}
+
+		$this->parameters->scalarValue($operand, $operator);
 		$resolved = $this->parameters->resolveOperand($operand, $context);
 
 		return match ($operator) {
 			'_eq' => x()->eq($left, $resolved),
 			'_neq' => x()->neq($left, $resolved),
-			'_lt' => x()->lt($left, $resolved),
-			'_lte' => x()->lte($left, $resolved),
-			'_gt' => x()->gt($left, $resolved),
-			'_gte' => x()->gte($left, $resolved),
-			'_contains' => x()->contains($left, (string) $resolved),
-			'_ncontains' => x()->notContains($left, (string) $resolved),
-			'_starts_with' => x()->startsWith($left, (string) $resolved),
-			'_ends_with' => x()->endsWith($left, (string) $resolved),
-			'_in' => x()->in($left, $this->parameters->resolveList($operand, $context)),
-			'_nin' => x()->notIn($left, $this->parameters->resolveList($operand, $context)),
-			'_between' => $this->betweenCondition($left, $operand, false, $context),
-			'_nbetween' => $this->betweenCondition($left, $operand, true, $context),
+			'_lt' => x()->lt($left, $this->orderedOperand($resolved, $operator)),
+			'_lte' => x()->lte($left, $this->orderedOperand($resolved, $operator)),
+			'_gt' => x()->gt($left, $this->orderedOperand($resolved, $operator)),
+			'_gte' => x()->gte($left, $this->orderedOperand($resolved, $operator)),
+			'_contains', '_ncontains', '_starts_with', '_ends_with' => $this->textCondition($left, $resolved, $operator),
 			'_null' => x()->isNull($left),
 			'_nnull' => x()->isNotNull($left),
 			'_empty' => x()->or(x()->isNull($left), x()->eq($left, '')),
 			'_nempty' => x()->and(x()->isNotNull($left), x()->neq($left, '')),
-			default => null,
+			default => throw DirectusParameterParser::invalidParameter($operator, 'is not a supported filter operator'),
 		};
+	}
+
+	private function inCondition(
+		ValueExpressionInterface $left,
+		mixed $operand,
+		string $operator,
+		QueryContext $context,
+	): ConditionInterface {
+		$values = $this->parameters->resolveList($operand, $context, $operator);
+		$negated = $operator === '_nin';
+		if ($values === []) {
+			// Preserve the truth value inside both AND and OR groups.
+			return x()->eq(x()->literal(1), $negated ? 1 : 0);
+		}
+
+		return $negated ? x()->notIn($left, $values) : x()->in($left, $values);
 	}
 
 	private function betweenCondition(
 		ValueExpressionInterface $left,
 		mixed $operand,
-		bool $negated,
+		string $operator,
 		QueryContext $context,
-	): ?ConditionInterface {
-		$values = $this->parameters->parseArrayValue($operand);
+	): ConditionInterface {
+		$values = $this->parameters->resolveList($operand, $context, $operator);
 		if (count($values) !== 2) {
-			return null;
+			throw DirectusParameterParser::invalidParameter($operator, 'requires exactly two bounds');
 		}
 
 		$condition = x()->and(
-			x()->gte($left, $this->parameters->resolveOperand($values[0], $context)),
-			x()->lte($left, $this->parameters->resolveOperand($values[1], $context)),
+			x()->gte($left, $this->orderedOperand($values[0], $operator)),
+			x()->lte($left, $this->orderedOperand($values[1], $operator)),
 		);
 
-		return $negated ? x()->not($condition) : $condition;
+		return $operator === '_nbetween' ? x()->not($condition) : $condition;
+	}
+
+	private function orderedOperand(mixed $value, string $operator): mixed
+	{
+		if ($value === null) {
+			throw DirectusParameterParser::invalidParameter($operator, 'requires a non-null value');
+		}
+
+		return $value;
+	}
+
+	private function textCondition(ValueExpressionInterface $field, mixed $term, string $operator): ConditionInterface
+	{
+		$term = (string) $this->parameters->scalarValue($term, $operator);
+		$escaped = strtr($term, ['!' => '!!', '%' => '!%', '_' => '!_']);
+		$pattern = match ($operator) {
+			'_starts_with' => $escaped . '%',
+			'_ends_with' => '%' . $escaped,
+			default => '%' . $escaped . '%',
+		};
+
+		return x()->eq(x()->fn()->call(LiteralLike::class, $field, $pattern, $operator === '_ncontains'), 1);
 	}
 
 	private function applySearch(SelectQuery $query, CollectionInterface $collection, mixed $search): void
@@ -653,7 +568,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			return null;
 		}
 
-		$term = (string) $search;
+		$term = $this->parameters->scalarValue($search, 'search');
 		$stringFields = $this->getStringFields($collection);
 		if ($stringFields === []) {
 			return null;
@@ -661,55 +576,82 @@ final class DirectusQueryParser implements QueryParserInterface
 
 		$conditions = [];
 		foreach ($stringFields as $fieldName) {
-			$conditions[] = x()->contains($source->field($fieldName), $term);
+			$conditions[] = $this->textCondition($source->field($fieldName), $term, '_contains');
 		}
 
 		return count($conditions) === 1 ? $conditions[0] : x()->or(...$conditions);
 	}
 
-	private function applySort(
-		SelectQuery $query,
+	private function applySort(SelectQuery $query, CollectionInterface $collection, mixed $sort): void
+	{
+		$sorts = $this->sortExpressions($query, $collection, $sort, 'sort');
+		if ($sorts !== []) {
+			$query->orderBy(...$sorts);
+		}
+	}
+
+	/**
+	 * @return list<Sort>
+	 */
+	private function sortExpressions(
+		SelectQuery|RelationRef $source,
 		CollectionInterface $collection,
 		mixed $sort,
-		QueryContext $context,
-	): void {
+		string $parameter,
+	): array {
 		$sorts = [];
-		foreach ($this->parameters->parseArrayValue($sort) as $item) {
+		foreach ($this->parameters->parseArrayValue($sort, $parameter) as $item) {
 			$item = trim((string) $item);
 			if ($item === '') {
 				continue;
 			}
 			$desc = str_starts_with($item, '-');
 			$field = $desc ? substr($item, 1) : $item;
-			$expression = $this->valueExpression($query, $collection, $field, $context);
+			$expression = $this->valueExpression($source, $collection, $field);
 			$sorts[] = $desc ? $expression->desc() : $expression->asc();
 		}
 
-		if ($sorts !== []) {
-			$query->orderBy(...$sorts);
+		return $sorts;
+	}
+
+	private function applyPagination(SelectQuery $query, array $input, QueryContext $context): void
+	{
+		[$limit, $offset] = $this->pagination($input, $context);
+		$query->limit($limit);
+		if ($offset > 0) {
+			$query->offset($offset);
 		}
 	}
 
-	private function applyPagination(SelectQuery $query, array $input, QueryContext $context, string $prefix = ''): void
+	/**
+	 * @return array{int, int}
+	 */
+	private function pagination(array $input, QueryContext $context, string $prefix = ''): array
 	{
 		$limitKey = $prefix . 'limit';
 		$offsetKey = $prefix . 'offset';
 		$pageKey = $prefix . 'page';
 
-		$hasPagination = isset($input[$limitKey]) || isset($input[$offsetKey]) || isset($input[$pageKey]);
-		$limit = $hasPagination && isset($input[$limitKey])
-			? (int) $input[$limitKey]
+		$limit = isset($input[$limitKey])
+			? $this->parameters->integerValue($input[$limitKey], $limitKey)
 			: $context->defaultLimit;
-		$limit = min(max(1, $limit), $context->maxLimit);
-		$offset = isset($input[$offsetKey]) ? max(0, (int) $input[$offsetKey]) : 0;
+		$limit = min(max(1, $limit), max(1, $context->maxLimit));
+		$offset = isset($input[$offsetKey])
+			? max(0, $this->parameters->integerValue($input[$offsetKey], $offsetKey))
+			: 0;
+
 		if (isset($input[$pageKey])) {
-			$offset = (max(1, (int) $input[$pageKey]) - 1) * $limit;
+			$page = max(1, $this->parameters->integerValue($input[$pageKey], $pageKey));
+			if ($page > intdiv(PHP_INT_MAX, $limit)) {
+				throw DirectusParameterParser::invalidParameter($pageKey, 'is too large');
+			}
+			$offset = ($page - 1) * $limit;
+		}
+		if ($offset > PHP_INT_MAX - $limit) {
+			throw DirectusParameterParser::invalidParameter($offsetKey, 'is too large');
 		}
 
-		$query->limit($limit);
-		if ($offset > 0) {
-			$query->offset($offset);
-		}
+		return [$limit, $offset];
 	}
 
 	private function requirePrimaryKeys(
@@ -753,35 +695,24 @@ final class DirectusQueryParser implements QueryParserInterface
 	}
 
 	private function valueExpression(
-		SelectQuery $query,
+		SelectQuery|RelationRef $source,
 		CollectionInterface $collection,
 		string $field,
-		QueryContext $context,
+		bool $filter = false,
 	): ValueExpressionInterface {
 		$parsed = $this->functions->parse($field);
-		$expression = $query->field($parsed->field);
+		$this->requireVisibleField($collection, $parsed->field, $filter);
+		$expression = $source->field($parsed->field);
 
-		if (! $parsed->isFunction()) {
-			return $expression;
-		}
-
-		return $this->functionCall($parsed->function, $expression);
+		return $parsed->isFunction() ? $this->functionCall($parsed->function, $expression) : $expression;
 	}
 
-	private function relationValueExpression(
-		RelationRef $rel,
-		CollectionInterface $collection,
-		string $field,
-		QueryContext $context,
-	): ValueExpressionInterface {
-		$parsed = $this->functions->parse($field);
-		$expression = $rel->field($parsed->field);
-
-		if (! $parsed->isFunction()) {
-			return $expression;
+	private function requireVisibleField(CollectionInterface $collection, string $field, bool $filter = false): void
+	{
+		$definition = $collection->getField($field);
+		if ($definition === null || $definition->isHidden() || ($filter && ! $definition->isFilterable())) {
+			throw RestApiError::invalidField($field);
 		}
-
-		return $this->functionCall($parsed->function, $expression);
 	}
 
 	private function functionCall(string $function, ValueExpressionInterface $expression): ValueExpressionInterface
@@ -800,7 +731,6 @@ final class DirectusQueryParser implements QueryParserInterface
 		CollectionInterface $collection,
 		string $function,
 		string $field,
-		QueryContext $context,
 	): ValueExpressionInterface {
 		$distinct = false;
 		$normalized = $function;
@@ -811,7 +741,7 @@ final class DirectusQueryParser implements QueryParserInterface
 
 		$operand = $field === '*'
 			? $query->all()
-			: $this->valueExpression($query, $collection, $field, $context);
+			: $this->valueExpression($query, $collection, $field);
 
 		return match (strtolower($normalized)) {
 			'count' => $distinct ? x()->countDistinct($operand) : x()->count($operand),
@@ -832,11 +762,11 @@ final class DirectusQueryParser implements QueryParserInterface
 		$fields = [];
 
 		foreach ($collection->fields as $name => $field) {
-			if ($field->isHidden() || $field->isPrimaryKey()) {
+			if ($field->isHidden() || $field->isPrimaryKey() || ! $field->isFilterable()) {
 				continue;
 			}
 
-			if (method_exists($field, 'isSearchable') && $field->isSearchable() === false) {
+			if ($field->isSearchable() === false) {
 				continue;
 			}
 
@@ -871,7 +801,50 @@ final class DirectusQueryParser implements QueryParserInterface
 		$aliasKey = $this->joinScope($scope, $responseName);
 		$relationName = $aliases[$aliasKey] ?? ($aliases[$responseName] ?? $responseName);
 
-		return $collection->relations->has($relationName) ? $relationName : null;
+		$relation = $collection->getRelation($relationName);
+		if ($relation === null) {
+			return null;
+		}
+		if ($relation->getCollection()->isHidden()) {
+			throw RestApiError::invalidField($aliasKey);
+		}
+
+		return $relationName;
+	}
+
+	private function validateDeepRelations(
+		CollectionInterface $collection,
+		array $deep,
+		array $aliases,
+		string $scope,
+		QueryContext $context,
+	): void {
+		foreach ($deep as $name => $options) {
+			if (! is_string($name)) {
+				throw DirectusParameterParser::invalidParameter('deep', 'must map relation names to options');
+			}
+			if ($scope !== '' && str_starts_with($name, '_')) {
+				continue;
+			}
+
+			$this->assertRelationDepth($scope, $context);
+			$relation = $this->relationName($collection, $name, $aliases, $scope);
+			$path = $this->joinScope($scope, $name);
+			if ($relation === null) {
+				throw RestApiError::invalidField($path);
+			}
+
+			$target = $collection->relations->get($relation)->getCollection();
+			$this->validateDeepRelations($target, $this->parameters->objectValue($options, $path), $aliases, $path, $context);
+		}
+	}
+
+	private function assertRelationDepth(string $scope, QueryContext $context): void
+	{
+		$depth = $scope === '' ? 1 : substr_count($scope, '.') + 2;
+		if ($depth > $context->maxRelationDepth) {
+			throw DirectusParameterParser::invalidParameter('relation', 'exceeds the configured nesting depth');
+		}
 	}
 
 	private function joinScope(string $scope, string $name): string

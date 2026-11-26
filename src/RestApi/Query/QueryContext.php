@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\RestApi\Query;
 
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\RestApiConfig;
 
 /**
  * RestApi-owned request context for building an ON\Data SelectQuery.
@@ -30,7 +31,20 @@ final class QueryContext
 		private array $aggregates = [],
 		private array $groupBy = [],
 		private array $relationResponseNames = [],
+		public readonly int $maxRelationDepth = 5,
+		public readonly int $maxFilterDepth = 8,
 	) {
+	}
+
+	public static function fromConfig(RestApiConfig $config): self
+	{
+		return new self(
+			defaultLimit: (int) $config->get('defaultLimit', 100),
+			maxLimit: (int) $config->get('maxLimit', 1000),
+			dynamicVariables: $config->get('dynamicVariables', []),
+			maxRelationDepth: (int) $config->get('maxRelationDepth', 5),
+			maxFilterDepth: (int) $config->get('maxFilterDepth', 8),
+		);
 	}
 
 	/**
