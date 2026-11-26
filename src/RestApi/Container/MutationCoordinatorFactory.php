@@ -11,6 +11,7 @@ use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
 use ON\RestApi\Mutation\SessionFactory;
 use ON\RestApi\Repository\ItemRepositoryInterface;
+use ON\RestApi\RestApiConfig;
 use Psr\Container\ContainerInterface;
 
 final class MutationCoordinatorFactory
@@ -29,6 +30,7 @@ final class MutationCoordinatorFactory
 			$items,
 			$container->get(RestHookDispatcher::class),
 			$runtime,
+			$container->get(RestApiConfig::class),
 		);
 	}
 }

@@ -414,7 +414,7 @@ final class RestMiddlewareTest extends TestCase
 		);
 
 		$request = (new ServerRequest(
-			uri: '/files',
+			uri: '/items/files',
 			method: 'POST',
 			headers: ['Content-Type' => 'multipart/form-data; boundary=test'],
 		))
@@ -506,35 +506,35 @@ final class RestMiddlewareTest extends TestCase
 		$this->assertSame('create', $body['errors'][0]['extensions']['action']);
 	}
 
-	public function testUnexpectedExceptionsReturnTheOriginalMessage(): void
+	public function testUnexpectedExceptionsOnlyExposeDetailsInDebugMode(): void
 	{
-		$middleware = new RestMiddleware(
-			new RestActionRouter([
-				['name' => 'boom', 'methods' => ['POST'], 'path' => 'asset', 'action' => 'boom'],
-			]),
-			static function (): never {
-				throw new RuntimeException('Boom failure');
-			},
-			['endpointUri' => '/items']
-		);
+		foreach ([false, true] as $debug) {
+			$middleware = new RestMiddleware(
+				new RestActionRouter([
+					['name' => 'boom', 'methods' => ['POST'], 'path' => 'asset', 'action' => 'boom'],
+				]),
+				static function (): never {
+					throw new RuntimeException('Boom failure');
+				},
+				['endpointUri' => '/items', 'debug' => $debug],
+			);
 
-		$response = $middleware->process(
-			new ServerRequest(uri: '/items/asset', method: 'POST'),
-			new class () implements RequestHandlerInterface {
-				public function handle(ServerRequestInterface $request): ResponseInterface
-				{
-					return new JsonResponse(['miss' => true]);
+			$response = $middleware->process(
+				new ServerRequest(uri: '/items/asset', method: 'POST'),
+				new class () implements RequestHandlerInterface {
+					public function handle(ServerRequestInterface $request): ResponseInterface
+					{
+						return new JsonResponse(['miss' => true]);
+					}
 				}
-			}
-		);
+			);
 
-		$response->getBody()->rewind();
-		$body = json_decode((string) $response->getBody(), true);
-		$exceptionClass = (string) ($body['errors'][0]['extensions']['exception'] ?? '');
-
-		$this->assertSame(500, $response->getStatusCode());
-		$this->assertSame('Boom failure', $body['errors'][0]['message']);
-		$this->assertSame('RuntimeException', basename(str_replace('\\', '/', $exceptionClass)));
+			$error = json_decode((string) $response->getBody(), true, flags: JSON_THROW_ON_ERROR)['errors'][0];
+			$this->assertSame(500, $response->getStatusCode());
+			$this->assertSame($debug ? 'Boom failure' : 'Internal server error.', $error['message']);
+			$this->assertSame($debug ? RuntimeException::class : null, $error['extensions']['exception'] ?? null);
+			$this->assertSame($debug, isset($error['extensions']['trace']));
+		}
 	}
 
 	public function testActivationCallbackRunsBeforeMatchedRestRequest(): void

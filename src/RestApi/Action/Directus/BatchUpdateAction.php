@@ -6,7 +6,7 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use function ON\Data\Mapper\map;
+use ON\Data\Key;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
@@ -16,9 +16,7 @@ use ON\RestApi\Payload\MutationInputMerger;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
-use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
-use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 use ON\RestApi\Support\ValidationTrait;
 
@@ -27,6 +25,7 @@ final class BatchUpdateAction implements RestActionInterface
 	use ETagTrait;
 	use RegistrySupportTrait;
 	use ValidationTrait;
+	use WriteInputTrait;
 
 	public function __construct(
 		private Registry $registry,
@@ -50,45 +49,31 @@ final class BatchUpdateAction implements RestActionInterface
 		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
 		$files = is_array($payload['files'] ?? null) ? $payload['files'] : [];
 
-		if (! isset($body[0]) || ! is_array($body[0])) {
-			throw new RestApiError('Batch update expects an array of objects with primary keys.', 'INVALID_PAYLOAD', null, 400);
-		}
+		$this->assertObjectBatch($body, 'Batch update expects an array of objects with primary keys.');
+		$primaryKey = PrimaryKey::of($collection);
+		$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
+		$ifMatch = $this->getIfMatch($headers);
+		$prepare = function (array $input, Key $identity, array $validation) use ($collection, $ifMatch): array {
+			$this->checkIfMatch($collection, $identity, $ifMatch);
+
+			return $this->prepareInput($collection, $input, $validation, partial: true);
+		};
 
 		$batch = [];
-		foreach ($body as $item) {
-			$identity = PrimaryKey::of($collection)->extractFromInput($item);
+		foreach ((new MutationInputMerger())->mergeFilesForBatch($collection, $body, $files) as $item) {
+			$identity = $primaryKey->extractFromInput($item);
 			if ($identity === null) {
-				$missing = PrimaryKey::of($collection)->getMissingFieldNames($item);
+				$missing = $primaryKey->getMissingFieldNames($item);
 
 				throw new RestApiError(
-					"Each item must include the primary key field(s): " . implode(', ', $missing) . '.',
+					'Each item must include valid primary key fields.',
 					'MISSING_PRIMARY_KEY',
 					$missing[0] ?? null,
-					400
+					400,
 				);
 			}
 
-			foreach (PrimaryKey::of($collection)->getFieldNames() as $fieldName) {
-				unset($item[$fieldName]);
-			}
-			foreach (PrimaryKey::of($collection)->getColumns() as $columnName) {
-				unset($item[$columnName]);
-			}
-
-			$this->validate($collection, $item, true);
-			$identityValue = PrimaryKey::of($collection)->getValue($identity);
-			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
-			$this->checkIfMatch($collection, $identityValue, $this->getIfMatch($headers));
-
-			$input = $this->fileUploadEventEmitter->processInput(
-				$collection,
-				$this->toPhpInput($collection, $item, $files, $options['input']),
-			);
-
-			$batch[] = [
-				'identity' => $identityValue,
-				'input' => $input,
-			];
+			$batch[] = ['identity' => $identity, 'input' => $primaryKey->withoutFields($item)];
 		}
 
 		return [
@@ -97,6 +82,8 @@ final class BatchUpdateAction implements RestActionInterface
 				$batch,
 				(bool) $options['dispatchEvents'],
 				$options['output'],
+				$prepare,
+				$options['input'],
 			),
 		];
 	}
@@ -108,37 +95,5 @@ final class BatchUpdateAction implements RestActionInterface
 			PrimaryKey::of($collection)->getValue($identity),
 			PhpRepresentation::class,
 		);
-	}
-
-	/**
-	 * @param array<string, mixed> $item
-	 * @param array<string, mixed> $files
-	 * @param class-string $from
-	 * @return array<string, mixed>
-	 */
-	private function toPhpInput(
-		CollectionInterface $collection,
-		array $item,
-		array $files,
-		string $from,
-	): array {
-		if ($files !== []) {
-			$item = (new MutationInputMerger())->mergeFiles($collection, $item, $files);
-		}
-
-		if ($from === PhpRepresentation::class) {
-			return $item;
-		}
-
-		[$scalars, $relations] = MutationInput::splitNodeInput($collection, $item);
-		if ($scalars !== []) {
-			$scalars = map($scalars)
-				->args($collection)
-				->from($from)
-				->as(PhpRepresentation::class)
-				->to([]);
-		}
-
-		return $scalars + $relations;
 	}
 }

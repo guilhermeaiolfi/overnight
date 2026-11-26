@@ -11,6 +11,25 @@ use Psr\Http\Message\UploadedFileInterface;
 final class MutationInputMerger
 {
 	/**
+	 * Merge uploads addressed to individual rows. Flat file fields retain the
+	 * existing shared-file behavior for callers using that batch request shape.
+	 *
+	 * @param list<array<string, mixed>> $items
+	 * @return list<array<string, mixed>>
+	 */
+	public function mergeFilesForBatch(CollectionInterface $collection, array $items, array $files): array
+	{
+		$files = $this->expandBracketedFileKeys($files);
+		$sharedFiles = array_filter($files, 'is_string', ARRAY_FILTER_USE_KEY);
+		foreach ($items as $index => $item) {
+			$itemFiles = is_array($files[$index] ?? null) ? $files[$index] : [];
+			$items[$index] = $this->mergeFiles($collection, $item, array_replace($sharedFiles, $itemFiles));
+		}
+
+		return $items;
+	}
+
+	/**
 	 * Merge uploaded files into mutation input so the parser can include them as field values.
 	 *
 	 * @param array<string, mixed> $input

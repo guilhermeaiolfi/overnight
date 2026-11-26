@@ -238,53 +238,7 @@ class ItemRepository implements ItemRepositoryInterface
 
 	protected function convertDatabaseError(Throwable $e, CollectionInterface $collection): RestApiError
 	{
-		$message = $e->getMessage();
-
-		if (str_contains($message, 'UNIQUE constraint') || str_contains($message, 'Duplicate entry')) {
-			if (preg_match('/column[s]?\s+[`\']?(\w+)/i', $message, $matches)) {
-				$field = $collection->getFieldNameByColumn($matches[1]);
-
-				return new RestApiError(
-					"A record with this {$field} already exists.",
-					'DUPLICATE',
-					$field,
-					409,
-					$e
-				);
-			}
-
-			return new RestApiError('A record with these values already exists.', 'DUPLICATE', null, 409, $e);
-		}
-
-		if (
-			str_contains($message, 'NOT NULL constraint')
-			|| str_contains($message, 'cannot be null')
-			|| preg_match("/Field '([^']+)' doesn't have a default value/i", $message, $defaultValueMatches)
-		) {
-			$column = $defaultValueMatches[1] ?? null;
-			if ($column === null && preg_match('/[`\']?(\w+)[`\']?\s+(?:cannot be null|NOT NULL)/i', $message, $matches)) {
-				$column = $matches[1];
-			}
-
-			if ($column !== null) {
-				$field = $collection->getFieldNameByColumn($column);
-
-				return new RestApiError(
-					"The field {$field} is required.",
-					'REQUIRED_FIELD',
-					$field,
-					400,
-					$e
-				);
-			}
-
-			return new RestApiError('A required field is missing.', 'REQUIRED_FIELD', null, 400, $e);
-		}
-
-		if (stripos($message, 'foreign key constraint') !== false) {
-			return new RestApiError('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION', null, 400, $e);
-		}
-
-		return new RestApiError('Database operation failed.', 'DATABASE_ERROR', null, 500, $e);
+		return RestApiError::databaseConstraint($e, $collection)
+			?? new RestApiError('Database operation failed.', 'DATABASE_ERROR', null, 500, $e);
 	}
 }

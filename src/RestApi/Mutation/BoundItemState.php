@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Mutation;
 
+use Closure;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
+use ON\Data\ORM\Record\RecordState;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Mutation\Payload\PayloadPath;
 use ON\RestApi\Support\PrimaryKey;
@@ -15,7 +17,7 @@ use ON\RestApi\Support\PrimaryKey;
  *
  * Pending Directus scalars live in an overlay map ({@see getData()}) that is also
  * written onto the representation. After flush, {@see markReady()} merges the
- * reloaded row into that overlay. Hooks never see {@see \ON\Data\ORM\Record\RecordState}.
+ * reloaded row into that overlay. Hooks never see {@see RecordState}.
  *
  * Supported before-hook mutations: scalar field setValue/setData (including fields
  * absent from the original payload). Newly introduced scalars are tracked via
@@ -62,6 +64,9 @@ final class BoundItemState implements MutationStateInterface
 		array $fieldPaths = [],
 		private readonly bool $identityMutable = true,
 		private readonly bool $creating = true,
+		private readonly ?Key $identity = null,
+		private ?Closure $loadRow = null,
+		private bool $useRowAsData = false,
 	) {
 		$this->values = $values;
 		$this->row = $row;
@@ -98,12 +103,18 @@ final class BoundItemState implements MutationStateInterface
 
 	public function getData(): array
 	{
+		if ($this->useRowAsData) {
+			$this->useRowAsData = false;
+			$this->values = $this->getRow() ?? [];
+		}
+
 		return $this->values;
 	}
 
 	public function setData(array $data): void
 	{
 		$this->assertIdentityMutable($data);
+		$this->useRowAsData = false;
 		$this->values = $data;
 		$this->writeRepresentation($data);
 	}
@@ -114,16 +125,17 @@ final class BoundItemState implements MutationStateInterface
 			return $this->values[$column];
 		}
 
-		if ($this->row !== null && array_key_exists($column, $this->row)) {
-			return $this->row[$column];
+		if ($this->identity !== null && array_key_exists($column, $this->identity->getValues())) {
+			return $this->identity->getFieldValue($column);
 		}
 
-		return null;
+		return $this->getRow()[$column] ?? null;
 	}
 
 	public function setValue(string $column, mixed $value): void
 	{
 		$this->assertIdentityMutable([$column => $value]);
+		$this->getData();
 		$this->values[$column] = $value;
 		$this->writeField($column, $value);
 	}
@@ -140,7 +152,25 @@ final class BoundItemState implements MutationStateInterface
 
 	public function getRow(): ?array
 	{
+		if ($this->loadRow !== null) {
+			$loadRow = $this->loadRow;
+			$this->loadRow = null;
+			$this->row = $loadRow();
+		}
+
 		return $this->row;
+	}
+
+	public function attachRepresentation(object $representation, array $values, ?array $row, array $fieldPaths = []): void
+	{
+		$this->representation = $representation;
+		$this->values = $values;
+		$this->row = $row;
+		$this->loadRow = null;
+		$this->useRowAsData = false;
+		$this->fieldPaths = $fieldPaths;
+		$this->pendingHookFields = [];
+		$this->writeRepresentation($values);
 	}
 
 	public function markReady(array $row): void
@@ -156,6 +186,10 @@ final class BoundItemState implements MutationStateInterface
 
 	public function getKey(bool $requireReady = true): ?Key
 	{
+		if ($this->identity !== null) {
+			return $this->identity;
+		}
+
 		$source = $this->row === null
 			? $this->values
 			: array_merge($this->row, $this->values);

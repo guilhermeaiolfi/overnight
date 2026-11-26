@@ -6,9 +6,13 @@ namespace ON\RestApi\Mutation;
 
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\HasManyRelation;
+use ON\Data\Definition\Relation\HasOneRelation;
 use ON\Data\Definition\Relation\RelationCardinality;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Key;
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Relation\ToManyRelationState;
 use ON\Data\ORM\Relation\ToOneRelationState;
@@ -26,6 +30,7 @@ use ON\RestApi\Mutation\Payload\ToOneKind;
 use ON\RestApi\Mutation\Payload\ToOneMutation;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
+use Psr\Http\Message\UploadedFileInterface;
 use stdClass;
 
 /**
@@ -86,12 +91,36 @@ final class DirectusMutationBinder
 		$this->pendingRemovedIdentities = [];
 	}
 
+	/**
+	 * Normalize the known root scalar fields without consulting the database.
+	 * Upload objects are converted later by the authorized file hook.
+	 */
+	public function normalizeRootValues(CollectionInterface $collection, array $values, string $from): array
+	{
+		$fields = array_filter(
+			$values,
+			static fn ($value, $field): bool => $collection->hasField((string) $field) && ! $value instanceof UploadedFileInterface,
+			ARRAY_FILTER_USE_BOTH,
+		);
+		if ($fields === []) {
+			return $values;
+		}
+
+		$typed = $from === PhpRepresentation::class
+			? $this->schemas->toPhpValues($collection, $fields)
+			: map($fields)->args($collection)->from($from)->as(PhpRepresentation::class)->to([]);
+
+		return array_replace($values, $typed);
+	}
+
 	public function bindCreate(
 		Session $session,
 		CollectionInterface $collection,
 		DirectusMutation $mutation,
+		?BoundItemState $state = null,
+		bool $valuesArePhp = false,
 	): BoundMutation {
-		return $this->bindRoot($session, $collection, $mutation, 'create', null);
+		return $this->bindRoot($session, $collection, $mutation, 'create', null, $state, $valuesArePhp);
 	}
 
 	public function bindUpdate(
@@ -99,6 +128,8 @@ final class DirectusMutationBinder
 		CollectionInterface $collection,
 		DirectusMutation $mutation,
 		Key|string|int $identity,
+		?BoundItemState $state = null,
+		bool $valuesArePhp = false,
 	): BoundMutation {
 		return $this->bindRoot(
 			$session,
@@ -106,6 +137,8 @@ final class DirectusMutationBinder
 			$mutation,
 			'update',
 			$this->normalizeKey($collection, $identity),
+			$state,
+			$valuesArePhp,
 		);
 	}
 
@@ -113,6 +146,7 @@ final class DirectusMutationBinder
 		Session $session,
 		CollectionInterface $collection,
 		Key|string|int $identity,
+		?BoundItemState $state = null,
 	): BoundMutation {
 		$key = $this->normalizeKey($collection, $identity);
 		$previous = $this->findRow($collection, $key);
@@ -124,7 +158,11 @@ final class DirectusMutationBinder
 		$session->remove($representation);
 		$this->markPendingRemoved($collection, $key);
 
-		$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false, creating: false);
+		if ($state === null) {
+			$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false, creating: false);
+		} else {
+			$state->attachRepresentation($representation, $previous, $previous);
+		}
 
 		return new BoundMutation(
 			operation: 'delete',
@@ -143,8 +181,13 @@ final class DirectusMutationBinder
 		DirectusMutation $mutation,
 		string $operation,
 		?Key $identity,
+		?BoundItemState $state,
+		bool $valuesArePhp,
 	): BoundMutation {
 		$values = $mutation->values;
+		if ($operation === 'update') {
+			$values = PrimaryKey::of($collection)->withoutFields($values);
+		}
 		/** @var array<string, mixed>|null $previous */
 		$previous = null;
 		/** @var array<string, string> $fieldPaths */
@@ -157,9 +200,12 @@ final class DirectusMutationBinder
 			}
 		}
 
+		if (! $valuesArePhp) {
+			$values = $this->schemas->toPhpValues($collection, $values);
+		}
+
 		if ($operation === 'create') {
 			$representation = new stdClass();
-			$values = $this->schemas->toPhpValues($collection, $values);
 			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
 			if ($manualIdentity !== null) {
 				$identity = $this->normalizeKey($collection, $manualIdentity);
@@ -192,7 +238,6 @@ final class DirectusMutationBinder
 				throw RestApiError::notFound();
 			}
 
-			$values = $this->schemas->toPhpValues($collection, $values);
 			$loadFields = [];
 			foreach (array_keys($values) as $fieldName) {
 				$name = (string) $fieldName;
@@ -214,17 +259,21 @@ final class DirectusMutationBinder
 			$mutation->relations,
 		);
 
-		$state = new BoundItemState(
-			$collection,
-			$representation,
-			$values,
-			$operation === 'update' ? $previous : null,
-			$operation === 'update',
-			$mutation->path,
-			$fieldPaths,
-			identityMutable: $operation === 'create',
-			creating: $operation === 'create',
-		);
+		if ($state === null) {
+			$state = new BoundItemState(
+				$collection,
+				$representation,
+				$values,
+				$previous,
+				$operation === 'update',
+				$mutation->path,
+				$fieldPaths,
+				identityMutable: $operation === 'create',
+				creating: $operation === 'create',
+			);
+		} else {
+			$state->attachRepresentation($representation, $values, $previous, $fieldPaths);
+		}
 
 		return new BoundMutation(
 			operation: $operation,
@@ -273,6 +322,10 @@ final class DirectusMutationBinder
 		RecordState $ownerRecord,
 		RelationMutation $relationMutation,
 	): array {
+		if ($relationMutation->relation()->getCollection()->isHidden()) {
+			throw RestApiError::invalidField($relationMutation->path()->toString());
+		}
+
 		return match (true) {
 			$relationMutation instanceof ToOneMutation => array_values(array_filter([
 				$this->bindToOne(
@@ -438,12 +491,17 @@ final class DirectusMutationBinder
 			$desired[spl_object_id($childBound->representation)] = $childBound->representation;
 		}
 
-		foreach ($baseline->items() as $existing) {
-			if (isset($desired[spl_object_id($existing)])) {
-				continue;
+		$desiredKeys = [];
+		foreach ($desired as $object) {
+			$key = $this->recordFor($session, $object)?->getKey();
+			if ($key !== null) {
+				$desiredKeys[$key->getHash()] = true;
 			}
+		}
 
-			if ($this->matchesAnyDesiredKey($session, $desired, $existing)) {
+		foreach ($baseline->items() as $existing) {
+			$key = $this->recordFor($session, $existing)?->getKey();
+			if (isset($desired[spl_object_id($existing)]) || ($key !== null && isset($desiredKeys[$key->getHash()]))) {
 				continue;
 			}
 
@@ -719,6 +777,7 @@ final class DirectusMutationBinder
 			}
 		}
 
+		$parentKeys = [];
 		if ($linkRelation) {
 			$this->attachRelated(
 				$session,
@@ -728,6 +787,11 @@ final class DirectusMutationBinder
 				$childObject,
 				$toMany,
 			);
+			if ($relation instanceof HasManyRelation || $relation instanceof HasOneRelation) {
+				foreach ($relation->getKeyPairing()->getPairs() as $pair) {
+					$parentKeys[$pair['right']] = $ownerRecord->getValueRef($pair['left']);
+				}
+			}
 		}
 
 		$related = $this->bindNestedOnRelated(
@@ -758,6 +822,8 @@ final class DirectusMutationBinder
 			path: $item->path,
 			related: $related,
 			rootRecord: $this->recordFor($session, $childObject),
+			submittedValues: $item->values,
+			parentKeys: $parentKeys,
 		);
 	}
 
@@ -861,6 +927,7 @@ final class DirectusMutationBinder
 			identity: $item->identity,
 			path: $item->path,
 			related: $related,
+			submittedValues: $item->values,
 		);
 	}
 
@@ -1016,30 +1083,6 @@ final class DirectusMutationBinder
 	private function identityCacheKey(CollectionInterface $collection, Key $identity): string
 	{
 		return $collection->getName() . '|' . $identity->getHash();
-	}
-
-	/**
-	 * @param array<int, object> $desired
-	 */
-	private function matchesAnyDesiredKey(Session $session, array $desired, object $existing): bool
-	{
-		$existingRecord = $this->recordFor($session, $existing);
-		if (! $existingRecord instanceof RecordState || ! $existingRecord->hasKey()) {
-			return false;
-		}
-
-		foreach ($desired as $desiredObject) {
-			$desiredRecord = $this->recordFor($session, $desiredObject);
-			if (
-				$desiredRecord instanceof RecordState
-				&& $desiredRecord->hasKey()
-				&& $desiredRecord->getKey()?->equals($existingRecord->getKey())
-			) {
-				return true;
-			}
-		}
-
-		return false;
 	}
 
 	private function requireRecord(Session $session, object $representation): RecordState

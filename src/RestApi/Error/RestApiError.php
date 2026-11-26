@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Error;
 
+use Cycle\Database\Exception\StatementException;
+use ON\Data\Definition\Collection\CollectionInterface;
+use PDOException;
 use RuntimeException;
 use Throwable;
 
@@ -223,6 +226,64 @@ class RestApiError extends RuntimeException
 		return new self($message, 'UNAUTHENTICATED', null, 401, null, $extensions);
 	}
 
+	public static function databaseConstraint(Throwable $exception, CollectionInterface $collection): ?self
+	{
+		for ($cause = $exception; $cause !== null; $cause = $cause->getPrevious()) {
+			if (! $cause instanceof PDOException && ! $cause instanceof StatementException) {
+				continue;
+			}
+
+			$message = $cause->getMessage();
+			$sqlState = $cause instanceof PDOException ? (string) ($cause->errorInfo[0] ?? $cause->getCode()) : '';
+			if ($sqlState === '23505' || preg_match('/unique constraint|duplicate (?:entry|key)/i', $message)) {
+				$column = preg_match('/UNIQUE constraint failed:\s*(\w+)\.(\w+)$/i', $message, $matches)
+					&& $matches[1] === $collection->getTable() ? $matches[2] : null;
+				$field = self::visibleConstraintField($collection, $column);
+
+				return new self(
+					$field === null ? 'A record with these values already exists.' : "A record with this {$field} already exists.",
+					'DUPLICATE',
+					$field,
+					409,
+					$exception,
+				);
+			}
+			if ($sqlState === '23502' || preg_match("/not null constraint|cannot be null|doesn't have a default value/i", $message)) {
+				$column = null;
+				if (preg_match('/NOT NULL constraint failed:\s*(\w+)\.(\w+)$/i', $message, $matches)) {
+					$column = $matches[1] === $collection->getTable() ? $matches[2] : null;
+				} elseif (preg_match("/(?:field|column)\s+['\"](\w+)/i", $message, $matches)) {
+					$column = $matches[1];
+				}
+				$field = self::visibleConstraintField($collection, $column);
+
+				return new self(
+					$field === null ? 'A required field is missing.' : "The field {$field} is required.",
+					'REQUIRED_FIELD',
+					$field,
+					400,
+					$exception,
+				);
+			}
+			if ($sqlState === '23503' || stripos($message, 'foreign key constraint') !== false) {
+				return new self('Referenced record does not exist.', 'FOREIGN_KEY_VIOLATION', null, 400, $exception);
+			}
+		}
+
+		return null;
+	}
+
+	private static function visibleConstraintField(CollectionInterface $collection, ?string $column): ?string
+	{
+		if ($column === null) {
+			return null;
+		}
+
+		$field = $collection->getField($collection->getFieldNameByColumn($column));
+
+		return $field !== null && ! $field->isHidden() ? $field->getName() : null;
+	}
+
 	public static function internal(Throwable $previous, bool $debug = false): self
 	{
 		$message = trim($previous->getMessage());
@@ -231,14 +292,12 @@ class RestApiError extends RuntimeException
 		}
 
 		return new self(
-			$debug ? $message : $message,
+			$debug ? $message : 'Internal server error.',
 			'INTERNAL_ERROR',
 			null,
 			500,
 			$previous,
-			[
-				'exception' => $previous::class,
-			],
+			$debug ? ['exception' => $previous::class] : [],
 		);
 	}
 

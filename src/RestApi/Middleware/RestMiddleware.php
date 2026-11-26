@@ -6,8 +6,9 @@ namespace ON\RestApi\Middleware;
 
 use Laminas\Diactoros\Response\EmptyResponse;
 use Laminas\Diactoros\Response\JsonResponse;
-use ON\Http\MultipartFormDataParser;
 use ON\Data\Mapper\Representation\WireRepresentation;
+use ON\Http\Exception\InvalidMultipartFormDataException;
+use ON\Http\MultipartFormDataParser;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\RequestComplete;
@@ -31,10 +32,11 @@ class RestMiddleware implements MiddlewareInterface
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$basePath = $this->options['endpointUri'] ?? '/items';
+		$basePath = rtrim($this->options['endpointUri'] ?? '/items', '/');
 		$path = $request->getUri()->getPath();
 
-		if (! $this->matchesBasePath($path, $basePath)) {
+		$prefixStripped = ($this->options['pathPrefixStripped'] ?? false) === true;
+		if (! $prefixStripped && ! $this->matchesBasePath($path, $basePath)) {
 			return $handler->handle($request);
 		}
 
@@ -45,7 +47,7 @@ class RestMiddleware implements MiddlewareInterface
 
 			$routeResult = $this->router->match(
 				$request->getMethod(),
-				$this->extractRemainder($path, $basePath)
+				$prefixStripped ? $path : $this->extractRemainder($path, $basePath)
 			);
 
 			if ($routeResult->isFailure()) {
@@ -81,12 +83,18 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function payload(ServerRequestInterface $request): array
 	{
+		$method = strtoupper($request->getMethod());
+		$readsBody = ! in_array($method, ['GET', 'HEAD', 'OPTIONS'], true);
+		if ($readsBody) {
+			$request = $this->prepareMultipartRequest($request);
+		}
+
 		return [
 			'query' => $this->getQueryParams($request),
-			'body' => $this->parseRequestBody($request),
-			'files' => $this->resolveUploadedFiles($request),
+			'body' => $readsBody ? $this->parseRequestBody($request) : [],
+			'files' => $readsBody ? $this->resolveUploadedFiles($request) : [],
 			'headers' => $this->headers($request),
-			'method' => strtoupper($request->getMethod()),
+			'method' => $method,
 			'request' => $request,
 		];
 	}
@@ -96,13 +104,18 @@ class RestMiddleware implements MiddlewareInterface
 		$contentType = $request->getHeaderLine('Content-Type');
 
 		if ($this->isMultipartRequest($contentType)) {
-			$parsedBody = $request->getParsedBody();
-			$data = [];
-			if (isset($parsedBody['data'])) {
-				$data = json_decode($parsedBody['data'], true);
-				if (! is_array($data)) {
-					throw RestApiError::invalidJson();
-				}
+			$parsedBody = (array) $request->getParsedBody();
+			if (! array_key_exists('data', $parsedBody)) {
+				return [];
+			}
+
+			if (! is_string($parsedBody['data'])) {
+				throw RestApiError::invalidJson();
+			}
+
+			$data = json_decode($parsedBody['data'], true);
+			if (! is_array($data)) {
+				throw RestApiError::invalidJson();
 			}
 
 			return $data;
@@ -166,16 +179,12 @@ class RestMiddleware implements MiddlewareInterface
 
 	protected function matchesBasePath(string $path, string $basePath): bool
 	{
-		if (str_starts_with($path, $basePath)) {
-			return true;
-		}
-
-		return str_starts_with($path, '/');
+		return $path === $basePath || str_starts_with($path, $basePath . '/');
 	}
 
 	protected function extractRemainder(string $path, string $basePath): string
 	{
-		if (str_starts_with($path, $basePath)) {
+		if ($this->matchesBasePath($path, $basePath)) {
 			return substr($path, strlen($basePath));
 		}
 
@@ -187,22 +196,35 @@ class RestMiddleware implements MiddlewareInterface
 	 */
 	protected function resolveUploadedFiles(ServerRequestInterface $request): array
 	{
-		$uploadedFiles = $request->getUploadedFiles();
-		if ($uploadedFiles !== []) {
-			return $uploadedFiles;
-		}
+		return $request->getUploadedFiles();
+	}
 
+	private function prepareMultipartRequest(ServerRequestInterface $request): ServerRequestInterface
+	{
 		$contentType = $request->getHeaderLine('Content-Type');
 		if (! $this->isMultipartRequest($contentType)) {
-			return [];
+			return $request;
 		}
 
-		$rawBody = (string) $request->getBody();
-		if ($rawBody === '') {
-			return [];
+		$body = $request->getParsedBody();
+		$files = $request->getUploadedFiles();
+		if ($body !== null && $files !== []) {
+			return $request;
 		}
 
-		return (new MultipartFormDataParser())->parse($contentType, $rawBody)['uploadedFiles'];
+		$raw = (string) $request->getBody();
+		if ($raw === '') {
+			return $request;
+		}
+
+		try {
+			$parsed = (new MultipartFormDataParser())->parse($contentType, $raw);
+		} catch (InvalidMultipartFormDataException $exception) {
+			throw new RestApiError('Invalid multipart form data.', 'INVALID_PAYLOAD', null, 400, $exception);
+		}
+
+		return $request->withParsedBody(array_replace($parsed['parsedBody'], (array) $body))
+			->withUploadedFiles($files === [] ? $parsed['uploadedFiles'] : $files);
 	}
 
 	protected function isMultipartRequest(string $contentType): bool

@@ -94,6 +94,7 @@ class RestApiExtension extends AbstractExtension
 			[$this, 'execute'],
 			[
 				'endpointUri' => $path,
+				'pathPrefixStripped' => true,
 				'defaultLimit' => $defaultLimit,
 				'maxLimit' => $maxLimit,
 				'dynamicVariables' => $dynamicVariables,

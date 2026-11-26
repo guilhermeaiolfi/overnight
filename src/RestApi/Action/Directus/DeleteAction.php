@@ -6,6 +6,7 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Key;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Mutation\MutationCoordinator;
@@ -13,7 +14,6 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\PrimaryKey;
-use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class DeleteAction implements RestActionInterface
@@ -34,14 +34,15 @@ final class DeleteAction implements RestActionInterface
 		$payload = is_array($payload) ? $payload : [];
 		$options = ($options ?? []) + ['dispatchEvents' => true];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$identity = PrimaryKey::of($collection)->getValue((string) ($params['id'] ?? ''));
+		$identity = PrimaryKey::of($collection)->parseUrlId((string) ($params['id'] ?? ''));
 		$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
-		$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
+		$ifMatch = $this->getIfMatch($headers);
 
 		$this->mutations->delete(
 			$collection,
 			$identity,
 			(bool) $options['dispatchEvents'],
+			fn (Key $key) => $this->checkIfMatch($collection, $key, $ifMatch),
 		);
 
 		return null;
