@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Translation;
 
 use Exception;
-use ON\Translation\Locale\Locale;
 
 /**
   * HEAVY INSPIRED BY AgaviTrasnlationManager

@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Router;
 
-use On\Config\Config;
+use const FILTER_VALIDATE_BOOLEAN;
+use function filter_var;
+use ON\Config\Config;
 
 class RouterConfig extends Config
 {
@@ -15,7 +17,7 @@ class RouterConfig extends Config
 	public static function getDefaults(): array
 	{
 		return [
-			"cache_enabled" => ! $_ENV["APP_DEBUG"], // true|false
+			"cache_enabled" => ! filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN), // true|false
 			"cache_file" => 'var/cache/router.php.cache', // optional
 			"baseHref" => null,
 		];
