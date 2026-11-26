@@ -59,7 +59,8 @@ Configuration is managed via `ImageConfig`:
 | `404ImagePath` | string | `404i.png` | Fallback image when source file is not found |
 | `templates` | array | `['custom' => CustomTemplate::class]` | Named template classes for transformations |
 | `driver` | string | `Intervention\Image\Drivers\Gd\Driver` | Intervention Image driver (`Gd` or `Imagick`) |
-| `paths` | array | `[]` | Directories to search for source images |
+| `sourceRoots` | array | `[]` | Directories to search for source images |
+| `sourceAliases` | array | `[]` | Source path prefixes mapped to trusted directories |
 | `cache.lifetime` | int | (minutes) | Browser cache lifetime in minutes |
 | `cache.class` | string | `FileSystem::class` | Cache implementation class |
 | `encrypter.class` | string | `OpenSSL::class` | Encrypter implementation class |
@@ -74,7 +75,7 @@ return [
     ImageConfig::class => [
         'basePath' => 'i/',
         'driver' => \Intervention\Image\Drivers\Gd\Driver::class,
-        'paths' => [
+        'sourceRoots' => [
             'storage/uploads',
             'public/images',
         ],
@@ -100,6 +101,19 @@ return [
     ],
 ];
 ```
+
+### Shared upload directories
+
+If your deployment links `public/files` to a shared upload directory, configure a source alias for each prefix your application uses:
+
+```php
+'sourceAliases' => [
+    'files' => '{public}/files',
+    'public/files' => '{public}/files',
+],
+```
+
+Both `files/photo.jpg` and `public/files/photo.jpg` resolve to `photo.jpg` inside the configured upload directory. Use forward slashes in the prefixes and omit the trailing slash. The first matching prefix selects the only directory searched for that image. The resolved file must be inside the resolved directory. Paths with no matching prefix use `sourceRoots`.
 
 ### Using Imagick Instead of GD
 
