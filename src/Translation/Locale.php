@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace ON\Translation\Locale;
+namespace ON\Translation;
 
 class Locale
 {

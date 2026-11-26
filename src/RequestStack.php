@@ -130,12 +130,3 @@ class RequestStack implements RequestStackInterface
 		);
 	}
 }
-
-final class RequestStackFrame
-{
-	public function __construct(
-		public ServerRequestInterface $currentRequest,
-		public readonly ?ServerRequestInterface $parentRequest = null
-	) {
-	}
-}

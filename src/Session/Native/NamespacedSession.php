@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Session\Native;
 
+use ON\Session\SessionInterface;
+
 class NamespacedSession implements SessionInterface
 {
 	public function __construct(
