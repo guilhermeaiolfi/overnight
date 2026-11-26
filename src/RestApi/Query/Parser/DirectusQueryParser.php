@@ -147,9 +147,9 @@ final class DirectusQueryParser implements QueryParserInterface
 				$pkRefs[] = $query->field($field->getName());
 			}
 			if ($pkRefs !== []) {
-				$query->select(...$pkRefs);
+				$query->getSelections()->removeByTag(SelectionTag::DEFAULT);
 				foreach ($pkRefs as $ref) {
-					$query->require($ref, SelectionTag::INTERNAL);
+					$query->require($ref, 'internal');
 				}
 			}
 
@@ -721,19 +721,15 @@ final class DirectusQueryParser implements QueryParserInterface
 			return;
 		}
 
-		// Default * already exposes PKs in public output. Only require INTERNAL when an
-		// explicit select() omitted them — and never retag an already-visible PK (INTERNAL
-		// opts out of place and would strip it from the response).
+		// Default * already exposes PKs in public output. Only require non-explicit PKs
+		// when an explicit select() omitted them.
 		$hasExplicitSelect = $query->getSelections()->getByTag(SelectionTag::DEFAULT) === [];
 		if (! $hasExplicitSelect) {
 			return;
 		}
 
 		$visibleKeys = [];
-		foreach ($query->getSelections()->getAll() as $selection) {
-			if ($selection->hasTag(SelectionTag::INTERNAL)) {
-				continue;
-			}
+		foreach ($query->getSelections()->getExplicit() as $selection) {
 			$visibleKeys[$selection->getSelectionKey()] = true;
 		}
 
@@ -742,7 +738,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			if (isset($visibleKeys[$ref->getSelectionKey()])) {
 				continue;
 			}
-			$query->require($ref, SelectionTag::INTERNAL);
+			$query->require($ref, 'internal');
 		}
 	}
 

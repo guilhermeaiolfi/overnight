@@ -19,10 +19,10 @@ use ON\Data\Definition\Relation\M2MRelation;
 use ON\DataIntegration\DataExtension;
 use ON\DataIntegration\Definition\DefinitionCache;
 use ON\DataIntegration\Init\Event\DataDefinitionConfigureEvent;
-use ON\Extension\AbstractExtension;
-use ON\Init\Init;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\DB\DatabaseExtension;
+use ON\Extension\AbstractExtension;
+use ON\Init\Init;
 use ON\RestApi\Support\PrimaryKey;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -191,7 +191,7 @@ final class CachedDefinitionProbeExtension extends AbstractExtension
 
 		$event->registry->collection('user')
 			->primaryKey('id')
-			->field('id', 'primary')->autoIncrement(true)->end()
+			->field('id', 'int')->autoIncrement(true)->end()
 			->field('email', 'string')->end()
 			->hasMany('posts', 'post')->innerKey('id')->outerKey('user_id')->end()
 			->end();

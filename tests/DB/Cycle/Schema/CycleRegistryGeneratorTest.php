@@ -204,7 +204,7 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$registry->collection('user')
 			->table('user')
 			->primaryKey('id')
-			->field('id', 'primary')->end()
+			->field('id', 'int')->autoIncrement(true)->end()
 			->end();
 
 		$registry->collection('post')
@@ -255,6 +255,32 @@ final class CycleRegistryGeneratorTest extends TestCase
 		$this->assertSame('id', $author->getOptions()->get('outerKey'));
 		$this->assertTrue($author->getOptions()->get('nullable'));
 		$this->assertSame('eager', $author->getOptions()->get('load'));
+	}
+
+	public function testNonNullableBelongsToRelationCompilesToBelongsTo(): void
+	{
+		$registry = new DataRegistry();
+		$registry->collection('user')
+			->table('user')
+			->primaryKey('id')
+			->field('id', 'int')->autoIncrement(true)->end()
+			->end();
+
+		$registry->collection('post')
+			->table('post')
+			->primaryKey('id')
+			->field('id', 'int')->autoIncrement(true)->end()
+			->field('user_id', 'int')->nullable(false)->end()
+			->belongsTo('author', 'user')->innerKey('user_id')->outerKey('id')->nullable(false)->end()
+			->end();
+
+		$author = $this->compile($registry)->getEntity('post')->getRelations()->get('author');
+
+		$this->assertSame('user', $author->getTarget());
+		$this->assertSame('belongsTo', $author->getType());
+		$this->assertSame('user_id', $author->getOptions()->get('innerKey'));
+		$this->assertSame('id', $author->getOptions()->get('outerKey'));
+		$this->assertFalse($author->getOptions()->get('nullable'));
 	}
 
 	public function testManyToManyRelation(): void
@@ -356,7 +382,7 @@ final class CycleRegistryGeneratorTest extends TestCase
 			->end()
 			->source(Source::class)
 			->primaryKey('id')
-			->field('id', 'primary')->end()
+			->field('id', 'int')->autoIncrement(true)->end()
 			->field('email', 'string')->column('email_addr')->maxLength(80)->end()
 			->end();
 		$fluent->collection('post')
