@@ -13,7 +13,7 @@ use RegexIterator;
 use SplFileInfo;
 
 /**
- * Guard: production code must not reintroduce removed ON\ORM / ON\CMS stacks.
+ * Guard: production code must not reintroduce removed ON\ORM / ON\CMS / ON\Mapper stacks.
  */
 final class RemovedOrmCmsAbsenceTest extends TestCase
 {
@@ -21,8 +21,10 @@ final class RemovedOrmCmsAbsenceTest extends TestCase
 	private const FORBIDDEN = [
 		'namespace ON\\ORM',
 		'namespace ON\\CMS',
+		'namespace ON\\Mapper',
 		'ON\\ORM\\ORMExtension',
 		'ON\\CMS\\CMSExtension',
+		'ON\\Mapper\\MapperExtension',
 		'ON\\ORM\\Select',
 		'ON\\ORM\\Factory',
 		'ON\\ORM\\Definition',
@@ -72,7 +74,7 @@ final class RemovedOrmCmsAbsenceTest extends TestCase
 		$this->assertSame(
 			[],
 			$hits,
-			"Forbidden ORM/CMS references found under src/:\n" . implode("\n", $hits)
+			"Forbidden ORM/CMS/Mapper references found under src/:\n" . implode("\n", $hits)
 		);
 	}
 }

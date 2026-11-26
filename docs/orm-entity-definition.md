@@ -96,7 +96,7 @@ $registry->collection('user')
 | `primaryKey(string ...$fields)` | Declare primary key field name(s) | Required for most consumers |
 | `table(string)` | Database table name | Same as name |
 | `database(string)` | Database name | `"default"` |
-| `source(string)` | Source class | `ON\ORM\Select\Source` |
+| `source(?string)` | Source class | `null` |
 | `hidden(bool)` | Hide from schema generation | `false` |
 
 Cycle-specific settings belong to `CycleCollectionPlugin`, entered with `extend()` and closed with `end()`. It provides `entity()`, `mapper()`, `repository()`, and `scope()`. The schema generator reads the plugin through `getPlugin()` and preserves it across registry export and restoration. With no plugin, the generated entity uses `stdClass` and `Cycle\ORM\Mapper\StdMapper`, with no custom repository or scope. Reading schema metadata does not attach a plugin to the collection.
@@ -567,11 +567,12 @@ The Registry can be converted to other schema formats (like Cycle ORM) using gen
 
 ```php
 // Convert to Cycle ORM Schema
+use Cycle\Schema\Compiler;
 use Cycle\Schema\Registry as CycleRegistry;
-use ON\ORM\Compiler\CycleRegistryGenerator;
+use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 
 $cycleRegistry = new CycleRegistry($dbal);
-$schema = (new \Cycle\ORM\Schema\Compiler())->compile($cycleRegistry, [
+$schema = (new Compiler())->compile($cycleRegistry, [
     new CycleRegistryGenerator($registry),
     // ... other generators
 ]);

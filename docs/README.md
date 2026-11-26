@@ -84,7 +84,6 @@ class HelloPage
 ### Core Concepts
 - [Middleware](middleware.md) - PSR-15 middleware pipeline
 - [Extensions](extensions.md) - Framework extension system
-- [Mapper](mapper.md) - Value conversion and structural mapping (`map()->to()`)
 - [CLI](cli.md) - Console commands
 - [Testing](testing.md) - Writing tests
 - [Benchmarking](benchmarking.md) - Tracking bootstrap performance
@@ -108,7 +107,7 @@ class HelloPage
 
 ### ORM / Entity Reference
 - [ORM Entity Definition](orm-entity-definition.md) - Field types, relations, metadata, Cycle schema mapping
-- [Mapper](mapper.md) - Field handlers, representations, RestApi conversion
+- [ON\Data Definition Architecture](ondata-cycle-schema-migration.md) - `ON\Data\Definition\Registry`, definition cache, Cycle schema & `ON\Data\Mapper` wiring
 - [Action Middleware Decorator](action-middleware-decorator.md) - Dependency resolution in controllers
 - [CRUD Module Guide](crud-module.md) - Building full-stack CRUD with GraphQL or REST
 
@@ -121,13 +120,12 @@ src/
 ├── Benchmark.php            # Benchmarking utility
 ├── Cache/                   # Cache management (Symfony Cache)
 ├── Clockwork/               # Debug profiling (Clockwork)
-├── CMS/                     # Built-in CMS components
 ├── Common/                  # Shared traits (AttributesTrait)
 ├── Config/                  # Configuration system
 ├── Console/                 # CLI commands (Symfony Console)
 ├── Container/               # DI container and executors (PHP-DI)
-├── Data.php                 # Data helper
-├── DB/                      # Database abstraction (Cycle, PDO, Laminas, Doctrine)
+├── DataIntegration/         # ON\Data registry provider, definition cache & mapper wiring
+├── DB/                      # Database abstraction (Cycle ORM, PDO)
 ├── Discovery/               # Attribute-based class discovery
 ├── Event/                   # Event dispatcher (League Event)
 ├── Exception/               # Framework exceptions
@@ -141,22 +139,20 @@ src/
 ├── Init/                    # Init system and event lifecycle
 ├── Logging/                 # Logging (Monolog)
 ├── Maintenance/             # Maintenance mode
-├── Mapper/                  # Value conversion and structural mapping
 ├── Middleware/              # PSR-15 middleware pipeline
 ├── MiddlewareContainer.php  # Middleware container
 ├── MiddlewareFactory.php    # Middleware factory
 ├── MiddlewareFactoryInterface.php
-├── ORM/                     # Cycle ORM wrapper with definition system
 ├── RateLimit/               # Rate limiting
 ├── RequestStack.php         # Request stack
 ├── RequestStackInterface.php
 ├── Response/                # Response utilities
 ├── RestApi/                 # Auto-generated REST API endpoints
 ├── Router/                  # Routing system (FastRoute)
-├── Service/                 # Service loaders (EnvLoader, RoutesLoader)
 ├── Session/                 # Session handling
 ├── Swoole/                  # Swoole integration
 ├── Translation/             # i18n support
+├── Validation/              # Collection validation (somnambulist/validation)
 └── View/                    # Template engines (Plates, Latte)
 ```
 

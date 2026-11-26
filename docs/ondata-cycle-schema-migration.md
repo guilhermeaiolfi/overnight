@@ -1,6 +1,6 @@
 # ON\Data Definition Architecture
 
-Overnight uses **`ON\Data\Definition\Registry`** as the sole entity-definition registry. Legacy `ON\ORM\Definition` has been removed. Cycle ORM schema, RestApi, GraphQL, Mapper, and CMS all read collection/field/relation metadata from ON\Data.
+Overnight uses **`ON\Data\Definition\Registry`** as the sole entity-definition registry. Legacy `ON\ORM\Definition` has been removed. Cycle ORM schema, RestApi, GraphQL, and Mapper all read collection/field/relation metadata from ON\Data.
 
 ## Sole registry
 
@@ -9,7 +9,7 @@ Overnight uses **`ON\Data\Definition\Registry`** as the sole entity-definition r
 | Definition API | `guilhermeaiolfi/overnight-data` → `ON\Data\Definition\*` |
 | Framework wiring | `ON\DataIntegration\DataExtension` |
 | Container binding | `Registry::class` → `DefinitionRegistryProvider` |
-| Cycle schema compile | `ON\ORM\Compiler\CycleRegistryGenerator` |
+| Cycle schema compile | `ON\DB\Cycle\Schema\CycleRegistryGenerator` |
 
 There is no parallel ORM definition registry and no adapter layer between ON\Data and consumers.
 
@@ -71,8 +71,8 @@ CycleDatabaseFactory / CycleRegistryGeneratorFactory
 CycleRegistryGenerator(Registry) → Cycle\Schema\Compiler
 ```
 
-- Generator: `ON\ORM\Compiler\CycleRegistryGenerator`
-- Factory: `ON\ORM\Container\CycleRegistryGeneratorFactory`
+- Generator: `ON\DB\Cycle\Schema\CycleRegistryGenerator`
+- Factory: `ON\DB\Container\CycleRegistryGeneratorFactory`
 - Consumes `ON\Data\Definition\Registry` and Mapper `ConversionGateway` for field-type resolution
 
 ### Generated-field semantics
@@ -106,4 +106,4 @@ Primary-key helpers for RestApi identity parsing / URL encoding:
 ## Related docs
 
 - [ORM Entity Definition](orm-entity-definition.md) — fluent ON\Data API
-- [Mapper](mapper.md) — Storage / PHP / Wire conversion
+- `ON\Data\Mapper` (`guilhermeaiolfi/overnight-data`) — Storage / PHP / Wire conversion (`map()->to()`, `ConversionGateway`, wired by `ON\DataIntegration\DataExtension`)

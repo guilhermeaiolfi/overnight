@@ -23,13 +23,9 @@ The GraphQL extension provides GraphQL API support for the Overnight framework. 
 
 ## Installation
 
-The GraphQL extension requires `webonyx/graphql-php`. Add it to your dependencies:
+`webonyx/graphql-php` is already included in Overnight's `composer.json` dependencies.
 
-```bash
-composer require webonyx/graphql-php
-```
-
-Then install the extension in your application:
+Install the extension in your application:
 
 ```php
 // config/extensions.php
@@ -89,7 +85,7 @@ use ON\GraphQL\Resolver\SqlResolver;
 
 // Option A: SqlResolver — raw PDO/SQL queries
 $resolver = new SqlResolver($registry, $database);
-$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
+$generator = new GraphQLRegistryGenerator($registry, $resolver);
 $schema = $generator->generate();
 ```
 
@@ -99,7 +95,7 @@ use ON\GraphQL\Resolver\CycleResolver;
 
 // Option B: CycleResolver — uses Cycle ORM's repository pattern
 $resolver = new CycleResolver($orm, $registry);
-$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
+$generator = new GraphQLRegistryGenerator($registry, $resolver);
 $schema = $generator->generate();
 ```
 
@@ -144,8 +140,9 @@ The generator accepts an optional `GraphQLResolverInterface` that handles all da
 ```php
 new GraphQLRegistryGenerator(
     Registry $ormRegistry,
-    ?ContainerInterface $container = null,
-    ?GraphQLResolverInterface $resolver = null
+    ?GraphQLResolverInterface $resolver = null,
+    ?EventDispatcherInterface $eventDispatcher = null,
+    ?CollectionValidator $validator = null
 );
 ```
 
@@ -724,7 +721,7 @@ Use `CachedGraphQLRegistryGenerator` to memoize the generated schema. It detects
 ```php
 use ON\GraphQL\CachedGraphQLRegistryGenerator;
 
-$generator = new CachedGraphQLRegistryGenerator($registry, $container, $resolver);
+$generator = new CachedGraphQLRegistryGenerator($registry, $resolver);
 
 // First call generates the schema
 $schema = $generator->generate();
@@ -855,7 +852,7 @@ $middleware = new GraphQLMiddleware($schema, debug: true);
 ```php
 use ON\GraphQL\GraphQLRegistryGenerator;
 
-$generator = new GraphQLRegistryGenerator($registry, $container, $resolver);
+$generator = new GraphQLRegistryGenerator($registry, $resolver);
 $schema = $generator->generate();
 ```
 
@@ -864,7 +861,7 @@ $schema = $generator->generate();
 ```php
 use ON\GraphQL\CachedGraphQLRegistryGenerator;
 
-$generator = new CachedGraphQLRegistryGenerator($registry, $container, $resolver);
+$generator = new CachedGraphQLRegistryGenerator($registry, $resolver);
 $schema = $generator->generate();
 $generator->invalidate();
 $generator->isCached();
