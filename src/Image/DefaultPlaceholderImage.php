@@ -26,8 +26,9 @@ final class DefaultPlaceholderImage implements PlaceholderImageInterface
 	{
 		[$width, $height] = $this->resolveDimensions($imageRequest);
 		$content = $this->buildSvg($imageRequest, $width, $height);
-		$etag = md5($content);
-		$notModified = isset($_SERVER['HTTP_IF_NONE_MATCH']) && $_SERVER['HTTP_IF_NONE_MATCH'] == $etag;
+		$etag = '"' . md5($content) . '"';
+		$ifNoneMatch = $imageManager->getCurrentRequest()?->getHeaderLine('If-None-Match') ?? '';
+		$notModified = ImageManager::matchesIfNoneMatch($ifNoneMatch, $etag);
 
 		if ($notModified) {
 			return (new Response())

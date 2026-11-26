@@ -23,12 +23,18 @@ class EventHandlerAttributeProcessor
 	{
 		$attributes = $reader->getAttributes([], [EventHandler::class]);
 		foreach ($attributes as $attribute) {
-			/** @var EventHandler $attr */
+			/** @var EventHandler $attribute */
 			$eventName = $attribute->getName();
-			if (isset($attribute->__parameters[0])) {
+			if (($eventName === null || $eventName === '') && isset($attribute->__parameters[0])) {
 				[$name, $type] = $attribute->__parameters[0];
 
-				$eventName = $type;
+				if (is_string($type) && $type !== '') {
+					$eventName = $type;
+				}
+			}
+
+			if ($eventName === null || $eventName === '') {
+				continue;
 			}
 
 			$callable = new LazyListener(
@@ -38,7 +44,12 @@ class EventHandlerAttributeProcessor
 					$attribute->__methodName,
 				]
 			);
-			$this->app->events->registerListener($eventName, $callable, $attribute->getPriority());
+			$this->app->events->registerListener(
+				$eventName,
+				$callable,
+				$attribute->getPriority(),
+				$attribute->getOnce()
+			);
 		}
 	}
 }

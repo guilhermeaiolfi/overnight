@@ -11,9 +11,12 @@ use ON\Application;
 use ON\Middleware\PipelineExtension;
 use ON\Middleware\RequestPreparerInterface;
 use PHPUnit\Framework\TestCase;
+use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use ReflectionMethod;
 use ReflectionProperty;
+use RuntimeException;
 
 final class PipelineExtensionTest extends TestCase
 {
@@ -84,6 +87,62 @@ final class PipelineExtensionTest extends TestCase
 		$response = $extension->process(new ServerRequest(), $handler);
 
 		$this->assertSame('processed', (string) $response->getBody());
+	}
+
+	public function testProcessForwardEnforcesMaxDepthLimit(): void
+	{
+		$app = $this->getMockBuilder(Application::class)->disableOriginalConstructor()->getMock();
+		$extension = new PipelineExtension($app);
+
+		$pipeline = $this->createMock(MiddlewarePipeInterface::class);
+		$pipeline->method('handle')
+			->willReturnCallback(function (ServerRequestInterface $request) use ($extension): ResponseInterface {
+				return $extension->processForward('/loop', $request, 'GET');
+			});
+
+		$this->setProtectedProperty($extension, 'pipeline', $pipeline);
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('Maximum forward depth');
+
+		$extension->processForward('/loop', new ServerRequest(), 'GET');
+	}
+
+	public function testLoadPipelineCanBeInvokedTwiceInSameProcess(): void
+	{
+		$tempFile = tempnam(sys_get_temp_dir(), 'on_pipeline_');
+		$this->assertNotFalse($tempFile);
+
+		file_put_contents($tempFile, "<?php\nreturn static function (\\ON\\Application \$app): void {\n\t\$app->loadedCount++;\n};\n");
+
+		try {
+			$app1 = new class () extends Application {
+				public int $loadedCount = 0;
+
+				public function __construct()
+				{
+				}
+			};
+			$app2 = new class () extends Application {
+				public int $loadedCount = 0;
+
+				public function __construct()
+				{
+				}
+			};
+
+			$ext1 = new PipelineExtension($app1);
+			$ext2 = new PipelineExtension($app2);
+
+			$method = new ReflectionMethod(PipelineExtension::class, 'loadPipeline');
+			$method->invoke($ext1, $tempFile);
+			$method->invoke($ext2, $tempFile);
+
+			$this->assertSame(1, $app1->loadedCount);
+			$this->assertSame(1, $app2->loadedCount);
+		} finally {
+			@unlink($tempFile);
+		}
 	}
 
 	/**

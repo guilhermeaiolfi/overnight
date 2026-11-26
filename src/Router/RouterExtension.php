@@ -24,6 +24,7 @@ use ON\Router\Container\RouterFactory;
 use ON\Router\Container\UrlHelperFactory;
 use ON\Router\Init\Event\RouterReadyEvent;
 use ON\Router\Init\Event\RouterSetupEvent;
+use ON\Router\Middleware\MethodNotAllowedMiddleware;
 use ON\Router\Middleware\RouteMiddleware;
 use Psr\Container\ContainerInterface;
 
@@ -52,12 +53,14 @@ class RouterExtension extends AbstractExtension
 		$this->app->registerMethod("get", [$this, 'get']);
 		$this->app->registerMethod("put", [$this, 'put']);
 		$this->app->registerMethod("patch", [$this, 'patch']);
+		$this->app->registerMethod("delete", [$this, 'delete']);
 		$this->app->registerMethod("any", [$this, 'any']);
 		$this->app->registerMethod("post", [$this, 'post']);
 		$this->app->registerMethod("route", [$this, 'route']);
 
 		$init->on(PipelineReadyEvent::class, function () {
 			$this->app->pipe("/", RouteMiddleware::class, 100);
+			$this->app->pipe("/", MethodNotAllowedMiddleware::class, 90);
 			$this->app->pipeline->addRequestPreparer(new RouteResultCleanupPreparer(), 1000);
 		});
 

@@ -27,7 +27,16 @@ class ImageManagerFactory
 		$imageCfg = $this->container->get(ImageConfig::class);
 		$app = $this->container->get(Application::class);
 		$encrypter_class = $imageCfg->get('encrypter.class', OpenSSL::class);
-		$encrypter = new $encrypter_class($imageCfg->get('key'), $imageCfg->get('encrypter.options'));
+		$key = $imageCfg->get('key');
+		if (! is_string($key) || trim($key) === '') {
+			$key = isset($_ENV['APP_SALT']) && is_string($_ENV['APP_SALT']) ? $_ENV['APP_SALT'] : '';
+		}
+		if (trim($key) === '') {
+			throw new RuntimeException(
+				'No image signing key configured. Set "key" in ImageConfig or APP_SALT in the environment.'
+			);
+		}
+		$encrypter = new $encrypter_class($key, $imageCfg->get('encrypter.options'));
 		$cache_class = $imageCfg->get('cache.class', FileSystem::class);
 		$publicRoot = $app->paths->get('public');
 		$cache = $cache_class === FileSystem::class

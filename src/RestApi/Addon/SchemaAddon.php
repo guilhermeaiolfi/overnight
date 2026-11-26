@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Addon;
 
+use Closure;
 use Laminas\Diactoros\Response\JsonResponse;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
@@ -24,6 +25,8 @@ use Throwable;
 class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 {
 	protected string $basePath = '/items';
+	private bool $exposeTableNames = false;
+	private ?Closure $authorize = null;
 
 	public function __construct(
 		protected Registry $registry
@@ -32,27 +35,37 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 
 	public function register(array $options = []): void
 	{
-		$this->basePath = $options['basePath'] ?? '/items';
+		$this->basePath = rtrim($options['basePath'] ?? $options['apiEndpointPath'] ?? '/items', '/');
+		$this->exposeTableNames = (bool) ($options['exposeTableNames'] ?? false);
+		$this->authorize = isset($options['authorize']) ? Closure::fromCallable($options['authorize']) : null;
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
 		$path = $request->getUri()->getPath();
-		$schemaPath = $this->basePath . '/_schema';
-
-		if (! str_starts_with($path, $schemaPath)) {
-			return $handler->handle($request);
+		$schemaPath = '/_schema';
+		if ($path !== $schemaPath && ! str_starts_with($path, $schemaPath . '/')) {
+			$schemaPath = $this->basePath . $schemaPath;
+			if ($path !== $schemaPath && ! str_starts_with($path, $schemaPath . '/')) {
+				return $handler->handle($request);
+			}
 		}
 
 		if ($request->getMethod() !== 'GET') {
 			return new JsonResponse(
 				['errors' => [['message' => 'Method not allowed', 'extensions' => ['code' => 'METHOD_NOT_ALLOWED']]]],
-				405
+				405,
+				['Allow' => 'GET'],
 			);
 		}
 
 		$remainder = trim(substr($path, strlen($schemaPath)), '/');
 
+		if ($this->authorize !== null && ($this->authorize)($request) !== true) {
+			$error = RestApiError::forbidden();
+
+			return new JsonResponse($error->toArray(), 403, ['Cache-Control' => 'no-store']);
+		}
 		if ($remainder === '') {
 			return $this->listCollections();
 		}
@@ -69,15 +82,10 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 				continue;
 			}
 
-			$collections[] = [
-				'name' => $collection->getName(),
-				'table' => $collection->getTable(),
-				'description' => $collection->getDescription(),
-				'fields' => $this->serializeFields($collection),
-			];
+			$collections[] = $this->serializeCollection($collection);
 		}
 
-		return new JsonResponse(['data' => $collections], 200, ['Cache-Control' => 'no-cache']);
+		return new JsonResponse(['data' => $collections], 200, ['Cache-Control' => 'no-store']);
 	}
 
 	protected function getCollection(string $name): JsonResponse
@@ -94,21 +102,34 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 			);
 		}
 
+		$data = $this->serializeCollection($collection);
+		$data['relations'] = $this->serializeRelations($collection);
+
+		return new JsonResponse(['data' => $data], 200, ['Cache-Control' => 'no-store']);
+	}
+
+	private function serializeCollection(CollectionInterface $collection): array
+	{
 		$data = [
 			'name' => $collection->getName(),
-			'table' => $collection->getTable(),
 			'description' => $collection->getDescription(),
 			'fields' => $this->serializeFields($collection),
-			'relations' => $this->serializeRelations($collection),
 		];
+		if ($this->exposeTableNames) {
+			$data['table'] = $collection->getTable();
+		}
 
-		return new JsonResponse(['data' => $data], 200, ['Cache-Control' => 'no-cache']);
+		return $data;
 	}
 
 	protected function serializeFields(CollectionInterface $collection): array
 	{
 		$fields = [];
 		foreach ($collection->fields as $name => $field) {
+			if ($field->isHidden()) {
+				continue;
+			}
+
 			$entry = [
 				'name' => $name,
 				'type' => null,
@@ -157,6 +178,10 @@ class SchemaAddon implements RestApiAddonInterface, MiddlewareInterface
 	{
 		$relations = [];
 		foreach ($collection->relations as $name => $relation) {
+			if ($relation->getCollection()->isHidden()) {
+				continue;
+			}
+
 			$relations[] = [
 				'name' => $name,
 				'collection' => $relation->getCollectionName(),

@@ -81,41 +81,110 @@ class MaintenanceMiddleware implements MiddlewareInterface
 			$ips = $_ENV['MAINTENANCE_ALLOW_IPS'] ?? '';
 		}
 
+		return $this->parseIpList($ips);
+	}
+
+	private function getTrustedProxies(): array
+	{
+		$proxies = $this->appConfig->get('maintenance.trusted_proxies', '');
+
+		if (empty($proxies)) {
+			$proxies = $_ENV['MAINTENANCE_TRUSTED_PROXIES'] ?? '';
+		}
+
+		return $this->parseIpList($proxies);
+	}
+
+	/**
+	 * @return list<string>
+	 */
+	private function parseIpList(mixed $ips): array
+	{
 		if (empty($ips)) {
 			return [];
 		}
 
-		return array_map('trim', explode(',', $ips));
+		if (is_array($ips)) {
+			$items = $ips;
+		} elseif (is_string($ips)) {
+			$items = explode(',', $ips);
+		} else {
+			return [];
+		}
+
+		$result = [];
+		foreach ($items as $item) {
+			if (! is_string($item)) {
+				continue;
+			}
+			$trimmed = trim($item);
+			if ($trimmed !== '') {
+				$result[] = $trimmed;
+			}
+		}
+
+		return $result;
+	}
+
+	private function isTrustedProxy(string $ip, array $trustedProxies): bool
+	{
+		foreach ($trustedProxies as $proxy) {
+			if ($this->ipMatches($ip, $proxy)) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private function getClientIp(ServerRequestInterface $request): string
 	{
 		$serverParams = $request->getServerParams();
+		$remoteAddr = $serverParams['REMOTE_ADDR'] ?? '';
 
-		$headers = [
-			'HTTP_X_FORWARDED_FOR',
-			'HTTP_X_REAL_IP',
-			'HTTP_CF_CONNECTING_IP',
-			'REMOTE_ADDR',
-		];
+		if (! is_string($remoteAddr) || ! filter_var($remoteAddr, FILTER_VALIDATE_IP)) {
+			return '';
+		}
 
-		foreach ($headers as $header) {
-			if (isset($serverParams[$header])) {
-				$ip = $serverParams[$header];
-				if (str_contains($ip, ',')) {
-					$ip = trim(explode(',', $ip)[0]);
+		$trustedProxies = $this->getTrustedProxies();
+		if ($trustedProxies === [] || ! $this->isTrustedProxy($remoteAddr, $trustedProxies)) {
+			return $remoteAddr;
+		}
+
+		if (isset($serverParams['HTTP_X_FORWARDED_FOR']) && is_string($serverParams['HTTP_X_FORWARDED_FOR'])) {
+			$hops = explode(',', $serverParams['HTTP_X_FORWARDED_FOR']);
+			for ($i = count($hops) - 1; $i >= 0; $i--) {
+				$hop = trim($hops[$i]);
+				if (! filter_var($hop, FILTER_VALIDATE_IP)) {
+					return '';
 				}
+
+				if (! $this->isTrustedProxy($hop, $trustedProxies)) {
+					return $hop;
+				}
+			}
+
+			return trim($hops[0]);
+		}
+
+		foreach (['HTTP_X_REAL_IP', 'HTTP_CF_CONNECTING_IP'] as $header) {
+			if (isset($serverParams[$header]) && is_string($serverParams[$header])) {
+				$ip = trim($serverParams[$header]);
 				if (filter_var($ip, FILTER_VALIDATE_IP)) {
 					return $ip;
 				}
 			}
 		}
 
-		return $serverParams['REMOTE_ADDR'] ?? '0.0.0.0';
+		return $remoteAddr;
 	}
 
 	private function ipMatches(string $ip, string $allowed): bool
 	{
+		if ($ip === '' || $allowed === '') {
+			return false;
+		}
+
 		if ($ip === $allowed) {
 			return true;
 		}
@@ -144,21 +213,38 @@ class MaintenanceMiddleware implements MiddlewareInterface
 
 	private function ipInCidr(string $ip, string $cidr): bool
 	{
-		[$subnet, $bits] = explode('/', $cidr);
-
-		if (! filter_var($ip, FILTER_VALIDATE_IP) || ! filter_var($subnet, FILTER_VALIDATE_IP)) {
+		$parts = explode('/', $cidr);
+		if (count($parts) !== 2) {
 			return false;
 		}
 
-		$ip = ip2long($ip);
-		$subnet = ip2long($subnet);
-
-		if ($ip === false || $subnet === false) {
+		[$subnet, $bits] = $parts;
+		if (! ctype_digit($bits)) {
 			return false;
 		}
 
-		$mask = -1 << (32 - (int) $bits);
+		$bitsInt = (int) $bits;
+		if ($bitsInt < 0 || $bitsInt > 32) {
+			return false;
+		}
 
-		return ($ip & $mask) === ($subnet & $mask);
+		if (! filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) || ! filter_var($subnet, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
+			return false;
+		}
+
+		$ipLong = ip2long($ip);
+		$subnetLong = ip2long($subnet);
+
+		if ($ipLong === false || $subnetLong === false) {
+			return false;
+		}
+
+		if ($bitsInt === 0) {
+			return true;
+		}
+
+		$mask = -1 << (32 - $bitsInt);
+
+		return ($ipLong & $mask) === ($subnetLong & $mask);
 	}
 }

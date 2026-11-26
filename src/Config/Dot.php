@@ -170,6 +170,10 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 				continue;
 			}
 
+			if (! is_string($key)) {
+				continue;
+			}
+
 			$items = &$this->items;
 			$segments = explode($this->delimiter, $key);
 			$lastSegment = array_pop($segments);
@@ -264,11 +268,15 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 	/**
 	 * Return the given items as an array
 	 *
-	 * @param  array<TKey, TValue>|self<TKey, TValue>|object|string  $items
+	 * @param  array<TKey, TValue>|self<TKey, TValue>|object|string|null  $items
 	 * @return array<TKey, TValue>
 	 */
-	protected function getArrayItems(array|object|string $items): array
+	protected function getArrayItems(array|object|string|null $items): array
 	{
+		if ($items === null) {
+			return [];
+		}
+
 		if (is_array($items)) {
 			return $items;
 		}
@@ -299,6 +307,10 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 
 			if ($this->exists($items, $key)) {
 				continue;
+			}
+
+			if (! is_string($key)) {
+				return false;
 			}
 
 			foreach (explode($this->delimiter, $key) as $segment) {
@@ -541,16 +553,20 @@ class Dot implements ArrayAccess, Countable, IteratorAggregate, JsonSerializable
 			return $this;
 		}
 
+		if (is_int($keys)) {
+			$this->items[$keys] = $value;
+
+			return $this;
+		}
+
 		$items = &$this->items;
 
-		if (is_string($keys)) {
-			foreach (explode($this->delimiter, $keys) as $key) {
-				if (! isset($items[$key]) || ! is_array($items[$key])) {
-					$items[$key] = [];
-				}
-
-				$items = &$items[$key];
+		foreach (explode($this->delimiter, $keys) as $key) {
+			if (! isset($items[$key]) || ! is_array($items[$key])) {
+				$items[$key] = [];
 			}
+
+			$items = &$items[$key];
 		}
 
 		$items = $value;

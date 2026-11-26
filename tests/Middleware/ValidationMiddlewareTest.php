@@ -245,7 +245,7 @@ final class ValidationMiddlewareTest extends TestCase
 		$this->assertInstanceOf(ResponseInterface::class, $response);
 	}
 
-	public function testPassesThroughWhenValidationFailsButNoErrorHandler(): void
+	public function testFailsClosedWith422WhenValidationFailsAndNoErrorHandler(): void
 	{
 		$page = new class () {
 			public function validate(): bool
@@ -268,13 +268,45 @@ final class ValidationMiddlewareTest extends TestCase
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
-		$expectedResponse = new TextResponse('fallthrough');
 
-		$handler = $this->createHandler($expectedResponse);
+		$handler = $this->createMock(RequestHandlerInterface::class);
+		$handler->expects($this->never())->method('handle');
 
 		$response = $middleware->process($request, $handler);
 
-		$this->assertSame($expectedResponse, $response);
+		$this->assertSame(422, $response->getStatusCode());
+		$this->assertStringContainsString('text/plain', $response->getHeaderLine('Content-Type'));
+		$this->assertSame('nosniff', $response->getHeaderLine('X-Content-Type-Options'));
+	}
+
+	public function testFailsClosedWith422JsonWhenAcceptJsonAndNoErrorHandler(): void
+	{
+		$page = new class () {
+			public function validate(): bool
+			{
+				return false;
+			}
+		};
+
+		$executor = $this->createMock(ExecutorInterface::class);
+		$executor->expects($this->once())
+			->method('execute')
+			->willReturn(false);
+
+		$middleware = $this->createValidationMiddleware($executor);
+
+		$routeResult = $this->createRouteResult($page, 'index');
+		$request = (new ServerRequest())
+			->withHeader('Accept', 'application/json')
+			->withAttribute(RouteResult::class, $routeResult);
+
+		$handler = $this->createMock(RequestHandlerInterface::class);
+		$handler->expects($this->never())->method('handle');
+
+		$response = $middleware->process($request, $handler);
+
+		$this->assertSame(422, $response->getStatusCode());
+		$this->assertStringContainsString('application/json', $response->getHeaderLine('Content-Type'));
 	}
 
 	public function testPrefersActionSpecificOverGenericValidate(): void

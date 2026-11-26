@@ -4,71 +4,106 @@ declare(strict_types=1);
 
 namespace ON\Image\Encrypter;
 
+use InvalidArgumentException;
+use JsonException;
 use ON\Image\ImageRequest;
 
 class OpenSSL implements EncrypterInterface
 {
+	private const MAC_LENGTH = 32;
+
 	protected ?array $configuration = null;
 	protected string $key;
-	protected string $cipher = "AES-128-CBC";
+	protected string $cipher = 'AES-256-CBC';
 	protected ?array $options = null;
-	protected string $iv;
+
+	private string $encryptionKey;
+	private string $macKey;
+	private string $ivKey;
 
 	public function __construct(string $key, ?array $options = null)
 	{
+		if (trim($key) === '') {
+			throw new InvalidArgumentException('OpenSSL encrypter requires a non-empty signing key.');
+		}
+
 		$this->key = $key;
 		$this->options = $options;
-		$this->iv = $options['iv'] ?? $_ENV["APP_SALT"] ?? substr(md5((string) $key), 0, 16);
+		$this->encryptionKey = hash_hmac('sha256', 'overnight:image:enc:v1', $key, true);
+		$this->macKey = hash_hmac('sha256', 'overnight:image:mac:v1', $key, true);
+		$this->ivKey = hash_hmac('sha256', 'overnight:image:iv:v1', $key, true);
 	}
 
 	public function decrypt(string $token): ?ImageRequest
 	{
-
-		$token = str_replace(['-','_'], ['+','/'], $token);
-		$token = base64_decode($token, true);
-		if ($token === false) {
+		if ($token === '') {
 			return null;
 		}
+
+		$normalized = strtr($token, '-_', '+/');
+		$remainder = strlen($normalized) % 4;
+		if ($remainder !== 0) {
+			$normalized .= str_repeat('=', 4 - $remainder);
+		}
+
+		$decoded = base64_decode($normalized, true);
+		if ($decoded === false) {
+			return null;
+		}
+
 		$ivlen = openssl_cipher_iv_length($this->cipher);
-		$iv = substr($token, 0, $ivlen);
-		//$iv=1234567890123456;
-		//$hmac = substr($token, $ivlen, $sha2len=32);
-		//$raw = substr($token, $ivlen+$sha2len);
-		$raw = substr($token, $ivlen);
-
-		$data = openssl_decrypt($raw, $this->cipher, $this->key, OPENSSL_RAW_DATA, $iv);
-		if ($data === false) {
+		if ($ivlen === false || strlen($decoded) <= $ivlen + self::MAC_LENGTH) {
 			return null;
 		}
 
-		//$calcmac = hash_hmac('sha256', $raw, $this->key, $as_binary=true);
-		$params = parse_url($data);
-		if ($params === false || ! isset($params["path"], $params["query"])) {
+		$iv = substr($decoded, 0, $ivlen);
+		$hmac = substr($decoded, $ivlen, self::MAC_LENGTH);
+		$ciphertext = substr($decoded, $ivlen + self::MAC_LENGTH);
+
+		$expectedMac = hash_hmac('sha256', $iv . $ciphertext, $this->macKey, true);
+		if (! hash_equals($expectedMac, $hmac)) {
 			return null;
 		}
-		parse_str($params["query"], $data);
 
-		return ImageRequest::fromArray([
-			"path" => $params["path"],
-			"template" => $data["t"] ?? null,
-			"options" => $data["o"] ?? null,
-		]);
+		$plaintext = openssl_decrypt($ciphertext, $this->cipher, $this->encryptionKey, OPENSSL_RAW_DATA, $iv);
+		if ($plaintext === false) {
+			return null;
+		}
+
+		$payload = json_decode($plaintext, true);
+		if (! is_array($payload)) {
+			return null;
+		}
+
+		return ImageRequest::fromArray($payload);
 	}
 
 	public function encrypt(ImageRequest $data): ?string
 	{
-		$plaintext = $data->getSourceFilePath() . "?t=" . $data->getTemplate() . '&o=' . $data->getOptions();
+		try {
+			$plaintext = json_encode([
+				'path' => $data->getSourceFilePath(),
+				'template' => $data->getTemplate(),
+				'options' => $data->getOptions(),
+			], JSON_THROW_ON_ERROR);
+		} catch (JsonException) {
+			return null;
+		}
+
 		$ivlen = openssl_cipher_iv_length($this->cipher);
+		if ($ivlen === false) {
+			return null;
+		}
 
-		// TODO: figured it out what iv should be
-		// it was: $iv = substr(md5(filemtime('public/' . $data["path"])), 0, $ivlen);
-		$iv = substr(md5($data->getSourceFilePath()), 0, $ivlen);
-		//$iv=1234567890123456;
-		//$iv = openssl_random_pseudo_bytes(openssl_cipher_iv_length('AES-256-CBC'));
-		$ciphertext_raw = openssl_encrypt($plaintext, $this->cipher, $this->key, OPENSSL_RAW_DATA, $iv);
-		$hmac = ""; // hash_hmac('sha256', $ciphertext_raw, "123", $as_binary=true);
-		$token = base64_encode($iv.$hmac.$ciphertext_raw);
+		$iv = substr(hash_hmac('sha256', $plaintext, $this->ivKey, true), 0, $ivlen);
+		$ciphertext = openssl_encrypt($plaintext, $this->cipher, $this->encryptionKey, OPENSSL_RAW_DATA, $iv);
+		if ($ciphertext === false) {
+			return null;
+		}
 
-		return str_replace(['+','/','='], ['-','_',''], $token);
+		$hmac = hash_hmac('sha256', $iv . $ciphertext, $this->macKey, true);
+		$token = base64_encode($iv . $hmac . $ciphertext);
+
+		return rtrim(strtr($token, '+/', '-_'), '=');
 	}
 }

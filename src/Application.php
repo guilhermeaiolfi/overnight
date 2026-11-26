@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace ON;
 
+use BadMethodCallException;
 use Exception;
 use ON\Extension\ExtensionInterface;
 use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
 use ON\Init\NonLifecycleOrderingEventInterface;
+use OutOfBoundsException;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -85,19 +87,41 @@ class Application
 		$extensions = $options["extensions"] ?? "./config/extensions.php";
 
 		if (is_string($extensions)) {
-			$extensions = require_once($extensions);
+			$extensions = require $extensions;
 		}
 
-		// load .env file vars
-		$this->env = new Dotenv();
-		$this->env->load('.env');
+		$envVarName = $options['env_var_name'] ?? 'APP_ENV';
+		$debugVarName = $options['debug_var_name'] ?? 'APP_DEBUG';
 
-		$debug = $options["debug"] ?? $_ENV["APP_DEBUG"] ?? $_SERVER["APP_DEBUG"] ?? false;
-		$this->debug = $_ENV["APP_DEBUG"] = filter_var($debug, FILTER_VALIDATE_BOOLEAN);
+		// load .env file vars
+		if (empty($options['disable_dotenv'])) {
+			$this->env = new Dotenv($envVarName, $debugVarName);
+			if (isset($options['use_putenv'])) {
+				$this->env->usePutenv((bool) $options['use_putenv']);
+			}
+
+			$explicitDotenvPath = isset($options['dotenv_path']) && $options['dotenv_path'] !== '';
+			$dotenvPath = $explicitDotenvPath ? (string) $options['dotenv_path'] : '.env';
+
+			if ($explicitDotenvPath || file_exists($dotenvPath)) {
+				if (! empty($options['dotenv_overload'])) {
+					$this->env->overload($dotenvPath);
+				} else {
+					$this->env->load($dotenvPath);
+				}
+			}
+		}
+
+		$debug = $options["debug"] ?? $_ENV[$debugVarName] ?? $_SERVER[$debugVarName] ?? false;
+		$this->debug = $_ENV['APP_DEBUG'] = filter_var($debug, FILTER_VALIDATE_BOOLEAN);
 
 		$this->configureErrorDisplay();
 
-		$this->environment = $_ENV["APP_ENV"] ?? "development";
+		$environment = $options['env'] ?? $_ENV[$envVarName] ?? $_SERVER[$envVarName] ?? null;
+		$this->environment = $environment === null ? 'development' : (string) $environment;
+		if ($environment !== null) {
+			$_ENV['APP_ENV'] = $this->environment;
+		}
 
 		foreach ($extensions as $ext_class => $ext_options) {
 			$this->extensionsToInstall[$ext_class] = $ext_options;
@@ -245,11 +269,29 @@ class Application
 		$order = $this->rebuildLifecycleOrder($subscriptionMap);
 
 		if (! $this->debug) {
-			if (! is_dir(dirname($cacheFile))) {
-				mkdir(dirname($cacheFile), 0777, true);
+			$cacheDir = dirname($cacheFile);
+			if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+				throw new Exception("Unable to create cache directory: {$cacheDir}");
 			}
 			$content = "<?php\n\nreturn " . var_export(['hash' => $hash, 'order' => $order], true) . ";\n";
-			file_put_contents($cacheFile, $content);
+			$tempFile = tempnam($cacheDir, 'app_lifecycle_');
+			if ($tempFile === false) {
+				throw new Exception("Unable to create temporary lifecycle cache file in: {$cacheDir}");
+			}
+			if (file_put_contents($tempFile, $content, LOCK_EX) !== strlen($content)) {
+				@unlink($tempFile);
+
+				throw new Exception("Unable to write temporary lifecycle cache file: {$tempFile}");
+			}
+			@chmod($tempFile, 0644);
+			if (! @rename($tempFile, $cacheFile)) {
+				@unlink($tempFile);
+
+				throw new Exception("Unable to move lifecycle cache file into place: {$cacheFile}");
+			}
+			if (function_exists('opcache_invalidate')) {
+				@opcache_invalidate($cacheFile, true);
+			}
 		}
 
 		return $order;
@@ -377,12 +419,8 @@ class Application
 			throw new Exception("Class {$extension_class} not found when loading as extension");
 		}
 
-		if ($this->isDebug()) {
-			$interfaces = class_implements($extension_class);
-
-			if (! isset($interfaces['ON\Extension\ExtensionInterface'])) {
-				throw new Exception("Extensions must implement \ON\Extension\ExtensionInterface.");
-			}
+		if (! is_subclass_of($extension_class, ExtensionInterface::class)) {
+			throw new Exception("Extensions must implement \\ON\\Extension\\ExtensionInterface.");
 		}
 
 		$this->extensionProfiler->begin(
@@ -447,7 +485,16 @@ class Application
 
 	public function __get($name)
 	{
+		if (! array_key_exists($name, $this->__properties)) {
+			throw new OutOfBoundsException("Undefined Application property '{$name}'.");
+		}
+
 		return $this->__properties[$name];
+	}
+
+	public function __isset($name): bool
+	{
+		return isset($this->__properties[$name]);
 	}
 
 	public function __set($name, $value)
@@ -460,6 +507,10 @@ class Application
 
 	public function __call($name, $args)
 	{
+		if (! isset($this->__methods[$name])) {
+			throw new BadMethodCallException("Call to undefined Application method '{$name}'.");
+		}
+
 		return call_user_func_array($this->__methods[$name], $args);
 	}
 

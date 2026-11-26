@@ -67,7 +67,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		$html = $this->render("template.html");
+		$html = $this->render(__DIR__ . '/template.html');
 
 		return new HtmlResponse($html, 503);
 	}

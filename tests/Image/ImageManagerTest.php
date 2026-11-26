@@ -266,6 +266,42 @@ final class ImageManagerTest extends TestCase
 		);
 	}
 
+	public function testSourceAliasesServeSharedImagesThroughBothPathPrefixes(): void
+	{
+		$this->writeFile('shared/public/files/nested/photo.jpg', 'shared-photo');
+		$this->writeFile('release/public/files/missing.jpg', 'fallback-photo');
+		$this->writeFile('release/public/files-backup/photo.jpg', 'ordinary-photo');
+
+		$paths = new PathRegistry([
+			'project' => 'release',
+			'uploads' => '../shared/public/files',
+		], $this->projectDir);
+		$config = new ImageConfig([
+			'key' => 'test-image-key',
+			'sourceRoots' => ['.', 'public'],
+			'sourceAliases' => [
+				'files' => '{uploads}',
+				'public/files' => '{uploads}',
+			],
+		]);
+
+		$manager = new ImageManager($config, $paths);
+
+		foreach (['files/nested/photo.jpg', 'public/files/nested/photo.jpg'] as $filename) {
+			$uri = $manager->getUri($filename, 'original');
+			$this->assertStringEndsWith('.jpg', $uri);
+
+			$request = new ServerRequest(uri: '/' . $uri, method: 'GET');
+			$response = $manager->process($request, new NullRequestHandler());
+
+			$this->assertSame(200, $response->getStatusCode());
+			$this->assertSame('shared-photo', (string) $response->getBody());
+		}
+
+		$this->assertStringEndsWith('.svg', $manager->getUri('files/missing.jpg', 'original'));
+		$this->assertStringEndsWith('.jpg', $manager->getUri('files-backup/photo.jpg', 'original'));
+	}
+
 	private function createDirectory(string $relativePath): string
 	{
 		$directory = $this->projectDir . DIRECTORY_SEPARATOR . str_replace(['/', '\\'], DIRECTORY_SEPARATOR, $relativePath);

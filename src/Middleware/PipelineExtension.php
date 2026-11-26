@@ -52,6 +52,8 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
+use RuntimeException;
+use function sprintf;
 
 /**
  * Owns the PSR-15 middleware pipeline lifecycle for the application.
@@ -65,6 +67,10 @@ class PipelineExtension extends AbstractExtension
 	public const ID = 'pipeline';
 
 	public const NAMESPACE = 'core.extensions.pipeline';
+
+	private const MAX_FORWARD_DEPTH = 10;
+	private const FORWARD_DEPTH_ATTRIBUTE = self::class . '::forward_depth';
+
 	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
 	protected RequestStack $requestStack;
@@ -173,7 +179,7 @@ class PipelineExtension extends AbstractExtension
 
 	protected function loadPipeline(string $file)
 	{
-		(require_once $file)($this->app);
+		(require $file)($this->app);
 	}
 
 	public function flush(): void
@@ -293,9 +299,21 @@ class PipelineExtension extends AbstractExtension
 		ServerRequestInterface $request,
 		?string $method = null
 	): ResponseInterface {
+		$depth = (int) $request->getAttribute(self::FORWARD_DEPTH_ATTRIBUTE, 0) + 1;
+		if ($depth > self::MAX_FORWARD_DEPTH) {
+			throw new RuntimeException(sprintf(
+				'Maximum forward depth (%d) exceeded while forwarding to "%s".',
+				self::MAX_FORWARD_DEPTH,
+				$path
+			));
+		}
+
 		// Forwarding stays transport-level here: the caller provides the target
 		// URI/path and routing middleware prepares the next execution state.
-		return $this->handle($this->createForwardRequest($path, $request, $method));
+		$forwardedRequest = $this->createForwardRequest($path, $request, $method)
+			->withAttribute(self::FORWARD_DEPTH_ATTRIBUTE, $depth);
+
+		return $this->handle($forwardedRequest);
 	}
 
 	public function run(): void

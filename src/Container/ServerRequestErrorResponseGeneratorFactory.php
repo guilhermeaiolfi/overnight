@@ -12,7 +12,7 @@ class ServerRequestErrorResponseGeneratorFactory
 {
 	public function __invoke(ContainerInterface $container): ServerRequestErrorResponseGenerator
 	{
-		$debug = ! ! $_ENV["APP_DEBUG"];
+		$debug = filter_var($_ENV['APP_DEBUG'] ?? false, FILTER_VALIDATE_BOOLEAN);
 
 		$responseFactory = $container->get(ResponseFactoryInterface::class);
 
