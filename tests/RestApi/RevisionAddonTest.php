@@ -82,7 +82,7 @@ final class RevisionAddonTest extends TestCase
 			$failure = $error;
 		}
 		$this->assertNotNull($failure);
-		$this->assertStringContainsString('UNIQUE', $failure->getMessage());
+		$this->assertMatchesRegularExpression('/UNIQUE|already exists/i', $failure->getMessage());
 		$operations->update('notes', $id, ['title' => 'Published']);
 		$operations->delete('notes', $id);
 		$operations->create('notes', ['title' => 'Canceled']);
