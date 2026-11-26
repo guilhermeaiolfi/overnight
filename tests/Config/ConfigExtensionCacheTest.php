@@ -108,6 +108,29 @@ final class ConfigExtensionCacheTest extends TestCase
 		);
 	}
 
+	public function testLegacyCacheIsRebuiltWithoutWritingToTheResponse(): void
+	{
+		$cacheFile = $this->projectDir . '/var/cache/config.php';
+		file_put_contents($cacheFile, serialize(['data' => []]));
+
+		ob_start();
+
+		try {
+			new Application([
+				'paths' => ['project' => $this->projectDir],
+				'extensions' => [
+					ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false],
+				],
+				'debug' => false,
+			]);
+			$this->assertSame('', ob_get_contents());
+		} finally {
+			ob_end_clean();
+		}
+
+		$this->assertStringStartsWith("<?php\n", (string) file_get_contents($cacheFile));
+	}
+
 	public function testSaveCacheRejectsObjectsWithoutSetState(): void
 	{
 		$cacheFile = $this->projectDir . '/var/cache/config.php';

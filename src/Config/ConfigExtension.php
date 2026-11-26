@@ -17,6 +17,7 @@ use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
 use ON\Init\InitContext;
+use ParseError;
 use ReflectionFunction;
 use RuntimeException;
 use stdClass;
@@ -211,7 +212,16 @@ class ConfigExtension extends AbstractExtension
 	protected function loadCache(): bool
 	{
 		if ($this->cachePath && is_file($this->cachePath) && ! $this->options["debug"]) {
-			$cache = include $this->cachePath;
+			$prefix = @file_get_contents($this->cachePath, false, null, 0, 6);
+			if ($prefix !== "<?php\n") {
+				return false;
+			}
+
+			try {
+				$cache = @include $this->cachePath;
+			} catch (ParseError) {
+				return false;
+			}
 			if (is_array($cache) && isset($cache['data']) && is_array($cache['data'])) {
 				$this->data = $cache['data'];
 				$this->cacheExceptions = isset($cache['cacheExceptions']) && is_array($cache['cacheExceptions'])
@@ -282,7 +292,9 @@ class ConfigExtension extends AbstractExtension
 		}
 
 		$tmpFile = $this->cachePath . '.' . uniqid('', true) . '.tmp';
-		if (file_put_contents($tmpFile, $content, LOCK_EX) === false) {
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
 			throw new RuntimeException(sprintf('Unable to write temporary config cache file "%s".', $tmpFile));
 		}
 

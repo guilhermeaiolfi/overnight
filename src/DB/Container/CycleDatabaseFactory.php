@@ -67,7 +67,9 @@ class CycleDatabaseFactory
 		$safeName = preg_replace('/\.{2,}/', '_', $safeName) ?? '';
 		$safeName = trim($safeName, '.');
 
-		return $safeName !== '' ? $safeName : 'default';
+		$prefix = $safeName === '' ? 'default' : substr($safeName, 0, 64);
+
+		return $prefix . '.' . hash('sha256', $name);
 	}
 
 	protected function isCacheClean(Registry $registry): bool
@@ -99,7 +101,9 @@ class CycleDatabaseFactory
 		$tmpFile = $this->cacheFile . '.' . uniqid('', true) . '.tmp';
 		$content = "<?php\n\nreturn " . var_export($schema, true) . ";\n";
 
-		if (file_put_contents($tmpFile, $content, LOCK_EX) === false) {
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
 			throw new RuntimeException(sprintf('Unable to write temporary Cycle schema cache file "%s".', $tmpFile));
 		}
 

@@ -295,7 +295,9 @@ class AutoWiringExtension extends AbstractExtension
 		$content = "<?php\n\nreturn " . var_export($cache, true) . ";\n";
 		$tmpFile = $this->cacheFile . '.' . uniqid('', true) . '.tmp';
 
-		if (file_put_contents($tmpFile, $content, LOCK_EX) === false) {
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
 			throw new RuntimeException(sprintf('Unable to write temporary auto-wiring cache file "%s".', $tmpFile));
 		}
 

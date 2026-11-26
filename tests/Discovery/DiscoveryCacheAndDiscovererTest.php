@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Tests\ON\Discovery;
 
-use __PHP_Incomplete_Class;
 use FilesystemIterator;
 use InvalidArgumentException;
 use ON\Application;
@@ -30,6 +29,7 @@ use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use SplFileInfo;
+use stdClass;
 
 final class DiscoveryCacheAndDiscovererTest extends TestCase
 {
@@ -44,7 +44,6 @@ final class DiscoveryCacheAndDiscovererTest extends TestCase
 		mkdir($this->projectDir . '/var/cache', 0755, true);
 		file_put_contents($this->projectDir . '/.env', "APP_DEBUG=true\nAPP_ENV=testing\n");
 		chdir($this->projectDir);
-		UnsafeGadget::$woken = false;
 		CountingDiscoverer::$applyCalls = 0;
 	}
 
@@ -52,7 +51,6 @@ final class DiscoveryCacheAndDiscovererTest extends TestCase
 	{
 		chdir($this->previousCwd);
 		Application::$instance = null;
-		UnsafeGadget::$woken = false;
 		CountingDiscoverer::$applyCalls = 0;
 		$this->removeDirectory($this->projectDir);
 	}
@@ -86,7 +84,7 @@ final class DiscoveryCacheAndDiscovererTest extends TestCase
 		$adapter->hasCache($discover, $location);
 	}
 
-	public function testAggressiveAndTimestampAdaptersBlockDisallowedClassesDuringUnserialize(): void
+	public function testAdaptersTreatUnconfiguredAttributeClassesAsCacheMisses(): void
 	{
 		$app = $this->createMinimalApp();
 		$appCfg = new AppConfig();
@@ -96,25 +94,15 @@ final class DiscoveryCacheAndDiscovererTest extends TestCase
 			new AggressiveCacheAdapter($appCfg, $app),
 			new TimestampCacheAdapter($appCfg, $app),
 		] as $adapter) {
-			UnsafeGadget::$woken = false;
 			$discover = new InMemoryDiscoverer();
-
-			// Write a malicious serialized gadget directly into the cache path
-			$validItems = new DiscoveryItems([
-				new DiscoveryItem(new UnsafeGadget(), $location, dirty: true),
-			]);
-			$discover->setData($validItems);
+			$discover->getData()->add(new DiscoveryItem(new stdClass(), $location, dirty: true));
 			$adapter->save($discover, $location);
 
-			$freshDiscover = new InMemoryDiscoverer();
-			$adapter->recover($freshDiscover, $location);
+			$fresh = new InMemoryDiscoverer();
+			$adapter->recover($fresh, $location);
 
-			$this->assertFalse(UnsafeGadget::$woken, 'Disallowed gadget class must not be instantiated during unserialize.');
-
-			$recoveredItems = iterator_to_array($freshDiscover->getData());
-			$this->assertCount(1, $recoveredItems);
-			$this->assertInstanceOf(__PHP_Incomplete_Class::class, $recoveredItems[0]->getValue());
-
+			$this->assertCount(0, $fresh->getData());
+			$this->assertFalse($adapter->hasCache($fresh, $location));
 			$adapter->clear($discover, $location);
 		}
 	}
@@ -320,15 +308,6 @@ PHP
 	}
 }
 
-final class UnsafeGadget
-{
-	public static bool $woken = false;
-
-	public function __wakeup(): void
-	{
-		self::$woken = true;
-	}
-}
 
 class InMemoryDiscoverer implements DiscoverInterface
 {

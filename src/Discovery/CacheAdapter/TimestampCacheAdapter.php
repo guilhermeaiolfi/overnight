@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Discovery\CacheAdapter;
 
 use ON\Discovery\DiscoverInterface;
+use ON\Discovery\DiscoveryItems;
 use ON\Discovery\DiscoveryLocation;
 use Symfony\Component\Finder\Finder;
 
@@ -16,7 +17,7 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 
 		$data = $this->readCacheFile($cacheFile);
 		if ($data !== null) {
-			$discover->addData($data);
+			$discover->addData(new DiscoveryItems($data->filterByLocation($location)));
 		}
 
 		return $discover;
@@ -52,9 +53,9 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 
 	public function save(DiscoverInterface $discover, DiscoveryLocation $location): bool
 	{
-		if ($this->isDirty($discover, $location)) {
+		if (! $this->hasCache($discover, $location) || $this->isDirty($discover, $location)) {
 			$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
-			$this->writeCacheFile($cacheFile, $discover->getData());
+			$this->writeCacheFile($cacheFile, new DiscoveryItems($discover->getData()->filterByLocation($location)));
 
 			foreach ($discover->getData()->filterByLocation($location) as $item) {
 				$item->setDirty(false);
@@ -85,8 +86,9 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 	{
 		$cacheFile = $this->cacheFilenameFromDiscover($discover, $location);
 
-		return file_exists($cacheFile) ?
-				filemtime($cacheFile) : 0;
+		return ! isset($this->unreadableCacheFiles[$cacheFile]) && is_file($cacheFile)
+			? (@filemtime($cacheFile) ?: 0)
+			: 0;
 	}
 
 	protected function oldest(array $discovers, DiscoveryLocation $location): float

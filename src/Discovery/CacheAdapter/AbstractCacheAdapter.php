@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Discovery\CacheAdapter;
 
+use __PHP_Incomplete_Class;
 use InvalidArgumentException;
 use ON\Application;
 use ON\Config\AppConfig;
@@ -16,6 +17,8 @@ use ON\Event\Attribute\EventHandler;
 use ON\FS\Path;
 use ON\Router\Attribute\Route;
 use RuntimeException;
+use SplObjectStorage;
+use Throwable;
 
 abstract class AbstractCacheAdapter implements CacheAdapterInterface
 {
@@ -28,6 +31,9 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 		EventHandler::class,
 		ConsoleCommand::class,
 	];
+
+	/** @var array<string, true> */
+	protected array $unreadableCacheFiles = [];
 
 	public function __construct(
 		protected AppConfig $appCfg,
@@ -81,15 +87,49 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 
 		$raw = @file_get_contents($cacheFile);
 		if ($raw === false || $raw === '') {
+			$this->unreadableCacheFiles[$cacheFile] = true;
+
 			return null;
 		}
 
-		$data = @unserialize($raw, ['allowed_classes' => $this->getAllowedClasses()]);
-		if (! $data instanceof DiscoveryItems) {
-			return null;
+		try {
+			$data = @unserialize($raw, ['allowed_classes' => $this->getAllowedClasses()]);
+			if ($data instanceof DiscoveryItems && $this->isRestored($data, new SplObjectStorage())) {
+				return $data;
+			}
+		} catch (Throwable) {
+			// A stale or incomplete cache will be rebuilt from discovery.
 		}
 
-		return $data;
+		$this->unreadableCacheFiles[$cacheFile] = true;
+
+		return null;
+	}
+
+	private function isRestored(mixed $value, SplObjectStorage $seen, int $depth = 0): bool
+	{
+		if ($value instanceof __PHP_Incomplete_Class || $depth > 64) {
+			return false;
+		}
+
+		if (is_object($value)) {
+			if ($seen->contains($value)) {
+				return true;
+			}
+
+			$seen->attach($value);
+			$value = (array) $value;
+		}
+
+		if (is_array($value)) {
+			foreach ($value as $child) {
+				if (! $this->isRestored($child, $seen, $depth + 1)) {
+					return false;
+				}
+			}
+		}
+
+		return true;
 	}
 
 	protected function writeCacheFile(string $cacheFile, DiscoveryItems $data): void
@@ -100,7 +140,10 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 		}
 
 		$tmpFile = $cacheFile . '.' . uniqid('', true) . '.tmp';
-		if (file_put_contents($tmpFile, serialize($data), LOCK_EX) === false) {
+		$content = serialize($data);
+		if (@file_put_contents($tmpFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tmpFile);
+
 			throw new RuntimeException(sprintf('Unable to write temporary discovery cache file "%s".', $tmpFile));
 		}
 
@@ -109,6 +152,8 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 
 			throw new RuntimeException(sprintf('Unable to move discovery cache file into place at "%s".', $cacheFile));
 		}
+
+		unset($this->unreadableCacheFiles[$cacheFile]);
 	}
 
 	protected function cacheFilenameFromDiscover(DiscoverInterface $discover, DiscoveryLocation $location): string

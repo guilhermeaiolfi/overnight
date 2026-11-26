@@ -77,7 +77,9 @@ final class CycleDatabaseFactoryTest extends TestCase
 		$factory = new CycleDatabaseFactory($app, $app->ext('container')->getContainer());
 		$db = $factory($dbCfg, $registry, 'analytics');
 
-		$cacheFile = $this->projectDir . '/var/cache/cycle.schema.analytics.php';
+		$files = glob($this->projectDir . '/var/cache/cycle.schema.analytics.*.php') ?: [];
+		$this->assertCount(1, $files);
+		$cacheFile = $files[0];
 		$this->assertFileExists($cacheFile);
 		$this->assertSame([], glob($cacheFile . '.*.tmp') ?: []);
 
