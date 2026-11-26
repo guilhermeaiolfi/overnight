@@ -207,6 +207,7 @@ final class MutationCoordinator
 			return [];
 		}
 
+		$singleRoot = count($items) === 1;
 		$requests = [];
 		$primaryKey = PrimaryKey::of($collection);
 		foreach ($items as $item) {
@@ -229,7 +230,7 @@ final class MutationCoordinator
 			$event = $dispatchEvents ? $this->authorizeRoot($operation, $collection, $typedScalars, $identity) : null;
 			if ($event?->isDefaultPrevented()) {
 				$result = $event->getPreventResult();
-				if (count($items) === 1 && $result !== null) {
+				if ($singleRoot && $result !== null) {
 					return [$result];
 				}
 
@@ -259,8 +260,8 @@ final class MutationCoordinator
 			}
 
 			$bound = $operation === 'create'
-				? $this->binder->bindCreate($session, $collection, $mutation, $event?->getState(), valuesArePhp: true)
-				: $this->binder->bindUpdate($session, $collection, $mutation, $identity, $event?->getState(), valuesArePhp: true);
+				? $this->binder->bindCreate($session, $collection, $mutation, $event?->getState(), valuesArePhp: true, singleRoot: $singleRoot)
+				: $this->binder->bindUpdate($session, $collection, $mutation, $identity, $event?->getState(), valuesArePhp: true, singleRoot: $singleRoot);
 			$roots[] = $bound;
 
 			$nodes = MutationEventPlan::fromBound($bound)->before;
@@ -576,30 +577,16 @@ final class MutationCoordinator
 
 	private function resolveKeyAfterFlush(Session $session, BoundMutation $bound): Key
 	{
-		if ($bound->rootRecord instanceof RecordState && $bound->rootRecord->hasKey()) {
-			return $bound->rootRecord->getKey();
-		}
-
-		$representationState = $session->getRepresentations()->get($bound->representation);
-		if ($representationState instanceof RepresentationState) {
-			foreach ($representationState->getFieldItems() as $fieldItem) {
-				$record = $fieldItem->getRecord();
-				if (
-					$record->getCollection()->getName() === $bound->collection->getName()
-					&& $record->hasKey()
-				) {
-					return $record->getKey();
-				}
-			}
-		}
-
-		$record = null;
 		$state = $session->getRepresentations()->get($bound->representation);
-		if ($state instanceof RepresentationState) {
-			$record = $state->getSingleRecord();
+		$root = $bound->rootRecord ?? $state?->getRootRecord();
+		if ($root?->getCollection()->getName() === $bound->collection->getName() && $root->hasKey()) {
+			return $root->getKey();
 		}
-		if ($record instanceof RecordState && $record->hasKey()) {
-			return $record->getKey();
+
+		foreach ($state?->getRecordsForCollection($bound->collection) ?? [] as $record) {
+			if ($record->hasKey()) {
+				return $record->getKey();
+			}
 		}
 
 		if ($bound->identity instanceof Key) {

@@ -22,8 +22,8 @@ use stdClass;
 /**
  * Compiles RepresentationSchema shapes for RestApi Session writes.
  *
- * Prefer writable SelectQuery loads for existing rows (schema comes from the query).
- * Use {@see projectFields()} only for creates and field overlays absent from a load select.
+ * Use {@see projectFields()} to stage writes when the field names are known.
+ * Use writable SelectQuery loads when binding needs values beyond an existing row snapshot.
  */
 final class MutationSchemaFactory
 {

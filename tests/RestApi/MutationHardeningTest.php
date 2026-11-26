@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Key;
+use ON\Data\ORM\Exception\SyncException;
+use ON\Data\Query\SelectQuery;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -16,6 +19,7 @@ use ON\RestApi\Mutation\DirectusMutationBinder;
 use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
 use ON\RestApi\Mutation\SessionFactory;
+use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -26,6 +30,77 @@ use Tests\ON\RestApi\Support\RestApiTestFixtures;
 final class MutationHardeningTest extends TestCase
 {
 	use RestApiTestFixtures;
+
+	public function testScalarPatchReusesThePreviousRowAndSkipsUnchangedUpdates(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$database = $this->createFullDatabase();
+		$connection = $database->database();
+		$connection->execute('CREATE TABLE post_updates (post_id INTEGER)');
+		$connection->execute('CREATE TRIGGER record_post_update AFTER UPDATE ON post
+			BEGIN INSERT INTO post_updates (post_id) VALUES (NEW.id); END');
+
+		$runtime = $this->createDataRuntime($database);
+		$items = new class ($registry, $runtime, $connection) extends ItemRepository {
+			public int $selections = 0;
+
+			public function select(CollectionInterface|string $collection, array $fieldNames = []): SelectQuery
+			{
+				$this->selections++;
+
+				return parent::select($collection, $fieldNames);
+			}
+		};
+		$sessions = new SessionFactory($runtime);
+		$coordinator = new MutationCoordinator(
+			$sessions,
+			new DirectusMutationBinder($items, $runtime, $sessions),
+			new DirectusPayloadParser(),
+			$items,
+			$this->noopHookDispatcher($registry),
+			$runtime,
+		);
+		$post = $registry->getCollection('post');
+		$before = $items->findByIdentity($post, '1');
+		$items->selections = 0;
+
+		$unchanged = $coordinator->update($post, '1', ['title' => $before['title']], dispatchEvents: false);
+		$this->assertSame($before['title'], $unchanged['title']);
+		$this->assertSame(0, $this->countRows($database, 'post_updates'));
+		$this->assertSame(2, $items->selections, 'The previous row and the response require one read each.');
+
+		RestHooks::for($post)->on('update.before', static function (ItemUpdating $event): void {
+			$event->getState()->setValue('title', 'Edited by hook');
+		});
+		$items->selections = 0;
+		$updated = $coordinator->update($post, '1', ['content' => null]);
+		$this->assertSame('Edited by hook', $updated['title']);
+		$this->assertNull($updated['content']);
+		$this->assertSame($before['status'], $updated['status']);
+		$this->assertSame(1, $this->countRows($database, 'post_updates'));
+		$this->assertSame(2, $items->selections);
+	}
+
+	public function testConflictingPatchesToTheSameRowStillAbortTheBatch(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$items = $this->createItems($registry, $this->createFullDatabase());
+		$coordinator = $this->coordinator($registry, $items);
+		$post = $registry->getCollection('post');
+		$before = $items->findByIdentity($post, '1');
+
+		try {
+			$coordinator->batchUpdate($post, [
+				['identity' => '1', 'input' => ['title' => 'First edit']],
+				['identity' => '1', 'input' => ['title' => 'Second edit']],
+			], dispatchEvents: false);
+			$this->fail('Conflicting writes to the same row must abort the batch.');
+		} catch (SyncException) {
+			$this->assertSame($before['title'], $items->findByIdentity($post, '1')['title']);
+		}
+	}
 
 	public function testMissingToOneScalarTargetFailsBeforeFlush(): void
 	{

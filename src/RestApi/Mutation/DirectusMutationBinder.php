@@ -119,8 +119,9 @@ final class DirectusMutationBinder
 		DirectusMutation $mutation,
 		?BoundItemState $state = null,
 		bool $valuesArePhp = false,
+		bool $singleRoot = false,
 	): BoundMutation {
-		return $this->bindRoot($session, $collection, $mutation, 'create', null, $state, $valuesArePhp);
+		return $this->bindRoot($session, $collection, $mutation, 'create', null, $state, $valuesArePhp, $singleRoot);
 	}
 
 	public function bindUpdate(
@@ -130,6 +131,7 @@ final class DirectusMutationBinder
 		Key|string|int $identity,
 		?BoundItemState $state = null,
 		bool $valuesArePhp = false,
+		bool $singleRoot = false,
 	): BoundMutation {
 		return $this->bindRoot(
 			$session,
@@ -139,6 +141,7 @@ final class DirectusMutationBinder
 			$this->normalizeKey($collection, $identity),
 			$state,
 			$valuesArePhp,
+			$singleRoot,
 		);
 	}
 
@@ -183,81 +186,62 @@ final class DirectusMutationBinder
 		?Key $identity,
 		?BoundItemState $state,
 		bool $valuesArePhp,
+		bool $singleRoot,
 	): BoundMutation {
 		$values = $mutation->values;
 		if ($operation === 'update') {
 			$values = PrimaryKey::of($collection)->withoutFields($values);
 		}
-		/** @var array<string, mixed>|null $previous */
 		$previous = null;
-		/** @var array<string, string> $fieldPaths */
-		$fieldPaths = [];
+		$scalarWrite = $singleRoot && $mutation->relations === [];
 
 		foreach (array_keys($values) as $fieldName) {
-			$name = (string) $fieldName;
-			if (! $collection->hasField($name)) {
-				throw RestApiError::invalidField($name);
+			if (! $collection->hasField((string) $fieldName)) {
+				throw RestApiError::invalidField((string) $fieldName);
 			}
 		}
 
 		if (! $valuesArePhp) {
 			$values = $this->schemas->toPhpValues($collection, $values);
 		}
+		$fieldNames = array_keys($values);
+		$fieldPaths = array_combine($fieldNames, $fieldNames);
 
 		if ($operation === 'create') {
-			$representation = new stdClass();
 			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
 			if ($manualIdentity !== null) {
 				$identity = $this->normalizeKey($collection, $manualIdentity);
-				foreach ($manualIdentity->getValues() as $field => $value) {
-					$representation->{$field} = $value;
-				}
 			}
 
-			foreach ($values as $field => $value) {
-				$name = (string) $field;
-				$representation->{$name} = $value;
-				$fieldPaths[$name] = $name;
+			$representation = (object) ($values + ($manualIdentity?->getValues() ?? []));
+			$schema = $this->schemas->projectFields($collection, array_keys(get_object_vars($representation)));
+			$session->create($representation, $schema);
+			if (! $scalarWrite) {
+				// Bind owners in order so later roots and related writes see the same Session state.
+				$session->sync($representation);
 			}
-
-			$fieldNames = array_keys($fieldPaths);
-			if ($identity !== null) {
-				foreach ($identity->getValues() as $field => $_) {
-					$fieldNames[] = (string) $field;
-				}
-			}
-			$map = $this->schemas->projectFields($collection, $fieldNames);
-			$session->create($representation, $map);
-			$session->sync($representation);
 		} else {
 			if ($identity === null) {
 				throw RestApiError::notFound();
 			}
+
 			$previous = $this->findRow($collection, $identity);
 			if ($previous === null) {
 				throw RestApiError::notFound();
 			}
 
-			$loadFields = [];
-			foreach (array_keys($values) as $fieldName) {
-				$name = (string) $fieldName;
-				$loadFields[] = $name;
-				$fieldPaths[$name] = $name;
-			}
+			if ($scalarWrite && array_diff_key($values, $previous) === []) {
+				$baseline = $identity->getValues() + array_intersect_key($previous, $values);
+				$representation = (object) $baseline;
+				$schema = $this->schemas->projectFields($collection, array_keys($baseline));
 
-			$representation = $this->schemas->loadWritable($session, $collection, $identity, $loadFields);
-			foreach ($values as $field => $value) {
-				$representation->{(string) $field} = $value;
+				// A clean baseline keeps unchanged attributes out of the pending PATCH.
+				$session->identify($collection, $identity, $representation, $schema);
+				$session->update($representation, $schema)->identity($identity);
+			} else {
+				$representation = $this->schemas->loadWritable($session, $collection, $identity, $fieldNames);
 			}
 		}
-
-		$ownerRecord = $this->requireRecord($session, $representation);
-		$related = $this->bindRelations(
-			$session,
-			$representation,
-			$ownerRecord,
-			$mutation->relations,
-		);
 
 		if ($state === null) {
 			$state = new BoundItemState(
@@ -274,6 +258,11 @@ final class DirectusMutationBinder
 		} else {
 			$state->attachRepresentation($representation, $values, $previous, $fieldPaths);
 		}
+
+		$ownerRecord = $scalarWrite ? null : $this->requireRecord($session, $representation);
+		$related = $ownerRecord === null
+			? []
+			: $this->bindRelations($session, $representation, $ownerRecord, $mutation->relations);
 
 		return new BoundMutation(
 			operation: $operation,
