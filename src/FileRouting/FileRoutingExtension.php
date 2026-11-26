@@ -9,6 +9,7 @@ use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
@@ -19,7 +20,7 @@ use RuntimeException;
 
 class FileRoutingExtension extends AbstractExtension
 {
-	public const ID = 'app';
+	public const ID = 'filerouting';
 
 	protected int $type = self::TYPE_EXTENSION;
 
@@ -32,6 +33,7 @@ class FileRoutingExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
+		$init->on(ConfigReadyEvent::class, [$this, 'onConfigReady']);
 		$init->on(PipelineReadyEvent::class, function (): void {
 			$this->injectMiddleware();
 		});
@@ -55,23 +57,58 @@ class FileRoutingExtension extends AbstractExtension
 		}
 		$fileroutingCfg->set('cachePath', $cache_path);
 
-		if (! is_dir($cache_path) && ! mkdir($cache_path, 0777, true) && ! is_dir($cache_path)) {
+		if (! is_dir($cache_path) && ! mkdir($cache_path, 0755, true) && ! is_dir($cache_path)) {
 			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cache_path));
 		}
 
 		$view_cfg->set("templates.paths.{$template_namespace}", $cache_path);
+		$baseUrl = trim((string) $fileroutingCfg->get('url', '__fileRouting'), '/');
+		$this->registerApiRouteIfEnabled($fileroutingCfg, $router_cfg);
 		$router_cfg->addRoute(
-			'/' . $fileroutingCfg->get('url', "__fileRouting"),
-			"ON\FileRouting\Page\ApiPage::index",
-			['GET'],
-			"filerouting.api",
-		);
-		$router_cfg->addRoute(
-			'/' . trim($fileroutingCfg->get('url', "__fileRouting"), '/') . '/page',
+			'/' . $baseUrl . '/page',
 			$fileroutingCfg->get('controller'),
 			['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
 			'filerouting.page',
 		);
+	}
+
+	public function onConfigReady(): void
+	{
+		$fileroutingCfg = $this->app->config->get(FileRoutingConfig::class);
+		$router_cfg = $this->app->config->get(RouterConfig::class);
+
+		$this->registerApiRouteIfEnabled($fileroutingCfg, $router_cfg);
+	}
+
+	protected function registerApiRouteIfEnabled(FileRoutingConfig $fileroutingCfg, RouterConfig $routerCfg): void
+	{
+		$exposeApi = (bool) ($this->options['exposeApi'] ?? false) || (bool) $fileroutingCfg->get('exposeApi', false);
+		if (! $exposeApi || $this->hasRouteNamed($routerCfg, 'filerouting.api')) {
+			return;
+		}
+
+		$baseUrl = trim((string) $fileroutingCfg->get('url', '__fileRouting'), '/');
+		$routerCfg->addRoute(
+			'/' . $baseUrl,
+			"ON\FileRouting\Page\ApiPage::index",
+			['GET'],
+			'filerouting.api',
+		);
+	}
+
+	protected function hasRouteNamed(RouterConfig $routerCfg, string $name): bool
+	{
+		if ($routerCfg->getRouteByName($name) !== null) {
+			return true;
+		}
+
+		foreach ($routerCfg->getRoutesToInject() as $route) {
+			if ($route->getName() === $name) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
