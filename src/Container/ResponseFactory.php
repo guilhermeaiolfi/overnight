@@ -12,6 +12,12 @@ class ResponseFactory implements ResponseFactoryInterface
 {
 	public function createResponse(int $code = 200, string $reasonPhrase = ''): ResponseInterface
 	{
-		return new Response(status: $code);
+		$response = new Response(status: $code);
+
+		if ($reasonPhrase !== '') {
+			return $response->withStatus($code, $reasonPhrase);
+		}
+
+		return $response;
 	}
 }

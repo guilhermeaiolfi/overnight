@@ -14,14 +14,17 @@ use ON\Clockwork\Handler\MonologHandler;
 class PsrLoggerDataSource extends DataSource
 {
 	// Clockwork log instance
-	protected $log;
+	protected Log $log;
+
+	protected MonologHandler $handler;
 
 	// Create a new data source, takes Monolog instance as an argument
 	public function __construct(Logger $logger)
 	{
 		$this->log = new Log();
+		$this->handler = new MonologHandler($this->log);
 
-		$logger->pushHandler(new MonologHandler($this->log));
+		$logger->pushHandler($this->handler);
 	}
 
 	// Adds log entries to the request
@@ -36,5 +39,6 @@ class PsrLoggerDataSource extends DataSource
 	public function reset()
 	{
 		$this->log = new Log();
+		$this->handler->setClockworkLog($this->log);
 	}
 }

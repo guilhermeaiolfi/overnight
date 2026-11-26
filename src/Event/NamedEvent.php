@@ -17,7 +17,7 @@ class NamedEvent implements HasEventNameInterface
 		return $this->name;
 	}
 
-	public function getSubject(): object
+	public function getSubject(): ?object
 	{
 		return $this->subject;
 	}

@@ -240,4 +240,32 @@ final class DotTest extends TestCase
 		$dot->add('baz', 'qux');
 		$this->assertSame(['foo' => 'bar', 'baz' => 'qux'], $dot->all());
 	}
+
+	public function testSetWithIntegerKeyDoesNotOverwriteExistingItems(): void
+	{
+		$dot = new Dot(['foo' => 'bar']);
+		$dot->set(0, 'zero');
+		$dot->set(2, 'two');
+
+		$this->assertSame(['foo' => 'bar', 0 => 'zero', 2 => 'two'], $dot->all());
+		$this->assertSame('zero', $dot->get(0));
+		$this->assertSame('two', $dot->get(2));
+	}
+
+	public function testConstructorAcceptsNull(): void
+	{
+		$dot = new Dot(null);
+
+		$this->assertSame([], $dot->all());
+		$this->assertTrue($dot->isEmpty());
+	}
+
+	public function testHasAndDeleteHandleMissingIntegerKeysUnderStrictTypes(): void
+	{
+		$dot = new Dot(['foo' => 'bar']);
+
+		$this->assertFalse($dot->has(42));
+		$dot->delete(42);
+		$this->assertSame(['foo' => 'bar'], $dot->all());
+	}
 }

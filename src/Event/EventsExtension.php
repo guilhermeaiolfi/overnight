@@ -30,7 +30,7 @@ class EventsExtension extends AbstractExtension
 
 	/** @var EventDispatcher */
 	public EventDispatcherInterface $eventDispatcher;
-	protected ContainerInterface $container;
+	protected ?ContainerInterface $container = null;
 
 	protected array $q = [];
 
@@ -78,6 +78,7 @@ class EventsExtension extends AbstractExtension
 
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
+		$this->container = $event->container;
 		$this->dispatch(new ReadyEvent());
 	}
 
@@ -141,17 +142,17 @@ class EventsExtension extends AbstractExtension
 				}
 				foreach ($listener as $callback) {
 					$priority = ListenerPriority::NORMAL;
-					;
 					if (is_array($callback)) {
-						$priority = $callback[1];
+						$priority = $callback[1] ?? ListenerPriority::NORMAL;
 						$callback = $callback[0];
 					}
 					if (is_string($callback)) {
+						if ($this->container === null) {
+							throw new Exception("Container is not initialized when trying to resolve listener {$callback}");
+						}
 						$instance = $this->container->get($callback);
 						if (! is_callable($instance)) {
 							throw new Exception("Event manager can't handle class of type {$callback}");
-
-							return;
 						}
 						$this->registerListener($key, $instance, $priority);
 					}
@@ -164,12 +165,14 @@ class EventsExtension extends AbstractExtension
 
 	public function loadEventSubscriber(mixed $class)
 	{
-
 		$instance = $class;
 
 		if (is_string($class)) {
 			if (! class_exists($class)) {
 				throw new Exception("Class {$class} doesn't exist when trying to register events");
+			}
+			if ($this->container === null) {
+				throw new Exception("Container is not initialized when trying to register event subscriber {$class}");
 			}
 			$instance = $this->container->get($class);
 		}
@@ -177,9 +180,18 @@ class EventsExtension extends AbstractExtension
 		if ($instance instanceof EventSubscriberInterface) {
 			$events = $instance->getSubscribedEvents();
 			foreach ($events as $key => $method) {
+				if (is_array($method) && isset($method[0]) && is_array($method[0])) {
+					foreach ($method as $entry) {
+						$entryPriority = $entry[1] ?? ListenerPriority::NORMAL;
+						$this->registerListener($key, [$instance, $entry[0]], $entryPriority);
+					}
+
+					continue;
+				}
+
 				$priority = ListenerPriority::NORMAL;
 				if (is_array($method)) {
-					$priority = $method[1];
+					$priority = $method[1] ?? ListenerPriority::NORMAL;
 					$method = $method[0];
 				}
 				$this->registerListener($key, [$instance, $method], $priority);

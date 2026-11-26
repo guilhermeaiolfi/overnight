@@ -45,6 +45,10 @@ class RouteMiddleware implements MiddlewareInterface
 
 		$result = $this->router->match($request);
 		if ($result->isFailure()) {
+			if ($result->isMethodFailure()) {
+				$request = $request->withAttribute(RouteResult::class, $result);
+			}
+
 			return $handler->handle($request);
 		}
 
@@ -126,9 +130,22 @@ class RouteMiddleware implements MiddlewareInterface
 			$value = $routeParams[$paramName];
 			$type = $param->getType();
 
-			if ($type instanceof ReflectionNamedType && $type->isBuiltin()) {
-				settype($value, $type->getName());
-			} elseif ($type && ! $type->isBuiltin()) {
+			if ($type instanceof ReflectionNamedType) {
+				if (! $type->isBuiltin()) {
+					continue;
+				}
+				$typeName = $type->getName();
+				if ($typeName === 'bool') {
+					if (is_string($value)) {
+						$parsed = filter_var($value, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
+						$value = $parsed ?? (bool) $value;
+					} else {
+						$value = (bool) $value;
+					}
+				} elseif (in_array($typeName, ['int', 'float', 'string'], true)) {
+					settype($value, $typeName);
+				}
+			} elseif ($type !== null) {
 				continue;
 			}
 
