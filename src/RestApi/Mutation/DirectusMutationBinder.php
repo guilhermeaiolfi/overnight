@@ -6,6 +6,8 @@ namespace ON\RestApi\Mutation;
 
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
+use ON\Data\Definition\Relation\HasManyRelation;
+use ON\Data\Definition\Relation\HasOneRelation;
 use ON\Data\Definition\Relation\RelationCardinality;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Key;
@@ -775,6 +777,7 @@ final class DirectusMutationBinder
 			}
 		}
 
+		$parentKeys = [];
 		if ($linkRelation) {
 			$this->attachRelated(
 				$session,
@@ -784,6 +787,11 @@ final class DirectusMutationBinder
 				$childObject,
 				$toMany,
 			);
+			if ($relation instanceof HasManyRelation || $relation instanceof HasOneRelation) {
+				foreach ($relation->getKeyPairing()->getPairs() as $pair) {
+					$parentKeys[$pair['right']] = $ownerRecord->getValueRef($pair['left']);
+				}
+			}
 		}
 
 		$related = $this->bindNestedOnRelated(
@@ -814,6 +822,8 @@ final class DirectusMutationBinder
 			path: $item->path,
 			related: $related,
 			rootRecord: $this->recordFor($session, $childObject),
+			submittedValues: $item->values,
+			parentKeys: $parentKeys,
 		);
 	}
 
@@ -917,6 +927,7 @@ final class DirectusMutationBinder
 			identity: $item->identity,
 			path: $item->path,
 			related: $related,
+			submittedValues: $item->values,
 		);
 	}
 

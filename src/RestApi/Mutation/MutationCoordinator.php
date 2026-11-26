@@ -10,6 +10,8 @@ use ON\Data\Key;
 use ON\Data\Mapper\Exception\ConversionException;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Mapper\Representation\WireRepresentation;
+use ON\Data\ORM\Persistence\TransactionalCommandExecutorInterface;
 use ON\Data\ORM\Record\RecordState;
 use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
@@ -160,6 +162,10 @@ final class MutationCoordinator
 			$key = PrimaryKey::of($collection)->getValue($identity);
 			$event = $dispatchEvents ? $this->authorizeRoot('delete', $collection, [], $key) : null;
 			if ($event?->isDefaultPrevented()) {
+				if ($event->getPreventResult() === null) {
+					throw RestApiError::mutationPrevented();
+				}
+
 				return true;
 			}
 
@@ -244,6 +250,7 @@ final class MutationCoordinator
 		$session = $this->sessions->create();
 		$this->binder->resetLookupCache();
 		$roots = [];
+		$deferredValidation = [];
 		foreach ($requests as [$identity, $input, $validationInput, $event]) {
 			$mutation = $this->parser->parse($collection, $input);
 			$this->assertVisibleRelations($mutation->relations);
@@ -256,20 +263,28 @@ final class MutationCoordinator
 				: $this->binder->bindUpdate($session, $collection, $mutation, $identity, $event?->getState(), valuesArePhp: true);
 			$roots[] = $bound;
 
-			foreach (MutationEventPlan::fromBound($bound)->before as $nested) {
-				if ($nested->isRoot()) {
+			$nodes = MutationEventPlan::fromBound($bound)->before;
+			if ($dispatchEvents) {
+				foreach ($nodes as $node) {
+					if (! $node->isRoot()) {
+						$this->dispatchBefore($node, $bound, $event?->shouldInheritAuthToNested() ?? false);
+					}
+				}
+				foreach ($nodes as $node) {
+					$this->reapplyHookMutations($session, $node);
+				}
+			}
+			foreach ($nodes as $node) {
+				if ($node->isRoot() || $node->operation === 'delete') {
 					continue;
 				}
-
-				if ($dispatchEvents) {
-					$this->dispatchBefore($nested, $bound, $event?->shouldInheritAuthToNested() ?? false);
-					$this->reapplyHookMutations($session, $nested);
+				if (! $this->validateNested($node, allowPendingKeys: true)) {
+					$deferredValidation[] = $node;
 				}
-				$this->validateNested($nested);
 			}
 		}
 
-		return $this->flush($session, $roots, $collection, $dispatchEvents, $output);
+		return $this->flush($session, $roots, $collection, $dispatchEvents, $output, $deferredValidation);
 	}
 
 	private function authorizeRoot(
@@ -319,21 +334,39 @@ final class MutationCoordinator
 		}
 	}
 
-	private function validateNested(BoundMutation $bound): void
+	private function validateNested(BoundMutation $bound, bool $allowPendingKeys = false): bool
 	{
-		if ($bound->operation !== 'create' && $bound->operation !== 'update') {
-			return;
-		}
-
 		$this->validator ??= new CollectionValidator(
 			$this->config?->get('validationMessages', []) ?? [],
 			$this->config?->get('validationLang', 'en') ?? 'en',
 		);
 
 		try {
-			$this->validator->validate(
+			$input = $bound->state->getData();
+			foreach ($input as $field => $value) {
+				if (array_key_exists($field, $bound->submittedValues) && $value === $bound->mutation->values[$field]) {
+					$input[$field] = $bound->submittedValues[$field];
+				}
+				if (is_object($input[$field])) {
+					$wire = map([$field => $input[$field]])->args($bound->collection)
+						->from(PhpRepresentation::class)->as(WireRepresentation::class)->to([]);
+					$input[$field] = $wire[$field] ?? null;
+				}
+			}
+			$pendingFields = [];
+			foreach ($bound->parentKeys as $field => $key) {
+				if ($allowPendingKeys && ! $key->isResolved()) {
+					unset($input[$field]);
+					$pendingFields[] = $field;
+				} else {
+					$input[$field] = $key->resolve();
+				}
+			}
+
+			return $this->validator->validateAvailable(
 				$bound->collection,
-				$bound->state->getData(),
+				$input,
+				$pendingFields,
 				partial: $bound->operation === 'update',
 			);
 		} catch (ValidationFailedException $exception) {
@@ -348,6 +381,7 @@ final class MutationCoordinator
 
 	/**
 	 * @param list<BoundMutation> $roots
+	 * @param list<BoundMutation> $deferredValidation
 	 * @param class-string $output
 	 * @return list<array<string, mixed>>
 	 */
@@ -357,13 +391,27 @@ final class MutationCoordinator
 		CollectionInterface $collection,
 		bool $dispatchEvents,
 		?string $output = null,
+		array $deferredValidation = [],
 	): array {
 		foreach ($roots as $bound) {
 			$session->sync($bound->representation);
 		}
 
 		try {
-			$session->flush();
+			if ($deferredValidation === []) {
+				$session->flush();
+			} else {
+				// Generated parent keys become available during flush. Keep the writes
+				// rollbackable until the child rules have checked their actual values.
+				$executor = $this->runtime->getCommandExecutor();
+				assert($executor instanceof TransactionalCommandExecutorInterface);
+				$executor->transaction(function () use ($session, $deferredValidation): void {
+					$session->flush();
+					foreach ($deferredValidation as $node) {
+						$this->validateNested($node);
+					}
+				});
+			}
 		} catch (Throwable $exception) {
 			throw RestApiError::databaseConstraint($exception, $collection) ?? $exception;
 		}

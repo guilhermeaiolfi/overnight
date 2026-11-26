@@ -30,8 +30,25 @@ final class CollectionValidator
 		bool $partial = false,
 		bool $skipPrimaryKey = false,
 	): void {
+		$this->validateAvailable($collection, $input, [], $partial, $skipPrimaryKey);
+	}
+
+	/**
+	 * Validate rules whose inputs are known. Returns false when a field or a
+	 * rule referencing it must be checked again after its value is generated.
+	 *
+	 * @param list<string> $pendingFields
+	 */
+	public function validateAvailable(
+		CollectionInterface $collection,
+		array $input,
+		array $pendingFields,
+		bool $partial = false,
+		bool $skipPrimaryKey = false,
+	): bool {
 		$rules = [];
 		$messages = [];
+		$complete = true;
 
 		foreach ($collection->fields as $name => $field) {
 			if ($skipPrimaryKey && $field->isPrimaryKey()) {
@@ -43,7 +60,17 @@ final class CollectionValidator
 				continue;
 			}
 
+			if (in_array($name, $pendingFields, true)) {
+				$complete = false;
+
+				continue;
+			}
 			if ($partial && ! array_key_exists($name, $input)) {
+				continue;
+			}
+			if ($pendingFields !== [] && $this->referencesPendingField($fieldRules, $pendingFields)) {
+				$complete = false;
+
 				continue;
 			}
 
@@ -56,7 +83,7 @@ final class CollectionValidator
 		}
 
 		if ($rules === []) {
-			return;
+			return $complete;
 		}
 
 		$validation = $this->factory()->make($input, $rules);
@@ -71,6 +98,21 @@ final class CollectionValidator
 		if ($validation->fails()) {
 			throw ValidationFailedException::fromErrors($this->normalizeErrors($validation->errors()));
 		}
+
+		return $complete;
+	}
+
+	/** @param list<string> $pendingFields */
+	private function referencesPendingField(string $rules, array $pendingFields): bool
+	{
+		foreach (explode('|', $rules) as $rule) {
+			[, $parameters] = array_pad(explode(':', $rule, 2), 2, null);
+			if ($parameters !== null && array_intersect($pendingFields, str_getcsv($parameters, escape: '\\')) !== []) {
+				return true;
+			}
+		}
+
+		return false;
 	}
 
 	private function factory(): ValidationFactory

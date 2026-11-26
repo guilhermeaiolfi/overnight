@@ -14,6 +14,7 @@ use function ON\Data\Query\x;
 use ON\RestApi\Event\FileUpload;
 use ON\RestApi\Event\ItemCreated;
 use ON\RestApi\Event\ItemCreating;
+use ON\RestApi\Event\ItemDeleting;
 use ON\RestApi\Event\ItemList;
 use ON\RestApi\Event\ItemUpdating;
 use ON\RestApi\Hook\RestHooks;
@@ -30,6 +31,116 @@ use Tests\ON\RestApi\Support\RestApiTestFixtures;
 final class RestApiMutationSecurityTest extends TestCase
 {
 	use RestApiTestFixtures;
+
+	public function testPreventedDeleteReportsAnErrorAndKeepsTheWholeBatch(): void
+	{
+		[$registry, $database] = $this->assetFixtures();
+		RestHooks::for($registry->getCollection('asset'))
+			->on('delete.before', static function (ItemDeleting $event): void {
+				if ((int) $event->getKey()->getValue() === 1) {
+					$event->preventDefault();
+				}
+			});
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $database));
+		$this->sendJson($middleware, 'POST', '/items/asset', ['title' => 'Second']);
+
+		foreach ([['/items/asset/1', []], ['/items/asset', [2, 1]]] as [$path, $body]) {
+			$response = $this->sendJson($middleware, 'DELETE', $path, $body);
+			$this->assertSame(400, $response->getStatusCode());
+			$this->assertSame('MUTATION_PREVENTED', $this->bodyOf($response)['errors'][0]['extensions']['code']);
+		}
+		$list = $this->respond($middleware, new ServerRequest(uri: '/items/asset'));
+		$this->assertEqualsCanonicalizing([1, 2], array_column($this->bodyOf($list)['data'], 'id'));
+	}
+
+	public function testChildBeforeHookCanAddAFieldToItsParent(): void
+	{
+		[$registry, $database] = $this->assetFixtures();
+		RestHooks::for($registry->getCollection('attachment'))
+			->on('create.before', static fn (ItemCreating $event) => $event->getRootState()->setValue('file_id', 42));
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $database));
+
+		$response = $this->sendJson($middleware, 'POST', '/items/asset', ['title' => 'Parent', 'attachments' => [['title' => 'Child']]]);
+		$this->assertSame(200, $response->getStatusCode(), (string) $response->getBody());
+		$this->assertSame(42, $this->bodyOf($response)['data']['file_id']);
+	}
+
+	public function testNestedDateRulesValidateTheSubmittedFormat(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$registry->getCollection('post')->getField('created_at')->validation('date:Y-m-d');
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $this->createFullDatabase()));
+
+		foreach (['2026-11-26' => 200, '2026-11-26T12:30:00+00:00' => 400] as $date => $status) {
+			$response = $this->sendJson($middleware, 'POST', '/items/user', [
+				'name' => 'Parent', 'posts' => [['title' => 'Child', 'created_at' => $date]],
+			]);
+			$this->assertSame($status, $response->getStatusCode(), (string) $response->getBody());
+			if ($status === 400) {
+				$this->assertSame('posts.0.created_at', $this->bodyOf($response)['errors'][0]['extensions']['field']);
+			}
+		}
+	}
+
+	public function testNestedCreateAcceptsARequiredForeignKeyFromItsParent(): void
+	{
+		[$registry, $database] = $this->assetFixtures();
+		$registry->getCollection('attachment')->getField('asset_id')->validation('required|integer');
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $database));
+
+		$response = $this->sendJson($middleware, 'POST', '/items/asset', ['title' => 'Parent', 'attachments' => [['title' => 'Child']]]);
+		$this->assertSame(200, $response->getStatusCode(), (string) $response->getBody());
+		$children = $this->respond($middleware, new ServerRequest(uri: '/items/attachment'));
+		$this->assertSame($this->bodyOf($response)['data']['id'], $this->bodyOf($children)['data'][0]['asset_id']);
+
+		$invalidChild = $this->sendJson($middleware, 'POST', '/items/asset', [
+			'title' => 'Another parent', 'attachments' => [['title' => null]],
+		]);
+		$this->assertSame(400, $invalidChild->getStatusCode());
+		$this->assertSame('attachments.0.title', $this->bodyOf($invalidChild)['errors'][0]['extensions']['field']);
+
+		$standalone = $this->sendJson($middleware, 'POST', '/items/attachment', ['title' => 'No parent']);
+		$this->assertSame(400, $standalone->getStatusCode());
+		$this->assertSame('asset_id', $this->bodyOf($standalone)['errors'][0]['extensions']['field']);
+	}
+
+	public function testInvalidGeneratedForeignKeyRollsBackTheBatchBeforeAfterHooks(): void
+	{
+		[$registry, $database] = $this->assetFixtures();
+		$registry->getCollection('attachment')->getField('asset_id')->validation('required|in:2');
+		$afterCalls = 0;
+		RestHooks::for($registry->getCollection('asset'))->on('create.after', static function () use (&$afterCalls): void {
+			++$afterCalls;
+		});
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $database));
+
+		$response = $this->sendJson($middleware, 'POST', '/items/asset', [
+			['title' => 'Allowed parent', 'attachments' => [['title' => 'First child']]],
+			['title' => 'Rejected parent', 'attachments' => [['title' => 'Second child']]],
+		]);
+		$this->assertSame(400, $response->getStatusCode(), (string) $response->getBody());
+		$this->assertSame('attachments.0.asset_id', $this->bodyOf($response)['errors'][0]['extensions']['field']);
+		$this->assertSame(0, $afterCalls);
+		$parents = $this->respond($middleware, new ServerRequest(uri: '/items/asset'));
+		$children = $this->respond($middleware, new ServerRequest(uri: '/items/attachment'));
+		$this->assertSame([1], array_column($this->bodyOf($parents)['data'], 'id'));
+		$this->assertSame([], $this->bodyOf($children)['data']);
+	}
+
+	public function testNestedRuleCanReferenceTheGeneratedParentKey(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$registry->getCollection('post')->getField('status')->validation('required_if:user_id,4');
+		$middleware = $this->createRestMiddleware($registry, $this->createItems($registry, $this->createFullDatabase()));
+
+		$response = $this->sendJson($middleware, 'POST', '/items/user', [
+			'name' => 'Fourth user', 'posts' => [['title' => 'Child']],
+		]);
+		$this->assertSame(400, $response->getStatusCode());
+		$this->assertSame('posts.0.status', $this->bodyOf($response)['errors'][0]['extensions']['field']);
+	}
 
 	public function testDeniedWritesDoNotRunFrameworkUploadOrPreconditionChecks(): void
 	{

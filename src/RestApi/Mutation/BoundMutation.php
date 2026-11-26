@@ -7,6 +7,7 @@ namespace ON\RestApi\Mutation;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
 use ON\Data\ORM\Record\RecordState;
+use ON\Data\ORM\Record\ValueRef;
 use ON\RestApi\Mutation\Payload\DirectusMutation;
 use ON\RestApi\Mutation\Payload\PayloadPath;
 
@@ -17,6 +18,8 @@ final class BoundMutation
 {
 	/**
 	 * @param list<BoundMutation> $related
+	 * @param array<string, mixed> $submittedValues Nested scalar input before type conversion
+	 * @param array<string, ValueRef> $parentKeys Child fields supplied by the parent relation
 	 */
 	public function __construct(
 		public readonly string $operation,
@@ -28,6 +31,8 @@ final class BoundMutation
 		public readonly PayloadPath $path = new PayloadPath([]),
 		public array $related = [],
 		public readonly ?RecordState $rootRecord = null,
+		public readonly array $submittedValues = [],
+		public readonly array $parentKeys = [],
 	) {
 	}
 
