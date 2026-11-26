@@ -7,11 +7,12 @@ namespace ON\RestApi\Action\Directus;
 use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
-use ON\Data\Query\SelectQuery;
-use function ON\Data\Query\x;
+use ON\Data\Key;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\Mapper\Representation\RepresentationInterface;
+use ON\Data\Query\SelectQuery;
+use function ON\Data\Query\x;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemGet;
@@ -21,7 +22,6 @@ use ON\RestApi\Query\Parser\QueryParserInterface;
 use ON\RestApi\Query\QueryContext;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\PrimaryKey;
-use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class GetAction implements RestActionInterface
@@ -48,7 +48,7 @@ final class GetAction implements RestActionInterface
 			'output' => PhpRepresentation::class,
 		];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$identity = PrimaryKey::of($collection)->getValue((string) ($params['id'] ?? ''));
+		$identity = PrimaryKey::of($collection)->parseUrlId((string) ($params['id'] ?? ''));
 		$queryParams = is_array($payload['query'] ?? null) ? $payload['query'] : [];
 		$context = $this->createContext();
 		$query = $this->parser->parse($collection, $queryParams, $context);
@@ -58,7 +58,7 @@ final class GetAction implements RestActionInterface
 		if (! $options['dispatchEvents']) {
 			$item = $this->mapRowOutput(
 				$collection,
-				$this->fetchOne($query, $context),
+				$query->fetchOne(),
 				PhpRepresentation::class,
 				$options['output'],
 			);
@@ -77,7 +77,7 @@ final class GetAction implements RestActionInterface
 					$responseOptions['output'],
 				);
 			} else {
-				$event->setResult($this->fetchOne($query, $context));
+				$event->setResult($query->fetchOne());
 				$item = $this->mapRowOutput(
 					$collection,
 					$event->getResult(),
@@ -91,19 +91,7 @@ final class GetAction implements RestActionInterface
 			throw RestApiError::notFound();
 		}
 
-		return ['data' => $item];
-	}
-
-	private function fetchOne(SelectQuery $query, QueryContext $context): ?array
-	{
-		$row = $query->fetchOne();
-		if ($row === null) {
-			return null;
-		}
-
-		$rows = $this->renameRelationAliases([$row], $context);
-
-		return $rows[0] ?? null;
+		return ['data' => RelationAliases::apply($item, $context->getRelationResponseNames())];
 	}
 
 	private function applyIdentity(
@@ -135,35 +123,6 @@ final class GetAction implements RestActionInterface
 			->from($from)
 			->as($to)
 			->to([]);
-	}
-
-	/**
-	 * @param list<array<string, mixed>> $rows
-	 * @return list<array<string, mixed>>
-	 */
-	private function renameRelationAliases(array $rows, QueryContext $context): array
-	{
-		if ($context->getRelationResponseNames() === []) {
-			return $rows;
-		}
-
-		foreach ($rows as &$row) {
-			foreach ($context->getRelationResponseNames() as $relationPath => $responseName) {
-				$segments = explode('.', $relationPath);
-				$relationName = $segments[0] ?? null;
-				if ($relationName === null || $relationName === $responseName) {
-					continue;
-				}
-				if (! array_key_exists($relationName, $row)) {
-					continue;
-				}
-				$row[$responseName] = $row[$relationName];
-				unset($row[$relationName]);
-			}
-		}
-		unset($row);
-
-		return $rows;
 	}
 
 	private function createContext(): QueryContext

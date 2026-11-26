@@ -16,6 +16,7 @@ class RestApiConfig extends Config
 	public int $rateLimit = 100;
 	public int $rateLimitWindow = 60;
 	public string $filesCollection = 'directus_files';
+	public int $maxBatchSize = 1000;
 	public array $addons = [];
 	public array $dynamicVariables = [];
 

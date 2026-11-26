@@ -8,6 +8,7 @@ use InvalidArgumentException;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Field\FieldInterface;
 use ON\Data\Key;
+use ON\RestApi\Error\RestApiError;
 use RuntimeException;
 
 /**
@@ -101,6 +102,24 @@ final class PrimaryKey
 		}
 
 		return $missing;
+	}
+
+	public function withoutFields(array $values): array
+	{
+		foreach ($this->fields as $field) {
+			unset($values[$field->getName()], $values[$field->getColumn()]);
+		}
+
+		return $values;
+	}
+
+	public function parseUrlId(string $id): Key
+	{
+		try {
+			return $this->getValueFromUrlId($id);
+		} catch (InvalidArgumentException $exception) {
+			throw new RestApiError('Invalid primary key.', 'INVALID_PRIMARY_KEY', null, 400, $exception);
+		}
 	}
 
 	public function getValueFromUrlId(string $id): Key

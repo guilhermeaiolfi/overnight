@@ -6,6 +6,7 @@ namespace ON\RestApi\Action\Directus;
 
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Key;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Error\RestApiError;
@@ -14,7 +15,6 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\RestApiConfig;
 use ON\RestApi\Support\ETagTrait;
 use ON\RestApi\Support\PrimaryKey;
-use ON\Data\Key;
 use ON\RestApi\Support\RegistrySupportTrait;
 
 final class BatchDeleteAction implements RestActionInterface
@@ -35,38 +35,37 @@ final class BatchDeleteAction implements RestActionInterface
 		$payload = is_array($payload) ? $payload : [];
 		$options = ($options ?? []) + ['dispatchEvents' => true];
 		$collection = $this->getCollectionOrThrow($this->registry, (string) ($params['collection'] ?? ''));
-		$body = is_array($payload['body'] ?? null) ? $payload['body'] : [];
-
-		if (! is_array($body)) {
+		$body = $payload['body'] ?? null;
+		if (! is_array($body) || ! array_is_list($body) || $body === []) {
 			throw new RestApiError('Batch delete expects an array of IDs.', 'INVALID_PAYLOAD', null, 400);
 		}
 
+		if (count($body) > max(1, (int) $this->config->get('maxBatchSize', 1000))) {
+			throw new RestApiError('Too many items in a single batch.', 'BATCH_LIMIT_EXCEEDED', null, 400);
+		}
+		$primaryKey = PrimaryKey::of($collection);
 		$identities = [];
 		foreach ($body as $id) {
-			$identity = is_array($id)
-				? PrimaryKey::of($collection)->extractFromInput($id)
-				: PrimaryKey::of($collection)->getValue((string) $id);
+			$identity = match (true) {
+				is_array($id) => $primaryKey->extractFromInput($id),
+				is_string($id), is_int($id) => $primaryKey->parseUrlId((string) $id),
+				default => null,
+			};
 			if ($identity === null) {
-				$missing = is_array($id) ? PrimaryKey::of($collection)->getMissingFieldNames($id) : PrimaryKey::of($collection)->getFieldNames();
-
-				throw new RestApiError(
-					"Batch delete item is missing primary key field(s): " . implode(', ', $missing) . '.',
-					'MISSING_PRIMARY_KEY',
-					$missing[0] ?? null,
-					400
-				);
+				throw new RestApiError('Batch delete expects valid primary keys.', 'INVALID_PRIMARY_KEY', null, 400);
 			}
 
-			$identity = PrimaryKey::of($collection)->getValue($identity);
-			$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
-			$this->checkIfMatch($collection, $identity, $this->getIfMatch($headers));
 			$identities[] = $identity;
 		}
+
+		$headers = is_array($payload['headers'] ?? null) ? $payload['headers'] : [];
+		$ifMatch = $this->getIfMatch($headers);
 
 		$this->mutations->batchDelete(
 			$collection,
 			$identities,
 			(bool) $options['dispatchEvents'],
+			fn (Key $key) => $this->checkIfMatch($collection, $key, $ifMatch),
 		);
 
 		return null;
