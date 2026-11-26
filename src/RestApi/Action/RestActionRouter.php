@@ -14,6 +14,8 @@ use ON\Router\RouteResult;
 
 final class RestActionRouter
 {
+	private ?Dispatcher $dispatcher = null;
+
 	/** @param list<array{name: string, methods: list<string>, path: string, action: string, options?: array<string, mixed>}> $routes */
 	public function __construct(private array $routes)
 	{
@@ -21,14 +23,18 @@ final class RestActionRouter
 
 	public function match(string $method, string $path): RouteResult
 	{
-		$dispatcher = new GroupCountBased($this->collector()->getData());
-		$result = $dispatcher->dispatch(strtoupper($method), $this->normalizePath($path));
+		$result = $this->dispatcher()->dispatch(strtoupper($method), $this->normalizePath($path));
 
 		return match ($result[0]) {
 			Dispatcher::FOUND => RouteResult::fromRoute($result[1], $result[2]),
 			Dispatcher::METHOD_NOT_ALLOWED => RouteResult::fromRouteFailure($result[1]),
 			default => RouteResult::fromRouteFailure(Route::HTTP_METHOD_ANY),
 		};
+	}
+
+	private function dispatcher(): Dispatcher
+	{
+		return $this->dispatcher ??= new GroupCountBased($this->collector()->getData());
 	}
 
 	private function collector(): RouteCollector

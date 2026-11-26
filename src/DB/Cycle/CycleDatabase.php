@@ -13,6 +13,8 @@ use Cycle\ORM\Schema;
 use Cycle\Schema\Registry;
 use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseInterface;
+use RuntimeException;
+use function sprintf;
 
 class CycleDatabase implements DatabaseInterface
 {
@@ -50,6 +52,12 @@ class CycleDatabase implements DatabaseInterface
 
 	public function getRegistry(): Registry
 	{
+		if ($this->registry === null) {
+			throw new RuntimeException(
+				sprintf('CycleDatabase "%s" registry has not been initialized. Call setRegistry() first.', $this->name)
+			);
+		}
+
 		return $this->registry;
 	}
 
@@ -65,7 +73,18 @@ class CycleDatabase implements DatabaseInterface
 
 	public function getEntityManager(): EntityManager
 	{
+		if ($this->entityManager === null) {
+			throw new RuntimeException(
+				sprintf('CycleDatabase "%s" entity manager has not been initialized. Call setSchema() first.', $this->name)
+			);
+		}
+
 		return $this->entityManager;
+	}
+
+	public function cleanHeap(): void
+	{
+		$this->orm?->getHeap()->clean();
 	}
 
 	public function getName(): string

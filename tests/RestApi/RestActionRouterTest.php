@@ -43,6 +43,36 @@ final class RestActionRouterTest extends TestCase
 		$this->assertSame(['GET'], $result->getAllowedMethods());
 	}
 
+	public function testCachesCompiledDispatcherAcrossRepeatedMatches(): void
+	{
+		$config = new RestApiConfig();
+		$config->addAction('list', 'GET', '{collection}', TestRestAction::class);
+		$config->addAction('get', 'GET', '{collection}/{id}', TestRestAction::class);
+		$config->addAction('create', 'POST', '{collection}', TestRestAction::class);
+
+		$router = new RestActionRouter($config->get('actions'));
+		$dispatcherProperty = new ReflectionProperty(RestActionRouter::class, 'dispatcher');
+
+		$this->assertNull($dispatcherProperty->getValue($router));
+
+		$first = $router->match('GET', '/posts');
+		$dispatcherAfterFirst = $dispatcherProperty->getValue($router);
+		$this->assertNotNull($dispatcherAfterFirst);
+		$this->assertTrue($first->isSuccess());
+		$this->assertSame(['collection' => 'posts'], $first->getMatchedParams());
+
+		$second = $router->match('get', 'posts/42');
+		$this->assertSame($dispatcherAfterFirst, $dispatcherProperty->getValue($router));
+		$this->assertTrue($second->isSuccess());
+		$this->assertSame(['collection' => 'posts', 'id' => '42'], $second->getMatchedParams());
+
+		$third = $router->match('DELETE', '/posts/42');
+		$this->assertSame($dispatcherAfterFirst, $dispatcherProperty->getValue($router));
+		$this->assertTrue($third->isFailure());
+		$this->assertTrue($third->isMethodFailure());
+		$this->assertSame(['GET'], $third->getAllowedMethods());
+	}
+
 	public function testRestApiExtensionExecutesActionsThroughExecutor(): void
 	{
 		$container = new class () implements ContainerInterface {

@@ -8,6 +8,7 @@ use ON\Data\Definition\Registry;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
 use PHPUnit\Framework\TestCase;
+use ReflectionProperty;
 
 final class CollectionValidatorTest extends TestCase
 {
@@ -156,5 +157,48 @@ final class CollectionValidatorTest extends TestCase
 				$e->getErrors()
 			);
 		}
+	}
+
+	public function testReusesValidationFactoryWithoutLeakingPerFieldMessages(): void
+	{
+		$registry = new Registry();
+		$registry->collection('user_custom')
+			->field('email', 'string')->type('string')->nullable(true)
+				->validation('required', [
+					'required' => 'Custom user email required.',
+				])
+				->end()
+			->end();
+		$registry->collection('user_default')
+			->field('email', 'string')->type('string')->nullable(true)
+				->validation('required')
+				->end()
+			->end();
+
+		$validator = new CollectionValidator([
+			'rule.required' => 'Default required for :attribute.',
+		]);
+		$factoryProp = new ReflectionProperty(CollectionValidator::class, 'factory');
+
+		$this->assertNull($factoryProp->getValue($validator));
+
+		try {
+			$validator->validate($registry->getCollection('user_custom'), []);
+			$this->fail('Expected validation to fail.');
+		} catch (ValidationFailedException $e) {
+			$this->assertSame(['email' => ['Custom user email required.']], $e->getErrors());
+		}
+
+		$factoryAfterFirst = $factoryProp->getValue($validator);
+		$this->assertNotNull($factoryAfterFirst);
+
+		try {
+			$validator->validate($registry->getCollection('user_default'), []);
+			$this->fail('Expected validation to fail.');
+		} catch (ValidationFailedException $e) {
+			$this->assertSame(['email' => ['Default required for email.']], $e->getErrors());
+		}
+
+		$this->assertSame($factoryAfterFirst, $factoryProp->getValue($validator));
 	}
 }

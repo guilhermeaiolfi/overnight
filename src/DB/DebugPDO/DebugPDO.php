@@ -154,6 +154,8 @@ class DebugPDO extends PDO
 		$trace->start();
 
 		$ex = null;
+		$result = false;
+		$errorMode = $this->pdo->getAttribute(PDO::ATTR_ERRMODE);
 
 		try {
 			$result = $this->__call($method, $args);
@@ -161,16 +163,16 @@ class DebugPDO extends PDO
 			$ex = $e;
 		}
 
-		if ($this->pdo->getAttribute(PDO::ATTR_ERRMODE) !== PDO::ERRMODE_EXCEPTION && $result === false) {
+		if ($errorMode !== PDO::ERRMODE_EXCEPTION && $result === false) {
 			$error = $this->pdo->errorInfo();
-			$ex = new PDOException($error[2], $error[0]);
+			$ex = new PDOException((string) ($error[2] ?? ''), (int) ($error[0] ?? 0));
 		}
 
 		$trace->end($ex);
 
 		$this->recordQuery($trace);
 
-		if ($this->pdo->getAttribute(PDO::ATTR_ERRMODE) === PDO::ERRMODE_EXCEPTION && $ex !== null) {
+		if ($errorMode === PDO::ERRMODE_EXCEPTION && $ex !== null) {
 			throw $ex;
 		}
 

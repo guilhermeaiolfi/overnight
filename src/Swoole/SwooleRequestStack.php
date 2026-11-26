@@ -12,8 +12,19 @@ use Swoole\Coroutine;
 
 class SwooleRequestStack implements RequestStackInterface
 {
+	private static int $nextInstanceId = 0;
+
+	private string $contextKey;
+
+	private ?RequestStack $fallbackStack = null;
+
 	/** @var array<int, RequestStack> */
 	private array $stacks = [];
+
+	public function __construct()
+	{
+		$this->contextKey = self::class . ':' . (++self::$nextInstanceId);
+	}
 
 	public function beginRequest(ServerRequestInterface $request, callable $callback): mixed
 	{
@@ -67,10 +78,30 @@ class SwooleRequestStack implements RequestStackInterface
 		}
 
 		$coroutineId = Coroutine::getCid();
-		if ($coroutineId < 0) {
-			$coroutineId = 0;
+		if ($coroutineId <= 0) {
+			return $this->fallbackStack ??= new RequestStack();
 		}
 
-		return $this->stacks[$coroutineId] ??= new RequestStack();
+		if (method_exists(Coroutine::class, 'getContext')) {
+			$context = Coroutine::getContext();
+			if ($context !== null) {
+				if (! isset($context[$this->contextKey]) || ! $context[$this->contextKey] instanceof RequestStack) {
+					$context[$this->contextKey] = new RequestStack();
+				}
+
+				return $context[$this->contextKey];
+			}
+		}
+
+		if (! isset($this->stacks[$coroutineId])) {
+			$this->stacks[$coroutineId] = new RequestStack();
+			if (method_exists(Coroutine::class, 'defer')) {
+				Coroutine::defer(function () use ($coroutineId): void {
+					unset($this->stacks[$coroutineId]);
+				});
+			}
+		}
+
+		return $this->stacks[$coroutineId];
 	}
 }

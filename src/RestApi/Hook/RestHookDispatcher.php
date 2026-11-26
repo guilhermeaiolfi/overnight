@@ -4,18 +4,26 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Hook;
 
+use function array_values;
+use function count;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\RestApi\Event\AuthorizationAwareEventInterface;
 use ON\RestApi\Support\AuthorizationGuard;
 use Psr\Container\ContainerInterface;
+use function usort;
+use WeakMap;
 
 final class RestHookDispatcher
 {
+	/** @var WeakMap<CollectionInterface, array<string, array{source: array<int|string, mixed>, sorted: list<array{handler: mixed, priority: int}>}>> */
+	private WeakMap $sortedCache;
+
 	public function __construct(
 		private ContainerInterface $container,
 		private ExecutorInterface $executor,
 	) {
+		$this->sortedCache = new WeakMap();
 	}
 
 	public function start(): RestHookTransaction
@@ -49,12 +57,29 @@ final class RestHookDispatcher
 	{
 		$hooks = $collection->metadata(RestHooks::METADATA_KEY) ?? [];
 		$definitions = $hooks[$slot] ?? [];
+
+		if (count($definitions) <= 1) {
+			return array_values($definitions);
+		}
+
+		$collectionCache = $this->sortedCache[$collection] ?? [];
+		if (isset($collectionCache[$slot]) && $collectionCache[$slot]['source'] === $definitions) {
+			return $collectionCache[$slot]['sorted'];
+		}
+
+		$sorted = $definitions;
 		usort(
-			$definitions,
+			$sorted,
 			static fn (array $left, array $right): int => ($right['priority'] ?? 0) <=> ($left['priority'] ?? 0)
 		);
 
-		return $definitions;
+		$collectionCache[$slot] = [
+			'source' => $definitions,
+			'sorted' => $sorted,
+		];
+		$this->sortedCache[$collection] = $collectionCache;
+
+		return $sorted;
 	}
 
 	private function resolveHandler(mixed $handler): mixed
