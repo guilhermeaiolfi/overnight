@@ -9,6 +9,7 @@ use ON\RateLimit\CacheRateLimiter;
 use ON\RateLimit\InMemoryRateLimiter;
 use ON\RateLimit\RateLimiterInterface;
 use Psr\Container\ContainerInterface;
+use Psr\Log\LoggerInterface;
 
 class RateLimiterFactory
 {
@@ -19,6 +20,13 @@ class RateLimiterFactory
 			$cache = $container->get(CacheInterface::class);
 			if ($cache->isEnabled()) {
 				return new CacheRateLimiter($cache);
+			}
+		}
+
+		if ($container->has(LoggerInterface::class)) {
+			$logger = $container->get(LoggerInterface::class);
+			if ($logger instanceof LoggerInterface) {
+				$logger->warning('Cache is unavailable or disabled; falling back to InMemoryRateLimiter.');
 			}
 		}
 

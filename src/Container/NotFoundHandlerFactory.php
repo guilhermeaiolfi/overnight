@@ -17,8 +17,9 @@ class NotFoundHandlerFactory
 		$config = $container->get(AppConfig::class);
 		$app = $container->get(Application::class);
 
-		$errorHandlerConfig = $config->get('controllers.errors.404') ?? [];
+		$errorHandlerConfig = $config->get('controllers.errors.404');
+		$path = is_string($errorHandlerConfig) ? $errorHandlerConfig : '';
 
-		return new NotFoundHandler($app, $errorHandlerConfig, $container->get(ResponseInterface::class));
+		return new NotFoundHandler($app, $path, $container->get(ResponseInterface::class));
 	}
 }

@@ -13,8 +13,9 @@ class AclUser extends StandardUser
 
 	public function hasRole($role)
 	{
-		return is_array($this->data["roles"]) ?
-			in_array($role, $this->data["roles"]) : false;
+		return isset($this->data['roles'])
+			&& is_array($this->data['roles'])
+			&& in_array($role, $this->data['roles'], true);
 	}
 
 	public function getRole()

@@ -180,15 +180,14 @@ final class PlainPageIntegrationTest extends TestCase
 			->withAttribute(RouteResult::class, $routeResult)
 			->withParsedBody([]);
 
-		$fallthrough = new JsonResponse(['fallthrough' => true]);
 		$handler = $this->createMock(RequestHandlerInterface::class);
-		$handler->method('handle')->willReturn($fallthrough);
+		$handler->expects($this->never())->method('handle');
 
 		$validationMiddleware = $this->createValidationMiddleware();
 		$response = $validationMiddleware->process($request, $handler);
 
-		// No error handler → passes through to handler
-		$this->assertSame($fallthrough, $response);
+		// No error handler → fails closed with 422
+		$this->assertSame(422, $response->getStatusCode());
 	}
 
 	public function testPlainPageWithStringReturn(): void

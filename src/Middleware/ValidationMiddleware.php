@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Middleware;
 
+use Laminas\Diactoros\Response\JsonResponse;
+use Laminas\Diactoros\Response\TextResponse;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\InvocationContext;
 use ON\Router\RouteResult;
@@ -60,11 +62,11 @@ class ValidationMiddleware implements MiddlewareInterface
 			return $handler->handle($request);
 		}
 
-		// Validation failed — call error handler on the page
+		// Validation failed — call error handler on the page, or fail closed with 422
 		$errorMethod = $this->findErrorMethod($page, $action);
 
 		if ($errorMethod === null) {
-			return $handler->handle($request);
+			return $this->createValidationErrorResponse($request);
 		}
 
 		$response = $this->executor->execute([$page, $errorMethod], $args);
@@ -72,6 +74,19 @@ class ValidationMiddleware implements MiddlewareInterface
 		// We don't need to test $response as ResponseInterface, because that's done in the runView already
 		// that means that handleError can return an ResponseInterface directly, or return data to be rendered in the view
 		return $this->viewManager->runView($page, $action, $response, $request, $handler, $this->executor);
+	}
+
+	protected function createValidationErrorResponse(ServerRequestInterface $request): ResponseInterface
+	{
+		$outputType = $request->getAttribute(OutputTypeMiddleware::class);
+		$accept = $request->getHeaderLine('Accept');
+
+		if ($outputType === 'json' || ($outputType === null && preg_match('#application/([^+\s]+\+)?json#i', $accept) === 1)) {
+			return new JsonResponse(['error' => 'Unprocessable Entity'], 422);
+		}
+
+		return (new TextResponse('Unprocessable Entity', 422))
+			->withHeader('X-Content-Type-Options', 'nosniff');
 	}
 
 	protected function findValidateMethod(object $page, string $action): ?string
@@ -94,9 +109,11 @@ class ValidationMiddleware implements MiddlewareInterface
 
 	protected function findErrorMethod(object $page, ?string $action): ?string
 	{
-		$method = 'handle' . ucfirst($action) . 'Error';
-		if (method_exists($page, $method)) {
-			return $method;
+		if ($action !== null && $action !== '') {
+			$method = 'handle' . ucfirst($action) . 'Error';
+			if (method_exists($page, $method)) {
+				return $method;
+			}
 		}
 
 		if (method_exists($page, 'handleError')) {

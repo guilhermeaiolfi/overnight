@@ -32,6 +32,11 @@ class AuthorizationMiddleware implements MiddlewareInterface
 		}
 
 		$page = $routeResult->getTargetInstance();
+
+		if ($page === null) {
+			return $handler->handle($request);
+		}
+
 		$action = $routeResult->getMethod();
 
 		$checkMethod = $this->findCheckPermissionsMethod($page, $action);
@@ -52,11 +57,11 @@ class AuthorizationMiddleware implements MiddlewareInterface
 
 		$errorPath = $this->config->get('controllers.errors.403', false);
 
-		if (! $errorPath) {
+		if (! is_string($errorPath) || $errorPath === '') {
 			return new EmptyResponse(403);
 		}
 
-		return $this->app->processForward($errorPath, $request);
+		return $this->app->processForward($errorPath, $request, 'GET');
 	}
 
 	protected function findCheckPermissionsMethod(object $page, string $action): ?string

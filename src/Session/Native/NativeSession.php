@@ -7,22 +7,25 @@ namespace ON\Session\Native;
 use function array_key_exists;
 use function end;
 use function explode;
+use function headers_sent;
+use function ini_get;
 use function is_dir;
-use function is_file;
+use function is_string;
 use ON\Session\SessionInterface;
 use const PHP_SESSION_ACTIVE;
-use function rtrim;
 use RuntimeException;
 use function session_destroy;
+use function session_get_cookie_params;
 use function session_id;
 use function session_module_name;
+use function session_name;
 use function session_regenerate_id;
-use function session_save_path;
 use function session_start;
 use function session_status;
 use function session_write_close;
+use function setcookie;
 use function sprintf;
-use function unlink;
+use function time;
 
 class NativeSession implements SessionInterface
 {
@@ -50,10 +53,16 @@ class NativeSession implements SessionInterface
 			return;
 		}
 
-		if (isset($this->options['save_path']) && ! is_dir($this->options['save_path'])) {
-			throw new RuntimeException(
-				sprintf('Session save path "%s" does not exist.', $this->options['save_path'])
-			);
+		$savePath = $this->options['save_path'] ?? null;
+		$saveHandler = $this->options['save_handler'] ?? session_module_name();
+		if (is_string($savePath) && $savePath !== '' && $saveHandler === 'files') {
+			$parts = explode(';', $savePath);
+			$directory = end($parts);
+			if ($directory === false || $directory === '' || ! is_dir($directory)) {
+				throw new RuntimeException(
+					sprintf('Session save path "%s" does not exist.', $savePath)
+				);
+			}
 		}
 
 		if (! session_start($this->options)) {
@@ -61,34 +70,31 @@ class NativeSession implements SessionInterface
 		}
 	}
 
-	private function getSessionFilePath(?string $id = null): ?string
+	private function expireSessionCookie(): void
 	{
-		$id ??= $this->getId();
-		if ($id === null || session_module_name() !== 'files') {
-			return null;
-		}
-
-		$savePath = $this->options['save_path'] ?? session_save_path();
-		if ($savePath === '') {
-			return null;
-		}
-
-		$parts = explode(';', $savePath);
-		$directory = end($parts);
-		if ($directory === false || $directory === '') {
-			return null;
-		}
-
-		return rtrim($directory, '/\\') . DIRECTORY_SEPARATOR . 'sess_' . $id;
-	}
-
-	private function deleteSessionFileIfPossible(?string $sessionFile): void
-	{
-		if ($sessionFile === null || ! is_file($sessionFile)) {
+		if (! (bool) ini_get('session.use_cookies') || headers_sent()) {
 			return;
 		}
 
-		@unlink($sessionFile);
+		$name = session_name();
+		if ($name === false || $name === '') {
+			return;
+		}
+
+		$params = session_get_cookie_params();
+		$cookieOptions = [
+			'expires' => time() - 42000,
+			'path' => $params['path'] ?? '/',
+			'domain' => $params['domain'] ?? '',
+			'secure' => (bool) ($params['secure'] ?? false),
+			'httponly' => (bool) ($params['httponly'] ?? false),
+		];
+
+		if (isset($params['samesite']) && $params['samesite'] !== '') {
+			$cookieOptions['samesite'] = $params['samesite'];
+		}
+
+		setcookie($name, '', $cookieOptions);
 	}
 
 	public function get(string $key, mixed $default = null): mixed
@@ -135,16 +141,9 @@ class NativeSession implements SessionInterface
 			return;
 		}
 
-		$sessionFile = $this->getSessionFilePath();
+		$this->expireSessionCookie();
 		$_SESSION = [];
-
-		if ($sessionFile !== null) {
-			session_write_close();
-			$this->deleteSessionFileIfPossible($sessionFile);
-		} else {
-			session_destroy();
-		}
-
+		session_destroy();
 		session_id('');
 	}
 
@@ -158,19 +157,6 @@ class NativeSession implements SessionInterface
 	public function regenerateId(bool $deleteOldSession = false): bool
 	{
 		$this->ensureStarted();
-
-		if ($deleteOldSession) {
-			$sessionFile = $this->getSessionFilePath();
-			$result = session_regenerate_id(false);
-
-			if (! $result) {
-				return false;
-			}
-
-			$this->deleteSessionFileIfPossible($sessionFile);
-
-			return true;
-		}
 
 		return session_regenerate_id($deleteOldSession);
 	}
