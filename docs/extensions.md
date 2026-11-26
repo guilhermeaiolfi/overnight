@@ -15,19 +15,17 @@ Extensions are modular components that extend the framework's functionality.
 | `TranslationExtension` | Internationalization | [translation.md](extensions/translation.md) |
 | `LoggingExtension` | Monolog logging | |
 | `CacheExtension` | Symfony Cache integration | |
-| `DatabaseExtension` | ORM/database | [database.md](extensions/database.md) |
-| `ORMExtension` | Cycle ORM wrapper | [orm-entity-definition.md](orm-entity-definition.md) |
+| `DatabaseExtension` | Cycle ORM / database & migrations | [database.md](extensions/database.md) |
 | `EventsExtension` | Event dispatcher | [events.md](extensions/events.md) |
 | `DiscoveryExtension` | Class discovery | [discovery.md](extensions/discovery.md) |
 | `ConsoleExtension` | CLI commands | [cli.md](cli.md) |
-| `CMSExtension` | Built-in CMS | |
 | `MaintenanceExtension` | Maintenance mode | [maintenance.md](extensions/maintenance.md) |
 | `ClockworkExtension` | Debug profiling | |
 | `FileRoutingExtension` | File-based routing | [file-routing.md](extensions/file-routing.md) |
 | `GraphQLExtension` | GraphQL API support | [graphql.md](extensions/graphql.md) |
 | `AutoWiringExtension` | Automatic application extension discovery | [auto-wiring.md](extensions/auto-wiring.md) |
 | `RestApiExtension` | REST API endpoints from entity definitions | [rest-api.md](extensions/rest-api.md) |
-| `DataExtension` | ON\Data runtime + conversion gateway | |
+| `DataExtension` | ON\Data runtime, registry & conversion gateway | [ondata-cycle-schema-migration.md](ondata-cycle-schema-migration.md) |
 | `ImageExtension` | Image processing | [image.md](extensions/image.md) |
 | `RateLimitExtension` | Rate limiting | |
 | `PipelineExtension` | PSR-15 middleware pipeline | |
@@ -198,7 +196,7 @@ $viewCfg = $app->config->get(ViewConfig::class);
 ### DatabaseConfig
 
 ```php
-use ON\Db\DatabaseConfig;
+use ON\DB\DatabaseConfig;
 
 // DatabaseConfig is registered by DatabaseExtension
 $dbCfg = $app->config->get(DatabaseConfig::class);
