@@ -10,6 +10,7 @@ use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
+use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
 use ON\GraphQL\GraphQLRegistryGenerator;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
@@ -51,6 +52,21 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertIsArray($users);
 		$this->assertArrayHasKey('items', $users);
 		$this->assertArrayHasKey('totalCount', $users);
+	}
+
+	public function testListProjectsFieldsWhenACustomRelationDoesNotDeclareKeys(): void
+	{
+		$this->createUserCollection($this->registry);
+		$this->createPostCollection($this->registry);
+		$user = $this->registry->getCollection('user');
+		$user->hasMany('posts', 'post')
+			->metadata('gql::resolver', static fn (): array => [])
+			->end();
+
+		$resolver = new SqlResolver($this->registry, $this->createTestDatabase());
+		$result = $resolver->resolveCollection($user);
+
+		$this->assertSame(['John', 'Jane'], array_column($result['items'], 'name'));
 	}
 
 	public function testExecuteGraphQLQueryWithRelations(): void
@@ -328,28 +344,7 @@ final class GraphQLSQLResolverTest extends TestCase
 
 	public function testNestedCreateRollsBackWhenTheDeclaredSourceKeyIsNull(): void
 	{
-		$this->registry->collection('document')
-			->primaryKey('id')->field('id', 'int')->end()
-			->field('title', 'string')->end()
-			->field('external_id', 'int')->nullable(true)->end()
-			->hasMany('notes', 'note')->innerKey('external_id')->outerKey('document_external_id')->end()
-			->end();
-		$this->registry->collection('note')
-			->primaryKey('id')->field('id', 'int')->end()
-			->field('text', 'string')->end()
-			->field('document_external_id', 'int')->nullable(true)->end()
-			->end();
-
-		$database = new SqliteTestDatabase([
-			'document' => [
-				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'title' => 'TEXT', 'external_id' => 'INTEGER'],
-				'rows' => [],
-			],
-			'note' => [
-				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'text' => 'TEXT', 'document_external_id' => 'INTEGER'],
-				'rows' => [],
-			],
-		]);
+		$database = $this->createDocumentWithNotes();
 		$resolver = new SqlResolver($this->registry, $database);
 
 		try {
@@ -365,6 +360,74 @@ final class GraphQLSQLResolverTest extends TestCase
 
 		$this->assertSame(0, (int) $database->getConnection()->query('SELECT COUNT(*) FROM document')->fetchColumn());
 		$this->assertSame(0, (int) $database->getConnection()->query('SELECT COUNT(*) FROM note')->fetchColumn());
+	}
+
+	public function testNestedCreateReturnsParentWithHiddenIdentifierAndAnAlternateRelationKey(): void
+	{
+		$database = $this->createDocumentWithNotes();
+		$resolver = new SqlResolver($this->registry, $database);
+
+		$parent = $resolver->resolveNestedCreate(
+			$this->registry->getCollection('document'),
+			['title' => 'Document', 'external_id' => 41],
+			['notes' => [['text' => 'Note']]],
+		);
+
+		$this->assertSame(['title' => 'Document', 'external_id' => 41], (array) $parent);
+		$this->assertEquals(41, $database->getConnection()->query('SELECT document_key FROM note')->fetchColumn());
+	}
+
+	public function testNestedCreateRollsBackIfTheParentDisappearsBeforeItCanBeReturned(): void
+	{
+		$database = $this->createDocumentWithNotes();
+		$connection = $database->getConnection();
+		$connection->exec('CREATE TRIGGER remove_document AFTER INSERT ON note BEGIN
+			DELETE FROM document WHERE external_id = NEW.document_key;
+		END');
+		$resolver = new SqlResolver($this->registry, $database);
+
+		try {
+			$resolver->resolveNestedCreate(
+				$this->registry->getCollection('document'),
+				['title' => 'Document', 'external_id' => 41],
+				['notes' => [['text' => 'Note']]],
+			);
+			$this->fail('A missing parent must reject the nested create.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('DATABASE_ERROR', $error->getExtensions()['code']);
+		}
+
+		$this->assertSame(0, (int) $connection->query('SELECT COUNT(*) FROM note')->fetchColumn());
+	}
+
+	public function testNestedCreatePreparesEffectiveChildInputWithinTheTransaction(): void
+	{
+		$database = $this->createDocumentWithNotes();
+		$connection = $database->getConnection();
+		$resolver = new SqlResolver($this->registry, $database);
+
+		try {
+			$resolver->resolveNestedCreateWithChildPreparation(
+				$this->registry->getCollection('document'),
+				['title' => 'Document', 'external_id' => 41],
+				['notes' => [['text' => 'Note']]],
+				function (string $name, int $index, RelationInterface $relation, array $input) use ($connection): void {
+					$this->assertSame('notes', $name);
+					$this->assertSame(0, $index);
+					$this->assertSame($name, $relation->getName());
+					$this->assertSame(['text' => 'Note', 'document_external_id' => 41], $input);
+					$this->assertTrue($connection->inTransaction());
+
+					throw new GraphQLUserError('Child creation was denied.', 'FORBIDDEN');
+				},
+			);
+			$this->fail('A denied child must reject the nested create.');
+		} catch (GraphQLUserError $error) {
+			$this->assertSame('FORBIDDEN', $error->getExtensions()['code']);
+		}
+
+		$this->assertSame(0, (int) $connection->query('SELECT COUNT(*) FROM document')->fetchColumn());
+		$this->assertSame(0, (int) $connection->query('SELECT COUNT(*) FROM note')->fetchColumn());
 	}
 
 	public function testBatchReadsSeeRelationChangesMadeByEarlierOperations(): void
@@ -627,5 +690,31 @@ final class GraphQLSQLResolverTest extends TestCase
 		$this->assertArrayNotHasKey('errors', $data);
 		$this->assertSame('Alice', $data['data']['create_user']['name']);
 		$this->assertSame('alice@test.com', $data['data']['create_user']['email']);
+	}
+
+	private function createDocumentWithNotes(): SqliteTestDatabase
+	{
+		$this->registry->collection('document')
+			->primaryKey('id')->field('id', 'int')->hidden(true)->end()
+			->field('title', 'string')->end()
+			->field('external_id', 'int')->nullable(true)->end()
+			->hasMany('notes', 'note')->innerKey('external_id')->outerKey('document_external_id')->end()
+			->end();
+		$this->registry->collection('note')
+			->primaryKey('id')->field('id', 'int')->end()
+			->field('text', 'string')->end()
+			->field('document_external_id', 'int')->column('document_key')->nullable(true)->end()
+			->end();
+
+		return new SqliteTestDatabase([
+			'document' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'title' => 'TEXT', 'external_id' => 'INTEGER'],
+				'rows' => [],
+			],
+			'note' => [
+				'columns' => ['id' => 'INTEGER PRIMARY KEY', 'text' => 'TEXT', 'document_key' => 'INTEGER'],
+				'rows' => [],
+			],
+		]);
 	}
 }

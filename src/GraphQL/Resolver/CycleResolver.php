@@ -5,15 +5,19 @@ declare(strict_types=1);
 namespace ON\GraphQL\Resolver;
 
 use Cycle\ORM\EntityManager;
+use Cycle\ORM\Heap\Node;
 use Cycle\ORM\ORMInterface;
 use Cycle\ORM\Reference\Promise;
+use Cycle\ORM\Reference\ReferenceInterface;
 use Cycle\ORM\Select;
+use Cycle\ORM\Select\Repository;
 use Cycle\ORM\Transaction\Runner;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\GraphQL\Error\GraphQLUserError;
+use ReflectionMethod;
 use Throwable;
 
 class CycleResolver implements GraphQLResolverInterface
@@ -32,15 +36,17 @@ class CycleResolver implements GraphQLResolverInterface
 		$repo = $this->orm->getRepository($role);
 		$scope = $this->buildScope($collection, $args);
 		[$limit, $offset] = $this->resolvePagination($args);
+		$orderBy = $this->buildOrderBy($collection, $args);
 
-		if (method_exists($repo, 'select')) {
-			/** @var Select $select */
+		if (
+			$repo instanceof Repository
+			&& (new ReflectionMethod($repo, 'findAll'))->getDeclaringClass()->getName() === Repository::class
+		) {
 			$select = $repo->select();
 			$this->applyWhere($select, $scope);
 
 			$totalCount = $select->count();
 
-			$orderBy = $this->buildOrderBy($collection, $args);
 			if ($orderBy !== []) {
 				$select->orderBy($orderBy);
 			}
@@ -53,7 +59,7 @@ class CycleResolver implements GraphQLResolverInterface
 				$select->offset($offset);
 			}
 
-			$items = iterator_to_array($select->fetchAll());
+			$items = $limit === 0 ? [] : $this->asList($select->fetchAll());
 
 			return [
 				'items' => $items,
@@ -61,8 +67,29 @@ class CycleResolver implements GraphQLResolverInterface
 			];
 		}
 
-		$items = iterator_to_array($repo->findAll($scope));
+		// Custom repositories receive the same physical field names as the legacy findAll path.
+		$repositoryScope = [];
+		foreach ($scope as $name => $value) {
+			$repositoryScope[$collection->getField($name)?->getColumn() ?? $name] = $value;
+		}
+
+		$results = $repo instanceof Repository
+			? $repo->findAll($repositoryScope, $orderBy)
+			: $repo->findAll($repositoryScope);
+		$items = $this->asList($results);
 		$totalCount = count($items);
+
+		if (! $repo instanceof Repository && $orderBy !== []) {
+			$field = array_key_first($orderBy);
+			$direction = $orderBy[$field] === 'DESC' ? -1 : 1;
+			$mapper = $this->orm->getMapper($role);
+			usort($items, static function (object $left, object $right) use ($field, $direction, $mapper): int {
+				$leftFields = $mapper->fetchFields($left);
+				$rightFields = $mapper->fetchFields($right);
+
+				return $direction * (($leftFields[$field] ?? null) <=> ($rightFields[$field] ?? null));
+			});
+		}
 
 		if ($offset !== null) {
 			$items = array_slice($items, $offset);
@@ -150,19 +177,39 @@ class CycleResolver implements GraphQLResolverInterface
 
 	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
 	{
+		return $this->createNested($collection, $input, $nestedInput, null);
+	}
+
+	public function resolveNestedCreateWithChildPreparation(
+		Collection $collection,
+		array $input,
+		array $nestedInput,
+		callable $prepareChild,
+	): ?object {
+		return $this->createNested($collection, $input, $nestedInput, $prepareChild);
+	}
+
+	private function createNested(
+		Collection $collection,
+		array $input,
+		array $nestedInput,
+		?callable $prepareChild,
+	): ?object {
 		$relations = NestedCreateRelations::resolve($collection, $nestedInput);
 		$created = [];
 
 		try {
 			$database = $this->orm->getSource($collection->getName())->getDatabase();
 
-			return $database->transaction(function () use ($collection, $input, $nestedInput, $relations, $database, &$created): object {
+			return $database->transaction(function () use ($collection, $input, $nestedInput, $relations, $database, &$created, $prepareChild): object {
 				$entity = $created[] = $this->makeEntity($collection, $input);
 				$em = new EntityManager($this->orm);
 				$em->persist($entity);
 				$em->run(runner: Runner::outerTransaction());
 
 				$childrenEm = new EntityManager($this->orm);
+				$parentFields = $this->orm->getMapper($entity)->fetchFields($entity);
+				$writtenRelations = [];
 
 				foreach ($relations as $relationName => $relation) {
 					$relationData = $nestedInput[$relationName];
@@ -176,23 +223,30 @@ class CycleResolver implements GraphQLResolverInterface
 					$innerKey = $relation->getInnerField()->getName();
 					$outerKey = $relation->getOuterField()->getName();
 					// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
-					$parentKeyValue = $entity->{$innerKey} ?? null;
+					$parentKeyValue = $parentFields[$innerKey] ?? null;
 
 					$children = $relation->getCardinality()->isMany() ? $relationData : [$relationData];
-					foreach ($children as $childInput) {
+					foreach ($children as $childIndex => $childInput) {
 						if (! is_array($childInput)) {
 							continue;
 						}
 						if ($parentKeyValue === null) {
 							throw new GraphQLUserError('Nested create requires a parent relation key.', 'INVALID_INPUT', $relation->getName());
 						}
-						$child = $created[] = $this->makeEntity($targetCollection, $childInput, [$outerKey => $parentKeyValue]);
+						$effectiveInput = array_replace($childInput, [$outerKey => $parentKeyValue]);
+						if ($prepareChild !== null) {
+							$prepareChild($relationName, $childIndex, $relation, $effectiveInput);
+						}
+
+						$child = $created[] = $this->makeEntity($targetCollection, $effectiveInput, [$outerKey => $parentKeyValue]);
 						$childrenEm->persist($child);
+						$writtenRelations[$relationName] = true;
 					}
 				}
 
 				if (count($created) > 1) {
 					$childrenEm->run(runner: Runner::outerTransaction());
+					$this->refreshRelationReferences($entity, array_keys($writtenRelations));
 				}
 
 				return $entity;
@@ -217,59 +271,60 @@ class CycleResolver implements GraphQLResolverInterface
 
 	public function resolveRelation(mixed $source, RelationInterface $relation): mixed
 	{
-		$targetCollection = $relation->getCollection();
 		$isSingle = $relation->getCardinality()->isSingle();
-
-		if ($targetCollection->isHidden()) {
+		if ($relation->getCollection()->isHidden() || (! is_array($source) && ! is_object($source))) {
 			return $isSingle ? null : [];
 		}
 
 		$relationName = $relation->getName();
-		$value = is_array($source) ? ($source[$relationName] ?? null) : ($source->{$relationName} ?? null);
+		$node = is_object($source) ? $this->orm->getHeap()->get($source) : null;
+		$values = $node !== null
+			? $this->orm->getMapper($source)->fetchRelations($source)
+			: (is_array($source) ? $source : get_object_vars($source));
+		$value = $values[$relationName] ?? null;
 
 		if ($value instanceof Promise) {
 			$value = $value->fetch();
-		}
-		if ($isSingle && $value !== null && $value !== []) {
-			return is_array($value) ? reset($value) : $value;
-		}
-
-		if (! $isSingle && is_iterable($value)) {
-			$items = iterator_to_array($value, false);
-			if ($items !== []) {
-				return $items;
+		} elseif ($value instanceof ReferenceInterface || ! array_key_exists($relationName, $values)) {
+			$role = $node?->getRole() ?? $relation->getParent()->getName();
+			$mapping = $this->orm->getRelationMap($role)->getRelations()[$relationName] ?? null;
+			if ($mapping !== null) {
+				$reference = $value instanceof ReferenceInterface
+					? $value
+					: $mapping->initReference($node ?? new Node(Node::MANAGED, $values, $role));
+				$value = $mapping->collect($mapping->resolve($reference, true));
 			}
 		}
 
-		// Newly created entities can still have an empty relation initialized before their key was generated.
-		$outerKey = $relation->getOuterField()->getName();
-		$innerKey = $relation->getInnerField()->getName();
-		$role = $targetCollection->getName();
-
-		// Cycle convention: innerKey is on source entity, outerKey is on target entity
-		$sourceId = is_array($source)
-			? ($source[$innerKey] ?? null)
-			: ($source->{$innerKey} ?? null);
-
-		if ($sourceId === null) {
-			return $isSingle ? null : [];
-		}
-
-		$repo = $this->orm->getRepository($role);
-		if (method_exists($repo, 'select')) {
-			/** @var Select $select */
-			$select = $repo->select()->where($outerKey, $sourceId);
-
-			return $isSingle ? $select->limit(1)->fetchOne() : iterator_to_array($select->fetchAll());
-		}
-
-		$results = iterator_to_array($repo->findAll([$outerKey => $sourceId]));
-
 		if ($isSingle) {
-			return $results[0] ?? null;
+			return is_array($value) ? ($value === [] ? null : reset($value)) : $value;
 		}
 
-		return $results;
+		return is_iterable($value) ? $this->asList($value) : [];
+	}
+
+	private function asList(iterable $values): array
+	{
+		return is_array($values) ? array_values($values) : iterator_to_array($values, false);
+	}
+
+	/** @param list<string> $names */
+	private function refreshRelationReferences(object $entity, array $names): void
+	{
+		$node = $this->orm->getHeap()->get($entity);
+		if ($node === null) {
+			return;
+		}
+
+		$mappings = $this->orm->getRelationMap($node->getRole())->getRelations();
+		$references = [];
+		foreach ($names as $name) {
+			if (isset($mappings[$name])) {
+				$references[$name] = $mappings[$name]->initReference($node);
+				$node->setRelation($name, $references[$name]);
+			}
+		}
+		$this->orm->getMapper($entity)->hydrate($entity, $references);
 	}
 
 	protected function makeEntity(CollectionInterface $collection, array $input, array $forcedFields = []): object

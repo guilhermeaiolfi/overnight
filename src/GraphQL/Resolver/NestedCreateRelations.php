@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Resolver;
 
+use LogicException;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\HasManyRelation;
@@ -16,10 +17,19 @@ final class NestedCreateRelations
 {
 	public static function supports(RelationInterface $relation): bool
 	{
-		return ($relation instanceof HasOneRelation || $relation instanceof HasManyRelation)
-			&& ! ($relation instanceof FirstOfManyRelation)
-			&& ! $relation->isJunction()
-			&& ! $relation->getKeyPairing()->isComposite();
+		if ((! $relation instanceof HasOneRelation && ! $relation instanceof HasManyRelation)
+			|| $relation instanceof FirstOfManyRelation
+			|| $relation->isJunction()
+		) {
+			return false;
+		}
+
+		try {
+			return ! $relation->getKeyPairing()->isComposite();
+		} catch (LogicException) {
+			// Custom read resolvers can deliberately omit ORM keys.
+			return false;
+		}
 	}
 
 	/**

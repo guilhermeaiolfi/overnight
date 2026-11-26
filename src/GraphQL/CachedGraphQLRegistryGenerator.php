@@ -6,11 +6,15 @@ namespace ON\GraphQL;
 
 use GraphQL\Type\Schema;
 use ON\GraphQL\Resolver\NestedCreateRelations;
+use WeakMap;
 
 class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 {
 	private ?Schema $cachedSchema = null;
 	private ?string $registryHash = null;
+	/** @var WeakMap<object, int>|null */
+	private ?WeakMap $overrideIds = null;
+	private int $nextOverrideId = 0;
 
 	public function generate(): Schema
 	{
@@ -58,9 +62,9 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 			foreach ($collection->fields as $name => $field) {
 				$enumMetadata = $field->metadata('enum');
 				$enumPart = is_array($enumMetadata) ? json_encode($enumMetadata) : '';
-				$overrideType = (string) ($field->metadata('gql::type') ?? '');
+				$overrideType = $this->typeOverrideFingerprint($field->metadata('gql::type'));
 
-				$parts[] = implode(':', [
+				$parts[] = [
 					$name,
 					$field->getColumn(),
 					$field->getType(),
@@ -71,11 +75,11 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 					$field->isFilterable() ? 'f' : 'nf',
 					$enumPart,
 					$overrideType,
-				]);
+				];
 			}
 
 			foreach ($collection->relations as $name => $relation) {
-				$parts[] = implode(':', [
+				$parts[] = [
 					'rel',
 					$name,
 					$relation->getCollectionName(),
@@ -83,10 +87,25 @@ class CachedGraphQLRegistryGenerator extends GraphQLRegistryGenerator
 					! $usesBuiltInNestedCreate || NestedCreateRelations::supports($relation) ? 'create' : 'read-only',
 					$relation->getCardinality()->name,
 					$relation->isJunction() ? 'j' : 'nj',
-				]);
+				];
 			}
 		}
 
-		return md5(implode('|', $parts));
+		return hash('sha256', serialize($parts));
+	}
+
+	private function typeOverrideFingerprint(mixed $override): mixed
+	{
+		if (is_object($override)) {
+			$this->overrideIds ??= new WeakMap();
+
+			return ['object', $this->overrideIds[$override] ??= ++$this->nextOverrideId];
+		}
+
+		if (is_array($override)) {
+			return array_map($this->typeOverrideFingerprint(...), $override);
+		}
+
+		return $override;
 	}
 }

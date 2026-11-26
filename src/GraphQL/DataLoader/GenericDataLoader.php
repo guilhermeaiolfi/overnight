@@ -190,17 +190,27 @@ class GenericDataLoader
 
 	protected function encodeKey(string $entity, array $normalizedKeys): string
 	{
-		return $entity . "\0" . json_encode($normalizedKeys, JSON_THROW_ON_ERROR);
+		// JSON requires UTF-8, while database identifiers may contain raw bytes.
+		$encoded = [];
+		foreach ($normalizedKeys as $column => $value) {
+			$encoded[base64_encode((string) $column)] = is_string($value) ? base64_encode($value) : $value;
+		}
+
+		return $entity . "\0" . json_encode($encoded, JSON_THROW_ON_ERROR);
 	}
 
 	protected function decodeKey(string $entity, string $key): array
 	{
 		$payload = substr($key, strlen($entity) + 1);
 		$decoded = json_decode($payload, true, 512, JSON_THROW_ON_ERROR);
+		$keys = [];
+		foreach (is_array($decoded) ? $decoded : [] as $column => $value) {
+			$keys[base64_decode((string) $column)] = is_string($value) ? base64_decode($value) : $value;
+		}
 
 		return [
 			'entity' => $entity,
-			'keys' => is_array($decoded) ? $decoded : [],
+			'keys' => $keys,
 		];
 	}
 

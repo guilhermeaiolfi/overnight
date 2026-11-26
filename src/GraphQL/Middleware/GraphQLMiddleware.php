@@ -26,6 +26,8 @@ use Psr\Http\Server\RequestHandlerInterface;
 
 class GraphQLMiddleware implements MiddlewareInterface
 {
+	private const INVALID_OPERATION_NAME = 'Invalid "operationName". Expected a GraphQL name.';
+
 	public function __construct(
 		protected Schema $schema,
 		protected bool $debug = false,
@@ -98,11 +100,18 @@ class GraphQLMiddleware implements MiddlewareInterface
 						continue;
 					}
 
+					$operationName = $operation['operationName'] ?? null;
+					if (! $this->isValidOperationName($operationName)) {
+						$results[] = ['errors' => [['message' => self::INVALID_OPERATION_NAME]]];
+
+						continue;
+					}
+
 					$results[] = $this->executeSingleQuery(
 						$request,
 						isset($operation['query']) && is_string($operation['query']) ? $operation['query'] : null,
 						$operation['variables'] ?? null,
-						isset($operation['operationName']) && is_string($operation['operationName']) ? $operation['operationName'] : null
+						$operationName
 					);
 				}
 			} finally {
@@ -115,7 +124,10 @@ class GraphQLMiddleware implements MiddlewareInterface
 		// Single JSON operation (using already-decoded body; never reads stream twice)
 		$query = isset($decoded['query']) && is_string($decoded['query']) ? $decoded['query'] : null;
 		$variables = $decoded['variables'] ?? null;
-		$operationName = isset($decoded['operationName']) && is_string($decoded['operationName']) ? $decoded['operationName'] : null;
+		$operationName = $decoded['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
 
 		$result = [];
 
@@ -132,7 +144,10 @@ class GraphQLMiddleware implements MiddlewareInterface
 	{
 		$params = $request->getQueryParams();
 		$query = isset($params['query']) && is_string($params['query']) ? $params['query'] : null;
-		$operationName = isset($params['operationName']) && is_string($params['operationName']) ? $params['operationName'] : null;
+		$operationName = $params['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
 		$variables = null;
 
 		if (isset($params['variables'])) {
@@ -210,7 +225,10 @@ class GraphQLMiddleware implements MiddlewareInterface
 		if ($variables !== null && ! is_array($variables)) {
 			return $this->errorResponse('Invalid "variables" in multipart "operations" field.', 400);
 		}
-		$operationName = isset($operations['operationName']) && is_string($operations['operationName']) ? $operations['operationName'] : null;
+		$operationName = $operations['operationName'] ?? null;
+		if (! $this->isValidOperationName($operationName)) {
+			return $this->errorResponse(self::INVALID_OPERATION_NAME, 400);
+		}
 
 		foreach ($map as $fileKey => $paths) {
 			if (! is_array($paths)) {
@@ -243,6 +261,11 @@ class GraphQLMiddleware implements MiddlewareInterface
 		}
 
 		return new JsonResponse($result);
+	}
+
+	private function isValidOperationName(mixed $name): bool
+	{
+		return $name === null || (is_string($name) && preg_match('/^[_A-Za-z][_0-9A-Za-z]*$/D', $name) === 1);
 	}
 
 	protected function dispatchComplete(array $result): void

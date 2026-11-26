@@ -70,6 +70,54 @@ final class GraphQLMiddlewareTest extends TestCase
 		$this->assertSame(400, $response->getStatusCode());
 	}
 
+	public function testRejectsInvalidOperationNamesAcrossRequestFormats(): void
+	{
+		$middleware = new GraphQLMiddleware($this->createSchema());
+		$get = (new ServerRequest())->withMethod('GET')->withQueryParams([
+			'query' => 'query Read { status }',
+			'operationName' => ['Read'],
+		]);
+		$json = $this->jsonRequest([
+			'query' => 'query Read { status }',
+			'operationName' => 123,
+		]);
+		$multipart = (new ServerRequest())->withMethod('POST')
+			->withHeader('Content-Type', 'multipart/form-data')
+			->withParsedBody([
+				'operations' => '{"query":"query Read { status }","operationName":{"label":"Read"}}',
+			]);
+
+		foreach ([$get, $json, $multipart] as $request) {
+			$response = $this->process($middleware, $request);
+			$this->assertSame(400, $response->getStatusCode());
+			$result = $this->json($response);
+			$this->assertArrayNotHasKey('data', $result);
+			$this->assertStringContainsString('operationName', $result['errors'][0]['message']);
+		}
+	}
+
+	public function testInvalidOperationNameOnlyRejectsItsBatchEntry(): void
+	{
+		$middleware = new GraphQLMiddleware($this->createSchema());
+		$operation = ['query' => 'query Read { status }'];
+		$response = $this->process($middleware, $this->jsonRequest([
+			$operation + ['operationName' => false],
+			$operation + ['operationName' => ''],
+			$operation + ['operationName' => 'Read'],
+			$operation + ['operationName' => null],
+		]));
+		$this->assertSame(200, $response->getStatusCode());
+		$results = $this->json($response);
+
+		foreach (array_slice($results, 0, 2) as $result) {
+			$this->assertArrayNotHasKey('data', $result);
+			$this->assertStringContainsString('operationName', $result['errors'][0]['message']);
+		}
+
+		$this->assertSame(['data' => ['status' => 'ready']], $results[2]);
+		$this->assertSame(['data' => ['status' => 'ready']], $results[3]);
+	}
+
 	public function testDirectMiddlewareRequiresAnIntrospectionOptIn(): void
 	{
 		$request = $this->jsonRequest(['query' => '{ __schema { queryType { name } } }']);

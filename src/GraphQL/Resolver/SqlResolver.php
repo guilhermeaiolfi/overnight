@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\GraphQL\Resolver;
 
+use LogicException;
 use ON\Data\Definition\Collection\Collection;
 use ON\Data\Definition\Field\FieldInterface;
 use ON\Data\Definition\Registry;
@@ -156,6 +157,24 @@ class SqlResolver implements GraphQLResolverInterface
 
 	public function resolveNestedCreate(Collection $collection, array $input, array $nestedInput): ?object
 	{
+		return $this->createNestedRecords($collection, $input, $nestedInput, null);
+	}
+
+	public function resolveNestedCreateWithChildPreparation(
+		Collection $collection,
+		array $input,
+		array $nestedInput,
+		callable $prepareChild,
+	): ?object {
+		return $this->createNestedRecords($collection, $input, $nestedInput, $prepareChild);
+	}
+
+	private function createNestedRecords(
+		Collection $collection,
+		array $input,
+		array $nestedInput,
+		?callable $prepareChild,
+	): ?object {
 		$relations = NestedCreateRelations::resolve($collection, $nestedInput);
 		$connection = $this->database->getConnection();
 		$savepoint = null;
@@ -167,42 +186,43 @@ class SqlResolver implements GraphQLResolverInterface
 		}
 
 		try {
-			// Create the parent record
-			$parent = $this->insertRecord($collection, $input);
-
+			$parentId = $this->insertRecordId($collection, $input);
+			$parent = $this->resolveById($collection, $parentId);
 			if ($parent === null) {
-				$this->rollbackNestedCreate($connection, $savepoint);
-
-				return null;
+				throw new GraphQLUserError('Created record could not be loaded.', 'DATABASE_ERROR');
 			}
 
-			$pkColumn = $this->getPrimaryKeyColumn($collection);
-			$parentId = $parent->{$pkColumn} ?? null;
-
-			// Process nested relations
 			foreach ($relations as $relationName => $relation) {
 				$relationData = $nestedInput[$relationName];
 				$targetCollection = $relation->getCollection();
 
 				// Cycle convention: innerKey is on source (parent), outerKey is on target (child)
 				$innerKeyColumn = $relation->getInnerField()->getColumn();
-				$outerKeyColumn = $relation->getOuterField()->getColumn();
+				$outerField = $relation->getOuterField();
+				$outerKeyColumn = $outerField->getColumn();
 				$parentKeyValue = $parent->{$innerKeyColumn} ?? null;
 
 				$children = $relation->getCardinality()->isMany() ? $relationData : [$relationData];
-				foreach ($children as $childInput) {
+				foreach ($children as $childIndex => $childInput) {
 					if (! is_array($childInput)) {
 						continue;
 					}
 					if ($parentKeyValue === null) {
 						throw new GraphQLUserError('Nested create requires a parent relation key.', 'INVALID_INPUT', $relation->getName());
 					}
+					$childInput[$outerField->getName()] = $parentKeyValue;
+					if ($prepareChild !== null) {
+						$prepareChild($relationName, $childIndex, $relation, $childInput);
+					}
 					$this->insertRecord($targetCollection, $childInput, [$outerKeyColumn => $parentKeyValue]);
 				}
 			}
 
-			// Re-fetch the parent before committing, so a failed read rolls back as well.
-			$parent = $this->resolveById($collection, (string) $parentId);
+			$parent = $this->resolveById($collection, $parentId);
+			if ($parent === null) {
+				throw new GraphQLUserError('Created record could not be loaded.', 'DATABASE_ERROR');
+			}
+
 			if ($savepoint === null) {
 				$connection->commit();
 			} else {
@@ -315,6 +335,17 @@ class SqlResolver implements GraphQLResolverInterface
 	 */
 	protected function insertRecord(Collection $collection, array $input, array $forcedColumns = []): ?object
 	{
+		$id = $this->insertRecordId($collection, $input, $forcedColumns);
+
+		try {
+			return $this->resolveById($collection, $id);
+		} catch (PDOException $e) {
+			throw $this->convertDatabaseError($e, $collection);
+		}
+	}
+
+	private function insertRecordId(Collection $collection, array $input, array $forcedColumns = []): string
+	{
 		$columnData = $this->filterWritableInput($collection, $input);
 
 		foreach ($forcedColumns as $column => $value) {
@@ -339,12 +370,11 @@ class SqlResolver implements GraphQLResolverInterface
 				implode(', ', $placeholders)
 			);
 
-			$stmt = $this->database->getConnection()->prepare($sql);
+			$connection = $this->database->getConnection();
+			$stmt = $connection->prepare($sql);
 			$stmt->execute(array_values($columnData));
 
-			$lastId = $this->database->getConnection()->lastInsertId();
-
-			return $this->resolveById($collection, (string) $lastId);
+			return (string) $connection->lastInsertId();
 		} catch (PDOException $e) {
 			throw $this->convertDatabaseError($e, $collection);
 		}
@@ -398,7 +428,17 @@ class SqlResolver implements GraphQLResolverInterface
 				continue;
 			}
 
-			foreach ($relation->getInnerKeys() as $innerKeyName) {
+			try {
+				$innerKeys = $relation->getInnerKeys();
+			} catch (LogicException $error) {
+				if ($relation->metadata('gql::resolver') === null) {
+					throw $error;
+				}
+
+				continue;
+			}
+
+			foreach ($innerKeys as $innerKeyName) {
 				if ($collection->fields->has($innerKeyName)) {
 					$columns[$collection->fields->get($innerKeyName)->getColumn()] = true;
 				}

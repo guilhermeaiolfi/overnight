@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\GraphQL;
 
+use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use ON\Data\Definition\Registry;
 use ON\GraphQL\CachedGraphQLRegistryGenerator;
@@ -114,5 +115,22 @@ final class CachedGraphQLRegistryGeneratorTest extends TestCase
 
 		$this->assertNotSame($firstSchema, $nextSchema);
 		$this->assertArrayNotHasKey('title', $nextSchema->getType('Post')->getFields());
+	}
+
+	public function testLazyTypeOverridesAreCachedAndChangesRegenerateTheSchema(): void
+	{
+		$collection = $this->registry->collection('post')->primaryKey('id')
+			->field('id', 'int')->end()
+			->field('rating', 'string')->metadata('gql::type', static fn () => Type::int())->end();
+		$generator = new CachedGraphQLRegistryGenerator($this->registry);
+
+		$first = $generator->generate();
+		$this->assertSame(Type::int(), $first->getType('Post')->getField('rating')->getType());
+		$this->assertSame($first, $generator->generate());
+
+		$collection->fields->get('rating')->metadata('gql::type', static fn () => Type::float());
+		$second = $generator->generate();
+		$this->assertNotSame($first, $second);
+		$this->assertSame(Type::float(), $second->getType('Post')->getField('rating')->getType());
 	}
 }
