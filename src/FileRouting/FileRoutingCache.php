@@ -48,6 +48,10 @@ class FileRoutingCache
 	public function generate(string $file): array
 	{
 		$content = file_get_contents($file);
+		if ($content === false) {
+			throw new RuntimeException(sprintf('Unable to read file routing source "%s".', $file));
+		}
+
 		[$php_code, $template_code] = $this->splitSourceContent($content);
 		$page_meta = $this->extractPageMeta($php_code);
 		$template = $this->parseTemplate($template_code);
@@ -57,34 +61,68 @@ class FileRoutingCache
 		$template_cache_filename = $this->getCachedTemplateFilename($file, $template['lang']);
 		$metadata_cache_filename = $this->getCachedMetadataFilename($file);
 
-		$relative = $this->getPathFromFile($file);
-
-		// make sure the folder where it is going to be saved exists
-		@mkdir($this->cachePath . DIRECTORY_SEPARATOR . dirname($relative), 0777, true);
-
-		@unlink($php_cache_filename);
-		if (strlen($php_code) > 12) {
-			// there is no reason to have a empty php file,
-			// just don't include() it
-			file_put_contents($php_cache_filename, $php_code);
+		$targetDir = dirname($metadata_cache_filename);
+		if (! is_dir($targetDir) && ! mkdir($targetDir, 0755, true) && ! is_dir($targetDir)) {
+			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $targetDir));
 		}
 
+		$controller = null;
+		if ($this->hasPhpCode($php_code)) {
+			// there is no reason to have an empty php file,
+			// just don't include() it
+			$this->writeFileAtomically($php_cache_filename, $php_code);
+			$controller = $php_cache_filename;
+		} elseif (file_exists($php_cache_filename)) {
+			@unlink($php_cache_filename);
+		}
 
-		@unlink($template_cache_filename);
-		file_put_contents($template_cache_filename, $template['content']);
+		$this->writeFileAtomically($template_cache_filename, $template['content']);
 
 		clearstatcache(true, $file);
 		$metadata = [
 			'source_mtime' => filemtime($file),
 			'source_size' => filesize($file),
-			'controller' => file_exists($php_cache_filename) ? $php_cache_filename : null,
+			'controller' => $controller,
 			'template' => $template_cache_filename,
 			'lang' => $template['lang'],
 			'page_meta' => $page_meta,
 		];
-		file_put_contents($metadata_cache_filename, "<?php\n\nreturn " . var_export($metadata, true) . ";\n");
+		$this->writeFileAtomically($metadata_cache_filename, "<?php\n\nreturn " . var_export($metadata, true) . ";\n");
 
 		return $metadata;
+	}
+
+	protected function hasPhpCode(string $phpCode): bool
+	{
+		if ($phpCode === '') {
+			return false;
+		}
+
+		$inner = preg_replace('/^<\?php\b|\?>$/', '', $phpCode);
+
+		return is_string($inner) && trim($inner) !== '';
+	}
+
+	protected function writeFileAtomically(string $filename, string $content): void
+	{
+		$directory = dirname($filename);
+		if (! is_dir($directory) && ! mkdir($directory, 0755, true) && ! is_dir($directory)) {
+			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $directory));
+		}
+
+		$tempFile = $directory . DIRECTORY_SEPARATOR . basename($filename) . '.' . bin2hex(random_bytes(8)) . '.tmp';
+		$bytes = file_put_contents($tempFile, $content, LOCK_EX);
+		if ($bytes === false) {
+			@unlink($tempFile);
+
+			throw new RuntimeException(sprintf('Unable to write temporary cache file "%s".', $tempFile));
+		}
+
+		if (! rename($tempFile, $filename)) {
+			@unlink($tempFile);
+
+			throw new RuntimeException(sprintf('Unable to move temporary cache file "%s" to "%s".', $tempFile, $filename));
+		}
 	}
 
 	protected function getFreshMetadata(string $file): ?array
@@ -136,17 +174,24 @@ class FileRoutingCache
 	protected function splitSourceContent(string $content): array
 	{
 		$content = trim($content);
-		// it may not have php code
-		$len = -2;
 
-		if (substr($content, 0, 5) == "<?php") {
-
-			$len = strpos($content, "?>");
+		if (! str_starts_with($content, '<?php')) {
+			return [
+				'',
+				$content,
+			];
 		}
 
-		$php_code = substr($content, 0, $len + 2);
+		$closingPos = strpos($content, '?>');
+		if ($closingPos === false) {
+			return [
+				$content,
+				'',
+			];
+		}
 
-		$template_code = substr($content, $len + 2, strlen($content));
+		$php_code = substr($content, 0, $closingPos + 2);
+		$template_code = substr($content, $closingPos + 2);
 
 		return [
 			trim($php_code),

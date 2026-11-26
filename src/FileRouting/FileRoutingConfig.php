@@ -10,6 +10,7 @@ class FileRoutingConfig extends Config
 {
 	public string $pagesPath = "src" . DIRECTORY_SEPARATOR . "Pages";
 	public string $controller = "ON\FileRouting\Page\MainPage::index";
+	public bool $exposeApi = false;
 	public array $addons = [];
 	public array $template = [
 		"namespace" => "filerouting",
