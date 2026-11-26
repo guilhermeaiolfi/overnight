@@ -152,6 +152,28 @@ final class ConfigExtensionCacheTest extends TestCase
 		}
 	}
 
+	public function testSaveCacheRejectsNonExportableValuesInsideObjects(): void
+	{
+		$cacheFile = $this->projectDir . '/var/cache/config.php';
+		file_put_contents(
+			$this->projectDir . '/config/app.all.php',
+			'<?php return [\ON\Config\AppConfig::class => ["nested" => (object) ["clock" => new ArrayIterator()]]];',
+		);
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('[nested][clock]');
+
+		try {
+			new Application([
+				'paths' => ['project' => $this->projectDir],
+				'extensions' => [ConfigExtension::class => ['cachePath' => $cacheFile, 'debug' => false]],
+				'debug' => false,
+			]);
+		} finally {
+			$this->assertFileDoesNotExist($cacheFile);
+		}
+	}
+
 	public function testSaveCacheRoundTripsDiscoveryLocationObjects(): void
 	{
 		$cacheFile = $this->projectDir . '/var/cache/config.php';

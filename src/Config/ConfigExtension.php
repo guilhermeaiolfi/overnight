@@ -17,7 +17,6 @@ use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Init;
 use ON\Init\InitContext;
-use ParseError;
 use ReflectionFunction;
 use RuntimeException;
 use stdClass;
@@ -219,7 +218,7 @@ class ConfigExtension extends AbstractExtension
 
 			try {
 				$cache = @include $this->cachePath;
-			} catch (ParseError) {
+			} catch (Throwable) {
 				return false;
 			}
 			if (is_array($cache) && isset($cache['data']) && is_array($cache['data'])) {
@@ -262,7 +261,7 @@ class ConfigExtension extends AbstractExtension
 		}
 
 		$skipped = [];
-		$dataToCache = $this->withoutNonSerializable($dataToCache, 'data', $skipped);
+		$this->findNonExportableValues($dataToCache, 'data', $skipped);
 		if ($skipped !== []) {
 			// Incomplete caches skip ConfigConfigureEvent on the next boot. Never write
 			// a partial snapshot — fail hard so Closures cannot hide in production.
@@ -310,56 +309,34 @@ class ConfigExtension extends AbstractExtension
 	}
 
 	/**
-	 * Drop Closures and other non-exportable leaves so var_export() never produces broken cache files.
-	 *
 	 * @param list<string> $skipped
 	 */
-	private function withoutNonSerializable(mixed $value, string $path, array &$skipped): mixed
+	private function findNonExportableValues(mixed $value, string $path, array &$skipped, int $depth = 0): void
 	{
-		if ($value instanceof Closure) {
+		if (is_resource($value) || $depth > 256) {
 			$skipped[] = $path;
 
-			return null;
+			return;
 		}
 
-		if (is_resource($value)) {
-			$skipped[] = $path;
-
-			return null;
-		}
-
-		if (is_array($value)) {
-			$result = [];
-			foreach ($value as $key => $item) {
-				$childPath = $path . '[' . (is_int($key) ? (string) $key : $key) . ']';
-				if ($item instanceof Closure || is_resource($item)) {
-					$skipped[] = $childPath;
-
-					continue;
-				}
-
-				$result[$key] = $this->withoutNonSerializable($item, $childPath, $skipped);
-			}
-
-			return $result;
+		if ($value instanceof UnitEnum) {
+			return;
 		}
 
 		if (is_object($value)) {
-			if (! ($value instanceof stdClass) && ! ($value instanceof UnitEnum) && ! method_exists($value, '__set_state')) {
+			if (! $value instanceof stdClass && ! is_callable([$value::class, '__set_state'])) {
 				$skipped[] = $path;
 
-				return null;
+				return;
 			}
-
-			try {
-				serialize($value);
-			} catch (Throwable) {
-				$skipped[] = $path;
-
-				return null;
-			}
+			$value = (array) $value;
 		}
 
-		return $value;
+		if (is_array($value)) {
+			foreach ($value as $key => $child) {
+				$name = str_replace("\0", ' ', (string) $key);
+				$this->findNonExportableValues($child, "{$path}[{$name}]", $skipped, $depth + 1);
+			}
+		}
 	}
 }
