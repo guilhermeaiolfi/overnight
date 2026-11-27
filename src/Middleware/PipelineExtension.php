@@ -33,6 +33,7 @@ use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
+use ON\FS\Path;
 use ON\Handler\NotFoundHandler;
 use ON\Http\RequestContext;
 use ON\Init\Attribute\On;
@@ -169,6 +170,9 @@ class PipelineExtension extends AbstractExtension
 
 	protected function loadPipeline(string $file)
 	{
+		if (! Path::isAbsoluteString($file)) {
+			$file = Path::from($file, $this->app->paths->get('project'))->getAbsolutePath();
+		}
 		(require $file)($this->app);
 	}
 

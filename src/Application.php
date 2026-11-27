@@ -8,6 +8,7 @@ use BadMethodCallException;
 use Exception;
 use ON\Extension\ExtensionInterface;
 use ON\Extension\ExtensionProfiler;
+use ON\FS\Path;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
 use ON\Init\InitAttributeLoader;
@@ -35,6 +36,7 @@ class Application
 	public ?Dotenv $env = null;
 
 	public PathRegistry $paths;
+	private string $dotenvPath;
 
 	protected Init $init;
 
@@ -79,21 +81,20 @@ class Application
 		$paths['project'] ??= dirname(getcwd(), 1);
 
 		$this->paths = new PathRegistry($paths, getcwd());
-		$project_dir = $this->paths->get('project')->getAbsolutePath();
+		$projectPath = $this->paths->get('project');
+		$extensions = $options['extensions'] ?? null;
 
-		// defines the default dir to the project root
-		if ($project_dir != getcwd()) {
-			chdir($project_dir);
-		}
-
-		$extensions = $options["extensions"] ?? "./config/extensions.php";
-
-		if (is_string($extensions)) {
-			$extensions = require $extensions;
+		if ($extensions === null) {
+			$extensions = require $this->paths->get('config')->append('extensions.php')->getAbsolutePath();
+		} elseif (is_string($extensions)) {
+			$extensions = require Path::from($extensions, $projectPath)->getAbsolutePath();
 		}
 
 		$envVarName = $options['env_var_name'] ?? 'APP_ENV';
 		$debugVarName = $options['debug_var_name'] ?? 'APP_DEBUG';
+		$explicitDotenvPath = isset($options['dotenv_path']) && $options['dotenv_path'] !== '';
+		$this->dotenvPath = Path::from($explicitDotenvPath ? $options['dotenv_path'] : '.env', $projectPath)
+			->getAbsolutePath();
 
 		// load .env file vars
 		if (empty($options['disable_dotenv'])) {
@@ -102,14 +103,11 @@ class Application
 				$this->env->usePutenv((bool) $options['use_putenv']);
 			}
 
-			$explicitDotenvPath = isset($options['dotenv_path']) && $options['dotenv_path'] !== '';
-			$dotenvPath = $explicitDotenvPath ? (string) $options['dotenv_path'] : '.env';
-
-			if ($explicitDotenvPath || file_exists($dotenvPath)) {
+			if ($explicitDotenvPath || file_exists($this->dotenvPath)) {
 				if (! empty($options['dotenv_overload'])) {
-					$this->env->overload($dotenvPath);
+					$this->env->overload($this->dotenvPath);
 				} else {
-					$this->env->load($dotenvPath);
+					$this->env->load($this->dotenvPath);
 				}
 			}
 		}
@@ -133,6 +131,11 @@ class Application
 		$this->init = new Init($this->extensionProfiler);
 
 		$this->loadExtensions();
+	}
+
+	public function getDotenvPath(): string
+	{
+		return $this->dotenvPath;
 	}
 
 	protected function configureErrorDisplay(): void

@@ -6,7 +6,9 @@ namespace ON\View;
 
 use Exception;
 use ON\Application;
+use ON\Container\ApplicationBinding;
 use ON\Container\Executor\ExecutorInterface;
+use ON\FS\Path;
 use ON\Http\RequestContext;
 use ON\RequestStackInterface;
 use ON\Router\Route;
@@ -195,11 +197,15 @@ class ViewManager
 		}
 
 		if (is_string($sectionDefinition)) {
-			if (str_ends_with($sectionDefinition, '.php') && file_exists($sectionDefinition)) {
-				return [
-					'type' => 'phpFile',
-					'phpFile' => $sectionDefinition,
-				];
+			if (str_ends_with($sectionDefinition, '.php')) {
+				$app = ApplicationBinding::get($this->container);
+				$file = $app === null ? $sectionDefinition : Path::from($sectionDefinition, $app->paths->get('project'))->getAbsolutePath();
+				if (file_exists($file)) {
+					return [
+						'type' => 'phpFile',
+						'phpFile' => $file,
+					];
+				}
 			}
 
 			if ($this->config->getRendererNameFromTemplateExtension($sectionDefinition) !== null) {

@@ -119,6 +119,7 @@ class RouterExtension extends AbstractExtension
 
 	protected function loadRoutes(string $file)
 	{
+		$file = Path::from($file, $this->app->paths->get('project'))->getAbsolutePath();
 		(require_once $file)($this->app);
 	}
 

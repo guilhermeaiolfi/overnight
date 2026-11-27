@@ -12,6 +12,8 @@ use function is_array;
 use function is_numeric;
 use League\Plates\Engine as PlatesEngine;
 use League\Plates\Extension\ExtensionInterface;
+use ON\Container\ApplicationBinding;
+use ON\FS\Path;
 use ON\View\Plates\Exception\InvalidExtensionException;
 use ON\View\Plates\Extension\EscaperExtension;
 use ON\View\Plates\Extension\EscaperExtensionFactory;
@@ -73,11 +75,14 @@ class PlatesEngineFactory
 		// Add template paths
 
 		$allPaths = isset($config['paths']) && is_array($config['paths']) ? $config['paths'] : [];
+		$projectPath = ApplicationBinding::get($container)?->paths->get('project');
 
 		foreach ($allPaths as $namespace => $paths) {
 			$namespace = is_numeric($namespace) ? null : $namespace;
 			foreach ((array) $paths as $path) {
-				//dump($namespace);
+				if ($projectPath !== null) {
+					$path = Path::from($path, $projectPath)->getAbsolutePath();
+				}
 				if (! $namespace && ! $engine->getDirectory()) {
 					$engine->setDirectory($path);
 

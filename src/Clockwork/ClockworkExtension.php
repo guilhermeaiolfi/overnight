@@ -15,6 +15,7 @@ use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
+use ON\FS\Path;
 use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Router;
@@ -38,6 +39,10 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		}
 
 		$settings = ArrayUtils::merge($this->getOptions(), $options);
+		$storagePath = $settings['storage_files_path'];
+		if (is_string($storagePath) && trim($storagePath) !== '') {
+			$settings['storage_files_path'] = Path::from($storagePath, $this->app->paths->get('project'))->getAbsolutePath();
+		}
 		$settings['api'] = rtrim(Router::detectBaseUrl(), '/') . '/__clockwork/';
 		$this->clockwork = Clockwork::init($settings);
 		$this->clockwork->event('Booting')->begin();

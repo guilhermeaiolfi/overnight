@@ -8,6 +8,7 @@ use Exception;
 use Latte\Engine;
 use Latte\Helpers;
 use ON\Application;
+use ON\FS\Path;
 use ON\View\RendererInterface;
 use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
@@ -84,6 +85,9 @@ class LatteRenderer implements RendererInterface
 				continue;
 			}
 
+			if (! Path::isAbsoluteString($path)) {
+				$path = Path::from($path, $this->app->paths->get('project'))->getAbsolutePath();
+			}
 			$realBase = realpath($path);
 			if ($realBase === false || ! is_dir($realBase)) {
 				continue;
