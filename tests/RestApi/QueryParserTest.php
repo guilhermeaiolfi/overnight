@@ -63,13 +63,16 @@ final class QueryParserTest extends TestCase
 			'search' => 'GraphQL',
 			'sort' => '-month(created_at)',
 			'aggregate' => ['countDistinct' => 'user_id'],
-			'groupBy' => ['year(created_at)'],
+			'groupBy' => [' YEAR(created_at) '],
 		], $context);
 
 		$this->assertTrue($context->isAggregate());
 		$this->assertSame('countDistinct', $context->getAggregates()[0]['function']);
 		$this->assertSame('user_id', $context->getAggregates()[0]['field']);
-		$this->assertSame('year(created_at)', $context->getGroupBy()[0]['responseName']);
+		$this->assertSame([
+			'responseName' => ' YEAR(created_at) ',
+			'alias' => 'year_created_at',
+		], $context->getGroupBy()[0]);
 
 		$selections = $query->getSelections()->getAll();
 		$this->assertNotEmpty($selections);
