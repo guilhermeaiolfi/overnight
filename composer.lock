@@ -577,12 +577,12 @@
             "source": {
                 "type": "git",
                 "url": "https://github.com/guilhermeaiolfi/overnight-data.git",
-                "reference": "0a4876e469fc56a2c1e71c6ccf30767355ab77b8"
+                "reference": "f991e53726aaacb85fe321fb4fcb7f65532e849a"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/0a4876e469fc56a2c1e71c6ccf30767355ab77b8",
-                "reference": "0a4876e469fc56a2c1e71c6ccf30767355ab77b8",
+                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/f991e53726aaacb85fe321fb4fcb7f65532e849a",
+                "reference": "f991e53726aaacb85fe321fb4fcb7f65532e849a",
                 "shasum": ""
             },
             "require": {
@@ -667,7 +667,7 @@
                 "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/master",
                 "issues": "https://github.com/guilhermeaiolfi/overnight-data/issues"
             },
-            "time": "2026-11-27T15:01:56+00:00"
+            "time": "2026-11-27T15:05:49+00:00"
         },
         {
             "name": "illuminate/collections",
