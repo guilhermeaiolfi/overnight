@@ -194,10 +194,6 @@ final class MultipartFormDataParser
 		}
 
 		$keys = $this->parseFieldPath($name);
-		if ($keys === []) {
-			return;
-		}
-
 		$current = &$target;
 		foreach ($keys as $index => $key) {
 			if ($index === count($keys) - 1) {
