@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace ON\RestApi;
 
+use ON\Application;
+use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
+use ON\Init\Attribute\Before;
 use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
@@ -41,6 +44,7 @@ use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Server\MiddlewareInterface;
 use RuntimeException;
+use WeakMap;
 
 class RestApiExtension extends AbstractExtension
 {
@@ -49,6 +53,15 @@ class RestApiExtension extends AbstractExtension
 	protected ?ContainerInterface $container = null;
 	protected ?RestApiConfig $config = null;
 	private ?RestApiExecutor $fallbackExecutor = null;
+
+	/** @var WeakMap<ContainerInterface, array<class-string, RestApiAddonInterface>>|null */
+	private ?WeakMap $registeredAddons = null;
+
+	#[Before]
+	public function onConfigReady(ConfigReadyEvent $event): void
+	{
+		$this->registerDefaultActions($event->config->get(RestApiConfig::class));
+	}
 
 	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
@@ -69,7 +82,8 @@ class RestApiExtension extends AbstractExtension
 	#[On]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
-		$this->configureActions($event->container);
+		$config = $this->configureActions($event->container);
+		$this->registerAddons($event->container, $config->get('endpointUri', '/items'));
 	}
 
 	#[On(optional: true)]
@@ -78,7 +92,6 @@ class RestApiExtension extends AbstractExtension
 		$container = $event->container;
 		// PipelineReady can fire inside ContainerReady before this extension's listener runs.
 		$config = $this->configureActions($container);
-		$executor = $this->resolveExecutor($container);
 
 		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
@@ -88,7 +101,7 @@ class RestApiExtension extends AbstractExtension
 
 		$middleware = new RestMiddleware(
 			new RestActionRouter($config->get('actions', [])),
-			[$executor, 'execute'],
+			[$this, 'execute'],
 			[
 				'endpointUri' => $path,
 				'pathPrefixStripped' => true,
@@ -100,7 +113,7 @@ class RestApiExtension extends AbstractExtension
 				'debug' => $debug,
 			],
 			$container->get(EventDispatcherInterface::class),
-			[$executor, 'ensureActivated'],
+			[$this, 'ensureActivated'],
 		);
 
 		// Add rate limiting if the extension is installed
@@ -116,11 +129,9 @@ class RestApiExtension extends AbstractExtension
 			), 11);
 		}
 
-		// Load addons
 		$this->loadAddons($container, $path);
 
 		$this->app->pipe($path, $middleware, 10);
-
 	}
 
 	public function execute(string|RestActionInterface $action, array $params = [], mixed $payload = null, ?array $options = null): mixed
@@ -148,7 +159,9 @@ class RestApiExtension extends AbstractExtension
 		$this->container = $container;
 		$this->config = $container->get(RestApiConfig::class);
 		$this->fallbackExecutor = null;
-		$this->registerDefaultActions($this->config);
+		if (! $this->config->hasActions()) {
+			$this->registerDefaultActions($this->config);
+		}
 
 		return $this->config;
 	}
@@ -163,6 +176,7 @@ class RestApiExtension extends AbstractExtension
 			$container,
 			$this->config ?? $container->get(RestApiConfig::class),
 			$container->get(EventDispatcherInterface::class),
+			$container->has(Application::class) ? $container->get(Application::class) : (isset($this->app) ? $this->app : null),
 		);
 	}
 
@@ -187,6 +201,18 @@ class RestApiExtension extends AbstractExtension
 		ContainerInterface $container,
 		string $apiEndpointPath
 	): void {
+		foreach ($this->registerAddons($container, $apiEndpointPath) as $addon) {
+			if ($addon instanceof MiddlewareInterface) {
+				$this->app->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
+			}
+		}
+	}
+
+	/** @return array<class-string, RestApiAddonInterface> */
+	private function registerAddons(ContainerInterface $container, string $apiEndpointPath): array
+	{
+		$this->registeredAddons ??= new WeakMap();
+		$registered = $this->registeredAddons[$container] ?? [];
 		$addons = $container->get(RestApiConfig::class)->get('addons', []);
 
 		foreach ($addons as $key => $value) {
@@ -201,7 +227,7 @@ class RestApiExtension extends AbstractExtension
 				$addonOptions = is_array($value) ? $value : [];
 			}
 
-			if (! class_exists($addonClass)) {
+			if (isset($registered[$addonClass]) || ! class_exists($addonClass)) {
 				continue;
 			}
 
@@ -211,10 +237,10 @@ class RestApiExtension extends AbstractExtension
 			/** @var RestApiAddonInterface $addon */
 			$addon = $container->get($addonClass);
 			$addon->register($addonOptions);
-
-			if ($addon instanceof MiddlewareInterface) {
-				$this->app->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
-			}
+			$registered[$addonClass] = $addon;
+			$this->registeredAddons[$container] = $registered;
 		}
+
+		return $registered;
 	}
 }

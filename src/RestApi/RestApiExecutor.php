@@ -10,11 +10,14 @@ use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Event\RestApiActivatedEvent;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use RuntimeException;
 
 final class RestApiExecutor implements RestApiExecutorInterface
 {
 	private bool $activating = false;
-	private bool $activated = false;
+	private bool $initEmitted = false;
+	private bool $dispatched = false;
+	private ?RestApiActivatedEvent $activationEvent = null;
 
 	public function __construct(
 		private readonly ContainerInterface $container,
@@ -41,21 +44,29 @@ final class RestApiExecutor implements RestApiExecutorInterface
 
 	public function ensureActivated(): void
 	{
-		if ($this->activated || $this->activating) {
+		if ($this->activating) {
+			throw new RuntimeException('REST API cannot execute actions while activation is in progress.');
+		}
+
+		if ($this->dispatched) {
 			return;
 		}
 
 		$this->activating = true;
 
 		try {
-			$event = new RestApiActivatedEvent(
+			$event = $this->activationEvent ??= new RestApiActivatedEvent(
 				$this->container,
 				$this->config,
 				(string) $this->config->get('endpointUri', '/items'),
 			);
-			$this->app?->init()->emit($event);
+			if (! $this->initEmitted) {
+				$this->app?->init()->emit($event);
+				$this->initEmitted = true;
+			}
+
 			$this->dispatcher->dispatch($event);
-			$this->activated = true;
+			$this->dispatched = true;
 		} finally {
 			$this->activating = false;
 		}
