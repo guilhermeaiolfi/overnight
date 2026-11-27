@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Container;
 
-use ON\Data\Definition\Registry;
 use ON\Data\DataRuntime;
+use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
 use ON\RestApi\Error\RestApiError;

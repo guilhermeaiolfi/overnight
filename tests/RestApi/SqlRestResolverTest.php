@@ -339,6 +339,25 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame(['GraphQL', 'REST'], array_column($postsByTitle['GraphQL Guide']['tags'], 'name'));
 	}
 
+	public function testListWithManyToManyDeepPaginationAppliesToEachParent(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$posts = $registry->getCollection('post');
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($posts, $this->q($posts, [
+			'fields' => 'id,title,tags.name',
+			'sort' => 'id',
+			'deep' => ['tags' => ['_sort' => '-name', '_offset' => 1, '_limit' => 1]],
+		]));
+
+		$postsByTitle = array_column($result['data'], 'tags', 'title');
+		self::assertSame([['name' => 'GraphQL']], $postsByTitle['PHP Tips']);
+		self::assertSame([['name' => 'GraphQL']], $postsByTitle['GraphQL Guide']);
+		self::assertSame([], $postsByTitle['Draft Post']);
+	}
+
 	public function testListWithFirstOfManyRelationUsesRelationOrdering(): void
 	{
 		$registry = new Registry();

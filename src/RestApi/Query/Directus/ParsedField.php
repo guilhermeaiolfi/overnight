@@ -16,4 +16,13 @@ final readonly class ParsedField
 	{
 		return $this->function !== null;
 	}
+
+	public function alias(string $original): string
+	{
+		return preg_replace(
+			'/[^a-zA-Z0-9_]/',
+			'_',
+			$this->isFunction() ? $this->function . '_' . $this->field : $original,
+		);
+	}
 }

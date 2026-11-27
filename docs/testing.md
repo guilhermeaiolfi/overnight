@@ -13,6 +13,22 @@
 ./vendor/bin/phpunit --coverage-html coverage
 ```
 
+## Static analysis
+
+Run `composer analyse` after installing development dependencies with Composer.
+For a fresh checkout, place `overnight-data` at `../ondata` and check out the
+revision recorded in `composer.lock`, as CI does.
+
+PHPStan checks `src/` at level 5 against PHP 8.3, the minimum supported version.
+The optional Image and Swoole integrations are excluded because they require
+dependencies outside the default install. Tests and benchmarks are outside the
+analysis scope.
+
+`phpstan-baseline.neon` records the initial 419 findings by path, message,
+identifier, and count. Fix new findings in the code. PHPStan also reports stale
+baseline entries. Remove the entry or reduce its count when fixing an existing
+finding.
+
 ## Testing Controllers/Pages
 
 When testing controllers that use route parameter injection, follow this pattern:

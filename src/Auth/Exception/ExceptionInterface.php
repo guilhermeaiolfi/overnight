@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace ON\Auth\Exception;
 
-use Exception;
+use Throwable;
 
-interface ExceptionInterface extends Exception
+interface ExceptionInterface extends Throwable
 {
 }

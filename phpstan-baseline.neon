@@ -1,0 +1,1815 @@
+parameters:
+	ignoreErrors:
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Application.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(array \{
+				  debug\?\: \?bool,
+				  env\?\: \?string,
+				  disable_dotenv\?\: \?bool,
+				  paths\?\: \?array\<string, string\>,
+				  prod_envs\?\: \?string\[\],
+				  dotenv_path\?\: \?string,
+				  test_envs\?\: \?string\[\],
+				  use_putenv\?\: \?bool,
+				  runtimes\?\: \?array,
+				  error_handler\?\: string\|false,
+				  env_var_name\?\: string,
+				  debug_var_name\?\: string,
+				  dotenv_overload\?\: \?bool,
+				  error_reporting\?\: \?int,
+				\} \$options\)\: Unexpected token "\{", expected variable at offset 21 on line 2$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Application.php
+
+		-
+			message: '#^PHPDoc tag @return with type T is not subtype of native type ON\\Extension\\ExtensionInterface\.$#'
+			identifier: return.phpDocType
+			count: 1
+			path: src/Application.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/Application.php
+
+		-
+			message: '#^Variable \$instance in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.variable
+			count: 1
+			path: src/Application.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Auth/AuthExtension.php
+
+		-
+			message: '#^Interface ON\\Auth\\AuthenticatorInterface referenced with incorrect case\: ON\\Auth\\authenticatorInterface\.$#'
+			identifier: interface.nameCase
+			count: 1
+			path: src/Auth/AuthenticationService.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Auth/Middleware/AuthorizationMiddleware.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Auth/Middleware/SecurityMiddleware.php
+
+		-
+			message: '#^PHPDoc tag @throws with type ON\\Auth\\Storage\\ExceptionInterface is not subtype of Throwable$#'
+			identifier: throws.notThrowable
+			count: 4
+			path: src/Auth/Storage/StorageInterface.php
+
+		-
+			message: '#^Call to an undefined method Clockwork\\Support\\Vanilla\\Clockwork\:\:addDataSource\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Clockwork/ClockworkExtension.php
+
+		-
+			message: '#^Call to an undefined method Clockwork\\Support\\Vanilla\\Clockwork\:\:event\(\)\.$#'
+			identifier: method.notFound
+			count: 4
+			path: src/Clockwork/ClockworkExtension.php
+
+		-
+			message: '#^Call to an undefined method Clockwork\\Support\\Vanilla\\Clockwork\:\:userData\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Clockwork/ClockworkExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Clockwork/ClockworkExtension.php
+
+		-
+			message: '#^Call to an undefined method Psr\\Container\\ContainerInterface\:\:set\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Clockwork/ClockworkExtension.php
+
+		-
+			message: '#^Call to an undefined method Clockwork\\Support\\Vanilla\\Clockwork\:\:addDatabaseQuery\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Clockwork/ClockworkQueryRecorder.php
+
+		-
+			message: '#^Used function clock not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Clockwork/ClockworkQueryRecorder.php
+
+		-
+			message: '#^Used function clock not found\.$#'
+			identifier: function.notFound
+			count: 1
+			path: src/Clockwork/CycleDatabaseLogger.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Clockwork/Middleware/ClockworkMiddleware.php
+
+		-
+			message: '#^Trait ON\\Common\\AttributesTrait is used zero times and is not analysed\.$#'
+			identifier: trait.unused
+			count: 1
+			path: src/Common/AttributesTrait.php
+
+		-
+			message: '#^Class ON\\Config\\Config has @implements tag, but does not implement any interface\.$#'
+			identifier: generics.noParent
+			count: 2
+			path: src/Config/Config.php
+
+		-
+			message: '#^Call to an undefined method ReflectionType\:\:getName\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Config/ConfigExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Config\\Dot\<\(int\|string\), mixed\>\:\:mergeConfig\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^PHPDoc tag @param for parameter \$items with type mixed is not subtype of native type array\.$#'
+			identifier: parameter.phpDocType
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^PHPDoc tag @param for parameter \$items with type mixed is not subtype of native type array\|null\.$#'
+			identifier: parameter.phpDocType
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^PHPDoc tag @param for parameter \$key with type mixed is not subtype of native type int\|string\.$#'
+			identifier: parameter.phpDocType
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^PHPDoc tag @param for parameter \$key with type mixed is not subtype of native type int\|string\|null\.$#'
+			identifier: parameter.phpDocType
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^Variable \$defaults in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.variable
+			count: 1
+			path: src/Config/Dot.php
+
+		-
+			message: '#^Loose comparison using \=\= between int\<min, 32\> and ''c'' will always evaluate to false\.$#'
+			identifier: equal.alwaysFalse
+			count: 1
+			path: src/Config/Scanner/AttributeReader.php
+
+		-
+			message: '#^Parameter \#1 \$reflectors of method ON\\Config\\Scanner\\ReflectionAnalyzableInterface\:\:__analyzeReflection\(\) expects array\<ON\\Config\\Scanner\\Reflector\>, array\<int, mixed\> given\.$#'
+			identifier: argument.type
+			count: 8
+			path: src/Config/Scanner/AttributeReader.php
+
+		-
+			message: '#^Parameter \#3 \$type of method PhpParser\\NameContext\:\:addAlias\(\) expects 0\|1\|2\|3, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Config/Scanner/NameResolver.php
+
+		-
+			message: '#^Method ON\\Config\\Scanner\\NodeCollector\\ClassCollector\:\:beforeTraverse\(\) should return array\<PhpParser\\Node\>\|null but return statement is missing\.$#'
+			identifier: return.missing
+			count: 1
+			path: src/Config/Scanner/NodeCollector/ClassCollector.php
+
+		-
+			message: '#^Method ON\\Config\\Scanner\\NodeCollector\\ClassCollector\:\:enterNode\(\) should return array\<PhpParser\\Node\>\|int\|PhpParser\\Node\|null but return statement is missing\.$#'
+			identifier: return.missing
+			count: 4
+			path: src/Config/Scanner/NodeCollector/ClassCollector.php
+
+		-
+			message: '#^Parameter \$reflectors of method ON\\Config\\Scanner\\ReflectionAnalyzableInterface\:\:__analyzeReflection\(\) has invalid type ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Config/Scanner/ReflectionAnalyzableInterface.php
+
+		-
+			message: '#^Call to function method_exists\(\) with ReflectionProperty and ''getDefaultValue'' will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Config/Scanner/ReflectionCache.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/Config/Scanner/Scanner.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Console/Attribute/ConsoleAttributeProcessor.php
+
+		-
+			message: '#^Call to method getDeclaringClass\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Console/Attribute/ConsoleCommand.php
+
+		-
+			message: '#^Call to method getName\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Console/Attribute/ConsoleCommand.php
+
+		-
+			message: '#^Parameter \$reflectors of method ON\\Console\\Attribute\\ConsoleCommand\:\:__analyzeReflection\(\) has invalid type ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Console/Attribute/ConsoleCommand.php
+
+		-
+			message: '#^Variable \$reflector in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Console/Attribute/ConsoleCommand.php
+
+		-
+			message: '#^Call to an undefined method Symfony\\Component\\Console\\Helper\\HelperInterface\:\:ask\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Console/Command/ClearCacheCommand.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/Console/Command/OvernightCommand.php
+
+		-
+			message: '#^PHPDoc tag @throws with type ON\\Container\\InvalidDefinition is not subtype of Throwable$#'
+			identifier: throws.notThrowable
+			count: 1
+			path: src/Container/ConfigDefinitionSource.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/Container/ConfigDefinitionSource.php
+
+		-
+			message: '#^Call to method getContainer\(\) on an unknown class container\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/DB/Container/CycleDatabaseFactory.php
+
+		-
+			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<container\>, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/DB/Container/CycleDatabaseFactory.php
+
+		-
+			message: '#^Parameter \#2 \$container of class ON\\DB\\DatabaseManager constructor expects DI\\Container, Psr\\Container\\ContainerInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/DB/Container/DatabaseManagerFactory.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Definition\\Collection\\CollectionInterface\:\:getPlugin\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/DB/Cycle/Schema/CycleRegistryGenerator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
+			identifier: property.notFound
+			count: 5
+			path: src/DB/DatabaseExtension.php
+
+		-
+			message: '#^Method ON\\DB\\DebugPDO\\DebugPDO\:\:prepare\(\) has invalid return type ON\\DB\\DebugPDO\\TraceablePDOStatement\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/DB/DebugPDO/DebugPDO.php
+
+		-
+			message: '#^PHPDoc tag @return with type bool\|ON\\DB\\DebugPDO\\TraceablePDOStatement is not subtype of native type PDOStatement\|false\.$#'
+			identifier: return.phpDocType
+			count: 1
+			path: src/DB/DebugPDO/DebugPDO.php
+
+		-
+			message: '#^PHPDoc tag @return with type bool\|int is not subtype of native type int\|false\.$#'
+			identifier: return.phpDocType
+			count: 1
+			path: src/DB/DebugPDO/DebugPDO.php
+
+		-
+			message: '#^Variable \$result might not be defined\.$#'
+			identifier: variable.undefined
+			count: 2
+			path: src/DB/DebugPDO/DebugPDOStatement.php
+
+		-
+			message: '#^Expression on left side of \?\? is not nullable\.$#'
+			identifier: nullCoalesce.expr
+			count: 1
+			path: src/DB/DebugPDO/DebugStatement.php
+
+		-
+			message: '#^Ternary operator condition is always false\.$#'
+			identifier: ternary.alwaysFalse
+			count: 2
+			path: src/DB/DebugPDO/DebugStatement.php
+
+		-
+			message: '#^Variable \$result might not be defined\.$#'
+			identifier: variable.undefined
+			count: 1
+			path: src/DB/DebugPDO/LoggingPDOStatement.php
+
+		-
+			message: '#^Class ON\\DB\\DebugPDO\\DebugPDO\\LoggingPDOStatement not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/DB/PdoDatabase.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Discovery/AttributesDiscoverer.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Discovery/DiscoveryExtension.php
+
+		-
+			message: '#^Call to method getDeclaringClass\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Call to method getName\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Call to method getParameters\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Parameter \$reflectors of method ON\\Event\\Attribute\\EventHandler\:\:__analyzeReflection\(\) has invalid type ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Property ON\\Event\\Attribute\\EventHandler\:\:\$eventName is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Variable \$reflector in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Event/Attribute/EventHandler.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$events\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Event/Attribute/EventHandlerAttributeProcessor.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Event/EventsExtension.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Event/EventsExtension.php
+
+		-
+			message: '#^Property ON\\Event\\EventsExtension\:\:\$eventDispatcher in isset\(\) is not nullable nor uninitialized\.$#'
+			identifier: isset.initializedProperty
+			count: 1
+			path: src/Event/EventsExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$autowiring\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Extension/AutoWiringExtension.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 6
+			path: src/FS/Path.php
+
+		-
+			message: '#^Call to an undefined method ON\\FS\\DirectoryPathInterface\:\:resolveAgainst\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/FS/PathRegistry.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between non\-empty\-string and '''' will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/FileRouting/FileRouter.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 6
+			path: src/FileRouting/FileRoutingExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/FileRouting/FileRoutingExtension.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$delegate$#'
+			identifier: parameter.notFound
+			count: 1
+			path: src/FileRouting/FileRoutingMiddleware.php
+
+		-
+			message: '#^Instanceof between ON\\Router\\RouteResult and ON\\Router\\RouteResult will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/FileRouting/Page/MainPage.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between null and null will always evaluate to true\.$#'
+			identifier: identical.alwaysTrue
+			count: 1
+			path: src/FileRouting/Page/MainPage.php
+
+		-
+			message: '#^Using nullsafe method call on non\-nullable type Psr\\Container\\ContainerInterface\. Use \-\> instead\.$#'
+			identifier: nullsafe.neverNull
+			count: 1
+			path: src/FileRouting/Page/MainPage.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/GraphQL/CachedGraphQLRegistryGenerator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/GraphQL/CachedGraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:usesBuiltInNestedCreate\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/CachedGraphQLRegistryGenerator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$events\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/GraphQL/GraphQLExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/GraphQL/GraphQLExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Definition\\Relation\\RelationInterface\:\:metadata\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of class ON\\GraphQL\\Event\\AfterMutation constructor expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 3
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of class ON\\GraphQL\\Event\\BeforeMutation constructor expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 3
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:authorize\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 5
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:buildFieldsForCollection\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:buildInputType\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:buildQueryArgs\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:separateNestedInput\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:validateInput\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:validateNestedInput\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:wrapCollectionResolver\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 5
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveById\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveCollection\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveCreate\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveDelete\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveNestedCreate\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\GraphQLResolverInterface\:\:resolveUpdate\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\SqlResolver\:\:resolveNestedCreateWithChildPreparation\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$field of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:convertField\(\) expects ON\\Data\\Definition\\Field\\Field, ON\\Data\\Definition\\Field\\FieldInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter \#1 \$field of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:mapOrmTypeToGraphQL\(\) expects ON\\Data\\Definition\\Field\\Field, ON\\Data\\Definition\\Field\\FieldInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Parameter &\$allErrors by\-ref type of method ON\\GraphQL\\GraphQLRegistryGenerator\:\:collectNestedValidationErrors\(\) expects array\<string, array\<int, string\>\>, array\<string, array\<int, string\>\|string\> given\.$#'
+			identifier: parameterByRef.type
+			count: 1
+			path: src/GraphQL/GraphQLRegistryGenerator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 2
+			path: src/GraphQL/Resolver/CycleResolver.php
+
+		-
+			message: '#^Method ON\\GraphQL\\Resolver\\CycleResolver\:\:createNested\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/GraphQL/Resolver/CycleResolver.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Definition\\Relation\\RelationInterface\:\:metadata\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Call to function is_array\(\) with non\-empty\-list\<ON\\Data\\Definition\\Field\\FieldInterface\> will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Instanceof between list\<ON\\Data\\Definition\\Field\\FieldInterface\> and ON\\Data\\Definition\\Field\\FieldInterface will always evaluate to false\.$#'
+			identifier: instanceof.alwaysFalse
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Method ON\\GraphQL\\Resolver\\SqlResolver\:\:createNestedRecords\(\) never returns null so it can be removed from the return type\.$#'
+			identifier: return.unusedType
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\SqlResolver\:\:buildSelectColumns\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Parameter \#1 \$collection of method ON\\GraphQL\\Resolver\\SqlResolver\:\:insertRecord\(\) expects ON\\Data\\Definition\\Collection\\Collection, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Variable \$pk in empty\(\) always exists and is not falsy\.$#'
+			identifier: empty.variable
+			count: 1
+			path: src/GraphQL/Resolver/SqlResolver.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Handler/NotFoundHandler.php
+
+		-
+			message: '#^Offset 1 on array\{list\<string\>, list\<string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Http/MultipartFormDataParser.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Logging/Command/MonitorLogsCommand.php
+
+		-
+			message: '#^Call to an undefined method Psr\\Log\\LoggerInterface\:\:getHandlers\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Logging/Command/MonitorLogsCommand.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Logging/LoggingExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Maintenance/MaintenanceExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/Maintenance/MaintenanceExtension.php
+
+		-
+			message: '#^Unreachable statement \- code above always terminates\.$#'
+			identifier: deadCode.unreachable
+			count: 1
+			path: src/Maintenance/MaintenanceExtension.php
+
+		-
+			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 2
+			path: src/Middleware/BodyParams/MultipartFormDataStrategy.php
+
+		-
+			message: '#^PHPDoc tag @throws with type ON\\Middleware\\Exception\\EmptyPipelineException is not subtype of Throwable$#'
+			identifier: throws.notThrowable
+			count: 1
+			path: src/Middleware/MiddlewarePriorityPipe.php
+
+		-
+			message: '#^PHPDoc tag @var above assignment does not specify variable name\.$#'
+			identifier: varTag.noVariable
+			count: 1
+			path: src/Middleware/MiddlewarePriorityPipe.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$requestStack\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Call to method dispatch\(\) on an unknown class events\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^If condition is always true\.$#'
+			identifier: if.alwaysTrue
+			count: 2
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Method Laminas\\Stratigility\\MiddlewarePipeInterface\:\:pipe\(\) invoked with 2 parameters, 1 required\.$#'
+			identifier: arguments.count
+			count: 1
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<events\>, string given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Parameter \#2 \$middleware of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) expects ON\\Middleware\\MiddlewareParam\|null, string given\.$#'
+			identifier: argument.type
+			count: 6
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) has invalid type ON\\Middleware\\MiddlewareParam\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Parameter \$middlewareOrPath of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) has invalid type ON\\Middleware\\MiddlewareParam\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Middleware/PipelineExtension.php
+
+		-
+			message: '#^Call to method dispatch\(\) on an unknown class events\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Middleware/RegisterRequestMiddleware.php
+
+		-
+			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<events\>, string given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Middleware/RegisterRequestMiddleware.php
+
+		-
+			message: '#^Call to function is_object\(\) with \*NEVER\* will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Middleware/WhoopsErrorResponseGenerator.php
+
+		-
+			message: '#^Instanceof between Whoops\\RunInterface and Whoops\\RunInterface will always evaluate to true\.$#'
+			identifier: instanceof.alwaysTrue
+			count: 1
+			path: src/Middleware/WhoopsErrorResponseGenerator.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:pipeline\(\) has invalid type ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:pipeline\(\) has invalid type ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:pipeline\(\) has invalid type ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:prepare\(\) has invalid type ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:prepare\(\) has invalid type ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactory\:\:prepare\(\) has invalid type ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Type alias CallableType contains unknown class ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Type alias CallableType contains unknown class ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Type alias MiddlewareParam contains unknown class ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Type alias MiddlewareParam contains unknown class ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactory.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:pipeline\(\) has invalid type ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:pipeline\(\) has invalid type ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:pipeline\(\) has invalid type ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:prepare\(\) has invalid type ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:prepare\(\) has invalid type ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\MiddlewareFactoryInterface\:\:prepare\(\) has invalid type ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias CallableType contains unknown class ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias CallableType contains unknown class ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias InterfaceType contains unknown class ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias MiddlewareParam contains unknown class ON\\RequestHandlerMiddleware\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias MiddlewareParam contains unknown class ON\\ResponseInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Type alias MiddlewareParam contains unknown class ON\\ServerRequestInterface\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/MiddlewareFactoryInterface.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/BatchDeleteAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Action/Directus/BatchDeleteAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/BatchUpdateAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Action/Directus/BatchUpdateAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/CreateAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/DeleteAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Action/Directus/DeleteAction.php
+
+		-
+			message: '#^Property ON\\RestApi\\Action\\Directus\\DeleteAction\:\:\$config is never read, only written\.$#'
+			identifier: property.onlyWritten
+			count: 1
+			path: src/RestApi/Action/Directus/DeleteAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/FilesAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/GetAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Action/Directus/GetAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/ListAction.php
+
+		-
+			message: '#^Offset ''data'' on array\{data\: list\<array\<string, mixed\>\>, meta\: array\<string, int\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 2
+			path: src/RestApi/Action/Directus/ListAction.php
+
+		-
+			message: '#^Offset ''meta'' on array\{data\: mixed, meta\: array\<string, int\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/RestApi/Action/Directus/ListAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/RestApi/Action/Directus/ListAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Action/Directus/UpdateAction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Action/Directus/UpdateAction.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Addon/SchemaAddon.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Addon/SchemaAddon.php
+
+		-
+			message: '#^WeakMap\<ON\\Data\\Definition\\Collection\\CollectionInterface, array\<string, array\{source\: array\<int\|string, mixed\>, sorted\: list\<array\{handler\: mixed, priority\: int\}\>\}\>\> does not accept array\<string, array\<string, mixed\>\>\.$#'
+			identifier: offsetAssign.valueType
+			count: 1
+			path: src/RestApi/Hook/RestHookDispatcher.php
+
+		-
+			message: '#^Call to function is_object\(\) with object will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/RestApi/Hook/RestHookTransaction.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Mutation/DirectusMutationBinder.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Mutation/FileUploadEventEmitter.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\ORM\\Representation\\State\\RepresentationState\:\:getFieldItems\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Match expression does not handle remaining value\: string$#'
+			identifier: match.unhandled
+			count: 1
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Parameter \#4 \$state of method ON\\RestApi\\Mutation\\DirectusMutationBinder\:\:bindCreate\(\) expects ON\\RestApi\\Mutation\\BoundItemState\|null, ON\\RestApi\\Mutation\\MutationStateInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Parameter \#4 \$state of method ON\\RestApi\\Mutation\\DirectusMutationBinder\:\:bindDelete\(\) expects ON\\RestApi\\Mutation\\BoundItemState\|null, ON\\RestApi\\Mutation\\MutationStateInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Parameter \#5 \$state of method ON\\RestApi\\Mutation\\DirectusMutationBinder\:\:bindUpdate\(\) expects ON\\RestApi\\Mutation\\BoundItemState\|null, ON\\RestApi\\Mutation\\MutationStateInterface\|null given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/RestApi/Mutation/MutationCoordinator.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/RestApi/Mutation/MutationSchemaFactory.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Mutation/Payload/DirectusPayloadParser.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 3
+			path: src/RestApi/Mutation/Payload/DirectusPayloadParser.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Call to function is_array\(\) with null will always evaluate to false\.$#'
+			identifier: function.impossibleType
+			count: 2
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Offset 0 on array\{list\<string\>\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Offset int on array\<string, mixed\> on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Offset int\<0, max\> on array\<string, mixed\> on left side of \?\? does not exist\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/RestApi/Payload/MutationInputMerger.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Query/Parser/DirectusQueryParser.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Query\\Expression\\ValueExpressionInterface\:\:as\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/RestApi/Query/Parser/DirectusQueryParser.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Query\\Expression\\ValueExpressionInterface\:\:asc\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/RestApi/Query/Parser/DirectusQueryParser.php
+
+		-
+			message: '#^Call to an undefined method ON\\Data\\Query\\Expression\\ValueExpressionInterface\:\:desc\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/RestApi/Query/Parser/DirectusQueryParser.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between non\-empty\-list\<ON\\Data\\Query\\Sort\\Sort\> and array\{\} will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/RestApi/Query/Parser/DirectusQueryParser.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{function\: string, field\: string, alias\: string\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/RestApi/Query/QueryContext.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<array\{responseName\: string, alias\: string\}\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/RestApi/Query/QueryContext.php
+
+		-
+			message: '#^Parameter \#1 \$array \(list\<string\>\) of array_values is already a list, call has no effect\.$#'
+			identifier: arrayValues.list
+			count: 1
+			path: src/RestApi/Query/QueryContext.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 5
+			path: src/RestApi/Repository/ItemRepository.php
+
+		-
+			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
+			identifier: argument.type
+			count: 2
+			path: src/RestApi/Repository/ItemRepository.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 3
+			path: src/RestApi/RestApiExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/RestApi/Support/MutationInput.php
+
+		-
+			message: '#^Call to method getDeclaringClass\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/Attribute/Route.php
+
+		-
+			message: '#^Call to method getName\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/Attribute/Route.php
+
+		-
+			message: '#^Parameter \$reflectors of method ON\\Router\\Attribute\\Route\:\:__analyzeReflection\(\) has invalid type ON\\Config\\Scanner\\Reflector\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/Attribute/Route.php
+
+		-
+			message: '#^Variable \$reflector in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Router/Attribute/Route.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Router/Attribute/RouteAttributeProcessor.php
+
+		-
+			message: '#^Variable \$attr in PHPDoc tag @var does not exist\.$#'
+			identifier: varTag.variableNotFound
+			count: 1
+			path: src/Router/Attribute/RouteAttributeProcessor.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Router/Middleware/RouteMiddleware.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$delegate$#'
+			identifier: parameter.notFound
+			count: 1
+			path: src/Router/Middleware/RouteMiddleware.php
+
+		-
+			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
+			identifier: function.alreadyNarrowedType
+			count: 1
+			path: src/Router/Route.php
+
+		-
+			message: '#^PHPDoc tag @param for parameter \$config with type array\<mixed\> is incompatible with native type ON\\Router\\RouterConfig\.$#'
+			identifier: parameter.phpDocType
+			count: 1
+			path: src/Router/Router.php
+
+		-
+			message: '#^PHPDoc tag @param references unknown parameter\: \$router$#'
+			identifier: parameter.notFound
+			count: 1
+			path: src/Router/Router.php
+
+		-
+			message: '#^PHPDoc type for property ON\\Router\\Router\:\:\$config with type array\<mixed\> is incompatible with native type ON\\Router\\RouterConfig\.$#'
+			identifier: property.phpDocType
+			count: 1
+			path: src/Router/Router.php
+
+		-
+			message: '#^Parameter \#1 \$callback of function set_error_handler expects \(callable\(int, string, string, int\)\: bool\)\|null, Closure\(\)\: void given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Router/Router.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$pipeline\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 2
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:any\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:any\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:delete\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:delete\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:get\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:get\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:patch\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:patch\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:post\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:post\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:put\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:put\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:route\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:route\(\) has invalid type ON\\Router\\RequestHandlerInterface\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Router/RouterExtension.php
+
+		-
+			message: '#^Offset ''domain'' on array\{lifetime\: int\<0, max\>, path\: non\-falsy\-string, domain\: string, secure\: bool, httponly\: bool, samesite\: ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Offset ''httponly'' on array\{lifetime\: int\<0, max\>, path\: non\-falsy\-string, domain\: string, secure\: bool, httponly\: bool, samesite\: ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Offset ''path'' on array\{lifetime\: int\<0, max\>, path\: non\-falsy\-string, domain\: string, secure\: bool, httponly\: bool, samesite\: ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Offset ''samesite'' on array\{lifetime\: int\<0, max\>, path\: non\-falsy\-string, domain\: string, secure\: bool, httponly\: bool, samesite\: ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict''\} in isset\(\) always exists and is not nullable\.$#'
+			identifier: isset.offset
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Offset ''secure'' on array\{lifetime\: int\<0, max\>, path\: non\-falsy\-string, domain\: string, secure\: bool, httponly\: bool, samesite\: ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict''\} on left side of \?\? always exists and is not nullable\.$#'
+			identifier: nullCoalesce.offset
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Result of && is always true\.$#'
+			identifier: booleanAnd.alwaysTrue
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Strict comparison using \!\=\= between ''Lax''\|''lax''\|''None''\|''none''\|''Strict''\|''strict'' and '''' will always evaluate to true\.$#'
+			identifier: notIdentical.alwaysTrue
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between non\-falsy\-string and '''' will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '#^Strict comparison using \=\=\= between string and false will always evaluate to false\.$#'
+			identifier: identical.alwaysFalse
+			count: 1
+			path: src/Session/Native/NativeSession.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale to which the message should be
+				                        translated\.\)\: Unexpected token "The", expected variable at offset 201 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/CurrencyFormatter.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The message to be translated\.\)\: Unexpected token "The", expected variable at offset 88 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/CurrencyFormatter.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain of the message\.\)\: Unexpected token "The", expected variable at offset 146 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/CurrencyFormatter.php
+
+		-
+			message: '#^Parameter \#2 \$locale of function setlocale expects array\|string\|null, int given\.$#'
+			identifier: argument.type
+			count: 1
+			path: src/Translation/CurrencyFormatter.php
+
+		-
+			message: '#^Property ON\\Translation\\CurrencyFormatter\:\:\$locale has unknown class ON\\Translation\\AgaviLocale as its type\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/CurrencyFormatter.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale to which the message should be
+				                        translated\.\)\: Unexpected token "The", expected variable at offset 201 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/DateFormatter.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The message to be translated\.\)\: Unexpected token "The", expected variable at offset 88 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/DateFormatter.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain of the message\.\)\: Unexpected token "The", expected variable at offset 146 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/DateFormatter.php
+
+		-
+			message: '#^Property ON\\Translation\\DateFormatter\:\:\$locale has unknown class ON\\Translation\\AgaviLocale as its type\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/DateFormatter.php
+
+		-
+			message: '#^Access to offset ''identifier'' on an unknown class ON\\Translation\\AgaviLocale\.$#'
+			identifier: class.notFound
+			count: 2
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Caught class ON\\Translation\\InvalidArgumentException not found\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Method ON\\Translation\\TranslationManager\:\:getCurrentLocale\(\) has invalid return type ON\\Translation\\AgaviLocale\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Method ON\\Translation\\TranslationManager\:\:getDefaultLocale\(\) has invalid return type ON\\Translation\\AgaviLocale\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale which should be used for formatting\.
+				                        Defaults to the currently active locale\.\)\: Unexpected token "The", expected variable at offset 206 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale which should be used for formatting\.
+				                        Defaults to the currently active locale\.\)\: Unexpected token "The", expected variable at offset 210 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale which should be used for formatting\.
+				                        Defaults to the currently active locale\.\)\: Unexpected token "The", expected variable at offset 216 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale which should be used for formatting\.
+				                        Defaults to the currently active locale\.\)\: Unexpected token "The", expected variable at offset 225 on line 6$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(AgaviLocale The locale which should be used for formatting\.
+				                        Defaults to the currently active locale\.\)\: Unexpected token "The", expected variable at offset 385 on line 8$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(array       The parameters which should be used for sprintf on
+				                        the translated string\.\)\: Unexpected token "The", expected variable at offset 351 on line 8$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '''
+				#^PHPDoc tag @param has invalid value \(array       The parameters which should be used for sprintf on
+				                        the translated string\.\)\: Unexpected token "The", expected variable at offset 530 on line 10$#
+			'''
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(int         The amount for which the translation should happen\.\)\: Unexpected token "The", expected variable at offset 225 on line 6$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The date to be formatted\.\)\: Unexpected token "The", expected variable at offset 78 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The message\.\)\: Unexpected token "The", expected variable at offset 85 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The number to be formatted\.\)\: Unexpected token "The", expected variable at offset 80 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(mixed       The number to be formatted\.\)\: Unexpected token "The", expected variable at offset 89 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain in which the amount should be formatted\.\)\: Unexpected token "The", expected variable at offset 145 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain in which the date should be formatted\.\)\: Unexpected token "The", expected variable at offset 132 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain in which the number should be formatted\.\)\: Unexpected token "The", expected variable at offset 136 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain in which the translation should be done\.\)\: Unexpected token "The", expected variable at offset 126 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The domain in which the translation should be done\.\)\: Unexpected token "The", expected variable at offset 305 on line 7$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The message for the plural form\.\)\: Unexpected token "The", expected variable at offset 164 on line 5$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string      The message for the singular form\.\)\: Unexpected token "The", expected variable at offset 101 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string The locale identifier\.\)\: Unexpected token "The", expected variable at offset 60 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^PHPDoc tag @param has invalid value \(string The new default domain\.\)\: Unexpected token "The", expected variable at offset 60 on line 4$#'
+			identifier: phpDoc.parseError
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Property ON\\Translation\\TranslationManager\:\:\$currentLocale \(ON\\Translation\\AgaviLocale\) in isset\(\) is not nullable\.$#'
+			identifier: isset.property
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Property ON\\Translation\\TranslationManager\:\:\$currentLocale has unknown class ON\\Translation\\AgaviLocale as its type\.$#'
+			identifier: class.notFound
+			count: 1
+			path: src/Translation/TranslationManager.php
+
+		-
+			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/Validation/CollectionValidator.php
+
+		-
+			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
+			identifier: property.notFound
+			count: 1
+			path: src/View/Latte/LatteExtension.php
+
+		-
+			message: '#^Unsafe usage of new static\(\)\.$#'
+			identifier: new.static
+			count: 1
+			path: src/View/Latte/SectionNode.php
+
+		-
+			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
+			identifier: method.notFound
+			count: 1
+			path: src/View/ViewExtension.php

@@ -90,5 +90,12 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
+      - name: Check PHP formatting
+        if: matrix.php == '8.3'
+        run: php vendor/bin/php-cs-fixer fix --dry-run --diff --using-cache=no
+
       - name: Run PHPUnit
         run: php vendor/bin/phpunit
+
+      - name: Run PHPStan
+        run: composer analyse
