@@ -7,6 +7,7 @@ namespace Tests\ON\Http;
 use ON\Http\MultipartFormDataParser;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UploadedFileInterface;
+use RuntimeException;
 
 final class MultipartFormDataParserTest extends TestCase
 {
@@ -33,11 +34,13 @@ final class MultipartFormDataParserTest extends TestCase
 		);
 
 		$this->assertSame('{"title":"Updated title"}', $result['parsedBody']['data']);
-		$this->assertInstanceOf(
-			UploadedFileInterface::class,
-			$result['uploadedFiles']['images'][0]['file_id'],
-		);
-		$this->assertSame('photo.jpg', $result['uploadedFiles']['images'][0]['file_id']->getClientFilename());
+		$file = $result['uploadedFiles']['images'][0]['file_id'];
+		$this->assertInstanceOf(UploadedFileInterface::class, $file);
+		$this->assertSame('photo.jpg', $file->getClientFilename());
+		$this->assertSame('image/jpeg', $file->getClientMediaType());
+		$this->assertSame(strlen('binary-image-data'), $file->getSize());
+		$this->assertSame(UPLOAD_ERR_OK, $file->getError());
+		$this->assertSame('binary-image-data', $file->getStream()->getContents());
 	}
 
 	public function testPreservesTrailingNewlinesAndBoundaryTextInsideContent(): void
@@ -112,6 +115,25 @@ final class MultipartFormDataParserTest extends TestCase
 		$this->assertSame('two.txt', $result['uploadedFiles']['attachments'][1]->getClientFilename());
 	}
 
+	public function testPreservesSparseArrayKeysAndReplacesRepeatedNamedFiles(): void
+	{
+		$body = "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"files%5B5%5D\"; filename=\"old.txt\"\r\n\r\nold\r\n"
+			. "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"files[]\"; filename=\"append.txt\"\r\n\r\nappend\r\n"
+			. "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"files[5]\"; filename=\"new.txt\"\r\n\r\nnew\r\n"
+			. "--boundary--\r\n";
+
+		$result = (new MultipartFormDataParser())->parse('multipart/form-data; boundary=boundary', $body);
+		$files = $result['uploadedFiles']['files'];
+
+		$this->assertSame([5, 1], array_keys($files));
+		$this->assertSame('new.txt', $files[5]->getClientFilename());
+		$this->assertSame('new', $files[5]->getStream()->getContents());
+		$this->assertSame('append.txt', $files[1]->getClientFilename());
+	}
+
 	public function testParsedUploadCanBeMovedToDestination(): void
 	{
 		$boundary = 'test-boundary';
@@ -131,14 +153,46 @@ final class MultipartFormDataParserTest extends TestCase
 		);
 
 		$file = $result['uploadedFiles']['images'][0]['file_id'];
+		$stream = $file->getStream();
+		$this->assertSame('binary', $stream->read(6));
+		$source = $stream->getMetadata('uri');
+		$this->assertFileExists($source);
 		$target = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'overnight-move-test-' . bin2hex(random_bytes(8)) . '.jpg';
 
-		$file->moveTo($target);
+		try {
+			$file->moveTo($target);
 
-		$this->assertFileExists($target);
-		$this->assertSame('binary-image-data', file_get_contents($target));
+			$this->assertSame('binary-image-data', file_get_contents($target));
+			clearstatcache(true, $source);
+			$this->assertFileDoesNotExist($source);
+			$this->assertFalse($stream->isReadable());
 
-		@unlink($target);
+			$this->expectException(RuntimeException::class);
+			$file->moveTo($target);
+		} finally {
+			if (is_file($target)) {
+				unlink($target);
+			}
+		}
+	}
+
+	public function testTemporaryUploadLivesAsLongAsItsStream(): void
+	{
+		$content = "\x00\xFF\r\n";
+		$body = "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"file\"; filename=\"bytes.bin\"\r\n\r\n"
+			. $content . "\r\n--boundary--\r\n";
+		$result = (new MultipartFormDataParser())->parse('multipart/form-data; boundary=boundary', $body);
+		$stream = $result['uploadedFiles']['file']->getStream();
+		$source = $stream->getMetadata('uri');
+		unset($result);
+
+		$this->assertFileExists($source);
+		$this->assertSame($content, $stream->getContents());
+
+		unset($stream);
+		clearstatcache(true, $source);
+		$this->assertFileDoesNotExist($source);
 	}
 
 	public function testRepresentsEmptyFileInputAsNoFileUpload(): void
@@ -159,7 +213,24 @@ final class MultipartFormDataParserTest extends TestCase
 			$body,
 		);
 
-		$this->assertSame(UPLOAD_ERR_NO_FILE, $result['uploadedFiles']['avatar']->getError());
-		$this->assertSame('', $result['uploadedFiles']['avatar']->getClientFilename());
+		$file = $result['uploadedFiles']['avatar'];
+		$this->assertSame(UPLOAD_ERR_NO_FILE, $file->getError());
+		$this->assertSame('', $file->getClientFilename());
+		$this->assertSame('application/octet-stream', $file->getClientMediaType());
+		$this->assertSame(0, $file->getSize());
+		$this->expectException(RuntimeException::class);
+		$file->getStream();
+	}
+
+	public function testIgnoresMalformedInput(): void
+	{
+		$expected = ['parsedBody' => [], 'uploadedFiles' => []];
+		$parser = new MultipartFormDataParser();
+
+		$this->assertSame($expected, $parser->parse('multipart/form-data', 'body without a boundary'));
+		$this->assertSame($expected, $parser->parse(
+			'multipart/form-data; boundary=boundary',
+			"--boundary\r\nInvalid part headers\r\n\r\ncontent\r\n--boundary--\r\n",
+		));
 	}
 }

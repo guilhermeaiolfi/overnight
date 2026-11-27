@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Http;
 
+use Laminas\Diactoros\StreamFactory;
 use Laminas\Diactoros\UploadedFile;
 use ON\Http\Exception\InvalidMultipartFormDataException;
 use Psr\Http\Message\UploadedFileInterface;
@@ -28,7 +29,7 @@ final class MultipartFormDataParser
 		}
 
 		$parsedBody = [];
-		$fileSpecs = [];
+		$uploadedFiles = [];
 
 		foreach ($this->splitParts($body, $boundary) as $part) {
 			if ($part === '' || $part === '--') {
@@ -45,10 +46,10 @@ final class MultipartFormDataParser
 			$name = $disposition['name'];
 
 			if ($disposition['hasFilename']) {
-				$this->appendFileSpec(
-					$fileSpecs,
+				$this->setUploadedFile(
+					$uploadedFiles,
 					$name,
-					$this->createFileSpec(
+					$this->createUploadedFile(
 						$content,
 						$disposition['filename'] ?? '',
 						$headers['content-type'] ?? 'application/octet-stream',
@@ -63,158 +64,8 @@ final class MultipartFormDataParser
 
 		return [
 			'parsedBody' => $parsedBody,
-			'uploadedFiles' => $fileSpecs === [] ? [] : $this->normalizeParsedUploadedFiles($fileSpecs),
+			'uploadedFiles' => $uploadedFiles,
 		];
-	}
-
-	/**
-	 * Build stream-based UploadedFile instances for parsed multipart parts.
-	 *
-	 * Parsed PATCH/PUT uploads are written to temp paths that are not valid
-	 * move_uploaded_file() sources. Using streams keeps moveTo() working in all
-	 * SAPI environments, matching the behavior of native POST uploads.
-	 *
-	 * @param array<string, mixed> $files
-	 * @return array<string, mixed>
-	 */
-	private function normalizeParsedUploadedFiles(array $files): array
-	{
-		$normalized = [];
-
-		foreach ($files as $key => $value) {
-			if ($value instanceof UploadedFileInterface) {
-				$normalized[$key] = $value;
-
-				continue;
-			}
-
-			if (! is_array($value)) {
-				throw new InvalidMultipartFormDataException('Invalid value in parsed uploaded files specification.');
-			}
-
-			if (isset($value['tmp_name']) && is_array($value['tmp_name'])) {
-				$normalized[$key] = $this->normalizeNestedParsedUploadedFiles($value);
-
-				continue;
-			}
-
-			if (isset($value['tmp_name'])) {
-				$normalized[$key] = $this->createStreamUploadedFile($value);
-
-				continue;
-			}
-
-			$normalized[$key] = $this->normalizeParsedUploadedFiles($value);
-		}
-
-		return $normalized;
-	}
-
-	/**
-	 * @param array<string, mixed> $files
-	 * @return array<string, mixed>
-	 */
-	private function normalizeNestedParsedUploadedFiles(array $files): array
-	{
-		foreach (['tmp_name', 'size', 'error'] as $requiredKey) {
-			if (! isset($files[$requiredKey]) || ! is_array($files[$requiredKey])) {
-				throw new InvalidMultipartFormDataException(
-					'Parsed uploaded files must contain tmp_name, size, and error arrays.'
-				);
-			}
-		}
-
-		return $this->normalizeParsedUploadedFileTree(
-			$files['tmp_name'],
-			$files['size'],
-			$files['error'],
-			is_array($files['name'] ?? null) ? $files['name'] : null,
-			is_array($files['type'] ?? null) ? $files['type'] : null,
-		);
-	}
-
-	/**
-	 * @param array<string|int, mixed> $tmpNameTree
-	 * @param array<string|int, mixed> $sizeTree
-	 * @param array<string|int, mixed> $errorTree
-	 * @param array<string|int, mixed>|null $nameTree
-	 * @param array<string|int, mixed>|null $typeTree
-	 * @return array<string|int, mixed>
-	 */
-	private function normalizeParsedUploadedFileTree(
-		array $tmpNameTree,
-		array $sizeTree,
-		array $errorTree,
-		?array $nameTree = null,
-		?array $typeTree = null,
-	): array {
-		$normalized = [];
-
-		foreach ($tmpNameTree as $key => $value) {
-			if (is_array($value)) {
-				$normalized[$key] = $this->normalizeParsedUploadedFileTree(
-					$tmpNameTree[$key],
-					$sizeTree[$key],
-					$errorTree[$key],
-					is_array($nameTree[$key] ?? null) ? $nameTree[$key] : null,
-					is_array($typeTree[$key] ?? null) ? $typeTree[$key] : null,
-				);
-
-				continue;
-			}
-
-			$normalized[$key] = $this->createStreamUploadedFile([
-				'tmp_name' => $tmpNameTree[$key],
-				'size' => $sizeTree[$key],
-				'error' => $errorTree[$key],
-				'name' => $nameTree[$key] ?? null,
-				'type' => $typeTree[$key] ?? null,
-			]);
-		}
-
-		return $normalized;
-	}
-
-	/**
-	 * @param array{tmp_name: mixed, size: mixed, error: mixed, name?: mixed, type?: mixed} $spec
-	 */
-	private function createStreamUploadedFile(array $spec): UploadedFileInterface
-	{
-		$error = (int) $spec['error'];
-		$size = (int) $spec['size'];
-		$name = is_string($spec['name'] ?? null) ? $spec['name'] : null;
-		$type = is_string($spec['type'] ?? null) ? $spec['type'] : null;
-
-		if ($error !== UPLOAD_ERR_OK) {
-			return new UploadedFile('', $size, $error, $name, $type);
-		}
-
-		$stream = fopen('php://temp', 'rb+');
-		if ($stream === false) {
-			throw new InvalidMultipartFormDataException('Unable to create a stream for an uploaded part.');
-		}
-
-		$tmpPath = (string) ($spec['tmp_name'] ?? '');
-		if ($tmpPath !== '' && is_readable($tmpPath)) {
-			$content = file_get_contents($tmpPath);
-			if ($content === false) {
-				fclose($stream);
-
-				throw new InvalidMultipartFormDataException('Unable to read a temporary uploaded part.');
-			}
-
-			if ($content !== '' && fwrite($stream, $content) === false) {
-				fclose($stream);
-
-				throw new InvalidMultipartFormDataException('Unable to buffer an uploaded part.');
-			}
-
-			@unlink($tmpPath);
-		}
-
-		rewind($stream);
-
-		return new UploadedFile($stream, $size, UPLOAD_ERR_OK, $name, $type);
 	}
 
 	private function extractBoundary(string $contentType): ?string
@@ -354,90 +205,54 @@ final class MultipartFormDataParser
 		}
 	}
 
-	/**
-	 * @return array{tmp_name: string, size: int, error: int, name: string, type: string}
-	 */
-	private function createFileSpec(string $content, string $filename, string $mimeType): array
+	private function createUploadedFile(string $content, string $filename, string $mimeType): UploadedFileInterface
 	{
 		if ($filename === '') {
-			return [
-				'tmp_name' => '',
-				'size' => 0,
-				'error' => UPLOAD_ERR_NO_FILE,
-				'name' => '',
-				'type' => $mimeType,
-			];
+			return new UploadedFile('', 0, UPLOAD_ERR_NO_FILE, $filename, $mimeType);
 		}
 
-		$tmpPath = tempnam(sys_get_temp_dir(), 'onupload_');
-		if ($tmpPath === false) {
+		// The temporary file is removed when its stream closes or is released.
+		$resource = @tmpfile();
+		if ($resource === false) {
 			throw new InvalidMultipartFormDataException('Unable to create a temporary file for an uploaded part.');
 		}
 
-		if ($content !== '' && file_put_contents($tmpPath, $content) === false) {
-			@unlink($tmpPath);
+		$size = strlen($content);
+		if (@fwrite($resource, $content) !== $size || ! @rewind($resource)) {
+			fclose($resource);
 
 			throw new InvalidMultipartFormDataException('Unable to write an uploaded file to disk.');
 		}
 
-		return [
-			'tmp_name' => $tmpPath,
-			'size' => strlen($content),
-			'error' => UPLOAD_ERR_OK,
-			'name' => $filename,
-			'type' => $mimeType,
-		];
+		// A stream lets moveTo() work across SAPIs for files created by this parser.
+		$stream = (new StreamFactory())->createStreamFromResource($resource);
+
+		return new UploadedFile($stream, $size, UPLOAD_ERR_OK, $filename, $mimeType);
 	}
 
 	/**
 	 * @param array<string, mixed> $files
-	 * @param array{tmp_name: string, size: int, error: int, name: string, type: string} $spec
 	 */
-	private function appendFileSpec(array &$files, string $fieldName, array $spec): void
+	private function setUploadedFile(array &$files, string $fieldName, UploadedFileInterface $file): void
 	{
 		$keys = $this->parseFieldPath($fieldName);
-		if ($keys === []) {
-			return;
-		}
+		$key = array_shift($keys);
+		$current = &$files;
 
-		$rootKey = array_shift($keys);
-
-		if (! isset($files[$rootKey]) || ! is_array($files[$rootKey])) {
-			$files[$rootKey] = [];
-		}
-
-		$concreteKeys = $this->materializeFileKeys($files, $rootKey, $keys);
-
-		foreach ($spec as $property => $value) {
-			if ($concreteKeys === []) {
-				$files[$rootKey][$property] = $value;
-
-				continue;
+		foreach ($keys as $nextKey) {
+			if (! isset($current[$key]) || ! is_array($current[$key])) {
+				$current[$key] = [];
 			}
 
-			if (! isset($files[$rootKey][$property]) || ! is_array($files[$rootKey][$property])) {
-				$files[$rootKey][$property] = [];
-			}
-
-			$current = &$files[$rootKey][$property];
-			foreach ($concreteKeys as $index => $key) {
-				if ($index === count($concreteKeys) - 1) {
-					$current[$key] = $value;
-
-					break;
-				}
-
-				if (! isset($current[$key]) || ! is_array($current[$key])) {
-					$current[$key] = [];
-				}
-
-				$current = &$current[$key];
-			}
+			$current = &$current[$key];
+			$key = $nextKey === '' ? count($current) : $nextKey;
 		}
+
+		$current[$key] = $file;
 	}
 
 	/**
-	 * @return list<string>
+	 * @return non-empty-list<string>
 	 */
 	private function parseFieldPath(string $name): array
 	{
@@ -456,44 +271,5 @@ final class MultipartFormDataParser
 			static fn (string $key, int $index): bool => $index === 0 || $key !== '' || str_contains($name, '[]'),
 			ARRAY_FILTER_USE_BOTH,
 		));
-	}
-
-	/**
-	 * @param array<string, mixed> $files
-	 * @param list<string> $keys
-	 * @return list<string|int>
-	 */
-	private function materializeFileKeys(array &$files, string $rootKey, array $keys): array
-	{
-		if (! in_array('', $keys, true)) {
-			return $keys;
-		}
-
-		if (! isset($files[$rootKey]['name']) || ! is_array($files[$rootKey]['name'])) {
-			$files[$rootKey]['name'] = [];
-		}
-
-		$current = &$files[$rootKey]['name'];
-		$concreteKeys = [];
-
-		foreach ($keys as $index => $key) {
-			if ($key === '') {
-				$key = count($current);
-			}
-
-			$concreteKeys[] = $key;
-
-			if ($index === count($keys) - 1) {
-				break;
-			}
-
-			if (! isset($current[$key]) || ! is_array($current[$key])) {
-				$current[$key] = [];
-			}
-
-			$current = &$current[$key];
-		}
-
-		return $concreteKeys;
 	}
 }
