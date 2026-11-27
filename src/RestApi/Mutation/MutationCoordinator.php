@@ -417,10 +417,11 @@ final class MutationCoordinator
 		}
 
 		$results = [];
+		$reloadedRows = [];
 		$afterHooks = $this->hooks->start();
 		foreach ($roots as $bound) {
 			if ($output !== null) {
-				$row = $this->reload($session, $bound);
+				$row = $this->reload($session, $bound, $reloadedRows);
 				$results[] = map($row)
 					->args($bound->collection)
 					->from(PhpRepresentation::class)
@@ -429,7 +430,7 @@ final class MutationCoordinator
 			}
 
 			if ($dispatchEvents) {
-				$this->scheduleAfter($afterHooks, $session, MutationEventPlan::fromBound($bound), $bound);
+				$this->scheduleAfter($afterHooks, $session, MutationEventPlan::fromBound($bound), $bound, $reloadedRows);
 			}
 		}
 		if ($dispatchEvents) {
@@ -476,17 +477,19 @@ final class MutationCoordinator
 		}
 	}
 
+	/** @param array<string, array<string, mixed>> $reloadedRows */
 	private function scheduleAfter(
 		RestHookTransaction $afterHooksTx,
 		Session $session,
 		MutationEventPlan $plan,
 		BoundMutation $root,
+		array &$reloadedRows,
 	): void {
 		foreach ($plan->after as $bound) {
 			$slot = $bound->operation . '.after';
 			$hooks = $bound->collection->metadata(RestHooks::METADATA_KEY) ?? [];
 			if ($bound !== $root && isset($hooks[$slot]) && in_array($bound->operation, ['create', 'update'], true)) {
-				$this->reload($session, $bound);
+				$this->reload($session, $bound, $reloadedRows);
 			}
 
 			$afterHooksTx->schedule($slot, function () use ($bound, $root) {
@@ -556,17 +559,24 @@ final class MutationCoordinator
 	}
 
 	/**
+	 * @param array<string, array<string, mixed>> $reloadedRows
 	 * @return array<string, mixed>
 	 */
-	private function reload(Session $session, BoundMutation $bound): array
+	private function reload(Session $session, BoundMutation $bound, array &$reloadedRows): array
 	{
 		$key = $this->resolveKeyAfterFlush($session, $bound);
-		$row = $this->items->findByIdentity(
-			$bound->collection,
-			$key,
-		);
+		$hash = $key->getHash();
+		$row = $reloadedRows[$hash] ?? null;
 		if ($row === null) {
-			throw RestApiError::notFound();
+			$row = $this->items->findByIdentity($bound->collection, $key);
+			if ($row === null) {
+				throw RestApiError::notFound();
+			}
+
+			// Share scalar snapshots only. Mapped values can contain mutable objects or resources.
+			if (array_filter($row, static fn (mixed $value): bool => $value !== null && ! is_scalar($value)) === []) {
+				$reloadedRows[$hash] = $row;
+			}
 		}
 
 		$bound->state->markReady($row + $key->getValues());
