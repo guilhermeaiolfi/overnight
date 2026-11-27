@@ -526,10 +526,13 @@ final class MutationCoordinator
 			return;
 		}
 
-		// Already tracked (writable load or early create sync): patch RecordState directly.
-		// Re-issuing create()/update() would adopt a second NEW record and leave the first
-		// incomplete row to flush (NOT NULL on hook-added columns).
 		$representationState = $session->getRepresentations()->get($target);
+		if ($representationState === null && $bound->operation === 'create') {
+			// Admit the staged create with its original schema before applying the hook fields.
+			$session->sync($target);
+			$representationState = $session->getRepresentations()->get($target);
+		}
+		// Preserve the tracked record and its original projection when adding hook fields.
 		if ($representationState instanceof RepresentationState) {
 			$record = $representationState->getSingleRecord();
 			if ($record instanceof RecordState) {

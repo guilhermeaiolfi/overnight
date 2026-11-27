@@ -28,6 +28,7 @@ use ON\RestApi\Mutation\Payload\ToManyExplicitMutation;
 use ON\RestApi\Mutation\Payload\ToManyImplicitMutation;
 use ON\RestApi\Mutation\Payload\ToOneKind;
 use ON\RestApi\Mutation\Payload\ToOneMutation;
+use ON\RestApi\Repository\ItemRepository;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
 use Psr\Http\Message\UploadedFileInterface;
@@ -36,7 +37,7 @@ use stdClass;
 /**
  * Binds Directus-normalized mutations onto ON\Data Session save intents and relation state.
  *
- * Existing rows: writable SelectQuery load into the mutation Session (schema from the query).
+ * Existing rows use a writable SelectQuery or a complete snapshot from the built-in repository.
  * Creates / field overlays: SelectQuery::projection() via MutationSchemaFactory.
  * Membership: ToManyRelationState::full + remove for implicit; Session::remove for deletes.
  *
@@ -57,6 +58,7 @@ final class DirectusMutationBinder
 {
 	private readonly RelationBaselineReader $baselines;
 	private readonly MutationSchemaFactory $schemas;
+	private readonly bool $reusePatchSnapshots;
 
 	/**
 	 * Committed-row snapshot for this coordinator operation.
@@ -77,6 +79,8 @@ final class DirectusMutationBinder
 		DataRuntime|MutationSchemaFactory $runtimeOrSchemas,
 		SessionFactory|RelationBaselineReader $sessionsOrBaselines,
 	) {
+		$this->reusePatchSnapshots = $items::class === ItemRepository::class
+			&& $runtimeOrSchemas instanceof DataRuntime;
 		$this->schemas = $runtimeOrSchemas instanceof MutationSchemaFactory
 			? $runtimeOrSchemas
 			: new MutationSchemaFactory($runtimeOrSchemas, $items);
@@ -113,6 +117,7 @@ final class DirectusMutationBinder
 		return array_replace($values, $typed);
 	}
 
+	/** Set $singleRoot only when this is the sole root in a new mutation Session. */
 	public function bindCreate(
 		Session $session,
 		CollectionInterface $collection,
@@ -124,6 +129,7 @@ final class DirectusMutationBinder
 		return $this->bindRoot($session, $collection, $mutation, 'create', null, $state, $valuesArePhp, $singleRoot);
 	}
 
+	/** Set $singleRoot only when this is the sole root in a new mutation Session. */
 	public function bindUpdate(
 		Session $session,
 		CollectionInterface $collection,
@@ -230,14 +236,16 @@ final class DirectusMutationBinder
 				throw RestApiError::notFound();
 			}
 
-			if ($scalarWrite && array_diff_key($values, $previous) === []) {
-				$baseline = $identity->getValues() + array_intersect_key($previous, $values);
+			$keyFields = $identity->getValues();
+			if ($scalarWrite && $this->reusePatchSnapshots && array_diff_key($values + $keyFields, $previous) === []) {
+				$key = $collection->getKey(array_intersect_key($previous, $keyFields));
+				$baseline = $key->getValues() + array_intersect_key($previous, $values);
 				$representation = (object) $baseline;
 				$schema = $this->schemas->projectFields($collection, array_keys($baseline));
 
 				// A clean baseline keeps unchanged attributes out of the pending PATCH.
-				$session->identify($collection, $identity, $representation, $schema);
-				$session->update($representation, $schema)->identity($identity);
+				$session->identify($collection, $key, $representation, $schema);
+				$session->update($representation, $schema)->identity($key);
 			} else {
 				$representation = $this->schemas->loadWritable($session, $collection, $identity, $fieldNames);
 			}

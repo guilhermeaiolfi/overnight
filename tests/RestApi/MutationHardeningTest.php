@@ -4,11 +4,15 @@ declare(strict_types=1);
 
 namespace Tests\ON\RestApi;
 
+use ON\Data\Database\QueryExecutorInterface;
+use ON\Data\Database\Sql\SqlQueryExecutor;
+use ON\Data\DataRuntime;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Key;
 use ON\Data\ORM\Exception\SyncException;
 use ON\Data\Query\SelectQuery;
+use ON\DataIntegration\Container\DataRuntimeFactory;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -24,6 +28,7 @@ use ON\RestApi\Repository\ItemRepositoryInterface;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
+use Tests\ON\RestApi\Support\DelegatingRecordingCommandExecutor;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
 
 #[RequiresPhpExtension('pdo_sqlite')]
@@ -42,14 +47,84 @@ final class MutationHardeningTest extends TestCase
 			BEGIN INSERT INTO post_updates (post_id) VALUES (NEW.id); END');
 
 		$runtime = $this->createDataRuntime($database);
-		$items = new class ($registry, $runtime, $connection) extends ItemRepository {
-			public int $selections = 0;
+		$executor = new SqlQueryExecutor(DataRuntimeFactory::connectionFromCycleDatabase($connection), $runtime->getGateway());
+		$queries = new class ($executor) implements QueryExecutorInterface {
+			public int $reads = 0;
 
+			public function __construct(private readonly QueryExecutorInterface $inner)
+			{
+			}
+
+			public function fetchAll(SelectQuery $query): array
+			{
+				++$this->reads;
+
+				return $this->inner->fetchAll($query);
+			}
+
+			public function fetchOne(SelectQuery $query): ?array
+			{
+				++$this->reads;
+
+				return $this->inner->fetchOne($query);
+			}
+
+			public function iterate(SelectQuery $query): iterable
+			{
+				++$this->reads;
+
+				return $this->inner->iterate($query);
+			}
+		};
+		$commands = new DelegatingRecordingCommandExecutor($runtime->getCommandExecutor());
+		$runtime = new DataRuntime($queries, $commands, $runtime->getGateway());
+		$items = new ItemRepository($registry, $runtime, $connection);
+		$sessions = new SessionFactory($runtime);
+		$coordinator = new MutationCoordinator(
+			$sessions,
+			new DirectusMutationBinder($items, $runtime, $sessions),
+			new DirectusPayloadParser(),
+			$items,
+			$this->noopHookDispatcher($registry),
+			$runtime,
+		);
+		$post = $registry->getCollection('post');
+		$before = $items->findByIdentity($post, '1');
+		$queries->reads = 0;
+
+		$unchanged = $coordinator->update($post, '1', ['title' => $before['title']], dispatchEvents: false);
+		$this->assertSame($before['title'], $unchanged['title']);
+		$this->assertSame(0, $this->countRows($database, 'post_updates'));
+		$this->assertSame(2, $queries->reads, 'The previous row and the response require one read each.');
+
+		RestHooks::for($post)->on('update.before', static function (ItemUpdating $event): void {
+			$event->getState()->setValue('title', 'Edited by hook');
+		});
+		$queries->reads = 0;
+		$updated = $coordinator->update($post, '1', ['content' => null]);
+		$this->assertSame('Edited by hook', $updated['title']);
+		$this->assertNull($updated['content']);
+		$this->assertSame($before['status'], $updated['status']);
+		$this->assertSame(1, $this->countRows($database, 'post_updates'));
+		$this->assertSame(2, $queries->reads);
+		$this->assertSame(['id' => 1], $commands->getUpdateCommandsFor('post')[0]->getIdentity());
+	}
+
+	public function testScalarPatchHonorsTheCustomRepositoryWritableScope(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$database = $this->createFullDatabase();
+		$runtime = $this->createDataRuntime($database);
+		$items = new class ($registry, $runtime, $database->database()) extends ItemRepository {
 			public function select(CollectionInterface|string $collection, array $fieldNames = []): SelectQuery
 			{
-				$this->selections++;
+				$query = parent::select($collection, $fieldNames);
+				if ($fieldNames === ['id', 'title']) {
+					$query->where($query->field('id')->eq(-1));
+				}
 
-				return parent::select($collection, $fieldNames);
+				return $query;
 			}
 		};
 		$sessions = new SessionFactory($runtime);
@@ -63,23 +138,15 @@ final class MutationHardeningTest extends TestCase
 		);
 		$post = $registry->getCollection('post');
 		$before = $items->findByIdentity($post, '1');
-		$items->selections = 0;
+		$this->assertNotNull($before);
 
-		$unchanged = $coordinator->update($post, '1', ['title' => $before['title']], dispatchEvents: false);
-		$this->assertSame($before['title'], $unchanged['title']);
-		$this->assertSame(0, $this->countRows($database, 'post_updates'));
-		$this->assertSame(2, $items->selections, 'The previous row and the response require one read each.');
-
-		RestHooks::for($post)->on('update.before', static function (ItemUpdating $event): void {
-			$event->getState()->setValue('title', 'Edited by hook');
-		});
-		$items->selections = 0;
-		$updated = $coordinator->update($post, '1', ['content' => null]);
-		$this->assertSame('Edited by hook', $updated['title']);
-		$this->assertNull($updated['content']);
-		$this->assertSame($before['status'], $updated['status']);
-		$this->assertSame(1, $this->countRows($database, 'post_updates'));
-		$this->assertSame(2, $items->selections);
+		try {
+			$coordinator->update($post, '1', ['title' => 'Denied edit'], dispatchEvents: false);
+			$this->fail('The writable projection is scoped out.');
+		} catch (RestApiError $error) {
+			$this->assertSame('NOT_FOUND', $error->getErrorCode());
+			$this->assertSame($before['title'], $items->findByIdentity($post, '1')['title']);
+		}
 	}
 
 	public function testConflictingPatchesToTheSameRowStillAbortTheBatch(): void
