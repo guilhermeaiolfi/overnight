@@ -10,6 +10,7 @@ use ON\Data\Definition\Field\FieldInterface;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\RelationInterface;
 use ON\Data\Query\Condition\ConditionInterface;
+use ON\Data\Query\Exception\RelationSelectionException;
 use ON\Data\Query\Expression\ValueExpressionInterface;
 use ON\Data\Query\QueryFunction\Standard\Temporal\DateValue;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Day;
@@ -252,14 +253,16 @@ final class DirectusQueryParser implements QueryParserInterface
 		$relation = $collection->relations->get($relationName);
 		$targetCollection = $relation->getCollection();
 
-		$relationPath = $this->joinScope($scope, $relationName);
-		if ($responseName !== $relationName) {
-			$context->setRelationResponseName($relationPath, $responseName);
+		$alias = $responseName === $relationName ? null : $responseName;
+		if ($alias !== null) {
+			$context->markNativeRelationAlias($this->joinScope($scope, $relationName), $alias);
 		}
 
-		$rel = $parentRelation === null
-			? $query->relation($relationName)
-			: $parentRelation->relation($relationName);
+		try {
+			$rel = ($parentRelation ?? $query)->relation($relationName, $alias);
+		} catch (RelationSelectionException $exception) {
+			throw DirectusParameterParser::invalidParameter('alias', $exception->getMessage());
+		}
 
 		$relationDeep = $deep[$responseName] ?? [];
 		$childScope = $this->joinScope($scope, $responseName);

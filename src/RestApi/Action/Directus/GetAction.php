@@ -10,7 +10,6 @@ use ON\Data\Definition\Registry;
 use ON\Data\Key;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
-use ON\Data\Mapper\Representation\RepresentationInterface;
 use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
 use ON\RestApi\Action\RestActionInterface;
@@ -55,43 +54,37 @@ final class GetAction implements RestActionInterface
 		$this->applyIdentity($query, $collection, $identity);
 		$query->limit(1);
 
-		if (! $options['dispatchEvents']) {
-			$item = $this->mapRowOutput(
-				$collection,
-				$query->fetchOne(),
-				PhpRepresentation::class,
-				$options['output'],
-			);
-		} else {
+		$output = $options['output'];
+		$manualResult = false;
+		if ($options['dispatchEvents']) {
 			$event = new ItemGet($collection, $identity, $query, $context, $options);
 			$this->hooks->dispatch($collection, 'get', $event);
 			$query = $event->getQuery();
 			$context = $event->getContext();
 			$responseOptions = $event->getOptions() + ['output' => PhpRepresentation::class];
-
-			if ($event->isDefaultPrevented()) {
-				$item = $this->mapRowOutput(
-					$collection,
-					$event->getResult(),
-					PhpRepresentation::class,
-					$responseOptions['output'],
-				);
-			} else {
+			$output = $responseOptions['output'];
+			$manualResult = $event->isDefaultPrevented();
+			if (! $manualResult) {
 				$event->setResult($query->fetchOne());
-				$item = $this->mapRowOutput(
-					$collection,
-					$event->getResult(),
-					PhpRepresentation::class,
-					$responseOptions['output'],
-				);
 			}
+			$item = $event->getResult();
+		} else {
+			$item = $query->fetchOne();
 		}
 
 		if ($item === null) {
 			throw RestApiError::notFound();
 		}
 
-		return ['data' => RelationAliases::apply($item, $context->getRelationResponseNames())];
+		if ($context->hasNativeRelationAliases() && ! $manualResult) {
+			$item = RelationAliases::mapNative($item, $query->getFetchSchema(), $output);
+		}
+		$item = map($item)->args($collection)->from(PhpRepresentation::class)->as($output)->to([]);
+		if (! $context->hasNativeRelationAliases() || $manualResult) {
+			$item = RelationAliases::apply($item, $context->getRelationResponseNames());
+		}
+
+		return ['data' => $item];
 	}
 
 	private function applyIdentity(
@@ -102,27 +95,6 @@ final class GetAction implements RestActionInterface
 		foreach (PrimaryKey::of($collection)->getFields() as $field) {
 			$query->where(x()->eq($query->field($field->getName()), $identity->getFieldValue($field->getName())));
 		}
-	}
-
-	/**
-	 * @param class-string<RepresentationInterface> $from
-	 * @param class-string<RepresentationInterface> $to
-	 */
-	private function mapRowOutput(
-		CollectionInterface $collection,
-		?array $row,
-		string $from,
-		string $to,
-	): ?array {
-		if ($row === null) {
-			return null;
-		}
-
-		return map($row)
-			->args($collection)
-			->from($from)
-			->as($to)
-			->to([]);
 	}
 
 	private function createContext(): QueryContext

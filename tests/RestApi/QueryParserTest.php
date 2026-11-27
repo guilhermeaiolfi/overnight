@@ -40,8 +40,9 @@ final class QueryParserTest extends TestCase
 			],
 		], $context);
 
-		$this->assertSame('published_posts', $context->getRelationResponseNames()['posts'] ?? null);
-		$posts = $query->relation('posts');
+		$this->assertTrue($context->hasNativeRelationAliases());
+		$posts = $query->relation('posts', as: 'published_posts');
+		$this->assertSame(['published_posts'], $posts->getPath());
 		$this->assertTrue($posts->isSelected());
 		$this->assertNotEmpty($posts->getConditions());
 		$condition = $posts->getConditions()[0];
@@ -135,9 +136,9 @@ final class QueryParserTest extends TestCase
 		], $context);
 
 		$posts = $query->relation('posts');
-		$comments = $posts->relation('comments');
+		$comments = $posts->relation('comments', as: 'published_comments');
 		$this->assertTrue($comments->isSelected());
-		$this->assertSame('published_comments', $context->getRelationResponseNames()['posts.comments'] ?? null);
+		$this->assertSame(['posts', 'published_comments'], $comments->getPath());
 		$this->assertNotEmpty($comments->getConditions());
 	}
 

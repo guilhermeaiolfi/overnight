@@ -8,6 +8,7 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Mapper\Representation\WireRepresentation;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\RestApiConfig;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
@@ -537,9 +538,31 @@ final class SqlRestResolverTest extends TestCase
 
 	public function testListWithRelationAliasesAndIndependentDeepFilters(): void
 	{
-		$this->markTestSkipped(
-			'Multiple aliases for the same relation path are not supported by ON\\Data RelationRef yet.'
-		);
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$database = $this->createFullDatabase();
+		$users = $registry->getCollection('user');
+		$query = $this->q($users, [
+			'fields' => 'id,published.title,published.created_at,published.replies.body,drafts.title,drafts.created_at,posts.id',
+			'alias' => ['published' => 'posts', 'drafts' => 'posts', 'published.replies' => 'comments'],
+			'deep' => [
+				'published' => ['_filter' => ['status' => ['_eq' => 'published']]],
+				'drafts' => ['_filter' => ['status' => ['_eq' => 'draft']]],
+			],
+			'sort' => 'id',
+		]);
+		$readActions = $this->createDirectusReadActions($registry, $database);
+		$data = $readActions->list($users, $query, WireRepresentation::class)['data'];
+
+		self::assertSame(['PHP Tips'], array_column($data[0]['published'], 'title'));
+		self::assertSame(['Draft Post'], array_column($data[0]['drafts'], 'title'));
+		self::assertSame(['Great tips!', 'Very helpful'], array_column($data[0]['published'][0]['replies'], 'body'));
+		self::assertStringStartsWith('2025-01-10', $data[0]['published'][0]['created_at']);
+		self::assertStringStartsWith('2025-02-11', $data[0]['drafts'][0]['created_at']);
+		self::assertSame(['GraphQL Guide'], array_column($data[1]['published'], 'title'));
+		self::assertSame([], $data[1]['drafts']);
+		self::assertSame([1, 2], array_column($data[0]['posts'], 'id'));
+		self::assertSame($data[0], $readActions->get($users, '1', $query, WireRepresentation::class));
 	}
 
 	public function testListWithMeta(): void

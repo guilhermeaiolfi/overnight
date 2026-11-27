@@ -4,8 +4,45 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use function ON\Data\Mapper\map;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Schema\RepresentationRelationSchema;
+use ON\Data\Schema\RepresentationSchema;
+
 final class RelationAliases
 {
+	/** Convert alias branches whose names the collection mapper treats as unknown keys. */
+	public static function mapNative(array $row, ?RepresentationSchema $schema, string $output): array
+	{
+		if ($schema === null || $output === PhpRepresentation::class) {
+			return $row;
+		}
+
+		foreach ($schema->getRelations() as $relation) {
+			$name = $relation->getPath();
+			if (! is_array($row[$name] ?? null)) {
+				continue;
+			}
+
+			$row[$name] = $relation->isMany()
+				? array_map(static fn (array $child): array => self::mapChild($child, $relation, $output), $row[$name])
+				: self::mapChild($row[$name], $relation, $output);
+		}
+
+		return $row;
+	}
+
+	private static function mapChild(array $row, RepresentationRelationSchema $relation, string $output): array
+	{
+		$relatedSchema = $relation->getRelatedSchema();
+		$row = self::mapNative($row, $relatedSchema, $output);
+		if ($relation->getPath() !== $relation->getRelationName()) {
+			$row = map($row)->args($relatedSchema->getCollection())->from(PhpRepresentation::class)->as($output)->to([]);
+		}
+
+		return $row;
+	}
+
 	/**
 	 * @param array<string, string> $aliases
 	 */
