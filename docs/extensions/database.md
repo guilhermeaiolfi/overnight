@@ -326,6 +326,61 @@ $usersDb = $manager->getDatabase('users');
 $connection = $manager->getDatabaseConnection();
 ```
 
+### Long-running workers
+
+Overnight scopes managed database instances per outer HTTP dispatch, including
+successive requests in the same coroutine and sequential requests outside a
+coroutine. `DatabaseManager` creates each named instance on first lookup and
+caches it in `ON\DB\DatabaseStoreInterface`. `DatabaseScopeMiddleware` runs each
+outer dispatch through `DatabaseStoreInterface::scoped()`, which isolates the
+dispatch from any pre-existing startup instances, lets nested dispatches and
+forwards in the same execution context reuse the active scope, and closes only
+the instances opened during that dispatch in `finally`. Outside HTTP (such as
+queue workers or loops), call `$manager->close()` to release the current scope
+explicitly.
+
+Both built-in databases implement `ClosableDatabaseInterface`:
+
+- `CycleDatabase::close()` clears the ORM identity map and disconnects the
+  connected DBAL drivers.
+- `PdoDatabase::close()` drops the wrapper's references to the PDO handle and,
+  for dedicated (non-persistent) connections, rolls back any uncommitted
+  transaction left open on the underlying PDO handle (including when wrapped by
+  a custom `wrapper_class`). Persistent PDO handles share underlying
+  connections across handles in the same PHP process and are therefore not
+  rolled back on close; avoid `persistent => true` when isolating concurrent
+  Swoole coroutines.
+
+Custom `DatabaseInterface` implementations remain backward-compatible without
+implementing `ClosableDatabaseInterface`; their references are dropped when the
+scope closes, and they can opt into deterministic teardown by implementing
+`ClosableDatabaseInterface`.
+
+The default `ON\Swoole\SwooleDatabaseStore` keeps one `ON\DB\DatabaseStore` per
+active Swoole coroutine and closes it via `Coroutine::defer()` when the
+coroutine exits. Outside a coroutine, it uses a single fallback store.
+Container-managed `DatabaseManager` instances share the container's
+`DatabaseStoreInterface`; for another runtime, override
+`ON\DB\DatabaseStoreInterface` via container services, factories, or aliases
+(single-request-at-a-time workers can bind `ON\DB\DatabaseStore` directly). A
+database factory must return a fresh instance for each lookup after a scope
+closes.
+
+Resolve the database through `DatabaseManager` where it is used. A service that
+stores a database, PDO handle, ORM, or query runtime can carry it across
+requests. This includes the container's ON Data `DataRuntime` and the REST
+services that hold it or a Cycle DBAL database, as well as GraphQL resolvers
+built at startup. Their database access requires separate scoping.
+
+The regression tests use simulated coroutine IDs and an alternative runtime
+store with real SQLite connections and Cycle heaps. They cover overlapping
+dispatches, forwarding, nested dispatches and redispatched requests, startup
+instance preservation, exception cleanup, dedicated and persistent PDO teardown,
+custom `wrapper_class` rollback, driver disconnect, custom closable and
+non-closable databases, factory-bound stores, and successive requests in a
+reused context. Native Swoole scheduling and driver hooks require verification
+under Swoole.
+
 ## Best Practices
 
 1. **Use repositories** - Encapsulate data access logic

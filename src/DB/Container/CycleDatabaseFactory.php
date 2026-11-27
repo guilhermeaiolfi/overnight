@@ -41,13 +41,15 @@ class CycleDatabaseFactory
 		string $name
 	): CycleDatabase {
 		$safeName = $this->sanitizeDatabaseName($name);
-		$this->cacheFile = $this->app->paths->get('cache')->append("cycle.schema.{$safeName}.php")->getAbsolutePath();
+		// PHP-DI shares the factory while concurrent calls can build different schemas.
+		$factory = clone $this;
+		$factory->cacheFile = $this->app->paths->get('cache')->append("cycle.schema.{$safeName}.php")->getAbsolutePath();
 
 		$manager = new CycleDatabase($name, $dbCfg);
 
 		$dbal = $manager->getConnection();
 
-		$schema = $this->readCache($registry, $dbal);
+		$schema = $factory->readCache($registry, $dbal);
 
 		if (isset($schema)) {
 			$manager->setSchema(new Schema($schema));

@@ -19,9 +19,12 @@ use ON\DB\Container\CycleRegistryGeneratorFactory;
 use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
+use ON\DB\Middleware\DatabaseScopeMiddleware;
 use ON\Extension\AbstractExtension;
 use ON\Init\Attribute\On;
 use ON\Init\InitContext;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Swoole\SwooleDatabaseStore;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -33,6 +36,13 @@ class DatabaseExtension extends AbstractExtension
 		$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 		$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
 		$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
+		$event->containerConfig->set('definitions.services.' . DatabaseStoreInterface::class, SwooleDatabaseStore::class);
+	}
+
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
+	{
+		$event->pipeline->pipe(DatabaseScopeMiddleware::class, priority: PHP_INT_MAX);
 	}
 
 	#[On(optional: true)]

@@ -6,17 +6,19 @@ namespace ON\DB\Cycle;
 
 use Cycle\Database\Config\DatabaseConfig as CycleDatabaseConfig;
 use Cycle\Database\DatabaseManager as CycleDatabaseManager;
+use Cycle\Database\Driver\DriverInterface;
 use Cycle\ORM\EntityManager;
 use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
 use Cycle\ORM\Schema;
 use Cycle\Schema\Registry;
+use ON\DB\ClosableDatabaseInterface;
 use ON\DB\DatabaseConfig;
-use ON\DB\DatabaseInterface;
+use ReflectionClass;
 use RuntimeException;
 use function sprintf;
 
-class CycleDatabase implements DatabaseInterface
+class CycleDatabase implements ClosableDatabaseInterface
 {
 	protected $entityManager = null;
 	protected $dbal = null;
@@ -85,6 +87,35 @@ class CycleDatabase implements DatabaseInterface
 	public function cleanHeap(): void
 	{
 		$this->orm?->getHeap()->clean();
+	}
+
+	public function close(): void
+	{
+		$this->cleanHeap();
+
+		if (! $this->dbal instanceof CycleDatabaseManager) {
+			return;
+		}
+
+		foreach ($this->getInitializedDrivers($this->dbal) as $driver) {
+			if ($driver->isConnected()) {
+				$driver->disconnect();
+			}
+		}
+	}
+
+	/** @return iterable<DriverInterface> */
+	private function getInitializedDrivers(CycleDatabaseManager $dbal): iterable
+	{
+		$reflection = new ReflectionClass($dbal);
+		if ($reflection->hasProperty('drivers')) {
+			$drivers = $reflection->getProperty('drivers')->getValue($dbal);
+			if (is_array($drivers)) {
+				return $drivers;
+			}
+		}
+
+		return $dbal->getDrivers();
 	}
 
 	public function getName(): string

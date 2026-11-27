@@ -12,8 +12,6 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 
 class DatabaseManager
 {
-	protected $instances = [];
-
 	protected $eventDispatcher = null;
 
 	/**
@@ -22,6 +20,7 @@ class DatabaseManager
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
+		private DatabaseStoreInterface $store = new DatabaseStore(),
 	) {
 	}
 
@@ -60,13 +59,16 @@ class DatabaseManager
 			}
 		}
 
-		$database = null;
+		return $this->store->get($name) ?? $this->createDatabase($name);
+	}
 
-		// don't creates another one, gets from cache
-		if (isset($this->instances[$name])) {
-			return  $this->instances[$name];
-		}
+	public function close(): void
+	{
+		$this->store->close();
+	}
 
+	private function createDatabase(string $name): DatabaseInterface
+	{
 		$db_config = $this->config->getDatabase($name);
 		$database_class = null;
 		if (isset($db_config["class"])) {
@@ -84,6 +86,8 @@ class DatabaseManager
 			$this->eventDispatcher->dispatch($event);
 		}
 
-		return $this->instances[$name] = $database;
+		$this->store->set($name, $database);
+
+		return $database;
 	}
 }

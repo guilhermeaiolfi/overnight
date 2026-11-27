@@ -7,11 +7,14 @@ namespace ON\DB;
 use Exception;
 use ON\DB\DebugPDO\DebugPDO;
 use PDO;
+use Throwable;
 
-class PdoDatabase implements DatabaseInterface
+class PdoDatabase implements ClosableDatabaseInterface
 {
 	protected $resource;
 	protected $connection;
+	protected ?PDO $rawConnection = null;
+	protected bool $persistent = false;
 
 	public function __construct(
 		protected string $name,
@@ -25,12 +28,13 @@ class PdoDatabase implements DatabaseInterface
 		$options = ! empty($parameters["options"]) ? $parameters["options"] : [];
 
 		// Persistent connections
-		if (! empty($parameters["persistent"])) {
+		if (! empty($parameters["persistent"]) && empty($options[PDO::ATTR_PERSISTENT])) {
 			$options[PDO::ATTR_PERSISTENT] = true;
 		}
+		$this->persistent = ! empty($options[PDO::ATTR_PERSISTENT]);
 
 		try {
-			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
+			$this->rawConnection = $this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
 
 			if (! empty($parameters["wrapper_class"]) && class_exists($parameters["wrapper_class"])) {
 				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
@@ -83,6 +87,15 @@ class PdoDatabase implements DatabaseInterface
 	public function setConnection($connection)
 	{
 		$this->connection = $connection;
+		$this->rawConnection = $connection instanceof PDO ? $connection : null;
+		$this->persistent = false;
+		if ($this->rawConnection !== null) {
+			try {
+				$this->persistent = (bool) $this->rawConnection->getAttribute(PDO::ATTR_PERSISTENT);
+			} catch (Throwable) {
+				$this->persistent = false;
+			}
+		}
 	}
 
 	public function setResource($resource)
@@ -98,5 +111,23 @@ class PdoDatabase implements DatabaseInterface
 	public function setName(string $name): void
 	{
 		$this->name = $name;
+	}
+
+	public function close(): void
+	{
+		$rawConnection = $this->rawConnection;
+		$connection = $this->connection;
+		$this->rawConnection = null;
+		$this->connection = null;
+		$this->resource = null;
+
+		if ($this->persistent) {
+			return;
+		}
+
+		$pdo = $rawConnection ?? ($connection instanceof PDO ? $connection : null);
+		if ($pdo !== null && $pdo->inTransaction()) {
+			$pdo->rollBack();
+		}
 	}
 }
