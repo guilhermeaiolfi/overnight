@@ -9,6 +9,7 @@ use FilesystemIterator;
 use ON\Application;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
+use ON\Runtime\RuntimeInterface;
 use PHPUnit\Framework\Attributes\BackupGlobals;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -169,18 +170,18 @@ final class ApplicationTest extends TestCase
 		]);
 	}
 
-	public function testRunReturnsTheRegisteredRunnerResult(): void
+	public function testRunReturnsTheSoleRegisteredRuntimeResult(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
-			'extensions' => [RunnerExtension::class => []],
+			'extensions' => [RuntimeExtension::class => []],
 			'debug' => true,
 		]);
 
 		$this->assertSame(42, $app->run());
 	}
 
-	public function testRunThrowsWhenNoRunnerIsRegistered(): void
+	public function testRunThrowsWhenNoRuntimeIsRegistered(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
@@ -189,18 +190,18 @@ final class ApplicationTest extends TestCase
 		]);
 
 		$this->expectException(Exception::class);
-		$this->expectExceptionMessage('There is no extension defining the runner.');
+		$this->expectExceptionMessage('There are no runtimes registered on the application.');
 
 		$app->run();
 	}
 
-	public function testDuplicateRunnerRegistrationNamesBothExtensions(): void
+	public function testDuplicateRuntimeRegistrationNamesBothExtensions(): void
 	{
-		$first = RunnerExtension::class;
-		$second = ConflictingRunnerExtension::class;
+		$first = RuntimeExtension::class;
+		$second = ConflictingRuntimeExtension::class;
 		$this->expectException(Exception::class);
 		$this->expectExceptionMessage(
-			"Conflict detected: The runner was registered by multiple extensions: [{$first}, {$second}]. Only one extension can define the runner."
+			"Conflict detected: Runtime \"worker\" was registered by multiple extensions: [{$first}, {$second}]."
 		);
 
 		new Application([
@@ -238,18 +239,19 @@ final class SampleValidExtension extends AbstractExtension
 	public const ID = 'sample_valid';
 }
 
-final class RunnerExtension extends AbstractExtension
+class RuntimeExtension extends AbstractExtension
 {
 	public function register(Init $init): void
 	{
-		$this->app->setRunner(static fn (): int => 42);
+		$this->app->registerRuntime('worker', new class () implements RuntimeInterface {
+			public function run(Application $app): int
+			{
+				return 42;
+			}
+		});
 	}
 }
 
-final class ConflictingRunnerExtension extends AbstractExtension
+final class ConflictingRuntimeExtension extends RuntimeExtension
 {
-	public function register(Init $init): void
-	{
-		$this->app->setRunner(static fn (): int => 1);
-	}
 }

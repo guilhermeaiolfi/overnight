@@ -15,6 +15,7 @@ use ON\Extension\AbstractExtension;
 use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
+use ON\Runtime\ConsoleRuntime;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Application as ConsoleApplication;
 use Symfony\Component\Console\Command\Command;
@@ -45,9 +46,7 @@ class ConsoleExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		if ($this->app->isCli()) {
-			$this->app->setRunner([$this, 'run']);
-		}
+		$this->app->registerRuntime('console', new ConsoleRuntime());
 	}
 
 	public function start(InitContext $context): void
