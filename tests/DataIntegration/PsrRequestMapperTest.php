@@ -6,13 +6,13 @@ namespace Tests\ON\DataIntegration;
 
 use Laminas\Diactoros\ServerRequest;
 use ON\Data\Mapper\ConversionGateway;
+use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Mapping;
+use ON\Data\Mapper\MappingOptions;
 use ON\Data\Mapper\Representation\WireRepresentation;
 use ON\DataIntegration\Mapper\PsrRequestMapper;
 use PHPUnit\Framework\TestCase;
 use stdClass;
-
-use function ON\Data\Mapper\map;
 
 final class PsrRequestMapperTest extends TestCase
 {
@@ -81,7 +81,7 @@ final class PsrRequestMapperTest extends TestCase
 	public function testCanMapRecognizesServerRequest(): void
 	{
 		$request = new ServerRequest();
-		$options = new \ON\Data\Mapper\MappingOptions($this->gateway);
+		$options = new MappingOptions($this->gateway);
 
 		$this->assertTrue(PsrRequestMapper::canMap($request, $options));
 		$this->assertFalse(PsrRequestMapper::canMap(['a' => 1], $options));
