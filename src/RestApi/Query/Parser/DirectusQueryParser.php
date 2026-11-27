@@ -311,8 +311,7 @@ final class DirectusQueryParser implements QueryParserInterface
 			$rel->orderBy(...$sorts);
 		}
 
-		// ON Data's junction loader does not apply per-parent selection pagination.
-		if ($definition->isJunction() || ($pagination === null && ! $definition->getCardinality()->isMany())) {
+		if ($pagination === null && ! $definition->getCardinality()->isMany()) {
 			return;
 		}
 
