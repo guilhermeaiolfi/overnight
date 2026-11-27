@@ -14,9 +14,9 @@ use ON\Data\Key;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\ORM\Record\RecordState;
+use ON\Data\ORM\Record\ValueRef;
 use ON\Data\ORM\Relation\ToManyRelationState;
 use ON\Data\ORM\Relation\ToOneRelationState;
-use ON\Data\ORM\Representation\State\RepresentationState;
 use ON\Data\ORM\Session;
 use ON\Data\Schema\RepresentationSchema;
 use ON\RestApi\Error\RestApiError;
@@ -31,7 +31,6 @@ use ON\RestApi\Mutation\Payload\ToOneMutation;
 use ON\RestApi\Repository\ItemRepositoryInterface;
 use ON\RestApi\Support\PrimaryKey;
 use Psr\Http\Message\UploadedFileInterface;
-use stdClass;
 
 /**
  * Binds Directus-normalized mutations onto ON\Data Session save intents and relation state.
@@ -154,24 +153,14 @@ final class DirectusMutationBinder
 			throw RestApiError::notFound();
 		}
 
-		$representation = $this->schemas->loadWritable($session, $collection, $key);
-		$session->remove($representation);
-		$this->markPendingRemoved($collection, $key);
-
-		if ($state === null) {
-			$state = new BoundItemState($collection, $representation, $previous, $previous, true, identityMutable: false, creating: false);
-		} else {
-			$state->attachRepresentation($representation, $previous, $previous);
-		}
-
-		return new BoundMutation(
-			operation: 'delete',
-			collection: $collection,
-			representation: $representation,
+		return $this->stageRow(
+			$session,
+			$collection,
+			new DirectusMutation([]),
+			'delete',
+			$key,
+			$previous,
 			state: $state,
-			mutation: new DirectusMutation([], [], PayloadPath::root()),
-			identity: $key,
-			rootRecord: $this->requireRecord($session, $representation),
 		);
 	}
 
@@ -184,92 +173,93 @@ final class DirectusMutationBinder
 		?BoundItemState $state,
 		bool $valuesArePhp,
 	): BoundMutation {
-		$values = $mutation->values;
-		if ($operation === 'update') {
-			$values = PrimaryKey::of($collection)->withoutFields($values);
-		}
-		/** @var array<string, mixed>|null $previous */
-		$previous = null;
-		/** @var array<string, string> $fieldPaths */
-		$fieldPaths = [];
-
-		foreach (array_keys($values) as $fieldName) {
-			$name = (string) $fieldName;
-			if (! $collection->hasField($name)) {
-				throw RestApiError::invalidField($name);
+		$primaryKey = PrimaryKey::of($collection);
+		$values = $operation === 'update' ? $primaryKey->withoutFields($mutation->values) : $mutation->values;
+		foreach (array_keys($values) as $field) {
+			if (! $collection->hasField((string) $field)) {
+				throw RestApiError::invalidField((string) $field);
 			}
 		}
-
 		if (! $valuesArePhp) {
 			$values = $this->schemas->toPhpValues($collection, $values);
 		}
 
+		$previous = null;
 		if ($operation === 'create') {
-			$representation = new stdClass();
-			$manualIdentity = PrimaryKey::of($collection)->extractFromInput($values);
-			if ($manualIdentity !== null) {
-				$identity = $this->normalizeKey($collection, $manualIdentity);
-				foreach ($manualIdentity->getValues() as $field => $value) {
-					$representation->{$field} = $value;
-				}
-			}
+			$identity = $primaryKey->extractFromInput($values);
+		} else {
+			$previous = ($identity === null ? null : $this->findRow($collection, $identity))
+				?? throw RestApiError::notFound();
+		}
 
-			foreach ($values as $field => $value) {
-				$name = (string) $field;
-				$representation->{$name} = $value;
-				$fieldPaths[$name] = $name;
-			}
+		$bound = $this->stageRow(
+			$session,
+			$collection,
+			new DirectusMutation($values, $mutation->relations, $mutation->path),
+			$operation,
+			$identity,
+			$previous,
+			state: $state,
+		);
 
-			$fieldNames = array_keys($fieldPaths);
-			if ($identity !== null) {
-				foreach ($identity->getValues() as $field => $_) {
-					$fieldNames[] = (string) $field;
-				}
-			}
-			$map = $this->schemas->projectFields($collection, $fieldNames);
-			$session->create($representation, $map);
+		return $this->bindNested($session, $bound);
+	}
+
+	/**
+	 * Stage the represented row and its hook state independently of membership.
+	 *
+	 * A retained member can supply its tracked key stub for a reference or a delete.
+	 * Scalar patches use a writable projection to keep the clean baseline and the
+	 * Session's conflict checks between different representations of the same row.
+	 *
+	 * @param array<string, mixed>|null $previous
+	 * @param array<string, mixed> $submittedValues
+	 * @param array<string, ValueRef> $parentKeys
+	 */
+	private function stageRow(
+		Session $session,
+		CollectionInterface $collection,
+		DirectusMutation $mutation,
+		string $operation,
+		?Key $identity,
+		?array $previous,
+		?object $representation = null,
+		?BoundItemState $state = null,
+		array $submittedValues = [],
+		array $parentKeys = [],
+	): BoundMutation {
+		$creating = $operation === 'create';
+		$deleting = $operation === 'delete';
+		$fields = array_map('strval', array_keys($mutation->values));
+		$fieldPaths = array_combine($fields, $fields);
+
+		if ($creating) {
+			$seed = $mutation->values + ($identity?->getValues() ?? []);
+			$representation = (object) $seed;
+			$session->create($representation, $this->schemas->projectFields($collection, array_keys($seed)));
 			$session->sync($representation);
 		} else {
-			if ($identity === null) {
-				throw RestApiError::notFound();
-			}
-			$previous = $this->findRow($collection, $identity);
-			if ($previous === null) {
-				throw RestApiError::notFound();
-			}
-
-			$loadFields = [];
-			foreach (array_keys($values) as $fieldName) {
-				$name = (string) $fieldName;
-				$loadFields[] = $name;
-				$fieldPaths[$name] = $name;
-			}
-
-			$representation = $this->schemas->loadWritable($session, $collection, $identity, $loadFields);
-			foreach ($values as $field => $value) {
-				$representation->{(string) $field} = $value;
+			assert($identity !== null);
+			$representation ??= $this->schemas->loadWritable($session, $collection, $identity, $deleting ? null : $fields);
+			if ($deleting) {
+				$session->remove($representation);
+				$this->pendingRemovedIdentities[$this->identityCacheKey($collection, $identity)] = true;
 			}
 		}
 
-		$ownerRecord = $this->requireRecord($session, $representation);
-		$related = $this->bindRelations(
-			$session,
-			$representation,
-			$ownerRecord,
-			$mutation->relations,
-		);
-
+		$values = $deleting ? $previous : $mutation->values;
+		assert($values !== null);
 		if ($state === null) {
 			$state = new BoundItemState(
 				$collection,
 				$representation,
 				$values,
 				$previous,
-				$operation === 'update',
+				! $creating,
 				$mutation->path,
 				$fieldPaths,
-				identityMutable: $operation === 'create',
-				creating: $operation === 'create',
+				identityMutable: $creating,
+				creating: $creating,
 			);
 		} else {
 			$state->attachRepresentation($representation, $values, $previous, $fieldPaths);
@@ -283,9 +273,18 @@ final class DirectusMutationBinder
 			mutation: $mutation,
 			identity: $identity,
 			path: $mutation->path,
-			related: $related,
-			rootRecord: $ownerRecord,
+			rootRecord: $this->requireRecord($session, $representation),
+			submittedValues: $submittedValues,
+			parentKeys: $parentKeys,
 		);
+	}
+
+	private function bindNested(Session $session, BoundMutation $bound): BoundMutation
+	{
+		assert($bound->rootRecord !== null);
+		$bound->related = $this->bindRelations($session, $bound->rootRecord, $bound->mutation->relations);
+
+		return $bound;
 	}
 
 	/**
@@ -294,18 +293,22 @@ final class DirectusMutationBinder
 	 */
 	private function bindRelations(
 		Session $session,
-		object $ownerRepresentation,
 		RecordState $ownerRecord,
 		array $relations,
 	): array {
 		$bound = [];
-		foreach ($relations as $relationMutation) {
-			foreach ($this->bindRelationMutation(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relationMutation,
-			) as $child) {
+		foreach ($relations as $mutation) {
+			if ($mutation->relation()->getCollection()->isHidden()) {
+				throw RestApiError::invalidField($mutation->path()->toString());
+			}
+
+			$children = match (true) {
+				$mutation instanceof ToOneMutation => $this->bindToOne($session, $ownerRecord, $mutation),
+				$mutation instanceof ToManyImplicitMutation => $this->bindToManyImplicit($session, $ownerRecord, $mutation),
+				$mutation instanceof ToManyExplicitMutation => $this->bindToManyExplicit($session, $ownerRecord, $mutation),
+				default => [],
+			};
+			foreach ($children as $child) {
 				$bound[] = $child;
 			}
 		}
@@ -313,282 +316,119 @@ final class DirectusMutationBinder
 		return $bound;
 	}
 
-	/**
-	 * @return list<BoundMutation>
-	 */
-	private function bindRelationMutation(
-		Session $session,
-		object $ownerRepresentation,
-		RecordState $ownerRecord,
-		RelationMutation $relationMutation,
-	): array {
-		if ($relationMutation->relation()->getCollection()->isHidden()) {
-			throw RestApiError::invalidField($relationMutation->path()->toString());
-		}
-
-		return match (true) {
-			$relationMutation instanceof ToOneMutation => array_values(array_filter([
-				$this->bindToOne(
-					$session,
-					$ownerRepresentation,
-					$ownerRecord,
-					$relationMutation,
-				),
-			])),
-			$relationMutation instanceof ToManyImplicitMutation => $this->bindToManyImplicit(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relationMutation,
-			),
-			$relationMutation instanceof ToManyExplicitMutation => $this->bindToManyExplicit(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relationMutation,
-			),
-			default => [],
-		};
-	}
-
-	private function bindToOne(
-		Session $session,
-		object $ownerRepresentation,
-		RecordState $ownerRecord,
-		ToOneMutation $mutation,
-	): ?BoundMutation {
+	/** @return list<BoundMutation> */
+	private function bindToOne(Session $session, RecordState $ownerRecord, ToOneMutation $mutation): array
+	{
 		$mutation->assertValid();
 		$relation = $mutation->relation();
-
 		if ($mutation->kind === ToOneKind::Clear) {
-			$this->clearToOne($session, $ownerRecord, $relation);
+			$this->setToOne($session, $ownerRecord, $relation, null);
 
-			return null;
+			return [];
 		}
 
-		if ($mutation->kind === ToOneKind::Existing && $mutation->item === null && $mutation->identity !== null) {
-			$this->requireRelatedExists(
-				$relation->getCollection(),
-				$mutation->identity,
-				$mutation->path(),
-				$relation->getName(),
-				'assign',
+		if ($mutation->item !== null) {
+			return [$this->bindAndLink($session, $ownerRecord, $relation, $mutation->item)];
+		}
+
+		if ($mutation->identity !== null) {
+			$this->requireRelatedExists($relation, $mutation->identity, $mutation->path(), 'assign');
+			$this->setToOne(
+				$session,
+				$ownerRecord,
+				$relation,
+				$session->identify($relation->getCollection(), $mutation->identity),
 			);
-			$this->assignToOneIdentity($session, $ownerRecord, $relation, $mutation->identity);
-
-			return null;
 		}
 
-		$item = $mutation->item;
-		if ($item === null) {
-			return null;
-		}
-
-		return $this->bindRelatedItem(
-			$session,
-			$ownerRepresentation,
-			$ownerRecord,
-			$relation,
-			$item,
-			cardinality: RelationCardinality::SINGLE,
-		);
+		return [];
 	}
 
-	private function clearToOne(
+	private function setToOne(
 		Session $session,
 		RecordState $ownerRecord,
 		RelationInterface $relation,
+		?object $target,
 	): void {
 		$relationName = $relation->getName();
-		$targetCollection = $relation->getCollection();
-		$session->getRelations()->remove($ownerRecord, $relationName);
-
-		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
+		$relations = $session->getRelations();
+		$relations->remove($ownerRecord, $relationName);
 		$toOne = new ToOneRelationState(
 			$ownerRecord,
 			$relationName,
-			new RepresentationSchema($targetCollection),
-			$baseline,
+			new RepresentationSchema($relation->getCollection()),
+			$this->baselines->loadToOneIdentity($session, $ownerRecord, $relation),
 		);
-		$session->getRelations()->add($toOne);
-		$toOne->clear();
-	}
-
-	private function assignToOneIdentity(
-		Session $session,
-		RecordState $ownerRecord,
-		RelationInterface $relation,
-		Key $identity,
-	): void {
-		$relationName = $relation->getName();
-		$targetCollection = $relation->getCollection();
-		$session->getRelations()->remove($ownerRecord, $relationName);
-
-		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
-		$target = $session->identify($targetCollection, $identity);
-		$toOne = new ToOneRelationState(
-			$ownerRecord,
-			$relationName,
-			new RepresentationSchema($targetCollection),
-			$baseline,
-		);
-		$session->getRelations()->add($toOne);
+		$relations->add($toOne);
 		$toOne->set($target);
 	}
 
-	/**
-	 * @return list<BoundMutation>
-	 */
+	/** @return list<BoundMutation> */
 	private function bindToManyImplicit(
 		Session $session,
-		object $ownerRepresentation,
 		RecordState $ownerRecord,
 		ToManyImplicitMutation $mutation,
 	): array {
 		$relation = $mutation->relation();
 		$relationName = $relation->getName();
-		$targetCollection = $relation->getCollection();
-		$relatedSchema = new RepresentationSchema($targetCollection);
-
+		$collection = $relation->getCollection();
 		$baseline = $this->baselines->loadToMany($session, $ownerRecord, $relation);
-		$session->getRelations()->remove($ownerRecord, $relationName);
-		$toMany = ToManyRelationState::full($ownerRecord, $relationName, $relatedSchema, $baseline->items());
-		$session->getRelations()->add($toMany);
+		$relations = $session->getRelations();
+		$relations->remove($ownerRecord, $relationName);
+		$toMany = ToManyRelationState::full($ownerRecord, $relationName, new RepresentationSchema($collection), $baseline->items());
+		$relations->add($toMany);
 
-		$desired = [];
 		$bound = [];
-		$exclusiveDeleteIndex = 0;
-
+		$omitted = $baseline->itemsByNormalizedKey;
 		foreach ($mutation->items as $item) {
-			$reused = null;
-			if (! $item->isNew() && $item->identity !== null) {
-				$reused = $baseline->find($item->identity);
-			}
-
-			if ($reused !== null) {
-				$childBound = $this->bindExistingRelatedObject(
-					$session,
-					$reused,
-					$targetCollection,
-					$item,
-				);
-				$desired[spl_object_id($reused)] = $reused;
-				$bound[] = $childBound;
+			$identity = $item->identity;
+			$retained = $item->forceNew || $identity === null ? null : $baseline->find($identity);
+			if ($retained === null) {
+				$bound[] = $this->bindAndLink($session, $ownerRecord, $relation, $item, $toMany);
 
 				continue;
 			}
 
-			$childBound = $this->bindRelatedItem(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relation,
-				$item,
-				cardinality: RelationCardinality::MANY,
-				toMany: $toMany,
-			);
-			$bound[] = $childBound;
-			$desired[spl_object_id($childBound->representation)] = $childBound->representation;
+			assert($identity !== null);
+			unset($omitted[$identity->getHash()]);
+			$child = $this->stageRelatedItem($session, $relation, $item, retained: $retained);
+			$bound[] = $this->bindNested($session, $child);
 		}
 
-		$desiredKeys = [];
-		foreach ($desired as $object) {
-			$key = $this->recordFor($session, $object)?->getKey();
-			if ($key !== null) {
-				$desiredKeys[$key->getHash()] = true;
-			}
-		}
-
-		foreach ($baseline->items() as $existing) {
-			$key = $this->recordFor($session, $existing)?->getKey();
-			if (isset($desired[spl_object_id($existing)]) || ($key !== null && isset($desiredKeys[$key->getHash()]))) {
-				continue;
-			}
-
+		$deleteIndex = 0;
+		foreach ($omitted as $hash => $existing) {
 			$toMany->remove($existing);
+			if (! $relation->isExclusive()) {
+				continue;
+			}
 
-			if ($relation->isExclusive()) {
-				$deleteBound = $this->bindExclusiveImplicitRemoval(
+			$key = $baseline->keysByHash[$hash];
+			$previous = $this->findRow($collection, $key);
+			if ($previous !== null) {
+				$path = $mutation->path()->append('delete')->append($deleteIndex++);
+				$bound[] = $this->stageRow(
 					$session,
-					$existing,
-					$targetCollection,
-					$mutation->path()->append('delete')->append($exclusiveDeleteIndex),
+					$collection,
+					new DirectusMutation([], path: $path),
+					'delete',
+					$key,
+					$previous,
+					representation: $existing,
 				);
-				if ($deleteBound !== null) {
-					$bound[] = $deleteBound;
-					++$exclusiveDeleteIndex;
-				}
 			}
 		}
 
 		return $bound;
 	}
 
-	/**
-	 * Delete an omitted exclusive has-many member using the baseline representation
-	 * already tracked in the Session, so RestApi delete hooks still fire.
-	 *
-	 * Baseline identities from {@see RelationBaselineReader} are PK stubs; reload the
-	 * full row so delete.after hooks (e.g. file cleanup) still see fields like file_id.
-	 */
-	private function bindExclusiveImplicitRemoval(
-		Session $session,
-		object $existing,
-		CollectionInterface $collection,
-		PayloadPath $path,
-	): ?BoundMutation {
-		$record = $this->recordFor($session, $existing);
-		if (! $record instanceof RecordState || ! $record->hasKey()) {
-			return null;
-		}
-
-		$key = $record->getKey();
-		if ($key === null) {
-			return null;
-		}
-
-		$previous = $this->findRow($collection, $key);
-		if ($previous === null) {
-			return null;
-		}
-
-		foreach ($previous as $field => $value) {
-			$existing->{$field} = $value;
-		}
-
-		$session->remove($existing);
-		$this->markPendingRemoved($collection, $key);
-
-		return new BoundMutation(
-			operation: 'delete',
-			collection: $collection,
-			representation: $existing,
-			state: new BoundItemState(
-				$collection,
-				$existing,
-				$previous,
-				$previous,
-				true,
-				$path,
-				identityMutable: false,
-				creating: false,
-			),
-			mutation: new DirectusMutation([], [], $path),
-			identity: $key,
-			path: $path,
-		);
-	}
-
-	/**
-	 * @return list<BoundMutation>
-	 */
+	/** @return list<BoundMutation> */
 	private function bindToManyExplicit(
 		Session $session,
-		object $ownerRepresentation,
 		RecordState $ownerRecord,
 		ToManyExplicitMutation $mutation,
 	): array {
 		$relation = $mutation->relation();
+		$collection = $relation->getCollection();
 		$baseline = $this->baselines->loadToMany($session, $ownerRecord, $relation);
 		$bound = [];
 
@@ -596,397 +436,93 @@ final class DirectusMutationBinder
 			$ownerRecord,
 			$relation->getName(),
 			RelationCardinality::MANY,
-			new RepresentationSchema($relation->getCollection()),
+			new RepresentationSchema($collection),
 		);
 		assert($toMany instanceof ToManyRelationState);
 
 		foreach ($mutation->create as $item) {
-			$bound[] = $this->bindRelatedItem(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relation,
-				$item,
-				cardinality: RelationCardinality::MANY,
-				toMany: $toMany,
-			);
+			$bound[] = $this->bindAndLink($session, $ownerRecord, $relation, $item, $toMany);
 		}
 
 		foreach ($mutation->update as $item) {
-			$this->assertInRelationScope(
-				$baseline,
-				$item->identity,
-				$relation,
-				$item->path,
-				'update',
-			);
-			$bound[] = $this->bindRelatedItem(
-				$session,
-				$ownerRepresentation,
-				$ownerRecord,
-				$relation,
-				$item,
-				cardinality: RelationCardinality::MANY,
-				toMany: $toMany,
-				requireExists: true,
-				existenceOperation: 'update',
-				linkRelation: false,
-			);
+			$this->assertInRelationScope($baseline, $item->identity, $relation, $item->path, 'update');
+			$child = $this->stageRelatedItem($session, $relation, $item, allowUpsert: false);
+			$bound[] = $this->bindNested($session, $child);
 		}
 
 		foreach ($mutation->delete as $index => $key) {
-			$deletePath = $mutation->path()->append('delete')->append((int) $index);
-			$this->assertInRelationScope(
-				$baseline,
-				$key,
-				$relation,
-				$deletePath,
-				'delete',
-			);
-			$bound[] = $this->bindExplicitDelete(
-				$session,
-				$relation->getCollection(),
-				$key,
-				$deletePath,
-				$relation->getName(),
-			);
+			$path = $mutation->path()->append('delete')->append((int) $index);
+			$this->assertInRelationScope($baseline, $key, $relation, $path, 'delete');
+			$previous = $this->requireRelatedExists($relation, $key, $path, 'delete');
+			$bound[] = $this->stageRow($session, $collection, new DirectusMutation([], path: $path), 'delete', $key, $previous);
 		}
 
 		return $bound;
 	}
 
-	private function bindExplicitDelete(
+	private function bindAndLink(
 		Session $session,
-		CollectionInterface $collection,
-		Key $key,
-		PayloadPath $path,
-		string $relationName,
-	): BoundMutation {
-		$previous = $this->requireRelatedExists(
-			$collection,
-			$key,
-			$path,
-			$relationName,
-			'delete',
-		);
-
-		$representation = $this->schemas->loadWritable($session, $collection, $key);
-		$session->remove($representation);
-		$this->markPendingRemoved($collection, $key);
-
-		return new BoundMutation(
-			operation: 'delete',
-			collection: $collection,
-			representation: $representation,
-			state: new BoundItemState(
-				$collection,
-				$representation,
-				$previous,
-				$previous,
-				true,
-				$path,
-				identityMutable: false,
-				creating: false,
-			),
-			mutation: new DirectusMutation([], [], $path),
-			identity: $key,
-			path: $path,
-		);
-	}
-
-	private function bindRelatedItem(
-		Session $session,
-		object $ownerRepresentation,
 		RecordState $ownerRecord,
 		RelationInterface $relation,
 		RelatedItemInput $item,
-		RelationCardinality $cardinality,
 		?ToManyRelationState $toMany = null,
-		bool $requireExists = true,
-		string $existenceOperation = 'reference',
-		bool $linkRelation = true,
+	): BoundMutation {
+		$parentKeys = [];
+		if ($relation instanceof HasManyRelation || $relation instanceof HasOneRelation) {
+			foreach ($relation->getKeyPairing()->getPairs() as $pair) {
+				$parentKeys[$pair['right']] = $ownerRecord->getValueRef($pair['left']);
+			}
+		}
+
+		$child = $this->stageRelatedItem($session, $relation, $item, parentKeys: $parentKeys);
+		if ($toMany === null) {
+			$this->setToOne($session, $ownerRecord, $relation, $child->representation);
+		} else {
+			$toMany->add($child->representation);
+		}
+
+		return $this->bindNested($session, $child);
+	}
+
+	/** @param array<string, ValueRef> $parentKeys */
+	private function stageRelatedItem(
+		Session $session,
+		RelationInterface $relation,
+		RelatedItemInput $item,
+		?object $retained = null,
+		bool $allowUpsert = true,
+		array $parentKeys = [],
 	): BoundMutation {
 		$collection = $relation->getCollection();
-		$relationName = $relation->getName();
-		/** @var array<string, mixed>|null $previous */
+		$values = $this->schemas->toPhpValues($collection, $item->values);
+		$identity = $item->identity;
+		$creating = $item->isNew();
 		$previous = null;
-		$itemValues = $this->schemas->toPhpValues($collection, $item->values);
-
-		if (! $item->isNew() && $item->identity !== null) {
-			$previous = $this->findRow($collection, $item->identity);
-			if ($previous === null && $this->hasRelatedBody($item)) {
-				$item = new RelatedItemInput(
-					$item->identity,
-					$item->values,
-					$item->relations,
-					$item->path,
-					forceNew: true,
-				);
-			} elseif ($previous === null && $requireExists) {
-				throw RestApiError::relatedNotFound(
-					$collection->getName(),
-					$item->identity->isComposite() ? $item->identity->getValues() : $item->identity->getValue(),
-					$relationName,
-					$item->path->toString(),
-					$existenceOperation,
-				);
-			}
-		}
-
-		/** @var array<string, string> $fieldPaths */
-		$fieldPaths = [];
-
-		if ($item->isNew()) {
-			$childObject = new stdClass();
-			$seedFields = [];
-			if ($item->identity !== null) {
-				foreach ($item->identity->getValues() as $field => $value) {
-					$childObject->{$field} = $value;
-					$seedFields[] = (string) $field;
-				}
-			}
-			foreach ($itemValues as $field => $value) {
-				$name = (string) $field;
-				if (! $collection->hasField($name)) {
-					continue;
-				}
-				$childObject->{$name} = $value;
-				$fieldPaths[$name] = $name;
-				$seedFields[] = $name;
-			}
-
-			$map = $this->schemas->projectFields($collection, $seedFields);
-			$session->create($childObject, $map);
-			$session->sync($childObject);
-		} else {
-			$loadFields = [];
-			foreach (array_keys($itemValues) as $fieldName) {
-				$name = (string) $fieldName;
-				if ($collection->hasField($name)) {
-					$loadFields[] = $name;
-					$fieldPaths[$name] = $name;
-				}
-			}
-			assert($item->identity !== null);
-			$childObject = $this->schemas->loadWritable($session, $collection, $item->identity, $loadFields);
-			foreach ($itemValues as $field => $value) {
-				$name = (string) $field;
-				if ($collection->hasField($name)) {
-					$childObject->{$name} = $value;
+		if (! $creating) {
+			assert($identity !== null);
+			$previous = $this->findRow($collection, $identity);
+			if ($previous === null) {
+				$creating = $allowUpsert
+					&& $retained === null
+					&& ($item->values !== [] || $item->relations !== [])
+					&& ! isset($this->pendingRemovedIdentities[$this->identityCacheKey($collection, $identity)]);
+				if (! $creating) {
+					throw $this->relatedNotFound($relation, $identity, $item->path, $allowUpsert ? 'reference' : 'update');
 				}
 			}
 		}
 
-		$parentKeys = [];
-		if ($linkRelation) {
-			$this->attachRelated(
-				$session,
-				$ownerRecord,
-				$relation,
-				$cardinality,
-				$childObject,
-				$toMany,
-			);
-			if ($relation instanceof HasManyRelation || $relation instanceof HasOneRelation) {
-				foreach ($relation->getKeyPairing()->getPairs() as $pair) {
-					$parentKeys[$pair['right']] = $ownerRecord->getValueRef($pair['left']);
-				}
-			}
-		}
-
-		$related = $this->bindNestedOnRelated(
+		return $this->stageRow(
 			$session,
-			$childObject,
-			$item,
-		);
-
-		$state = new BoundItemState(
 			$collection,
-			$childObject,
-			$itemValues,
+			new DirectusMutation($values, $item->relations, $item->path),
+			$creating ? 'create' : 'update',
+			$identity,
 			$previous,
-			! $item->isNew(),
-			$item->path,
-			$fieldPaths,
-			identityMutable: $item->isNew(),
-			creating: $item->isNew(),
-		);
-
-		return new BoundMutation(
-			operation: $item->isNew() ? 'create' : 'update',
-			collection: $collection,
-			representation: $childObject,
-			state: $state,
-			mutation: new DirectusMutation($itemValues, $item->relations, $item->path),
-			identity: $item->identity,
-			path: $item->path,
-			related: $related,
-			rootRecord: $this->recordFor($session, $childObject),
+			representation: $values === [] ? $retained : null,
 			submittedValues: $item->values,
 			parentKeys: $parentKeys,
 		);
-	}
-
-	private function hasRelatedBody(RelatedItemInput $item): bool
-	{
-		return $item->values !== [] || $item->relations !== [];
-	}
-
-	private function bindExistingRelatedObject(
-		Session $session,
-		object $representation,
-		CollectionInterface $collection,
-		RelatedItemInput $item,
-	): BoundMutation {
-		$previous = $item->identity !== null
-			? $this->findRow($collection, $item->identity)
-			: null;
-
-		if ($item->values === [] && $item->relations === []) {
-			return new BoundMutation(
-				operation: 'update',
-				collection: $collection,
-				representation: $representation,
-				state: new BoundItemState(
-					$collection,
-					$representation,
-					[],
-					$previous,
-					true,
-					$item->path,
-					identityMutable: false,
-					creating: false,
-				),
-				mutation: new DirectusMutation([], [], $item->path),
-				identity: $item->identity,
-				path: $item->path,
-			);
-		}
-
-		/** @var array<string, string> $fieldPaths */
-		$fieldPaths = [];
-		$itemValues = $this->schemas->toPhpValues($collection, $item->values);
-		$loadFields = [];
-		foreach ($itemValues as $field => $_value) {
-			$name = (string) $field;
-			if (! $collection->hasField($name)) {
-				continue;
-			}
-			$loadFields[] = $name;
-			$fieldPaths[$name] = $name;
-		}
-
-		if ($loadFields !== []) {
-			assert($item->identity !== null);
-			// Baseline members are Session::identify() PK stubs. update()+sync() no-ops
-			// on PK-only schemas, and RecordState::setValue always dirties missing fields —
-			// which emits no-op UPDATEs that MySQL reports as affected_rows=0.
-			// Hydrate writable fields (same as explicit/root update), absorb that snapshot
-			// as clean, then assign overlays so only real changes dirty the record.
-			$representation = $this->schemas->loadWritable(
-				$session,
-				$collection,
-				$item->identity,
-				$loadFields,
-			);
-			$record = $this->requireRecord($session, $representation);
-			if ($record->isDirty()) {
-				$record->markClean();
-			}
-
-			foreach ($itemValues as $field => $value) {
-				$name = (string) $field;
-				if ($collection->hasField($name)) {
-					$representation->{$name} = $value;
-				}
-			}
-		}
-
-		$related = $this->bindNestedOnRelated(
-			$session,
-			$representation,
-			$item,
-		);
-
-		return new BoundMutation(
-			operation: 'update',
-			collection: $collection,
-			representation: $representation,
-			state: new BoundItemState(
-				$collection,
-				$representation,
-				$itemValues,
-				$previous,
-				true,
-				$item->path,
-				$fieldPaths,
-				identityMutable: false,
-				creating: false,
-			),
-			mutation: new DirectusMutation($itemValues, $item->relations, $item->path),
-			identity: $item->identity,
-			path: $item->path,
-			related: $related,
-			submittedValues: $item->values,
-		);
-	}
-
-	/**
-	 * @return list<BoundMutation>
-	 */
-	private function bindNestedOnRelated(
-		Session $session,
-		object $childObject,
-		RelatedItemInput $item,
-	): array {
-		if ($item->relations === []) {
-			return [];
-		}
-
-		$childRecord = $this->requireRecord($session, $childObject);
-
-		return $this->bindRelations(
-			$session,
-			$childObject,
-			$childRecord,
-			$item->relations,
-		);
-	}
-
-	private function attachRelated(
-		Session $session,
-		RecordState $ownerRecord,
-		RelationInterface $relation,
-		RelationCardinality $cardinality,
-		object $childObject,
-		?ToManyRelationState $toMany,
-	): void {
-		$relationName = $relation->getName();
-		$relatedSchema = new RepresentationSchema($relation->getCollection());
-
-		if ($cardinality->isMany()) {
-			$state = $toMany ?? $session->getRelations()->getOrCreate(
-				$ownerRecord,
-				$relationName,
-				RelationCardinality::MANY,
-				$relatedSchema,
-			);
-			assert($state instanceof ToManyRelationState);
-			$state->add($childObject);
-
-			return;
-		}
-
-		$session->getRelations()->remove($ownerRecord, $relationName);
-		$baseline = $this->baselines->loadToOneIdentity($session, $ownerRecord, $relation);
-		$toOne = new ToOneRelationState(
-			$ownerRecord,
-			$relationName,
-			$relatedSchema,
-			$baseline,
-		);
-		$session->getRelations()->add($toOne);
-		$toOne->set($childObject);
 	}
 
 	private function assertInRelationScope(
@@ -1006,16 +542,7 @@ final class DirectusMutationBinder
 			return;
 		}
 
-		$row = $this->findRow($relation->getCollection(), $identity);
-		if ($row === null) {
-			throw RestApiError::relatedNotFound(
-				$relation->getCollection()->getName(),
-				$identity->isComposite() ? $identity->getValues() : $identity->getValue(),
-				$relation->getName(),
-				$path->toString(),
-				$operation,
-			);
-		}
+		$this->requireRelatedExists($relation, $identity, $path, $operation);
 
 		throw RestApiError::relationTargetOutOfScope(
 			$relation->getCollection()->getName(),
@@ -1026,25 +553,27 @@ final class DirectusMutationBinder
 		);
 	}
 
-	/**
-	 * @return array<string, mixed>
-	 */
+	/** @return array<string, mixed> */
 	private function requireRelatedExists(
-		CollectionInterface $collection,
+		RelationInterface $relation,
 		Key $identity,
 		PayloadPath $path,
-		string $relationName,
 		string $operation,
 	): array {
-		$row = $this->findRow($collection, $identity);
-		if ($row !== null) {
-			return $row;
-		}
+		return $this->findRow($relation->getCollection(), $identity)
+			?? throw $this->relatedNotFound($relation, $identity, $path, $operation);
+	}
 
-		throw RestApiError::relatedNotFound(
-			$collection->getName(),
+	private function relatedNotFound(
+		RelationInterface $relation,
+		Key $identity,
+		PayloadPath $path,
+		string $operation,
+	): RestApiError {
+		return RestApiError::relatedNotFound(
+			$relation->getCollection()->getName(),
 			$identity->isComposite() ? $identity->getValues() : $identity->getValue(),
-			$relationName,
+			$relation->getName(),
 			$path->toString(),
 			$operation,
 		);
@@ -1073,13 +602,6 @@ final class DirectusMutationBinder
 		return $row;
 	}
 
-	private function markPendingRemoved(CollectionInterface $collection, Key $identity): void
-	{
-		$cacheKey = $this->identityCacheKey($collection, $identity);
-		$this->pendingRemovedIdentities[$cacheKey] = true;
-		$this->identityLookupCache[$cacheKey] = null;
-	}
-
 	private function identityCacheKey(CollectionInterface $collection, Key $identity): string
 	{
 		return $collection->getName() . '|' . $identity->getHash();
@@ -1087,29 +609,14 @@ final class DirectusMutationBinder
 
 	private function requireRecord(Session $session, object $representation): RecordState
 	{
-		$record = $this->recordFor($session, $representation);
-		if (! $record instanceof RecordState) {
+		$record = $session->getRepresentations()->get($representation)?->getSingleRecord();
+		if ($record === null) {
 			throw RestApiError::validationFailed([
 				'_root' => ['Unable to resolve Session record for mutation binding.'],
 			]);
 		}
 
 		return $record;
-	}
-
-	private function recordFor(Session $session, object $representation): ?RecordState
-	{
-		$state = $session->getRepresentations()->get($representation);
-		if (! $state instanceof RepresentationState) {
-			return null;
-		}
-
-		$record = $state->getSingleRecord();
-		if ($record instanceof RecordState) {
-			return $record;
-		}
-
-		return null;
 	}
 
 	private function normalizeKey(
