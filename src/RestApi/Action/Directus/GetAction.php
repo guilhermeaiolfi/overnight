@@ -82,7 +82,7 @@ final class GetAction implements RestActionInterface
 			$item = RelationAliases::mapNative($item, $schema, $output);
 		}
 		$item = map($item)->args($collection)->from(PhpRepresentation::class)->as($output)->to([]);
-		if (! $nativeAliases || ($manualResult && $schema === null)) {
+		if (! $nativeAliases || $manualResult) {
 			$item = RelationAliases::apply($item, $context->getRelationResponseNames(), preserveExisting: $nativeAliases);
 		}
 

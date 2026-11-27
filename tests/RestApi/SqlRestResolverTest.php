@@ -567,9 +567,14 @@ final class SqlRestResolverTest extends TestCase
 		self::assertSame([1, 2], array_column($data[0]['posts'], 'id'));
 		self::assertSame($data[0], $readActions->get($users, '1', $query, WireRepresentation::class));
 
-		RestHooks::for($users)->on('get', static function (ItemGet $event): void {
+		$returnCanonicalOnly = false;
+		RestHooks::for($users)->on('get', static function (ItemGet $event) use (&$returnCanonicalOnly): void {
 			$event->allow();
-			$event->setResult($event->getQuery()->fetchOne());
+			$row = $event->getQuery()->fetchOne();
+			if ($returnCanonicalOnly) {
+				$row = ['id' => $row['id'], 'posts' => $row['published']];
+			}
+			$event->setResult($row);
 			$event->preventDefault();
 		});
 		$get = new GetAction(
@@ -580,6 +585,21 @@ final class SqlRestResolverTest extends TestCase
 		);
 		$fromHook = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
 		self::assertSame($data[0], $fromHook['data']);
+
+		$returnCanonicalOnly = true;
+		$canonicalQuery = $this->q($users, [
+			'fields' => 'id,published.title,published.created_at',
+			'alias' => ['published' => 'posts'],
+			'deep' => ['published' => ['_filter' => ['status' => ['_eq' => 'published']]]],
+		]);
+		$canonicalResult = $get(
+			['collection' => 'user', 'id' => '1'],
+			['query' => $canonicalQuery],
+			['output' => WireRepresentation::class],
+		)['data'];
+		self::assertSame(['PHP Tips'], array_column($canonicalResult['published'], 'title'));
+		self::assertStringStartsWith('2025-01-10', $canonicalResult['published'][0]['created_at']);
+		self::assertArrayNotHasKey('posts', $canonicalResult);
 	}
 
 	public function testListWithMeta(): void
