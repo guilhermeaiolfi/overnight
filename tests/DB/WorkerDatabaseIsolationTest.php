@@ -20,11 +20,11 @@ use ON\DataIntegration\DataExtension;
 use ON\DB\ClosableDatabaseInterface;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
-use ON\DB\DatabaseContextInterface;
 use ON\DB\DatabaseExtension;
 use ON\DB\DatabaseInterface;
 use ON\DB\DatabaseManager;
-use ON\DB\DatabaseScope;
+use ON\DB\DatabasePool;
+use ON\DB\DatabasePoolInterface;
 use ON\DB\PdoDatabase;
 use ON\Event\EventsExtension;
 use ON\Middleware\PipelineExtension;
@@ -162,29 +162,29 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame($pdo, $manager->getDatabaseResource('pdo'));
 	}
 
-	public function testDatabaseScopesWorkWithAnotherExecutionContext(): void
+	public function testDatabasePoolSupportsAnotherRuntime(): void
 	{
-		$app = $this->bootWorker(TestExecutionContext::class);
+		$app = $this->bootWorker(TestRuntimePool::class);
 		$container = $app->ext('container')->getContainer();
-		$context = $container->get(TestExecutionContext::class);
+		$pool = $container->get(TestRuntimePool::class);
 		$manager = $container->get(DatabaseManager::class);
 
-		$context->id = 'first';
+		$pool->id = 'first';
 		$firstDb = $manager->getDatabase();
 		$entity = $this->attachEntity($firstDb);
 		$this->assertSame($firstDb, $manager->getDatabase());
 
-		$context->id = 'second';
+		$pool->id = 'second';
 		$secondDb = $manager->getDatabase();
 		$this->assertNotSame($firstDb, $secondDb);
 		$secondEntity = $this->attachEntity($secondDb);
-		$context->finish();
+		$pool->finish();
 		$this->assertFalse($secondDb->getResource()->getHeap()->has($secondEntity));
 		$this->assertTrue($firstDb->getResource()->getHeap()->has($entity));
 
 		$this->assertNotSame($secondDb, $manager->getDatabase());
-		$context->finish();
-		$context->id = 'first';
+		$pool->finish();
+		$pool->id = 'first';
 		$app->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
 			$this->assertNotSame($firstDb, $manager->getDatabase());
 
@@ -192,13 +192,13 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 		$this->assertSame('scoped', (string) $app->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
 		$this->assertSame($firstDb, $manager->getDatabase());
-		$context->finish();
+		$pool->finish();
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
 	}
 
 	public function testClosesCustomClosablePdoAndPreservesNonClosableDatabaseImplementers(): void
 	{
-		$app = $this->bootWorker(SingleWorkerContext::class);
+		$app = $this->bootWorker(DatabasePool::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'closable', class: TestClosableDatabase::class);
@@ -260,7 +260,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 	public function testScopeClosesAllDatabasesEvenWhenOneCloseThrows(): void
 	{
-		$app = $this->bootWorker(SingleWorkerContext::class);
+		$app = $this->bootWorker(DatabasePool::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'broken', class: TestFailingCloseDatabase::class);
@@ -286,9 +286,9 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame(1, $healthy->closeCount);
 	}
 
-	private function bootWorker(?string $executionContext = null): Application
+	private function bootWorker(?string $poolClass = null): Application
 	{
-		if ($executionContext === null) {
+		if ($poolClass === null) {
 			if (class_exists(Coroutine::class)) {
 				$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
 			}
@@ -299,10 +299,10 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->projectDir = sys_get_temp_dir() . '/overnight-worker-db-' . bin2hex(random_bytes(8));
 		mkdir($this->projectDir . '/config', recursive: true);
 		file_put_contents($this->projectDir . '/config/pipeline.php', '<?php return static function (): void {};');
-		if ($executionContext !== null) {
+		if ($poolClass !== null) {
 			$config = [
 				ContainerConfig::class => [
-					'definitions' => ['aliases' => [DatabaseContextInterface::class => $executionContext]],
+					'definitions' => ['aliases' => [DatabasePoolInterface::class => $poolClass]],
 				],
 			];
 			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
@@ -398,41 +398,42 @@ final class CoroutineStub
 	}
 }
 
-final class TestExecutionContext implements DatabaseContextInterface
+final class TestRuntimePool implements DatabasePoolInterface
 {
 	public ?string $id = null;
 
-	/** @var array<string, DatabaseScope> */
-	private array $scopes = [];
+	/** @var array<string, DatabasePool> */
+	private array $pools = [];
 
-	public function current(): ?DatabaseScope
+	public function getOrCreate(DatabaseManager $manager, string $name, callable $create): ?DatabaseInterface
+	{
+		return $this->executionPool()?->getOrCreate($manager, $name, $create);
+	}
+
+	public function openRequest(): bool
+	{
+		return $this->executionPool()?->openRequest() ?? false;
+	}
+
+	public function closeRequest(): void
+	{
+		$this->executionPool()?->closeRequest();
+	}
+
+	private function executionPool(): ?DatabasePool
 	{
 		if ($this->id === null) {
 			return null;
 		}
 
-		return $this->scopes[$this->id] ??= new DatabaseScope();
+		return $this->pools[$this->id] ??= new DatabasePool();
 	}
 
 	public function finish(): void
 	{
-		$this->scopes[$this->id]->close();
-		unset($this->scopes[$this->id]);
-	}
-}
-
-final class SingleWorkerContext implements DatabaseContextInterface
-{
-	private DatabaseScope $scope;
-
-	public function __construct()
-	{
-		$this->scope = new DatabaseScope();
-	}
-
-	public function current(): DatabaseScope
-	{
-		return $this->scope;
+		$pool = $this->pools[$this->id];
+		unset($this->pools[$this->id]);
+		$pool->close();
 	}
 }
 

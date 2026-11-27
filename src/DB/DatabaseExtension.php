@@ -25,7 +25,7 @@ use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\Swoole\SwooleDatabaseContext;
+use ON\Swoole\SwooleDatabasePool;
 use Psr\Container\ContainerInterface;
 
 class DatabaseExtension extends AbstractExtension
@@ -69,11 +69,11 @@ class DatabaseExtension extends AbstractExtension
 	}
 
 	/** @internal */
-	public static function resolveContext(ContainerInterface $container): DatabaseContextInterface
+	public static function resolvePool(ContainerInterface $container): DatabasePoolInterface
 	{
-		return $container->has(DatabaseContextInterface::class)
-			? $container->get(DatabaseContextInterface::class)
-			: new SwooleDatabaseContext();
+		return $container->has(DatabasePoolInterface::class)
+			? $container->get(DatabasePoolInterface::class)
+			: new SwooleDatabasePool();
 	}
 
 	public function start(InitContext $context): void

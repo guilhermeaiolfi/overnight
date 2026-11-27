@@ -328,12 +328,11 @@ $connection = $manager->getDatabaseConnection();
 
 ### Long-running workers
 
-In an active execution context, `DatabaseScopeMiddleware` gives each outer
-HTTP dispatch its own managed database instances. The manager creates each
-named instance on first use and reuses it for forwarded requests in the same
-context. When the dispatch returns or throws, the middleware closes the
-request scope, calls `close()` on every instance implementing
-`ON\DB\ClosableDatabaseInterface`, and drops the cached references.
+In a long-running worker, `DatabaseScopeMiddleware` uses the database pool to
+give each outer HTTP dispatch its own database instances. The pool creates
+each named instance on first use and shares it with forwarded requests. When
+the dispatch returns or throws, the pool drops the request's instances and
+calls `close()` on each one that implements `ON\DB\ClosableDatabaseInterface`.
 
 Both built-in databases implement `ClosableDatabaseInterface`:
 
@@ -352,9 +351,11 @@ until the execution context exits. Without an active context, the manager
 caches instances for its lifetime. A database factory must return a fresh
 instance for each scope.
 
-The default `SwooleDatabaseContext` stores the database scope in the current
-coroutine and closes it when the coroutine exits. For another runtime, bind
-`ON\DB\DatabaseContextInterface` in the container configuration.
+The default `SwooleDatabasePool` keeps one pool per coroutine and closes it
+when the coroutine exits. Pool entries are reused within their request or
+coroutine lifetime. For another runtime, bind `ON\DB\DatabasePoolInterface`
+in the container configuration. A runtime that handles one request at a time
+can use `ON\DB\DatabasePool` directly and close it when the worker exits.
 
 Resolve the database through `DatabaseManager` where it is used. A service that
 stores a database, PDO handle, ORM, or query runtime can carry it across

@@ -22,7 +22,7 @@ class DatabaseManager
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
-		private ?DatabaseContextInterface $context = null,
+		private ?DatabasePoolInterface $pool = null,
 	) {
 	}
 
@@ -61,16 +61,13 @@ class DatabaseManager
 			}
 		}
 
-		$scope = $this->context?->current();
-		if ($scope !== null) {
-			$database = $scope->get($this, $name);
-			if ($database !== null) {
-				return $database;
-			}
-		} elseif (isset($this->instances[$name])) {
-			return $this->instances[$name];
-		}
+		$database = $this->pool?->getOrCreate($this, $name, fn (): DatabaseInterface => $this->createDatabase($name));
 
+		return $database ?? ($this->instances[$name] ??= $this->createDatabase($name));
+	}
+
+	private function createDatabase(string $name): DatabaseInterface
+	{
 		$db_config = $this->config->getDatabase($name);
 		$database_class = null;
 		if (isset($db_config["class"])) {
@@ -86,12 +83,6 @@ class DatabaseManager
 		if ($this->eventDispatcher) {
 			$event = new NamedEvent("core.db.manager.create", $database);
 			$this->eventDispatcher->dispatch($event);
-		}
-
-		if ($scope !== null) {
-			$scope->set($this, $name, $database);
-		} else {
-			$this->instances[$name] = $database;
 		}
 
 		return $database;
