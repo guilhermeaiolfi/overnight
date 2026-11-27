@@ -51,7 +51,7 @@
       }
     },
     "scripts": {
-      "pre-autoload-dump": "ON\\Composer\\LocalOnData::configure",
+      "pre-autoload-dump": "ON\\Composer\\LocalPackages::configure",
       "analyse": "phpstan analyse --configuration=phpstan.neon.dist --no-progress",
       "bench": "phpbench run --config=phpbench.json",
       "bench:bootstrap": "phpbench run --config=phpbench.json --filter=BootstrapBench",

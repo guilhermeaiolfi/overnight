@@ -8,10 +8,14 @@ use Composer\Json\JsonFile;
 use Composer\Package\Package;
 use Composer\Script\Event;
 use Composer\Util\Filesystem;
+use Composer\Util\Platform;
 
-final class LocalOnData
+final class LocalPackages
 {
-	private const PACKAGE = 'guilhermeaiolfi/overnight-data';
+	private const PACKAGES = [
+		'guilhermeaiolfi/overnight',
+		'guilhermeaiolfi/overnight-data',
+	];
 
 	public static function configure(Event $event): void
 	{
@@ -19,27 +23,34 @@ final class LocalOnData
 			return;
 		}
 
-		$checkout = realpath(dirname(__DIR__, 3) . '/ondata');
-		if ($checkout === false || ! is_file($checkout . '/composer.json')) {
-			return;
-		}
-
-		$manifest = (new JsonFile($checkout . '/composer.json'))->read();
-		if (($manifest['name'] ?? null) !== self::PACKAGE || ! is_array($manifest['autoload'] ?? null)) {
+		$root = Platform::getCwd();
+		if (! is_dir($root . '/packages')) {
 			return;
 		}
 
 		$composer = $event->getComposer();
+		$filesystem = new Filesystem();
 		foreach ($composer->getRepositoryManager()->getLocalRepository()->getCanonicalPackages() as $package) {
-			if (! $package instanceof Package || $package->getName() !== self::PACKAGE) {
+			if (! $package instanceof Package || ! in_array($package->getName(), self::PACKAGES, true)) {
+				continue;
+			}
+
+			$directory = 'packages/' . basename($package->getName());
+			$checkout = $root . '/' . $directory;
+			$manifestPath = $checkout . '/composer.json';
+			if (! is_file($manifestPath)) {
+				continue;
+			}
+
+			$manifest = (new JsonFile($manifestPath))->read();
+			if (($manifest['name'] ?? null) !== $package->getName() || ! is_array($manifest['autoload'] ?? null)) {
 				continue;
 			}
 
 			$installed = $composer->getInstallationManager()->getInstallPath($package);
-			$filesystem = new Filesystem();
 			$path = $filesystem->findShortestPath($installed, $checkout, directories: true, preferRelative: true);
 			if ($filesystem->isAbsolutePath($path)) {
-				return;
+				continue;
 			}
 
 			// Composer resolves dependency autoload paths relative to the installed package.
@@ -48,9 +59,7 @@ final class LocalOnData
 				$entry = $path . '/' . ltrim($entry, '/\\');
 			});
 			$package->setAutoload($autoload);
-			$event->getIO()->writeError('<info>Loading ON Data from ../ondata</info>');
-
-			return;
+			$event->getIO()->writeError('<info>Loading ' . $package->getName() . ' from ' . $directory . '</info>');
 		}
 	}
 }
