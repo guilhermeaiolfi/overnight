@@ -6,6 +6,7 @@ namespace Tests\ON\Http;
 
 use ON\Http\Exception\InvalidMultipartFormDataException;
 use ON\Http\MultipartFormDataParser;
+use PHPUnit\Framework\Attributes\TestWith;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UploadedFileInterface;
 use RuntimeException;
@@ -155,6 +156,21 @@ final class MultipartFormDataParserTest extends TestCase
 				. "Content-Disposition: form-data; name=\"files[]\"; filename=\"two.txt\"\r\n\r\ntwo\r\n"
 				. "--boundary--\r\n",
 		);
+	}
+
+	#[TestWith(['files[]'])]
+	#[TestWith(['files[][image]'])]
+	public function testRejectsAnUploadAppendWhenTheArrayIndexIsExhausted(string $name): void
+	{
+		$maximum = PHP_INT_MAX;
+		$body = "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"files[{$maximum}]\"; filename=\"first.txt\"\r\n\r\none\r\n"
+			. "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"{$name}\"; filename=\"second.txt\"\r\n\r\ntwo\r\n"
+			. "--boundary--\r\n";
+
+		$this->expectException(InvalidMultipartFormDataException::class);
+		(new MultipartFormDataParser())->parse('multipart/form-data; boundary=boundary', $body);
 	}
 
 	public function testParsedUploadCanBeMovedToDestination(): void

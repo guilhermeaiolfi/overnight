@@ -202,7 +202,7 @@ final class MultipartFormDataParser
 		foreach ($keys as $index => $key) {
 			if ($index === count($keys) - 1) {
 				if ($key === '') {
-					$current[] = $value;
+					$this->appendNestedValue($current, $value);
 				} else {
 					$current[$key] = $value;
 				}
@@ -211,8 +211,7 @@ final class MultipartFormDataParser
 			}
 
 			if ($key === '') {
-				$current[] = [];
-				$key = array_key_last($current);
+				$key = $this->appendNestedValue($current, []);
 			}
 
 			if (! isset($current[$key]) || ! is_array($current[$key])) {
@@ -221,6 +220,17 @@ final class MultipartFormDataParser
 
 			$current = &$current[$key];
 		}
+	}
+
+	private function appendNestedValue(array &$target, mixed $value): int
+	{
+		if (array_key_exists(PHP_INT_MAX, $target)) {
+			throw new InvalidMultipartFormDataException('The multipart array index cannot be incremented.');
+		}
+
+		$target[] = $value;
+
+		return array_key_last($target);
 	}
 
 	private function createUploadedFile(string $content, string $filename, string $mimeType): UploadedFileInterface
