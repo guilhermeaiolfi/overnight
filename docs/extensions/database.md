@@ -326,6 +326,31 @@ $usersDb = $manager->getDatabase('users');
 $connection = $manager->getDatabaseConnection();
 ```
 
+### Swoole workers
+
+Within an active `Swoole\Coroutine`, `DatabaseManager` creates separate database
+instances for each outer PSR-15 dispatch. Lookups of the same name share an
+instance within that dispatch, including forwarded requests in the same
+coroutine. On return or exception, the database middleware clears the Cycle
+heaps it owns and drops its references to the scoped instances. Lookups outside
+that middleware in an active coroutine use a separate cache that is cleared at
+coroutine exit. Outside coroutines, the manager caches instances for its
+lifetime. Scoped lookups expect the configured database factory to return a
+fresh instance. Physical connection reuse follows the driver's persistence
+settings.
+
+Resolve the database through `DatabaseManager` where it is used. A service that
+stores a database, PDO handle, ORM, or query runtime can carry it across
+requests. This includes the container's ON Data `DataRuntime` and the REST
+services that hold it or a Cycle DBAL database, as well as GraphQL resolvers
+built at startup. Their database access requires separate scoping. Request
+preparers run before the PSR-15 middleware and use the coroutine cache.
+
+The regression tests use simulated coroutine IDs and deferred callbacks with
+real SQLite connections and Cycle heaps. They cover overlapping dispatches,
+forwarding, exception cleanup, and successive requests in a reused coroutine.
+Native Swoole scheduling and driver hooks require verification under Swoole.
+
 ## Best Practices
 
 1. **Use repositories** - Encapsulate data access logic

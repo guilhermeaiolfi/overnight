@@ -6,6 +6,7 @@ namespace Tests\ON\DB\Cycle;
 
 use Cycle\Database\Config\SQLite\MemoryConnectionConfig;
 use Cycle\Database\Config\SQLiteDriverConfig;
+use Fiber;
 use FilesystemIterator;
 use ON\Application;
 use ON\Config\ConfigExtension;
@@ -123,6 +124,39 @@ final class CycleDatabaseFactoryTest extends TestCase
 			realpath($this->projectDir . '/var/cache'),
 			realpath(dirname($files[0]))
 		);
+	}
+
+	public function testOverlappingFactoryCallsKeepTheirOwnSchemaCachePaths(): void
+	{
+		$app = new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [],
+			'debug' => false,
+		]);
+		$config = $this->createSqliteDbConfig('analytics');
+		$config->set('databases.reporting', $config->getDatabase('analytics'));
+		$analytics = new Registry();
+		$analytics->collection('metric')->primaryKey('id')->field('id', 'primary')->end()->end();
+		$reporting = new Registry();
+		$reporting->collection('report')->primaryKey('id')->field('id', 'primary')->end()->end();
+		$factory = new class ($app) extends CycleDatabaseFactory {
+			protected function compileSchema(Registry $registry, $dbal): array
+			{
+				if ($registry->hasCollection('metric')) {
+					Fiber::suspend();
+				}
+
+				return parent::compileSchema($registry, $dbal);
+			}
+		};
+
+		$firstCall = new Fiber(static fn () => $factory($config, $analytics, 'analytics'));
+		$firstCall->start();
+		$factory($config, $reporting, 'reporting');
+		$firstCall->resume();
+
+		$this->assertTrue($factory($config, new Registry(), 'analytics')->getResource()->getSchema()->defines('metric'));
+		$this->assertTrue($factory($config, new Registry(), 'reporting')->getResource()->getSchema()->defines('report'));
 	}
 
 	public function testPassesContainerConversionGatewayToCycleRegistryGenerator(): void
