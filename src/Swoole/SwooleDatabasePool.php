@@ -5,16 +5,22 @@ declare(strict_types=1);
 namespace ON\Swoole;
 
 use ON\DB\DatabaseInterface;
-use ON\DB\DatabaseManager;
 use ON\DB\DatabasePool;
 use ON\DB\DatabasePoolInterface;
 use Swoole\Coroutine;
 
 final class SwooleDatabasePool implements DatabasePoolInterface
 {
-	public function getOrCreate(DatabaseManager $manager, string $name, callable $create): ?DatabaseInterface
+	private ?DatabasePool $fallback = null;
+
+	public function get(object $owner, string $name): ?DatabaseInterface
 	{
-		return $this->coroutinePool()?->getOrCreate($manager, $name, $create);
+		return $this->databasePool()->get($owner, $name);
+	}
+
+	public function set(object $owner, string $name, DatabaseInterface $database): void
+	{
+		$this->databasePool()->set($owner, $name, $database);
 	}
 
 	public function openRequest(): bool
@@ -25,6 +31,11 @@ final class SwooleDatabasePool implements DatabasePoolInterface
 	public function closeRequest(): void
 	{
 		$this->coroutinePool()?->closeRequest();
+	}
+
+	private function databasePool(): DatabasePool
+	{
+		return $this->coroutinePool() ?? ($this->fallback ??= new DatabasePool());
 	}
 
 	private function coroutinePool(): ?DatabasePool

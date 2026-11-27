@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ArrayObject;
 use SplObjectStorage;
 use Throwable;
 
 /** Holds database instances for one execution and its HTTP requests. */
 final class DatabasePool implements DatabasePoolInterface
 {
-	/** @var SplObjectStorage<DatabaseManager, ArrayObject<string, DatabaseInterface>> */
+	/** @var SplObjectStorage<object, array<string, DatabaseInterface>> */
 	private SplObjectStorage $instances;
 
-	/** @var SplObjectStorage<DatabaseManager, ArrayObject<string, DatabaseInterface>>|null */
+	/** @var SplObjectStorage<object, array<string, DatabaseInterface>>|null */
 	private ?SplObjectStorage $request = null;
 
 	public function __construct()
@@ -40,12 +39,19 @@ final class DatabasePool implements DatabasePoolInterface
 		$this->closeInstances($request);
 	}
 
-	public function getOrCreate(DatabaseManager $manager, string $name, callable $create): DatabaseInterface
+	public function get(object $owner, string $name): ?DatabaseInterface
 	{
 		$instances = $this->request ?? $this->instances;
-		$databases = $instances[$manager] ??= new ArrayObject();
 
-		return $databases[$name] ??= $create();
+		return $instances[$owner][$name] ?? null;
+	}
+
+	public function set(object $owner, string $name, DatabaseInterface $database): void
+	{
+		$instances = $this->request ?? $this->instances;
+		$databases = $instances[$owner] ?? [];
+		$databases[$name] = $database;
+		$instances[$owner] = $databases;
 	}
 
 	public function close(): void
@@ -58,7 +64,7 @@ final class DatabasePool implements DatabasePoolInterface
 		$this->closeInstances($request, $instances);
 	}
 
-	/** @param SplObjectStorage<DatabaseManager, ArrayObject<string, DatabaseInterface>>|null ...$caches */
+	/** @param SplObjectStorage<object, array<string, DatabaseInterface>>|null ...$caches */
 	private function closeInstances(?SplObjectStorage ...$caches): void
 	{
 		$firstError = null;
@@ -67,8 +73,8 @@ final class DatabasePool implements DatabasePoolInterface
 				continue;
 			}
 
-			foreach ($instances as $manager) {
-				foreach ($instances[$manager] as $database) {
+			foreach ($instances as $owner) {
+				foreach ($instances[$owner] as $database) {
 					if ($database instanceof ClosableDatabaseInterface) {
 						try {
 							$database->close();

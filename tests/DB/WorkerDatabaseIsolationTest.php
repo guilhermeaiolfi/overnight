@@ -405,9 +405,16 @@ final class TestRuntimePool implements DatabasePoolInterface
 	/** @var array<string, DatabasePool> */
 	private array $pools = [];
 
-	public function getOrCreate(DatabaseManager $manager, string $name, callable $create): ?DatabaseInterface
+	private ?DatabasePool $fallback = null;
+
+	public function get(object $owner, string $name): ?DatabaseInterface
 	{
-		return $this->executionPool()?->getOrCreate($manager, $name, $create);
+		return $this->databasePool()->get($owner, $name);
+	}
+
+	public function set(object $owner, string $name, DatabaseInterface $database): void
+	{
+		$this->databasePool()->set($owner, $name, $database);
 	}
 
 	public function openRequest(): bool
@@ -427,6 +434,11 @@ final class TestRuntimePool implements DatabasePoolInterface
 		}
 
 		return $this->pools[$this->id] ??= new DatabasePool();
+	}
+
+	private function databasePool(): DatabasePool
+	{
+		return $this->executionPool() ?? ($this->fallback ??= new DatabasePool());
 	}
 
 	public function finish(): void

@@ -9,10 +9,11 @@ use Exception;
 use ON\Event\NamedEvent;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
+use stdClass;
 
 class DatabaseManager
 {
-	protected $instances = [];
+	private readonly object $poolKey;
 
 	protected $eventDispatcher = null;
 
@@ -22,8 +23,9 @@ class DatabaseManager
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
-		private ?DatabasePoolInterface $pool = null,
+		private DatabasePoolInterface $pool = new DatabasePool(),
 	) {
+		$this->poolKey = new stdClass();
 	}
 
 	public function setEventDispatcher(EventDispatcherInterface $dispatcher)
@@ -61,9 +63,7 @@ class DatabaseManager
 			}
 		}
 
-		$database = $this->pool?->getOrCreate($this, $name, fn (): DatabaseInterface => $this->createDatabase($name));
-
-		return $database ?? ($this->instances[$name] ??= $this->createDatabase($name));
+		return $this->pool->get($this->poolKey, $name) ?? $this->createDatabase($name);
 	}
 
 	private function createDatabase(string $name): DatabaseInterface
@@ -84,6 +84,8 @@ class DatabaseManager
 			$event = new NamedEvent("core.db.manager.create", $database);
 			$this->eventDispatcher->dispatch($event);
 		}
+
+		$this->pool->set($this->poolKey, $name, $database);
 
 		return $database;
 	}

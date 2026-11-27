@@ -329,10 +329,11 @@ $connection = $manager->getDatabaseConnection();
 ### Long-running workers
 
 In a long-running worker, `DatabaseScopeMiddleware` uses the database pool to
-give each outer HTTP dispatch its own database instances. The pool creates
-each named instance on first use and shares it with forwarded requests. When
-the dispatch returns or throws, the pool drops the request's instances and
-calls `close()` on each one that implements `ON\DB\ClosableDatabaseInterface`.
+give each outer HTTP dispatch its own database instances. The manager creates
+each named instance on first use, and the pool shares it with forwarded
+requests. When the dispatch returns or throws, the pool drops the request's
+instances and calls `close()` on each one that implements
+`ON\DB\ClosableDatabaseInterface`.
 
 Both built-in databases implement `ClosableDatabaseInterface`:
 
@@ -347,9 +348,9 @@ scope closes, and they can opt into deterministic teardown by implementing
 `ClosableDatabaseInterface`.
 
 Lookups before or outside the HTTP pipeline use a separate cache that lasts
-until the execution context exits. Without an active context, the manager
-caches instances for its lifetime. A database factory must return a fresh
-instance for each scope.
+until the execution context exits. Without an active context, the pool keeps
+a fallback cache. A database factory must return a fresh instance for each
+scope.
 
 The default `SwooleDatabasePool` keeps one pool per coroutine and closes it
 when the coroutine exits. Pool entries are reused within their request or
