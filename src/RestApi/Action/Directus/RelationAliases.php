@@ -4,27 +4,71 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
+use ON\Data\Mapper\MapBuilder;
+use ON\Data\Mapper\Mapping;
+use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Schema\RepresentationRelationSchema;
+use ON\Data\Schema\RepresentationSchema;
+
 final class RelationAliases
 {
-	/**
-	 * @param array<string, string> $aliases
-	 */
-	public static function apply(array $row, array $aliases): array
+	/** Convert alias branches whose names the collection mapper treats as unknown keys. */
+	public static function mapNative(array $row, ?RepresentationSchema $schema, string $output): array
 	{
-		// Alias paths use the response name for ancestor segments.
-		uksort($aliases, static fn (string $left, string $right): int => substr_count($left, '.') <=> substr_count($right, '.'));
-		foreach ($aliases as $path => $name) {
-			self::rename($row, explode('.', $path), $name);
+		if ($schema === null || $output === PhpRepresentation::class) {
+			return $row;
+		}
+
+		foreach ($schema->getRelations() as $relation) {
+			$name = $relation->getPath();
+			if (! is_array($row[$name] ?? null)) {
+				continue;
+			}
+
+			$row[$name] = $relation->isMany()
+				? array_map(static fn (array $child): array => self::mapChild($child, $relation, $output), $row[$name])
+				: self::mapChild($row[$name], $relation, $output);
 		}
 
 		return $row;
 	}
 
-	private static function rename(array &$row, array $path, string $name): void
+	private static function mapChild(array $row, RepresentationRelationSchema $relation, string $output): array
+	{
+		$relatedSchema = $relation->getRelatedSchema();
+		$row = self::mapNative($row, $relatedSchema, $output);
+		if ($relation->getPath() !== $relation->getRelationName()) {
+			$row = (new MapBuilder(
+				$row,
+				Mapping::getDefaultGateway(),
+				sourceRepresentation: PhpRepresentation::class,
+				outputRepresentation: $output,
+				arguments: [$relatedSchema->getCollection()],
+			))->to([]);
+		}
+
+		return $row;
+	}
+
+	/**
+	 * @param array<string, string> $aliases
+	 */
+	public static function apply(array $row, array $aliases, bool $preserveExisting = false): array
+	{
+		// Alias paths use the response name for ancestor segments.
+		uksort($aliases, static fn (string $left, string $right): int => substr_count($left, '.') <=> substr_count($right, '.'));
+		foreach ($aliases as $path => $name) {
+			self::rename($row, explode('.', $path), $name, $preserveExisting);
+		}
+
+		return $row;
+	}
+
+	private static function rename(array &$row, array $path, string $name, bool $preserveExisting): void
 	{
 		$field = array_shift($path);
 		if ($path === []) {
-			if ($field !== $name && array_key_exists($field, $row)) {
+			if ($field !== $name && array_key_exists($field, $row) && (! $preserveExisting || ! array_key_exists($name, $row))) {
 				$row[$name] = $row[$field];
 				unset($row[$field]);
 			}
@@ -40,13 +84,13 @@ final class RelationAliases
 		if (array_is_list($related)) {
 			foreach ($related as &$item) {
 				if (is_array($item)) {
-					self::rename($item, $path, $name);
+					self::rename($item, $path, $name, $preserveExisting);
 				}
 			}
 
 			return;
 		}
 
-		self::rename($related, $path, $name);
+		self::rename($related, $path, $name, $preserveExisting);
 	}
 }

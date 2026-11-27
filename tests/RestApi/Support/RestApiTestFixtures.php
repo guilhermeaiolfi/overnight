@@ -399,12 +399,12 @@ trait RestApiTestFixtures
 			) {
 			}
 
-			public function list(CollectionInterface $collection, array $query = []): array
+			public function list(CollectionInterface $collection, array $query = [], string $output = PhpRepresentation::class): array
 			{
 				return $this->listAction()(
 					['collection' => $collection->getName()],
 					['query' => $query],
-					['dispatchEvents' => false],
+					['dispatchEvents' => false, 'output' => $output],
 				);
 			}
 
@@ -412,12 +412,13 @@ trait RestApiTestFixtures
 				CollectionInterface $collection,
 				Key|string $identity,
 				?array $query = null,
+				string $output = PhpRepresentation::class,
 			): ?array {
 				try {
 					$response = $this->getAction()(
 						['collection' => $collection->getName(), 'id' => $identity instanceof Key ? PrimaryKey::of($collection)->toUrlId($identity) : (string) $identity],
 						['query' => $query ?? []],
-						['dispatchEvents' => false]
+						['dispatchEvents' => false, 'output' => $output],
 					);
 				} catch (RestApiError $error) {
 					if ($error->getHttpStatus() === 404) {
