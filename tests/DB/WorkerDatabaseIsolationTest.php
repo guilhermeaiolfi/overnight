@@ -13,6 +13,7 @@ use Laminas\Diactoros\ServerRequest;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use ON\Application;
 use ON\Config\ConfigExtension;
+use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 use ON\DataIntegration\DataExtension;
 use ON\DB\Cycle\CycleDatabase;
@@ -20,6 +21,7 @@ use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseExtension;
 use ON\DB\DatabaseManager;
 use ON\Event\EventsExtension;
+use ON\ExecutionContextInterface;
 use ON\Middleware\PipelineExtension;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
@@ -124,10 +126,17 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 
 		CoroutineStub::$cid = 1;
+		$contextDb = $manager->getDatabase();
+		$contextEntity = $this->attachEntity($contextDb);
 		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
+		$this->assertNotSame($contextDb, $firstDb);
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
 		$this->assertNotSame($pdo, $firstPdo);
 		$this->assertSame('next', (string) $app->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
+		$this->assertSame($contextDb, $manager->getDatabase());
+		$this->assertTrue($contextDb->getResource()->getHeap()->has($contextEntity));
+		CoroutineStub::finish();
+		$this->assertFalse($contextDb->getResource()->getHeap()->has($contextEntity));
 
 		CoroutineStub::$cid = 2;
 		$handler = $this->createStub(RequestHandlerInterface::class);
@@ -140,45 +149,61 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame($pdo, $manager->getDatabaseResource('pdo'));
 	}
 
-	#[RunInSeparateProcess]
-	#[PreserveGlobalState(false)]
-	public function testDatabaseLookupOutsideHttpIsScopedToTheCoroutine(): void
+	public function testDatabaseScopesWorkWithAnotherExecutionContext(): void
 	{
-		$app = $this->bootWorker();
-		$manager = $app->ext('container')->getContainer()->get(DatabaseManager::class);
+		$app = $this->bootWorker(TestExecutionContext::class);
+		$container = $app->ext('container')->getContainer();
+		$context = $container->get(TestExecutionContext::class);
+		$manager = $container->get(DatabaseManager::class);
 
-		CoroutineStub::$cid = 1;
+		$context->id = 'first';
 		$firstDb = $manager->getDatabase();
 		$entity = $this->attachEntity($firstDb);
 		$this->assertSame($firstDb, $manager->getDatabase());
 
-		CoroutineStub::$cid = 2;
+		$context->id = 'second';
 		$secondDb = $manager->getDatabase();
 		$this->assertNotSame($firstDb, $secondDb);
 		$secondEntity = $this->attachEntity($secondDb);
-		CoroutineStub::finish();
+		$context->finish();
 		$this->assertFalse($secondDb->getResource()->getHeap()->has($secondEntity));
 		$this->assertTrue($firstDb->getResource()->getHeap()->has($entity));
 
 		$this->assertNotSame($secondDb, $manager->getDatabase());
-		CoroutineStub::finish();
-		CoroutineStub::$cid = 1;
+		$context->finish();
+		$context->id = 'first';
+		$app->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
+			$this->assertNotSame($firstDb, $manager->getDatabase());
+
+			return new TextResponse('scoped');
+		}, 1500);
+		$this->assertSame('scoped', (string) $app->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
 		$this->assertSame($firstDb, $manager->getDatabase());
-		CoroutineStub::finish();
+		$context->finish();
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
 	}
 
-	private function bootWorker(): Application
+	private function bootWorker(?string $executionContext = null): Application
 	{
-		if (class_exists(Coroutine::class)) {
-			$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
+		if ($executionContext === null) {
+			if (class_exists(Coroutine::class)) {
+				$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
+			}
+			class_alias(CoroutineStub::class, Coroutine::class);
 		}
-		class_alias(CoroutineStub::class, Coroutine::class);
 
 		$this->previousCwd = (string) getcwd();
 		$this->projectDir = sys_get_temp_dir() . '/overnight-worker-db-' . bin2hex(random_bytes(8));
 		mkdir($this->projectDir . '/config', recursive: true);
 		file_put_contents($this->projectDir . '/config/pipeline.php', '<?php return static function (): void {};');
+		if ($executionContext !== null) {
+			$config = [
+				ContainerConfig::class => [
+					'definitions' => ['aliases' => [ExecutionContextInterface::class => $executionContext]],
+				],
+			];
+			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
+		}
 
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
@@ -255,6 +280,33 @@ final class CoroutineStub
 	{
 		$callbacks = self::$callbacks[self::$cid] ?? [];
 		unset(self::$callbacks[self::$cid]);
+		foreach (array_reverse($callbacks) as $callback) {
+			$callback();
+		}
+	}
+}
+
+final class TestExecutionContext implements ExecutionContextInterface
+{
+	public ?string $id = null;
+
+	/** @var array<string, list<callable>> */
+	private array $callbacks = [];
+
+	public function getId(): ?string
+	{
+		return $this->id;
+	}
+
+	public function onExit(callable $callback): void
+	{
+		$this->callbacks[$this->id][] = $callback;
+	}
+
+	public function finish(): void
+	{
+		$callbacks = $this->callbacks[$this->id] ?? [];
+		unset($this->callbacks[$this->id]);
 		foreach (array_reverse($callbacks) as $callback) {
 			$callback();
 		}

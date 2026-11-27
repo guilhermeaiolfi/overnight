@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\DB\Container;
 
 use Exception;
+use ON\Container\ExecutionContextFactory;
 use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseManager;
 use Psr\Container\ContainerInterface;
@@ -19,7 +20,11 @@ class DatabaseManagerFactory
 		}
 		$config = $container->get(DatabaseConfig::class);
 
-		$manager = new DatabaseManager($config, $container);
+		$manager = new DatabaseManager(
+			$config,
+			$container,
+			ExecutionContextFactory::resolve($container),
+		);
 
 		$manager->setEventDispatcher($container->get(EventDispatcherInterface::class));
 

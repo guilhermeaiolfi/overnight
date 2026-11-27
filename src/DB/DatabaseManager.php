@@ -8,19 +8,19 @@ use DI\Container;
 use Exception;
 use ON\DB\Cycle\CycleDatabase;
 use ON\Event\NamedEvent;
+use ON\ExecutionContextInterface;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
-use Swoole\Coroutine;
 
 class DatabaseManager
 {
 	protected $instances = [];
 
-	/** @var array<int, array<string, DatabaseInterface>> */
+	/** @var array<array-key, array<string, DatabaseInterface>> */
 	private array $requestInstances = [];
 
-	/** @var array<int, array<string, DatabaseInterface>> */
-	private array $coroutineInstances = [];
+	/** @var array<array-key, array<string, DatabaseInterface>> */
+	private array $contextInstances = [];
 
 	protected $eventDispatcher = null;
 
@@ -30,6 +30,7 @@ class DatabaseManager
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
+		private ?ExecutionContextInterface $executionContext = null,
 	) {
 	}
 
@@ -59,7 +60,7 @@ class DatabaseManager
 	}
 
 	/**
-	 * The outermost HTTP dispatch in a coroutine owns the database scope.
+	 * The outermost HTTP dispatch in an execution context owns the database scope.
 	 *
 	 * @template T
 	 * @param callable(): T $callback
@@ -67,8 +68,8 @@ class DatabaseManager
 	 */
 	public function usingRequest(callable $callback): mixed
 	{
-		$id = $this->getCoroutineId();
-		if ($id <= 0 || isset($this->requestInstances[$id])) {
+		$id = $this->executionContext?->getId();
+		if ($id === null || isset($this->requestInstances[$id])) {
 			return $callback();
 		}
 
@@ -116,15 +117,10 @@ class DatabaseManager
 		return $instances[$name] = $database;
 	}
 
-	private function getCoroutineId(): int
-	{
-		return class_exists(Coroutine::class, false) ? Coroutine::getCid() : -1;
-	}
-
 	private function &getInstances(): array
 	{
-		$id = $this->getCoroutineId();
-		if ($id <= 0) {
+		$id = $this->executionContext?->getId();
+		if ($id === null) {
 			return $this->instances;
 		}
 
@@ -132,17 +128,17 @@ class DatabaseManager
 			return $this->requestInstances[$id];
 		}
 
-		if (! isset($this->coroutineInstances[$id])) {
-			Coroutine::defer(function () use ($id): void {
-				$this->clearScope($this->coroutineInstances, $id);
+		if (! isset($this->contextInstances[$id])) {
+			$this->executionContext->onExit(function () use ($id): void {
+				$this->clearScope($this->contextInstances, $id);
 			});
-			$this->coroutineInstances[$id] = [];
+			$this->contextInstances[$id] = [];
 		}
 
-		return $this->coroutineInstances[$id];
+		return $this->contextInstances[$id];
 	}
 
-	private function clearScope(array &$scopes, int $id): void
+	private function clearScope(array &$scopes, string $id): void
 	{
 		$instances = $scopes[$id];
 		unset($scopes[$id]);

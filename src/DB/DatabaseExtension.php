@@ -9,6 +9,7 @@ use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
+use ON\Container\ExecutionContextFactory;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\DB\Command\MigrateAllCommand;
 use ON\DB\Command\MigrateCommand;
@@ -20,14 +21,11 @@ use ON\DB\Container\CycleRegistryGeneratorFactory;
 use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
+use ON\DB\Middleware\DatabaseScopeMiddleware;
 use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use Psr\Http\Message\ResponseInterface;
-use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\RequestHandlerInterface;
-use Swoole\Coroutine;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -61,24 +59,14 @@ class DatabaseExtension extends AbstractExtension
 			$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
 		});
 
-		if (class_exists(Coroutine::class, false)) {
-			$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-		}
+		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
 	}
 
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
 		$container = $event->container;
 		$event->pipeline->pipe(
-			static function (ServerRequestInterface $request, RequestHandlerInterface $handler) use ($container): ResponseInterface {
-				if (Coroutine::getCid() <= 0) {
-					return $handler->handle($request);
-				}
-
-				return $container->get(DatabaseManager::class)->usingRequest(
-					static fn (): ResponseInterface => $handler->handle($request)
-				);
-			},
+			new DatabaseScopeMiddleware($container, ExecutionContextFactory::resolve($container)),
 			priority: PHP_INT_MAX,
 		);
 	}

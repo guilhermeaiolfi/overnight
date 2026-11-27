@@ -326,30 +326,35 @@ $usersDb = $manager->getDatabase('users');
 $connection = $manager->getDatabaseConnection();
 ```
 
-### Swoole workers
+### Long-running workers
 
-Within an active `Swoole\Coroutine`, `DatabaseManager` creates separate database
-instances for each outer PSR-15 dispatch. Lookups of the same name share an
+`DatabaseScopeMiddleware` opens a database scope for each outer PSR-15 dispatch
+within an active execution context. Lookups of the same database name share an
 instance within that dispatch, including forwarded requests in the same
-coroutine. On return or exception, the database middleware clears the Cycle
-heaps it owns and drops its references to the scoped instances. Lookups outside
-that middleware in an active coroutine use a separate cache that is cleared at
-coroutine exit. Outside coroutines, the manager caches instances for its
-lifetime. Scoped lookups expect the configured database factory to return a
-fresh instance. Physical connection reuse follows the driver's persistence
-settings.
+context. On return or exception, the middleware clears the scope's Cycle heaps
+and drops its references to the database instances. Lookups outside the
+middleware use a separate cache until the context exits. Without an active
+context, the manager caches instances for its lifetime. Scoped lookups expect
+the configured database factory to return a fresh instance. Physical
+connection reuse follows the driver's persistence settings.
+
+The default `SwooleExecutionContext` uses the active Swoole coroutine. To use
+another runtime, bind an implementation of `ON\ExecutionContextInterface` in
+the container configuration. It supplies an ID for the active execution context
+and runs registered cleanup callbacks when that context exits.
 
 Resolve the database through `DatabaseManager` where it is used. A service that
 stores a database, PDO handle, ORM, or query runtime can carry it across
 requests. This includes the container's ON Data `DataRuntime` and the REST
 services that hold it or a Cycle DBAL database, as well as GraphQL resolvers
 built at startup. Their database access requires separate scoping. Request
-preparers run before the PSR-15 middleware and use the coroutine cache.
+preparers run before the PSR-15 middleware and use the execution context cache.
 
-The regression tests use simulated coroutine IDs and deferred callbacks with
-real SQLite connections and Cycle heaps. They cover overlapping dispatches,
-forwarding, exception cleanup, and successive requests in a reused coroutine.
-Native Swoole scheduling and driver hooks require verification under Swoole.
+The regression tests use simulated coroutine IDs and an alternative execution
+context with real SQLite connections and Cycle heaps. They cover overlapping
+dispatches, forwarding, exception cleanup, and successive requests in a
+reused context. Native Swoole scheduling and driver hooks require verification
+under Swoole.
 
 ## Best Practices
 
