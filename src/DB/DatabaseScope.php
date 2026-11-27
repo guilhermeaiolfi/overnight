@@ -4,57 +4,59 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ON\ScopedResourceInterface;
+use ArrayObject;
+use ON\DB\Cycle\CycleDatabase;
+use SplObjectStorage;
 
-/** @internal */
-final class DatabaseScope implements ScopedResourceInterface
+final class DatabaseScope
 {
-	/** @var array<string, DatabaseInterface> */
-	private array $contextInstances = [];
+	/** @var SplObjectStorage<DatabaseManager, ArrayObject<string, DatabaseInterface>> */
+	private SplObjectStorage $instances;
 
-	/** @var array<string, DatabaseInterface>|null */
-	private ?array $requestInstances = null;
+	private ?self $request = null;
 
+	public function __construct()
+	{
+		$this->instances = new SplObjectStorage();
+	}
+
+	/** A forward shares the request scope already opened by the outer middleware. */
 	public function openRequest(): bool
 	{
-		if ($this->requestInstances !== null) {
+		if ($this->request !== null) {
 			return false;
 		}
 
-		$this->requestInstances = [];
+		$this->request = new self();
 
 		return true;
 	}
 
 	public function closeRequest(): void
 	{
-		$instances = $this->requestInstances ?? [];
-		$this->requestInstances = null;
-		$this->releaseInstances($instances);
+		$request = $this->request;
+		$this->request = null;
+		$request?->close();
 	}
 
-	public function &getInstances(): array
+	/** @return ArrayObject<string, DatabaseInterface> */
+	public function instancesFor(DatabaseManager $manager): ArrayObject
 	{
-		if ($this->requestInstances !== null) {
-			return $this->requestInstances;
-		}
+		$scope = $this->request ?? $this;
 
-		return $this->contextInstances;
+		return $scope->instances[$manager] ??= new ArrayObject();
 	}
 
-	public function release(): void
+	public function close(): void
 	{
-		$instances = $this->contextInstances;
-		$this->contextInstances = [];
-		$this->releaseInstances($instances);
-	}
-
-	private function releaseInstances(array $instances): void
-	{
-		foreach ($instances as $database) {
-			if ($database instanceof ScopedResourceInterface) {
-				$database->release();
+		$this->closeRequest();
+		foreach ($this->instances as $manager) {
+			foreach ($this->instances[$manager] as $database) {
+				if ($database instanceof CycleDatabase) {
+					$database->cleanHeap();
+				}
 			}
 		}
+		$this->instances = new SplObjectStorage();
 	}
 }

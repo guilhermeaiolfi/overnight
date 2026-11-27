@@ -7,7 +7,6 @@ namespace ON\DB;
 use DI\Container;
 use Exception;
 use ON\Event\NamedEvent;
-use ON\ExecutionContextInterface;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
 
@@ -23,7 +22,7 @@ class DatabaseManager
 	public function __construct(
 		protected DatabaseConfig $config,
 		protected ContainerInterface $container,
-		private ?ExecutionContextInterface $executionContext = null,
+		private ?DatabaseContextInterface $context = null,
 	) {
 	}
 
@@ -52,19 +51,6 @@ class DatabaseManager
 		return null;
 	}
 
-	/**
-	 * Returns the scope to the caller responsible for closing it.
-	 * A forwarded request shares the scope that is already open.
-	 *
-	 * @internal
-	 */
-	public function openRequestScope(): ?DatabaseScope
-	{
-		$scope = $this->getScope();
-
-		return $scope?->openRequest() ? $scope : null;
-	}
-
 	public function getDatabase(?string $name = null)
 	{
 		if (! isset($name)) {
@@ -75,7 +61,10 @@ class DatabaseManager
 			}
 		}
 
-		$instances = &$this->getInstances();
+		$instances = $this->context?->current()?->instancesFor($this);
+		if ($instances === null) {
+			$instances = &$this->instances;
+		}
 		if (isset($instances[$name])) {
 			return $instances[$name];
 		}
@@ -98,20 +87,5 @@ class DatabaseManager
 		}
 
 		return $instances[$name] = $database;
-	}
-
-	private function &getInstances(): array
-	{
-		$scope = $this->getScope();
-		if ($scope === null) {
-			return $this->instances;
-		}
-
-		return $scope->getInstances();
-	}
-
-	private function getScope(): ?DatabaseScope
-	{
-		return $this->executionContext?->getScopedResource($this, static fn (): DatabaseScope => new DatabaseScope());
 	}
 }

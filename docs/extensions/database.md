@@ -332,9 +332,8 @@ In an active execution context, `DatabaseScopeMiddleware` gives each outer
 HTTP dispatch its own PDO and Cycle database instances. The manager creates
 each named instance on first use and reuses it for forwarded requests in the
 same context. When the dispatch returns or throws, the middleware closes the
-scope. The scope releases its database instances and calls `release()` on
-instances that implement `ON\ScopedResourceInterface`. Cycle uses this hook
-to clear its identity map. Physical connection reuse follows the driver's
+scope, clears each Cycle identity map, and drops the cached database instances.
+Physical connection reuse follows the driver's
 persistence settings.
 
 Lookups before or outside the HTTP pipeline use a separate cache that lasts
@@ -342,9 +341,9 @@ until the execution context exits. Without an active context, the manager
 caches instances for its lifetime. A database factory must return a fresh
 instance for each scope.
 
-The default `SwooleExecutionContext` stores the database scope in the current
+The default `SwooleDatabaseContext` stores the database scope in the current
 coroutine and releases it when the coroutine exits. To use another runtime,
-bind an implementation of `ON\ExecutionContextInterface` in the container
+bind an implementation of `ON\DB\DatabaseContextInterface` in the container
 configuration.
 
 Resolve the database through `DatabaseManager` where it is used. A service that

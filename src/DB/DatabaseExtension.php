@@ -9,7 +9,6 @@ use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
-use ON\Container\ExecutionContextFactory;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\DB\Command\MigrateAllCommand;
 use ON\DB\Command\MigrateCommand;
@@ -26,6 +25,8 @@ use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Swoole\SwooleDatabaseContext;
+use Psr\Container\ContainerInterface;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -64,11 +65,15 @@ class DatabaseExtension extends AbstractExtension
 
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$container = $event->container;
-		$event->pipeline->pipe(
-			new DatabaseScopeMiddleware($container, ExecutionContextFactory::resolve($container)),
-			priority: PHP_INT_MAX,
-		);
+		$event->pipeline->pipe(DatabaseScopeMiddleware::class, priority: PHP_INT_MAX);
+	}
+
+	/** @internal */
+	public static function resolveContext(ContainerInterface $container): DatabaseContextInterface
+	{
+		return $container->has(DatabaseContextInterface::class)
+			? $container->get(DatabaseContextInterface::class)
+			: new SwooleDatabaseContext();
 	}
 
 	public function start(InitContext $context): void

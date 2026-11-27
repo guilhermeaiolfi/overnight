@@ -19,12 +19,12 @@ use ON\Container\ContainerExtension;
 use ON\DataIntegration\DataExtension;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
+use ON\DB\DatabaseContextInterface;
 use ON\DB\DatabaseExtension;
 use ON\DB\DatabaseManager;
+use ON\DB\DatabaseScope;
 use ON\Event\EventsExtension;
-use ON\ExecutionContextInterface;
 use ON\Middleware\PipelineExtension;
-use ON\ScopedResourceInterface;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
@@ -34,7 +34,6 @@ use Psr\Http\Server\RequestHandlerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
-use SplObjectStorage;
 use stdClass;
 use Swoole\Coroutine;
 
@@ -206,7 +205,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		if ($executionContext !== null) {
 			$config = [
 				ContainerConfig::class => [
-					'definitions' => ['aliases' => [ExecutionContextInterface::class => $executionContext]],
+					'definitions' => ['aliases' => [DatabaseContextInterface::class => $executionContext]],
 				],
 			];
 			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
@@ -302,35 +301,25 @@ final class CoroutineStub
 	}
 }
 
-final class TestExecutionContext implements ExecutionContextInterface
+final class TestExecutionContext implements DatabaseContextInterface
 {
 	public ?string $id = null;
 
-	/** @var array<string, SplObjectStorage<object, ScopedResourceInterface>> */
-	private array $resources = [];
+	/** @var array<string, DatabaseScope> */
+	private array $scopes = [];
 
-	public function isActive(): bool
-	{
-		return $this->id !== null;
-	}
-
-	public function getScopedResource(object $owner, callable $create): ?ScopedResourceInterface
+	public function current(): ?DatabaseScope
 	{
 		if ($this->id === null) {
 			return null;
 		}
 
-		$resources = $this->resources[$this->id] ??= new SplObjectStorage();
-
-		return $resources[$owner] ??= $create();
+		return $this->scopes[$this->id] ??= new DatabaseScope();
 	}
 
 	public function finish(): void
 	{
-		$resources = $this->resources[$this->id];
-		unset($this->resources[$this->id]);
-		foreach ($resources as $owner) {
-			$resources[$owner]->release();
-		}
+		$this->scopes[$this->id]->close();
+		unset($this->scopes[$this->id]);
 	}
 }
