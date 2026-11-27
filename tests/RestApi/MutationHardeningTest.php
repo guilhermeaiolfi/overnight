@@ -6,6 +6,7 @@ namespace Tests\ON\RestApi;
 
 use ON\Data\Definition\Registry;
 use ON\Data\Key;
+use ON\Data\ORM\Exception\SyncException;
 use ON\RestApi\Error\RestApiError;
 use ON\RestApi\Event\ItemCreating;
 use ON\RestApi\Event\ItemDeleted;
@@ -710,6 +711,110 @@ final class MutationHardeningTest extends TestCase
 		$ids = array_map('intval', array_column($stmt->fetchAll(), 'tag_id'));
 		$stmt->close();
 		$this->assertSame([1], $ids);
+	}
+
+	public function testUnchangedRetainedItemPreservesAnEarlierHookEditAndItsOldSnapshot(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$post = $registry->getCollection('post');
+		$tag = $registry->getCollection('tag');
+		$oldValues = [];
+
+		RestHooks::for($post)->on('update.before', static fn (ItemUpdating $event) => $event->allow());
+		RestHooks::for($tag)->on('update.before', static function (ItemUpdating $event) use (&$oldValues): void {
+			$event->allow();
+			if ($event->getKey()->getValue() !== 2) {
+				return;
+			}
+
+			$oldValues[$event->getPathString()] = $event->getState()->getRow()['name'];
+			if ($event->getRootState()->getKey()?->getValue() === 1) {
+				$event->getState()->setValue('name', 'Edited by hook');
+			}
+		});
+
+		$this->coordinator($registry, $items)->batchUpdate($post, [
+			['identity' => 1, 'input' => ['tags' => [1, 2]]],
+			['identity' => 3, 'input' => ['tags' => [['id' => 2, 'name' => 'GraphQL'], 3]]],
+		]);
+
+		$this->assertSame(['tags.1' => 'GraphQL', 'tags.0' => 'GraphQL'], $oldValues);
+		$this->assertSame('Edited by hook', $items->findByIdentity($tag, $tag->getKey(2))['name']);
+	}
+
+	public function testBatchRetainedAndExplicitPatchesToTheSameFieldConflict(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$tag = $registry->getCollection('tag');
+
+		try {
+			$this->coordinator($registry, $items)->batchUpdate($registry->getCollection('post'), [
+				['identity' => 1, 'input' => ['tags' => [1, ['id' => 2, 'name' => 'First']]]],
+				['identity' => 3, 'input' => ['tags' => ['update' => [['id' => 2, 'name' => 'Second']]]]],
+			], false);
+			$this->fail('Expected conflicting representations of the same tag');
+		} catch (SyncException) {
+			$this->assertSame('GraphQL', $items->findByIdentity($tag, $tag->getKey(2))['name']);
+		}
+	}
+
+	public function testBatchExplicitDeleteOfAnAlreadyRemovedMemberFailsAtTheSecondPath(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+
+		try {
+			$this->coordinator($registry, $items)->batchUpdate($registry->getCollection('post'), [
+				['identity' => 1, 'input' => ['title' => 'Rolled back', 'tags' => ['delete' => [2]]]],
+				['identity' => 3, 'input' => ['tags' => ['delete' => [3, 2]]]],
+			], false);
+			$this->fail('Expected RELATED_NOT_FOUND for the second delete of tag 2');
+		} catch (RestApiError $error) {
+			$this->assertSame('RELATED_NOT_FOUND', $error->getErrorCode());
+			$this->assertSame('tags.delete.1', $error->getField());
+		}
+
+		$this->assertSame(3, $this->countRows($db, 'tag'));
+		$this->assertSame(0, $this->countRows($db, 'post', "title = 'Rolled back'"));
+	}
+
+	public function testBatchRepeatingAnExclusiveOmissionDeletesOnceAndPreservesTheHookSnapshot(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$items = $this->createItems($registry, $db);
+		$user = $registry->getCollection('user');
+		$user->relations->get('posts')->exclusive(true);
+		$deleted = [];
+
+		RestHooks::for($user)->on('update.before', static fn (ItemUpdating $event) => $event->allow());
+		RestHooks::for($registry->getCollection('post'))
+			->on('update.before', static fn (ItemUpdating $event) => $event->allow())
+			->on('delete.before', static function (ItemDeleting $event): void {
+				$event->allow();
+				$event->getState()->setMetadata('oldTitle', $event->getState()->getRow()['title']);
+			})
+			->on('delete.after', static function (ItemDeleted $event) use (&$deleted): void {
+				$deleted[] = [$event->getPath(), $event->getRow()['title'], $event->getState()->getMetadata('oldTitle')];
+			});
+
+		$this->coordinator($registry, $items)->batchUpdate($user, [
+			['identity' => 1, 'input' => ['posts' => [1]]],
+			['identity' => 1, 'input' => ['posts' => [1]]],
+		]);
+
+		$this->assertSame([[['posts', 'delete', 0], 'Draft Post', 'Draft Post']], $deleted);
+		$this->assertSame(0, $this->countRows($db, 'post', 'id = 2'));
+		$this->assertSame(1, $this->countRows($db, 'post', 'id = 1 AND user_id = 1'));
 	}
 
 	public function testBatchItemDeletesRelatedThenAnotherRootReferencingItFailsCleanly(): void
