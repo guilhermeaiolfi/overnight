@@ -328,15 +328,18 @@ $connection = $manager->getDatabaseConnection();
 
 ### Long-running workers
 
-`DatabaseScopeMiddleware` opens a database scope for each outer PSR-15 dispatch
-within an active execution context. Lookups of the same database name share an
-instance within that dispatch, including forwarded requests in the same
-context. On return or exception, the middleware clears the scope's Cycle heaps
-and drops its references to the database instances. Lookups outside the
-middleware use a separate cache until the context exits. Without an active
-context, the manager caches instances for its lifetime. Scoped lookups expect
-the configured database factory to return a fresh instance. Physical
-connection reuse follows the driver's persistence settings.
+In an active execution context, `DatabaseScopeMiddleware` gives each outer
+HTTP dispatch its own PDO and Cycle database instances. The manager creates
+each named instance on first use and reuses it for forwarded requests in the
+same context. When the dispatch returns or throws, the middleware closes the
+scope. The manager drops its references to the instances and clears any Cycle
+identity maps. Physical connection reuse follows the driver's persistence
+settings.
+
+Lookups before or outside the HTTP pipeline use a separate cache that lasts
+until the execution context exits. Without an active context, the manager
+caches instances for its lifetime. A database factory must return a fresh
+instance for each scope.
 
 The default `SwooleExecutionContext` uses the active Swoole coroutine. To use
 another runtime, bind an implementation of `ON\ExecutionContextInterface` in
@@ -347,8 +350,7 @@ Resolve the database through `DatabaseManager` where it is used. A service that
 stores a database, PDO handle, ORM, or query runtime can carry it across
 requests. This includes the container's ON Data `DataRuntime` and the REST
 services that hold it or a Cycle DBAL database, as well as GraphQL resolvers
-built at startup. Their database access requires separate scoping. Request
-preparers run before the PSR-15 middleware and use the execution context cache.
+built at startup. Their database access requires separate scoping.
 
 The regression tests use simulated coroutine IDs and an alternative execution
 context with real SQLite connections and Cycle heaps. They cover overlapping

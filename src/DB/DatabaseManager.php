@@ -60,26 +60,26 @@ class DatabaseManager
 	}
 
 	/**
-	 * The outermost HTTP dispatch in an execution context owns the database scope.
+	 * Returns true when the caller opens the scope and is responsible for closing it.
+	 * A forwarded request shares the scope that is already open.
 	 *
-	 * @template T
-	 * @param callable(): T $callback
-	 * @return T
+	 * @internal
 	 */
-	public function usingRequest(callable $callback): mixed
+	public function openRequestScope(string $contextId): bool
 	{
-		$id = $this->executionContext?->getId();
-		if ($id === null || isset($this->requestInstances[$id])) {
-			return $callback();
+		if (isset($this->requestInstances[$contextId])) {
+			return false;
 		}
 
-		$this->requestInstances[$id] = [];
+		$this->requestInstances[$contextId] = [];
 
-		try {
-			return $callback();
-		} finally {
-			$this->clearScope($this->requestInstances, $id);
-		}
+		return true;
+	}
+
+	/** @internal */
+	public function closeRequestScope(string $contextId): void
+	{
+		$this->clearScope($this->requestInstances, $contextId);
 	}
 
 	public function getDatabase(?string $name = null)

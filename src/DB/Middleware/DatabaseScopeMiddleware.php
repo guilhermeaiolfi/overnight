@@ -22,12 +22,20 @@ final class DatabaseScopeMiddleware implements MiddlewareInterface
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
-		if ($this->executionContext->getId() === null) {
+		$contextId = $this->executionContext->getId();
+		if ($contextId === null) {
 			return $handler->handle($request);
 		}
 
-		return $this->container->get(DatabaseManager::class)->usingRequest(
-			static fn (): ResponseInterface => $handler->handle($request)
-		);
+		$manager = $this->container->get(DatabaseManager::class);
+		$ownsScope = $manager->openRequestScope($contextId);
+
+		try {
+			return $handler->handle($request);
+		} finally {
+			if ($ownsScope) {
+				$manager->closeRequestScope($contextId);
+			}
+		}
 	}
 }
