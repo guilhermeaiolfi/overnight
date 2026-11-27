@@ -11,12 +11,12 @@ use Cycle\ORM\Factory;
 use Cycle\ORM\ORM;
 use Cycle\ORM\Schema;
 use Cycle\Schema\Registry;
+use ON\DB\ClosableDatabaseInterface;
 use ON\DB\DatabaseConfig;
-use ON\DB\DatabaseInterface;
 use RuntimeException;
 use function sprintf;
 
-class CycleDatabase implements DatabaseInterface
+class CycleDatabase implements ClosableDatabaseInterface
 {
 	protected $entityManager = null;
 	protected $dbal = null;
@@ -85,6 +85,21 @@ class CycleDatabase implements DatabaseInterface
 	public function cleanHeap(): void
 	{
 		$this->orm?->getHeap()->clean();
+	}
+
+	public function close(): void
+	{
+		$this->cleanHeap();
+
+		if (! $this->dbal instanceof CycleDatabaseManager) {
+			return;
+		}
+
+		foreach ($this->dbal->getDrivers() as $driver) {
+			if ($driver->isConnected()) {
+				$driver->disconnect();
+			}
+		}
 	}
 
 	public function getName(): string

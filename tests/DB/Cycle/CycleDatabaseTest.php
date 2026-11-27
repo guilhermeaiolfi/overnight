@@ -82,4 +82,32 @@ final class CycleDatabaseTest extends TestCase
 
 		$this->assertFalse($orm->getHeap()->has($entity));
 	}
+
+	public function testCloseCleansHeapAndDisconnectsDrivers(): void
+	{
+		$db = $this->createDatabase();
+		$db->setSchema(new Schema([]));
+
+		/** @var ORM $orm */
+		$orm = $db->getResource();
+		$entity = new stdClass();
+		$orm->getHeap()->attach($entity, new Node(Node::MANAGED, ['id' => 1], 'user'));
+
+		$driver = $db->getConnection()->driver('sqlite');
+		$driver->connect();
+		$driver->beginTransaction();
+
+		$this->assertTrue($driver->isConnected());
+		$this->assertSame(1, $driver->getTransactionLevel());
+
+		$db->close();
+
+		$this->assertFalse($orm->getHeap()->has($entity));
+		$this->assertFalse($driver->isConnected());
+		$this->assertSame(0, $driver->getTransactionLevel());
+
+		// Repeated close is safe and idempotent.
+		$db->close();
+		$this->assertFalse($driver->isConnected());
+	}
 }

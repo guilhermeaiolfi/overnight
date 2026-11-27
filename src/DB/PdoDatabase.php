@@ -8,7 +8,7 @@ use Exception;
 use ON\DB\DebugPDO\DebugPDO;
 use PDO;
 
-class PdoDatabase implements DatabaseInterface
+class PdoDatabase implements ClosableDatabaseInterface
 {
 	protected $resource;
 	protected $connection;
@@ -98,5 +98,11 @@ class PdoDatabase implements DatabaseInterface
 	public function setName(string $name): void
 	{
 		$this->name = $name;
+	}
+
+	public function close(): void
+	{
+		$this->connection = null;
+		$this->resource = null;
 	}
 }

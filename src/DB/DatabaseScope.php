@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ArrayObject;
-use ON\DB\Cycle\CycleDatabase;
 use SplObjectStorage;
+use Throwable;
 
 final class DatabaseScope
 {
-	/** @var SplObjectStorage<DatabaseManager, ArrayObject<string, DatabaseInterface>> */
+	/** @var SplObjectStorage<DatabaseManager, array<string, DatabaseInterface>> */
 	private SplObjectStorage $instances;
 
 	private ?self $request = null;
@@ -39,24 +38,53 @@ final class DatabaseScope
 		$request?->close();
 	}
 
-	/** @return ArrayObject<string, DatabaseInterface> */
-	public function instancesFor(DatabaseManager $manager): ArrayObject
+	public function get(DatabaseManager $manager, string $name): ?DatabaseInterface
 	{
 		$scope = $this->request ?? $this;
+		if (! $scope->instances->contains($manager)) {
+			return null;
+		}
 
-		return $scope->instances[$manager] ??= new ArrayObject();
+		return $scope->instances[$manager][$name] ?? null;
+	}
+
+	public function set(DatabaseManager $manager, string $name, DatabaseInterface $database): void
+	{
+		$scope = $this->request ?? $this;
+		$databases = $scope->instances->contains($manager) ? $scope->instances[$manager] : [];
+		$databases[$name] = $database;
+		$scope->instances[$manager] = $databases;
 	}
 
 	public function close(): void
 	{
-		$this->closeRequest();
-		foreach ($this->instances as $manager) {
-			foreach ($this->instances[$manager] as $database) {
-				if ($database instanceof CycleDatabase) {
-					$database->cleanHeap();
+		$firstError = null;
+
+		try {
+			$this->closeRequest();
+		} catch (Throwable $error) {
+			$firstError = $error;
+		}
+
+		$instances = $this->instances;
+		$this->instances = new SplObjectStorage();
+
+		foreach ($instances as $manager) {
+			foreach ($instances[$manager] as $database) {
+				if (! $database instanceof ClosableDatabaseInterface) {
+					continue;
+				}
+
+				try {
+					$database->close();
+				} catch (Throwable $error) {
+					$firstError ??= $error;
 				}
 			}
 		}
-		$this->instances = new SplObjectStorage();
+
+		if ($firstError !== null) {
+			throw $firstError;
+		}
 	}
 }

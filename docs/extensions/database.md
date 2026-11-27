@@ -329,12 +329,23 @@ $connection = $manager->getDatabaseConnection();
 ### Long-running workers
 
 In an active execution context, `DatabaseScopeMiddleware` gives each outer
-HTTP dispatch its own PDO and Cycle database instances. The manager creates
-each named instance on first use and reuses it for forwarded requests in the
-same context. When the dispatch returns or throws, the middleware closes the
-scope, clears each Cycle identity map, and drops the cached database instances.
-Physical connection reuse follows the driver's
-persistence settings.
+HTTP dispatch its own managed database instances. The manager creates each
+named instance on first use and reuses it for forwarded requests in the same
+context. When the dispatch returns or throws, the middleware closes the
+request scope, calls `close()` on every instance implementing
+`ON\DB\ClosableDatabaseInterface`, and drops the cached references.
+
+Both built-in databases implement `ClosableDatabaseInterface`:
+
+- `CycleDatabase::close()` clears the ORM identity map and disconnects the
+  connected DBAL drivers.
+- `PdoDatabase::close()` drops the wrapper's references to the PDO handle.
+  PHP manages the remaining handle lifetime and persistent connection reuse.
+
+Custom `DatabaseInterface` implementations remain backward-compatible without
+implementing `ClosableDatabaseInterface`; their references are dropped when the
+scope closes, and they can opt into deterministic teardown by implementing
+`ClosableDatabaseInterface`.
 
 Lookups before or outside the HTTP pipeline use a separate cache that lasts
 until the execution context exits. Without an active context, the manager
@@ -342,9 +353,8 @@ caches instances for its lifetime. A database factory must return a fresh
 instance for each scope.
 
 The default `SwooleDatabaseContext` stores the database scope in the current
-coroutine and releases it when the coroutine exits. To use another runtime,
-bind an implementation of `ON\DB\DatabaseContextInterface` in the container
-configuration.
+coroutine and closes it when the coroutine exits. For another runtime, bind
+`ON\DB\DatabaseContextInterface` in the container configuration.
 
 Resolve the database through `DatabaseManager` where it is used. A service that
 stores a database, PDO handle, ORM, or query runtime can carry it across
@@ -354,9 +364,10 @@ built at startup. Their database access requires separate scoping.
 
 The regression tests use simulated coroutine IDs and an alternative execution
 context with real SQLite connections and Cycle heaps. They cover overlapping
-dispatches, forwarding, exception cleanup, and successive requests in a
-reused context. Native Swoole scheduling and driver hooks require verification
-under Swoole.
+dispatches, forwarding, exception cleanup, transaction isolation, driver
+disconnect, custom closable and non-closable databases, and successive requests
+in a reused context. Native Swoole scheduling and driver hooks require
+verification under Swoole.
 
 ## Best Practices
 

@@ -17,12 +17,15 @@ use ON\Config\ConfigExtension;
 use ON\Container\ContainerConfig;
 use ON\Container\ContainerExtension;
 use ON\DataIntegration\DataExtension;
+use ON\DB\ClosableDatabaseInterface;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseContextInterface;
 use ON\DB\DatabaseExtension;
+use ON\DB\DatabaseInterface;
 use ON\DB\DatabaseManager;
 use ON\DB\DatabaseScope;
+use ON\DB\PdoDatabase;
 use ON\Event\EventsExtension;
 use ON\Middleware\PipelineExtension;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
@@ -87,10 +90,13 @@ final class WorkerDatabaseIsolationTest extends TestCase
 				case '/failure':
 					$failedDb = $db;
 					$failedEntity = $this->attachEntity($db);
+					$failedDb->getConnection()->driver('sqlite')->connect();
 					$this->assertNotSame($firstDb->getResource(), $db->getResource());
 					$this->assertNotSame($firstDb->getEntityManager(), $db->getEntityManager());
 					$this->assertNotSame($firstDb->getConnection(), $db->getConnection());
-					$this->assertFalse($manager->getDatabaseConnection('pdo')->inTransaction());
+					$failedPdo = $manager->getDatabaseConnection('pdo');
+					$this->assertFalse($failedPdo->inTransaction());
+					$failedPdo->beginTransaction();
 
 					throw $failure;
 
@@ -113,6 +119,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 						$firstPdo->rollBack();
 					}
 					$this->assertFalse($failedDb->getResource()->getHeap()->has($failedEntity));
+					$this->assertFalse($failedDb->getConnection()->driver('sqlite')->isConnected());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
 					$this->assertSame('forwarded', (string) $app->processForward('/forwarded', $request)->getBody());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
@@ -187,6 +194,96 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame($firstDb, $manager->getDatabase());
 		$context->finish();
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
+	}
+
+	public function testClosesCustomClosablePdoAndPreservesNonClosableDatabaseImplementers(): void
+	{
+		$app = $this->bootWorker(SingleWorkerContext::class);
+		$container = $app->ext('container')->getContainer();
+		$config = $container->get(DatabaseConfig::class);
+		$config->addDatabase(name: 'closable', class: TestClosableDatabase::class);
+		$config->addDatabase(name: 'legacy', class: TestLegacyDatabase::class);
+		$manager = $container->get(DatabaseManager::class);
+
+		$firstPdoDb = $firstPdo = $firstClosable = $firstLegacy = null;
+		$secondPdoDb = $secondClosable = $secondLegacy = null;
+
+		$app->pipe('/', function (ServerRequestInterface $request) use (
+			$manager,
+			&$firstPdoDb,
+			&$firstPdo,
+			&$firstClosable,
+			&$firstLegacy,
+			&$secondPdoDb,
+			&$secondClosable,
+			&$secondLegacy,
+		): ResponseInterface {
+			if ($request->getUri()->getPath() === '/fail') {
+				$firstPdoDb = $manager->getDatabase('pdo');
+				$firstPdo = $firstPdoDb->getConnection();
+				$firstPdo->beginTransaction();
+				$firstClosable = $manager->getDatabase('closable');
+				$firstLegacy = $manager->getDatabase('legacy');
+
+				throw new RuntimeException('boom');
+			}
+
+			$secondPdoDb = $manager->getDatabase('pdo');
+			$secondClosable = $manager->getDatabase('closable');
+			$secondLegacy = $manager->getDatabase('legacy');
+
+			return new TextResponse('ok');
+		}, 1500);
+
+		try {
+			$app->handle(new ServerRequest([], [], '/fail', 'GET'));
+			$this->fail('Expected /fail to throw.');
+		} catch (RuntimeException $e) {
+			$this->assertSame('boom', $e->getMessage());
+		}
+
+		$this->assertInstanceOf(PdoDatabase::class, $firstPdoDb);
+		$this->assertNull($firstPdoDb->getConnection());
+		$this->assertNull($firstPdoDb->getResource());
+		$this->assertTrue($firstPdo->inTransaction());
+		$firstPdo->rollBack();
+		$this->assertInstanceOf(TestClosableDatabase::class, $firstClosable);
+		$this->assertSame(1, $firstClosable->closeCount);
+		$this->assertInstanceOf(TestLegacyDatabase::class, $firstLegacy);
+
+		$this->assertSame('ok', (string) $app->handle(new ServerRequest([], [], '/ok', 'GET'))->getBody());
+		$this->assertNotSame($firstPdoDb, $secondPdoDb);
+		$this->assertNotSame($firstClosable, $secondClosable);
+		$this->assertNotSame($firstLegacy, $secondLegacy);
+		$this->assertSame(1, $secondClosable->closeCount);
+	}
+
+	public function testScopeClosesAllDatabasesEvenWhenOneCloseThrows(): void
+	{
+		$app = $this->bootWorker(SingleWorkerContext::class);
+		$container = $app->ext('container')->getContainer();
+		$config = $container->get(DatabaseConfig::class);
+		$config->addDatabase(name: 'broken', class: TestFailingCloseDatabase::class);
+		$config->addDatabase(name: 'healthy', class: TestClosableDatabase::class);
+		$manager = $container->get(DatabaseManager::class);
+
+		$healthy = null;
+		$app->pipe('/', function () use ($manager, &$healthy): ResponseInterface {
+			$manager->getDatabase('broken');
+			$healthy = $manager->getDatabase('healthy');
+
+			return new TextResponse('ok');
+		}, 1500);
+
+		try {
+			$app->handle(new ServerRequest([], [], '/', 'GET'));
+			$this->fail('Expected failing close to surface.');
+		} catch (RuntimeException $e) {
+			$this->assertSame('close failed', $e->getMessage());
+		}
+
+		$this->assertInstanceOf(TestClosableDatabase::class, $healthy);
+		$this->assertSame(1, $healthy->closeCount);
 	}
 
 	private function bootWorker(?string $executionContext = null): Application
@@ -321,5 +418,65 @@ final class TestExecutionContext implements DatabaseContextInterface
 	{
 		$this->scopes[$this->id]->close();
 		unset($this->scopes[$this->id]);
+	}
+}
+
+final class SingleWorkerContext implements DatabaseContextInterface
+{
+	private DatabaseScope $scope;
+
+	public function __construct()
+	{
+		$this->scope = new DatabaseScope();
+	}
+
+	public function current(): DatabaseScope
+	{
+		return $this->scope;
+	}
+}
+
+class TestLegacyDatabase implements DatabaseInterface
+{
+	public function __construct(private string $name)
+	{
+	}
+
+	public function getConnection(): mixed
+	{
+		return null;
+	}
+
+	public function getResource(): mixed
+	{
+		return null;
+	}
+
+	public function setName(string $name): void
+	{
+		$this->name = $name;
+	}
+
+	public function getName(): string
+	{
+		return $this->name;
+	}
+}
+
+final class TestClosableDatabase extends TestLegacyDatabase implements ClosableDatabaseInterface
+{
+	public int $closeCount = 0;
+
+	public function close(): void
+	{
+		$this->closeCount++;
+	}
+}
+
+final class TestFailingCloseDatabase extends TestLegacyDatabase implements ClosableDatabaseInterface
+{
+	public function close(): void
+	{
+		throw new RuntimeException('close failed');
 	}
 }

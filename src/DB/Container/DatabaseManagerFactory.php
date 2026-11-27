@@ -19,12 +19,7 @@ class DatabaseManagerFactory
 			throw new Exception("There is no DatabaseConfig set");
 		}
 		$config = $container->get(DatabaseConfig::class);
-
-		$manager = new DatabaseManager(
-			$config,
-			$container,
-			DatabaseExtension::resolveContext($container),
-		);
+		$manager = new DatabaseManager($config, $container, DatabaseExtension::resolveContext($container));
 
 		$manager->setEventDispatcher($container->get(EventDispatcherInterface::class));
 

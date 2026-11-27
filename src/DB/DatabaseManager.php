@@ -61,12 +61,14 @@ class DatabaseManager
 			}
 		}
 
-		$instances = $this->context?->current()?->instancesFor($this);
-		if ($instances === null) {
-			$instances = &$this->instances;
-		}
-		if (isset($instances[$name])) {
-			return $instances[$name];
+		$scope = $this->context?->current();
+		if ($scope !== null) {
+			$database = $scope->get($this, $name);
+			if ($database !== null) {
+				return $database;
+			}
+		} elseif (isset($this->instances[$name])) {
+			return $this->instances[$name];
 		}
 
 		$db_config = $this->config->getDatabase($name);
@@ -86,6 +88,12 @@ class DatabaseManager
 			$this->eventDispatcher->dispatch($event);
 		}
 
-		return $instances[$name] = $database;
+		if ($scope !== null) {
+			$scope->set($this, $name, $database);
+		} else {
+			$this->instances[$name] = $database;
+		}
+
+		return $database;
 	}
 }
