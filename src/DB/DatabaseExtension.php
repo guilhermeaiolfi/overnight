@@ -25,8 +25,7 @@ use ON\Extension\AbstractExtension;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
-use ON\Swoole\SwooleDatabasePool;
-use Psr\Container\ContainerInterface;
+use ON\Swoole\SwooleDatabaseStore;
 
 class DatabaseExtension extends AbstractExtension
 {
@@ -58,6 +57,7 @@ class DatabaseExtension extends AbstractExtension
 			$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
 			$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
 			$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
+			$event->containerConfig->addAlias(DatabaseStoreInterface::class, SwooleDatabaseStore::class);
 		});
 
 		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
@@ -66,14 +66,6 @@ class DatabaseExtension extends AbstractExtension
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
 		$event->pipeline->pipe(DatabaseScopeMiddleware::class, priority: PHP_INT_MAX);
-	}
-
-	/** @internal */
-	public static function resolvePool(ContainerInterface $container): DatabasePoolInterface
-	{
-		return $container->has(DatabasePoolInterface::class)
-			? $container->get(DatabasePoolInterface::class)
-			: $container->get(SwooleDatabasePool::class);
 	}
 
 	public function start(InitContext $context): void

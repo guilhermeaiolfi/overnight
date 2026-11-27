@@ -23,11 +23,12 @@ use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseExtension;
 use ON\DB\DatabaseInterface;
 use ON\DB\DatabaseManager;
-use ON\DB\DatabasePool;
-use ON\DB\DatabasePoolInterface;
+use ON\DB\DatabaseStore;
+use ON\DB\DatabaseStoreInterface;
 use ON\DB\PdoDatabase;
 use ON\Event\EventsExtension;
 use ON\Middleware\PipelineExtension;
+use ON\Swoole\SwooleDatabaseStore;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
@@ -53,22 +54,19 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$container = $app->ext('container')->getContainer();
 		$manager = $container->get(DatabaseManager::class);
 		$pipe = $container->get(MiddlewarePipeInterface::class);
-		$startupDb = $manager->getDatabase();
-		$startupEntity = $this->attachEntity($startupDb);
 		$failure = new RuntimeException('request failed');
-		$failedDb = $failedEntity = null;
+		$failedDb = $failedEntity = $failedPdo = null;
 		$firstDb = $firstEntity = $firstPdo = null;
 		$lastOutsideDb = null;
-		$pdo = $manager->getDatabaseConnection('pdo');
 
 		$app->pipe('/', function (ServerRequestInterface $request) use (
 			$app,
 			$manager,
 			$pipe,
-			$startupDb,
 			$failure,
 			&$failedDb,
 			&$failedEntity,
+			&$failedPdo,
 			&$firstDb,
 			&$firstEntity,
 			&$firstPdo,
@@ -79,7 +77,6 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 			switch ($request->getUri()->getPath()) {
 				case '/outside':
-					$this->assertNotSame($startupDb, $db);
 					$this->assertNotSame($lastOutsideDb, $db);
 					$lastOutsideDb = $db;
 
@@ -106,7 +103,6 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 				case '/first':
 					$firstDb = $db;
-					$this->assertNotSame($startupDb, $db);
 					$firstEntity = $this->attachEntity($db);
 					$firstPdo = $manager->getDatabaseConnection('pdo');
 					$firstPdo->beginTransaction();
@@ -122,8 +118,10 @@ final class WorkerDatabaseIsolationTest extends TestCase
 						$this->assertTrue($firstPdo->inTransaction());
 						$firstPdo->rollBack();
 					}
+
 					$this->assertFalse($failedDb->getResource()->getHeap()->has($failedEntity));
 					$this->assertFalse($failedDb->getConnection()->driver('sqlite')->isConnected());
+					$this->assertFalse($failedPdo->inTransaction());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
 					$this->assertSame('forwarded', (string) $app->processForward('/forwarded', $request)->getBody());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
@@ -139,71 +137,111 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 
 		CoroutineStub::$cid = 1;
-		$contextDb = $manager->getDatabase();
-		$contextEntity = $this->attachEntity($contextDb);
-		$otherManager = $container->make(DatabaseManager::class);
-		$this->assertNotSame($contextDb, $otherManager->getDatabase());
 		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
-		$this->assertNotSame($contextDb, $firstDb);
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
-		$this->assertNotSame($pdo, $firstPdo);
 		$this->assertSame('next', (string) $app->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
-		$this->assertSame($contextDb, $manager->getDatabase());
-		$this->assertTrue($contextDb->getResource()->getHeap()->has($contextEntity));
+
+		// Non-HTTP coroutine work closes when the coroutine exits.
+		$backgroundDb = $manager->getDatabase();
+		$backgroundEntity = $this->attachEntity($backgroundDb);
+		$this->assertSame($backgroundDb, $manager->getDatabase());
 		CoroutineStub::finish();
-		$this->assertFalse($contextDb->getResource()->getHeap()->has($contextEntity));
-		$this->assertNotSame($contextDb, $manager->getDatabase());
+		$this->assertFalse($backgroundDb->getResource()->getHeap()->has($backgroundEntity));
+		$this->assertNotSame($backgroundDb, $manager->getDatabase());
 		CoroutineStub::finish();
 
 		CoroutineStub::$cid = 2;
 		$handler = $this->createStub(RequestHandlerInterface::class);
 		$this->assertSame('next', (string) $app->process(new ServerRequest([], [], '/next', 'GET'), $handler)->getBody());
 
+		// Sequential requests outside a coroutine still isolate per dispatch.
 		CoroutineStub::$cid = -1;
 		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
 		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
-		$this->assertSame($startupDb, $manager->getDatabase());
-		$this->assertTrue($startupDb->getResource()->getHeap()->has($startupEntity));
-		$this->assertSame($pdo, $manager->getDatabaseResource('pdo'));
+
+		// Non-HTTP lookups outside a coroutine stay cached until explicitly closed.
+		$cliDb = $manager->getDatabase();
+		$cliEntity = $this->attachEntity($cliDb);
+		$this->assertSame($cliDb, $manager->getDatabase());
+		$manager->close();
+		$this->assertFalse($cliDb->getResource()->getHeap()->has($cliEntity));
+		$this->assertNotSame($cliDb, $manager->getDatabase());
 	}
 
-	public function testDatabasePoolSupportsAnotherRuntime(): void
+	#[RunInSeparateProcess]
+	#[PreserveGlobalState(false)]
+	public function testMultipleSwooleStoresDoNotCollideAndSkipAllocationWhenUnused(): void
 	{
-		$app = $this->bootWorker(TestRuntimePool::class);
+		if (class_exists(Coroutine::class)) {
+			$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
+		}
+		class_alias(CoroutineStub::class, Coroutine::class);
+
+		$storeA = new SwooleDatabaseStore();
+		$storeB = new SwooleDatabaseStore();
+
+		CoroutineStub::$cid = 10;
+		// Closing without touching any DB does not register deferred cleanup.
+		$storeA->close();
+		$this->assertSame(0, CoroutineStub::deferredCount(10));
+
+		$dbA = new TestClosableDatabase('a');
+		$dbB = new TestClosableDatabase('b');
+		$storeA->set('default', $dbA);
+		$storeB->set('default', $dbB);
+
+		$this->assertSame($dbA, $storeA->get('default'));
+		$this->assertSame($dbB, $storeB->get('default'));
+
+		$storeA->close();
+		$this->assertSame(1, $dbA->closeCount);
+		$this->assertSame(0, $dbB->closeCount);
+		$this->assertNull($storeA->get('default'));
+		$this->assertSame($dbB, $storeB->get('default'));
+
+		CoroutineStub::finish();
+		$this->assertSame(1, $dbA->closeCount);
+		$this->assertSame(1, $dbB->closeCount);
+	}
+
+	public function testDatabaseStoreSupportsAnotherRuntime(): void
+	{
+		$app = $this->bootWorker(TestRuntimeStore::class);
 		$container = $app->ext('container')->getContainer();
-		$pool = $container->get(TestRuntimePool::class);
+		$store = $container->get(TestRuntimeStore::class);
 		$manager = $container->get(DatabaseManager::class);
 
-		$pool->id = 'first';
+		$store->id = 'first';
 		$firstDb = $manager->getDatabase();
 		$entity = $this->attachEntity($firstDb);
 		$this->assertSame($firstDb, $manager->getDatabase());
 
-		$pool->id = 'second';
+		$store->id = 'second';
 		$secondDb = $manager->getDatabase();
 		$this->assertNotSame($firstDb, $secondDb);
 		$secondEntity = $this->attachEntity($secondDb);
-		$pool->finish();
+		$store->finish();
 		$this->assertFalse($secondDb->getResource()->getHeap()->has($secondEntity));
 		$this->assertTrue($firstDb->getResource()->getHeap()->has($entity));
 
 		$this->assertNotSame($secondDb, $manager->getDatabase());
-		$pool->finish();
-		$pool->id = 'first';
+		$store->finish();
+
+		$store->id = 'first';
 		$app->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
-			$this->assertNotSame($firstDb, $manager->getDatabase());
+			$this->assertSame($firstDb, $manager->getDatabase());
 
 			return new TextResponse('scoped');
 		}, 1500);
 		$this->assertSame('scoped', (string) $app->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
-		$this->assertSame($firstDb, $manager->getDatabase());
-		$pool->finish();
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
+		$this->assertNotSame($firstDb, $manager->getDatabase());
+		$store->finish();
 	}
 
 	public function testClosesCustomClosablePdoAndPreservesNonClosableDatabaseImplementers(): void
 	{
-		$app = $this->bootWorker(DatabasePool::class);
+		$app = $this->bootWorker(DatabaseStore::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'closable', class: TestClosableDatabase::class);
@@ -250,8 +288,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertInstanceOf(PdoDatabase::class, $firstPdoDb);
 		$this->assertNull($firstPdoDb->getConnection());
 		$this->assertNull($firstPdoDb->getResource());
-		$this->assertTrue($firstPdo->inTransaction());
-		$firstPdo->rollBack();
+		$this->assertFalse($firstPdo->inTransaction());
 		$this->assertInstanceOf(TestClosableDatabase::class, $firstClosable);
 		$this->assertSame(1, $firstClosable->closeCount);
 		$this->assertInstanceOf(TestLegacyDatabase::class, $firstLegacy);
@@ -265,7 +302,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 	public function testScopeClosesAllDatabasesEvenWhenOneCloseThrows(): void
 	{
-		$app = $this->bootWorker(DatabasePool::class);
+		$app = $this->bootWorker(DatabaseStore::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'broken', class: TestFailingCloseDatabase::class);
@@ -289,31 +326,12 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 		$this->assertInstanceOf(TestClosableDatabase::class, $healthy);
 		$this->assertSame(1, $healthy->closeCount);
+		$this->assertNotSame($healthy, $manager->getDatabase('healthy'));
 	}
 
-	public function testClosingPoolStillReleasesExecutionDatabasesWhenRequestCleanupThrows(): void
+	private function bootWorker(?string $storeClass = null): Application
 	{
-		$pool = new DatabasePool();
-		$owner = new stdClass();
-		$executionDatabase = new TestClosableDatabase('execution');
-		$pool->set($owner, 'execution', $executionDatabase);
-		$pool->openRequest();
-		$pool->set($owner, 'request', new TestFailingCloseDatabase('request'));
-
-		$this->expectException(RuntimeException::class);
-		$this->expectExceptionMessage('close failed');
-
-		try {
-			$pool->close();
-		} finally {
-			$this->assertSame(1, $executionDatabase->closeCount);
-			$this->assertNull($pool->get($owner, 'execution'));
-		}
-	}
-
-	private function bootWorker(?string $poolClass = null): Application
-	{
-		if ($poolClass === null) {
+		if ($storeClass === null) {
 			if (class_exists(Coroutine::class)) {
 				$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
 			}
@@ -324,10 +342,10 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->projectDir = sys_get_temp_dir() . '/overnight-worker-db-' . bin2hex(random_bytes(8));
 		mkdir($this->projectDir . '/config', recursive: true);
 		file_put_contents($this->projectDir . '/config/pipeline.php', '<?php return static function (): void {};');
-		if ($poolClass !== null) {
+		if ($storeClass !== null) {
 			$config = [
 				ContainerConfig::class => [
-					'definitions' => ['aliases' => [DatabasePoolInterface::class => $poolClass]],
+					'definitions' => ['aliases' => [DatabaseStoreInterface::class => $storeClass]],
 				],
 			];
 			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
@@ -412,6 +430,11 @@ final class CoroutineStub
 		self::$callbacks[self::$cid][] = $callback;
 	}
 
+	public static function deferredCount(int $cid): int
+	{
+		return count(self::$callbacks[$cid] ?? []);
+	}
+
 	public static function finish(): void
 	{
 		$callbacks = self::$callbacks[self::$cid] ?? [];
@@ -423,54 +446,55 @@ final class CoroutineStub
 	}
 }
 
-final class TestRuntimePool implements DatabasePoolInterface
+final class TestRuntimeStore implements DatabaseStoreInterface
 {
 	public ?string $id = null;
 
-	/** @var array<string, DatabasePool> */
-	private array $pools = [];
+	/** @var array<string, DatabaseStore> */
+	private array $stores = [];
 
-	private ?DatabasePool $fallback = null;
+	private ?DatabaseStore $fallback = null;
 
-	public function get(object $owner, string $name): ?DatabaseInterface
+	public function get(string $name): ?DatabaseInterface
 	{
-		return $this->databasePool()->get($owner, $name);
+		return $this->currentStore(create: false)?->get($name);
 	}
 
-	public function set(object $owner, string $name, DatabaseInterface $database): void
+	public function set(string $name, DatabaseInterface $database): void
 	{
-		$this->databasePool()->set($owner, $name, $database);
+		$this->currentStore(create: true)->set($name, $database);
 	}
 
-	public function openRequest(): bool
+	public function close(): void
 	{
-		return $this->executionPool()?->openRequest() ?? false;
-	}
-
-	public function closeRequest(): void
-	{
-		$this->executionPool()?->closeRequest();
-	}
-
-	private function executionPool(): ?DatabasePool
-	{
-		if ($this->id === null) {
-			return null;
-		}
-
-		return $this->pools[$this->id] ??= new DatabasePool();
-	}
-
-	private function databasePool(): DatabasePool
-	{
-		return $this->executionPool() ?? ($this->fallback ??= new DatabasePool());
+		$this->currentStore(create: false)?->close();
 	}
 
 	public function finish(): void
 	{
-		$pool = $this->pools[$this->id];
-		unset($this->pools[$this->id]);
-		$pool->close();
+		$store = $this->stores[$this->id];
+		unset($this->stores[$this->id]);
+		$store->close();
+	}
+
+	private function currentStore(bool $create): ?DatabaseStore
+	{
+		if ($this->id !== null) {
+			if (! isset($this->stores[$this->id])) {
+				if (! $create) {
+					return null;
+				}
+				$this->stores[$this->id] = new DatabaseStore();
+			}
+
+			return $this->stores[$this->id];
+		}
+
+		if (! $create) {
+			return $this->fallback;
+		}
+
+		return $this->fallback ??= new DatabaseStore();
 	}
 }
 

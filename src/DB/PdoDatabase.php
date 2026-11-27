@@ -102,7 +102,12 @@ class PdoDatabase implements ClosableDatabaseInterface
 
 	public function close(): void
 	{
+		$connection = $this->connection;
 		$this->connection = null;
 		$this->resource = null;
+
+		if ($connection instanceof PDO && $connection->inTransaction()) {
+			$connection->rollBack();
+		}
 	}
 }

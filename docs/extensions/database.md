@@ -328,35 +328,35 @@ $connection = $manager->getDatabaseConnection();
 
 ### Long-running workers
 
-Overnight opens a database scope for each outer HTTP dispatch, including
+Overnight scopes managed database instances per outer HTTP dispatch, including
 successive requests in the same coroutine and sequential requests outside a
-coroutine. The manager creates each named instance on first lookup. A forward
-reuses the parent dispatch's instances. When the outer dispatch returns or
-throws, the pool releases its instances and calls `close()` on each one that
-implements `ON\DB\ClosableDatabaseInterface`.
+coroutine. `DatabaseManager` creates each named instance on first lookup and
+caches it in `ON\DB\DatabaseStoreInterface`. An internal forward reuses the
+parent dispatch's instances. When the outer dispatch returns or throws,
+`DatabaseScopeMiddleware` closes the store, clearing cached entries and calling
+`close()` on each instance that implements `ON\DB\ClosableDatabaseInterface`.
+Outside HTTP (such as queue workers or loops), call `$manager->close()` to
+release the current scope explicitly.
 
 Both built-in databases implement `ClosableDatabaseInterface`:
 
 - `CycleDatabase::close()` clears the ORM identity map and disconnects the
   connected DBAL drivers.
-- `PdoDatabase::close()` drops the wrapper's references to the PDO handle.
-  PHP manages the remaining handle lifetime and persistent connection reuse.
+- `PdoDatabase::close()` drops the wrapper's references to the PDO handle and
+  rolls back any uncommitted transaction left open on it.
 
 Custom `DatabaseInterface` implementations remain backward-compatible without
 implementing `ClosableDatabaseInterface`; their references are dropped when the
 scope closes, and they can opt into deterministic teardown by implementing
 `ClosableDatabaseInterface`.
 
-Lookups before or outside the HTTP pipeline use a separate cache that lasts
-until the execution context exits. Without an active context, the pool keeps
-a fallback cache. A database factory must return a fresh instance for each
-scope.
-
-The default `SwooleDatabasePool` keeps one pool per coroutine and closes it
-when the coroutine exits. Pool entries are reused within their request or
-coroutine lifetime. For another runtime, bind `ON\DB\DatabasePoolInterface`
-in the container configuration. A runtime that handles one request at a time
-can use `ON\DB\DatabasePool` directly and close it when the worker exits.
+The default `ON\Swoole\SwooleDatabaseStore` keeps one `ON\DB\DatabaseStore` per
+active Swoole coroutine and closes it via `Coroutine::defer()` when the
+coroutine exits. Outside a coroutine, it uses a single fallback store. For
+another runtime, bind `ON\DB\DatabaseStoreInterface` in the container
+configuration (single-request-at-a-time workers can bind `ON\DB\DatabaseStore`
+directly). A database factory must return a fresh instance for each lookup
+after a scope closes.
 
 Resolve the database through `DatabaseManager` where it is used. A service that
 stores a database, PDO handle, ORM, or query runtime can carry it across
@@ -364,11 +364,11 @@ requests. This includes the container's ON Data `DataRuntime` and the REST
 services that hold it or a Cycle DBAL database, as well as GraphQL resolvers
 built at startup. Their database access requires separate scoping.
 
-The regression tests use simulated coroutine IDs and an alternative execution
-context with real SQLite connections and Cycle heaps. They cover overlapping
-dispatches, forwarding, exception cleanup, transaction isolation, driver
-disconnect, custom closable and non-closable databases, and successive requests
-in a reused context. Native Swoole scheduling and driver hooks require
+The regression tests use simulated coroutine IDs and an alternative runtime
+store with real SQLite connections and Cycle heaps. They cover overlapping
+dispatches, forwarding, exception cleanup, transaction rollback and isolation,
+driver disconnect, custom closable and non-closable databases, and successive
+requests in a reused context. Native Swoole scheduling and driver hooks require
 verification under Swoole.
 
 ## Best Practices
