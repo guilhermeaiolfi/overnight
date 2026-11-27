@@ -150,6 +150,7 @@ final class MultipartFormDataParserTest extends TestCase
 		$this->assertSame('one.txt', $result['uploadedFiles']['files'][0]->getClientFilename());
 
 		$this->expectException(InvalidMultipartFormDataException::class);
+		$this->expectExceptionCode(400);
 		$parser->parse(
 			$contentType,
 			$body . "--boundary\r\n"
@@ -170,6 +171,7 @@ final class MultipartFormDataParserTest extends TestCase
 			. "--boundary--\r\n";
 
 		$this->expectException(InvalidMultipartFormDataException::class);
+		$this->expectExceptionCode(400);
 		(new MultipartFormDataParser())->parse('multipart/form-data; boundary=boundary', $body);
 	}
 

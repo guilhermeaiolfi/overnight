@@ -20,8 +20,8 @@ final class MultipartFormDataParser
 
 	public function __construct(?int $maxFileUploads = null)
 	{
-		$configuredLimit = ini_get('max_file_uploads');
-		$this->maxFileUploads = $maxFileUploads ?? ($configuredLimit === false ? 20 : (int) $configuredLimit);
+		$configuredLimit = filter_var(ini_get('max_file_uploads'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 0]]);
+		$this->maxFileUploads = $maxFileUploads ?? ($configuredLimit === false ? 20 : $configuredLimit);
 		if ($this->maxFileUploads < 0) {
 			throw new InvalidArgumentException('The multipart file limit must be zero or greater.');
 		}
@@ -61,7 +61,7 @@ final class MultipartFormDataParser
 			if ($disposition['hasFilename']) {
 				$filename = $disposition['filename'] ?? '';
 				if ($filename !== '' && ++$fileCount > $this->maxFileUploads) {
-					throw new InvalidMultipartFormDataException('The multipart request contains too many uploaded files.');
+					throw new InvalidMultipartFormDataException('The multipart request contains too many uploaded files.', 400);
 				}
 
 				$this->setNestedValue(
@@ -225,12 +225,12 @@ final class MultipartFormDataParser
 	private function appendNestedValue(array &$target, mixed $value): int
 	{
 		if (array_key_exists(PHP_INT_MAX, $target)) {
-			throw new InvalidMultipartFormDataException('The multipart array index cannot be incremented.');
+			throw new InvalidMultipartFormDataException('The multipart array index cannot be incremented.', 400);
 		}
 
 		$target[] = $value;
 
-		return array_key_last($target);
+		return (int) array_key_last($target);
 	}
 
 	private function createUploadedFile(string $content, string $filename, string $mimeType): UploadedFileInterface

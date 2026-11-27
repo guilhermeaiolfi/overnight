@@ -7,11 +7,37 @@ namespace Tests\ON\Middleware;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Stream;
 use Laminas\Diactoros\UploadedFile;
+use Laminas\Stratigility\Middleware\ErrorHandler;
+use Laminas\Stratigility\MiddlewarePipe;
+use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
+use ON\Container\ResponseFactory;
+use ON\Http\MultipartFormDataParser;
 use ON\Middleware\BodyParams\MultipartFormDataStrategy;
+use ON\Middleware\ErrorResponseGenerator;
 use PHPUnit\Framework\TestCase;
 
 final class MultipartFormDataStrategyTest extends TestCase
 {
+	public function testPipelineReturnsBadRequestWhenUploadLimitIsExceeded(): void
+	{
+		$body = (new Stream('php://temp', 'wb+'));
+		$body->write("--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"file\"; filename=\"one.txt\"\r\n\r\none\r\n"
+			. "--boundary--\r\n");
+		$request = (new ServerRequest(
+			method: 'PATCH',
+			headers: ['Content-Type' => 'multipart/form-data; boundary=boundary'],
+		))->withBody($body);
+
+		$params = new BodyParamsMiddleware();
+		$params->addStrategy(new MultipartFormDataStrategy(new MultipartFormDataParser(maxFileUploads: 0)));
+		$pipeline = new MiddlewarePipe();
+		$pipeline->pipe(new ErrorHandler(new ResponseFactory(), new ErrorResponseGenerator()));
+		$pipeline->pipe($params);
+
+		$this->assertSame(400, $pipeline->handle($request)->getStatusCode());
+	}
+
 	public function testParsesMultipartPatchRequestsWhenParsedBodyIsEmpty(): void
 	{
 		$boundary = 'patch-boundary';
