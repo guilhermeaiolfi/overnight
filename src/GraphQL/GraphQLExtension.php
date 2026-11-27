@@ -7,6 +7,7 @@ namespace ON\GraphQL;
 use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
+use ON\Event\EventsExtension;
 use ON\Extension\AbstractExtension;
 use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\CycleResolver;
@@ -45,7 +46,7 @@ class GraphQLExtension extends AbstractExtension
 		$resolver = $this->buildResolver($container);
 
 		// Get event dispatcher from events extension
-		$eventsExt = $this->app->events;
+		$eventsExt = $this->app->ext(EventsExtension::class);
 
 		// Build the schema
 		$registry = $container->get(Registry::class);
@@ -60,7 +61,7 @@ class GraphQLExtension extends AbstractExtension
 
 		// Wire up per-request cleanup via event
 		if ($resolver !== null) {
-			$this->app->events->registerListener('graphql.query.complete', function () use ($resolver) {
+			$eventsExt->registerListener('graphql.query.complete', function () use ($resolver) {
 				$resolver->clearCache();
 			});
 		}

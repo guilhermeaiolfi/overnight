@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\Auth\Middleware;
 
 use Laminas\Diactoros\Response\EmptyResponse;
-use ON\Application;
 use ON\Config\AppConfig;
 use ON\Container\Executor\ExecutorInterface;
+use ON\Middleware\PipelineExtension;
 use ON\Router\RouteResult;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -18,7 +18,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
 {
 	public function __construct(
 		protected ExecutorInterface $executor,
-		protected Application $app,
+		protected PipelineExtension $pipeline,
 		protected AppConfig $config
 	) {
 	}
@@ -61,7 +61,7 @@ class AuthorizationMiddleware implements MiddlewareInterface
 			return new EmptyResponse(403);
 		}
 
-		return $this->app->processForward($errorPath, $request, 'GET');
+		return $this->pipeline->processForward($errorPath, $request, 'GET');
 	}
 
 	protected function findCheckPermissionsMethod(object $page, string $action): ?string

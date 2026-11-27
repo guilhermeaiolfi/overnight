@@ -6,8 +6,10 @@ namespace Tests\ON\Middleware;
 
 use Laminas\Diactoros\Response\TextResponse;
 use Laminas\Diactoros\ServerRequest;
+use Laminas\HttpHandlerRunner\RequestHandlerRunnerInterface;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use ON\Application;
+use ON\Event\EventsExtension;
 use ON\Middleware\PipelineExtension;
 use ON\Middleware\RequestPreparerInterface;
 use PHPUnit\Framework\TestCase;
@@ -108,23 +110,51 @@ final class PipelineExtensionTest extends TestCase
 		$extension->processForward('/loop', new ServerRequest(), 'GET');
 	}
 
+	public function testProcessForwardCanCreateARequestFromGlobals(): void
+	{
+		$extension = new PipelineExtension($this->createStub(Application::class));
+		$pipeline = $this->createMock(MiddlewarePipeInterface::class);
+		$pipeline->expects($this->once())
+			->method('handle')
+			->with($this->callback(static function (ServerRequestInterface $request): bool {
+				return $request->getUri()->getPath() === '/section' && $request->getMethod() === 'GET';
+			}))
+			->willReturn(new TextResponse('section'));
+		$this->setProtectedProperty($extension, 'pipeline', $pipeline);
+
+		$this->assertSame('section', (string) $extension->processForward('/section', method: 'GET')->getBody());
+	}
+
+	public function testRunInvokesTheRequestRunnerWithoutEventsInstalled(): void
+	{
+		$app = $this->createMock(Application::class);
+		$app->expects($this->once())->method('hasExtension')->with(EventsExtension::class)->willReturn(false);
+		$app->expects($this->never())->method('ext');
+		$extension = new PipelineExtension($app);
+		$runner = $this->createMock(RequestHandlerRunnerInterface::class);
+		$runner->expects($this->once())->method('run');
+		$this->setProtectedProperty($extension, 'runner', $runner);
+
+		$extension->run();
+	}
+
 	public function testLoadPipelineCanBeInvokedTwiceInSameProcess(): void
 	{
 		$tempFile = tempnam(sys_get_temp_dir(), 'on_pipeline_');
 		$this->assertNotFalse($tempFile);
 
-		file_put_contents($tempFile, "<?php\nreturn static function (\\ON\\Application \$app): void {\n\t\$app->loadedCount++;\n};\n");
+		file_put_contents($tempFile, "<?php\nreturn static function (\\ON\\Application \$app, \\ON\\Middleware\\PipelineExtension \$pipeline): void {\n\t\$app->loadedPipeline = \$pipeline;\n};\n");
 
 		try {
 			$app1 = new class () extends Application {
-				public int $loadedCount = 0;
+				public ?PipelineExtension $loadedPipeline = null;
 
 				public function __construct()
 				{
 				}
 			};
 			$app2 = new class () extends Application {
-				public int $loadedCount = 0;
+				public ?PipelineExtension $loadedPipeline = null;
 
 				public function __construct()
 				{
@@ -138,8 +168,8 @@ final class PipelineExtensionTest extends TestCase
 			$method->invoke($ext1, $tempFile);
 			$method->invoke($ext2, $tempFile);
 
-			$this->assertSame(1, $app1->loadedCount);
-			$this->assertSame(1, $app2->loadedCount);
+			$this->assertSame($ext1, $app1->loadedPipeline);
+			$this->assertSame($ext2, $app2->loadedPipeline);
 		} finally {
 			@unlink($tempFile);
 		}

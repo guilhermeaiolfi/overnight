@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Logging\Command;
 
 use ON\Application;
+use ON\Config\ConfigExtension;
 use ON\Console\TailReader;
 use ON\Logging\LoggingConfig;
 use Psr\Log\LoggerInterface;
@@ -36,7 +37,7 @@ class MonitorLogsCommand extends Command
 
 	protected function execute(InputInterface $input, OutputInterface $output): int
 	{
-		$logCfg = $this->app->config->get(LoggingConfig::class);
+		$logCfg = $this->app->ext(ConfigExtension::class)->get(LoggingConfig::class);
 		$logCfg->get("path");
 		if ($logCfg->get("type")) {
 

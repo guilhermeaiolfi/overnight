@@ -11,10 +11,10 @@ use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Attribute\On;
-use ON\Init\Init;
 use ON\Maintenance\Container\MaintenanceModeFactory;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\PipelineExtension;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -23,11 +23,6 @@ use Throwable;
 class MaintenanceExtension extends AbstractExtension implements MaintenanceModeInterface
 {
 	public const ID = 'maintenance';
-
-	public function register(Init $init): void
-	{
-		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
-	}
 
 	#[On]
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
@@ -45,7 +40,7 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$this->injectMiddleware();
+		$this->injectMiddleware($event->pipeline);
 	}
 
 	#[On(optional: true)]
@@ -59,9 +54,9 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 		return isset($_ENV["APP_MAINTENANCE"]) ? $_ENV["APP_MAINTENANCE"] == "true" : false;
 	}
 
-	public function injectMiddleware(): void
+	public function injectMiddleware(?PipelineExtension $pipeline = null): void
 	{
-		$this->app->pipe("/", MaintenanceMiddleware::class, 900);
+		($pipeline ?? $this->app->ext(PipelineExtension::class))->pipe("/", MaintenanceMiddleware::class, 900);
 	}
 
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface

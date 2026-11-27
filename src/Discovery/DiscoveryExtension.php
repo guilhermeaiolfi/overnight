@@ -7,6 +7,7 @@ namespace ON\Discovery;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
+use ON\Config\ConfigExtension;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Attribute\On;
@@ -61,7 +62,7 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function runDiscovery(): void
 	{
-		$this->appCfg = $this->app->config->get(AppConfig::class);
+		$this->appCfg = $this->app->ext(ConfigExtension::class)->get(AppConfig::class);
 
 		$discoverClassnames = array_keys($this->appCfg->get('discovery.discoverers', []));
 

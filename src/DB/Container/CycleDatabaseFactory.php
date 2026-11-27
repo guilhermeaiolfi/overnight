@@ -17,6 +17,7 @@ use Cycle\Schema\Generator\ValidateEntities;
 use Cycle\Schema\Registry as CycleRegistry;
 use ON\Application;
 use ON\Clockwork\CycleDatabaseLogger;
+use ON\Container\ContainerExtension;
 use ON\Data\Definition\Registry;
 use ON\Data\Mapper\ConversionGateway;
 use ON\DB\Cycle\CycleDatabase;
@@ -157,8 +158,8 @@ class CycleDatabaseFactory
 	protected function resolveConversionGateway(): ?ConversionGateway
 	{
 		$container = $this->container;
-		if ($container === null && $this->app->hasExtension('container')) {
-			$container = $this->app->ext('container')->getContainer();
+		if ($container === null && $this->app->hasExtension(ContainerExtension::class)) {
+			$container = $this->app->ext(ContainerExtension::class)->getContainer();
 		}
 
 		if ($container !== null && $container->has(ConversionGateway::class)) {

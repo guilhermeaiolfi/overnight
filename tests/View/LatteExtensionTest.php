@@ -19,7 +19,6 @@ use ON\View\Latte\LatteRendererFactory;
 use ON\View\ViewConfig;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
-use RuntimeException;
 
 final class LatteExtensionTest extends TestCase
 {
@@ -36,7 +35,7 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-		$app = $this->createApplication($containerConfig, $viewConfig);
+		$app = $this->createApplication();
 		$extension = new LatteExtension($app);
 
 		$configExt = new ConfigExtension($app);
@@ -64,7 +63,7 @@ final class LatteExtensionTest extends TestCase
 			],
 		]);
 
-		$app = $this->createApplication($containerConfig, $viewConfig);
+		$app = $this->createApplication();
 		$extension = new LatteExtension($app);
 
 		$configExt = new ConfigExtension($app);
@@ -109,39 +108,11 @@ final class LatteExtensionTest extends TestCase
 		}
 	}
 
-	private function createApplication(ContainerConfig $containerConfig, ViewConfig $viewConfig): Application
+	private function createApplication(): Application
 	{
-		$config = new class ($containerConfig, $viewConfig) {
-			public function __construct(
-				private ContainerConfig $containerConfig,
-				private ViewConfig $viewConfig
-			) {
-			}
+		$app = $this->createStub(Application::class);
+		$app->paths = new PathRegistry(['project' => sys_get_temp_dir()]);
 
-			public function get(string $className): object
-			{
-				if ($className === ContainerConfig::class) {
-					return $this->containerConfig;
-				}
-
-				if ($className === ViewConfig::class) {
-					return $this->viewConfig;
-				}
-
-				throw new RuntimeException("Unexpected config {$className}");
-			}
-		};
-
-		return new class ($config) extends Application {
-			public object $config;
-
-			public function __construct(object $config)
-			{
-				$this->config = $config;
-				$this->paths = new PathRegistry([
-					'project' => sys_get_temp_dir(),
-				]);
-			}
-		};
+		return $app;
 	}
 }

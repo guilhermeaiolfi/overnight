@@ -9,6 +9,7 @@ use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
 use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\PipelineExtension;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
@@ -101,7 +102,7 @@ class RestApiExtension extends AbstractExtension
 			$maxRequests = $config->get('rateLimit', 100);
 			$windowSeconds = $config->get('rateLimitWindow', 60);
 
-			$this->app->pipe($path, new RateLimitMiddleware(
+			$event->pipeline->pipe($path, new RateLimitMiddleware(
 				$rateLimiter,
 				$maxRequests,
 				$windowSeconds
@@ -109,9 +110,9 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		// Load addons
-		$this->loadAddons($container, $path);
+		$this->loadAddons($container, $event->pipeline, $path);
 
-		$this->app->pipe($path, $middleware, 10);
+		$event->pipeline->pipe($path, $middleware, 10);
 
 	}
 
@@ -186,6 +187,7 @@ class RestApiExtension extends AbstractExtension
 
 	protected function loadAddons(
 		ContainerInterface $container,
+		PipelineExtension $pipeline,
 		string $apiEndpointPath
 	): void {
 		$addons = $container->get(RestApiConfig::class)->get('addons', []);
@@ -214,7 +216,7 @@ class RestApiExtension extends AbstractExtension
 			$addon->register($addonOptions);
 
 			if ($addon instanceof MiddlewareInterface) {
-				$this->app->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
+				$pipeline->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
 			}
 		}
 	}

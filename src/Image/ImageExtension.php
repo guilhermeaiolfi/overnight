@@ -8,6 +8,7 @@ use Intervention\Image\ImageManager as InterventionImageManager;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
+use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
@@ -53,7 +54,7 @@ class ImageExtension extends AbstractExtension
 			name: 'image',
 			label: 'Image',
 			clear: function (): void {
-				$config = $this->app->config->get(ImageConfig::class);
+				$config = $this->app->ext(ConfigExtension::class)->get(ImageConfig::class);
 				$cachePath = Path::from($config->getPublicImagesUri(), $this->app->paths->get('public'))
 					->getAbsolutePath();
 

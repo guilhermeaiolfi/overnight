@@ -288,23 +288,23 @@ final class RouterRuntimeTest extends TestCase
 		);
 	}
 
-	public function testRouterExtensionRegistersDeleteMacro(): void
+	public function testRouterExtensionRegistersDeleteRoute(): void
 	{
-		$registered = [];
-		$app = $this->createMock(Application::class);
-		$app->method('isCli')->willReturn(false);
-		$app->method('registerMethod')->willReturnCallback(function (string $name, callable $cb) use (&$registered): void {
-			$registered[] = $name;
-		});
+		$config = new RouterConfig(['cache_enabled' => false, 'baseHref' => '/']);
+		$app = $this->createStub(Application::class);
+		$extension = new class ($app, $config) extends RouterExtension {
+			public function __construct(Application $app, RouterConfig $config)
+			{
+				parent::__construct($app);
+				$this->config = $config;
+			}
+		};
+		$extension->delete('/items', 'ItemsPage::delete', 'items.delete');
+		$router = new Router($config);
 
-		$ext = new RouterExtension($app);
-		$ext->register(new Init());
-
-		$this->assertContains('delete', $registered);
-		$this->assertContains('get', $registered);
-		$this->assertContains('post', $registered);
-		$this->assertContains('put', $registered);
-		$this->assertContains('patch', $registered);
+		$result = $router->match(new ServerRequest([], [], '/items', 'DELETE'));
+		$this->assertTrue($result->isSuccess());
+		$this->assertSame('items.delete', $result->getMatchedRouteName());
 	}
 
 	private function createCapturingHandler(?ServerRequestInterface &$captured): RequestHandlerInterface

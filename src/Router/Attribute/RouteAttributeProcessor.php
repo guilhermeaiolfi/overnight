@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Router\Attribute;
 
 use ON\Application;
+use ON\Config\ConfigExtension;
 use ON\Config\Scanner\AttributeReader;
 use ON\Router\RouterConfig;
 use Psr\Container\ContainerInterface;
@@ -18,7 +19,7 @@ class RouteAttributeProcessor
 		protected ContainerInterface $container,
 		protected array $options = []
 	) {
-		$this->config = $app->config->get(RouterConfig::class);
+		$this->config = $app->ext(ConfigExtension::class)->get(RouterConfig::class);
 	}
 
 	public function __invoke(AttributeReader $reader): void

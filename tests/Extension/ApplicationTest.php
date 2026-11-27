@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Tests\ON\Extension;
 
-use BadMethodCallException;
 use Exception;
 use FilesystemIterator;
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use OutOfBoundsException;
+use ON\Init\Init;
 use PHPUnit\Framework\Attributes\BackupGlobals;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -170,23 +169,18 @@ final class ApplicationTest extends TestCase
 		]);
 	}
 
-	public function testRegisteredPropertiesSupportIsset(): void
+	public function testRunReturnsTheRegisteredRunnerResult(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
-			'extensions' => [],
+			'extensions' => [RunnerExtension::class => []],
 			'debug' => true,
 		]);
-		$app->service = new stdClass();
-		$app->optionalService = null;
 
-		$this->assertTrue(isset($app->service));
-		$this->assertFalse(isset($app->optionalService));
-		$this->assertFalse(isset($app->unregisteredService));
-		$this->assertNull($app->optionalService);
+		$this->assertSame(42, $app->run());
 	}
 
-	public function testUndefinedPropertyThrowsOutOfBoundsException(): void
+	public function testRunThrowsWhenNoRunnerIsRegistered(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
@@ -194,24 +188,26 @@ final class ApplicationTest extends TestCase
 			'debug' => true,
 		]);
 
-		$this->expectException(OutOfBoundsException::class);
-		$this->expectExceptionMessage('missingProp');
+		$this->expectException(Exception::class);
+		$this->expectExceptionMessage('There is no extension defining the runner.');
 
-		$_ = $app->missingProp;
+		$app->run();
 	}
 
-	public function testUndefinedMethodThrowsBadMethodCallException(): void
+	public function testDuplicateRunnerRegistrationNamesBothExtensions(): void
 	{
-		$app = new Application([
+		$first = RunnerExtension::class;
+		$second = ConflictingRunnerExtension::class;
+		$this->expectException(Exception::class);
+		$this->expectExceptionMessage(
+			"Conflict detected: The runner was registered by multiple extensions: [{$first}, {$second}]. Only one extension can define the runner."
+		);
+
+		new Application([
 			'paths' => ['project' => $this->projectDir],
-			'extensions' => [],
+			'extensions' => [$first => [], $second => []],
 			'debug' => true,
 		]);
-
-		$this->expectException(BadMethodCallException::class);
-		$this->expectExceptionMessage('missingMethod');
-
-		$app->missingMethod();
 	}
 
 	private function removeDirectory(string $dir): void
@@ -240,4 +236,20 @@ final class ApplicationTest extends TestCase
 final class SampleValidExtension extends AbstractExtension
 {
 	public const ID = 'sample_valid';
+}
+
+final class RunnerExtension extends AbstractExtension
+{
+	public function register(Init $init): void
+	{
+		$this->app->setRunner(static fn (): int => 42);
+	}
+}
+
+final class ConflictingRunnerExtension extends AbstractExtension
+{
+	public function register(Init $init): void
+	{
+		$this->app->setRunner(static fn (): int => 1);
+	}
 }

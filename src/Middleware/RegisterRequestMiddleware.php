@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace ON\Middleware;
 
 use ON\Application;
+use ON\Event\EventsExtension;
 use ON\Event\NamedEvent;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -26,8 +27,8 @@ class RegisterRequestMiddleware implements MiddlewareInterface
 
 	public function process(ServerRequestInterface $request,  RequestHandlerInterface $handler): ResponseInterface
 	{
-		if ($this->app->hasExtension('events')) {
-			$this->app->ext('events')->dispatch(new NamedEvent('core.request', $request));
+		if ($this->app->hasExtension(EventsExtension::class)) {
+			$this->app->ext(EventsExtension::class)->dispatch(new NamedEvent('core.request', $request));
 		}
 
 		return $handler->handle($request);

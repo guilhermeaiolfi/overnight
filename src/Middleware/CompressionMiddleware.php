@@ -29,7 +29,7 @@ use function trim;
  * Skips responses that are already encoded, too small to benefit, or binary.
  *
  * Usage:
- *   $app->pipe('/', new CompressionMiddleware(), 999); // high priority = runs last (wraps response)
+ *   $pipeline->pipe('/', new CompressionMiddleware(), 999); // high priority = runs last (wraps response)
  *
  * Or in extension config:
  *   'compression' => true

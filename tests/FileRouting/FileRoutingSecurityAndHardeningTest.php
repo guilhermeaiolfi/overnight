@@ -57,7 +57,7 @@ final class FileRoutingSecurityAndHardeningTest extends TestCase
 	public function testApiRouteIsDisabledByDefault(): void
 	{
 		$app = $this->createApplication(exposeApi: null);
-		$routerConfig = $app->config->get(RouterConfig::class);
+		$routerConfig = $app->ext(ConfigExtension::class)->get(RouterConfig::class);
 		$routesByName = $this->indexRoutesByName($routerConfig);
 
 		$this->assertArrayNotHasKey('filerouting.api', $routesByName);
@@ -68,7 +68,7 @@ final class FileRoutingSecurityAndHardeningTest extends TestCase
 	public function testApiRouteIsMountedOnlyWhenExplicitlyEnabled(): void
 	{
 		$app = $this->createApplication(exposeApi: true);
-		$routerConfig = $app->config->get(RouterConfig::class);
+		$routerConfig = $app->ext(ConfigExtension::class)->get(RouterConfig::class);
 		$routesByName = $this->indexRoutesByName($routerConfig);
 
 		$this->assertArrayHasKey('filerouting.api', $routesByName);

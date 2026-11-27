@@ -46,7 +46,7 @@ class ConsoleExtension extends AbstractExtension
 	public function register(Init $init): void
 	{
 		if ($this->app->isCli()) {
-			$this->app->registerMethod("run", [$this, "run"]);
+			$this->app->setRunner([$this, 'run']);
 		}
 	}
 

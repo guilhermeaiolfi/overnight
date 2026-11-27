@@ -20,6 +20,7 @@ use ON\Config\AppConfig;
 use ON\Container\Executor\Executor;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
+use ON\Middleware\PipelineExtension;
 use ON\Middleware\ValidationMiddleware;
 use ON\RequestStack;
 use ON\Router\Middleware\RouteMiddleware;
@@ -336,24 +337,13 @@ final class PlainPageIntegrationTest extends TestCase
 		$auth->method('hasIdentity')->willReturn(false);
 
 		$forwardResponse = new HtmlResponse('login page');
-		$app = new class ($forwardResponse) extends Application {
-			private ResponseInterface $forwardResponse;
-
-			public function __construct(ResponseInterface $r)
-			{
-				$this->forwardResponse = $r;
-			}
-
-			public function processForward($path, $request): ResponseInterface
-			{
-				return $this->forwardResponse;
-			}
-		};
+		$pipeline = $this->createStub(PipelineExtension::class);
+		$pipeline->method('processForward')->willReturn($forwardResponse);
 
 		$config = new AppConfig();
 		$config->set('controllers.login', '/login');
 
-		$middleware = new SecurityMiddleware($auth, $app, $config);
+		$middleware = new SecurityMiddleware($auth, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -382,10 +372,10 @@ final class PlainPageIntegrationTest extends TestCase
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
 		$auth->method('hasIdentity')->willReturn(true);
 
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new SecurityMiddleware($auth, $app, $config);
+		$middleware = new SecurityMiddleware($auth, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -409,10 +399,10 @@ final class PlainPageIntegrationTest extends TestCase
 		};
 
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new SecurityMiddleware($auth, $app, $config);
+		$middleware = new SecurityMiddleware($auth, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -442,10 +432,10 @@ final class PlainPageIntegrationTest extends TestCase
 			}
 		};
 
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new AuthorizationMiddleware($this->executor, $app, $config);
+		$middleware = new AuthorizationMiddleware($this->executor, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -471,10 +461,10 @@ final class PlainPageIntegrationTest extends TestCase
 			}
 		};
 
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new AuthorizationMiddleware($this->executor, $app, $config);
+		$middleware = new AuthorizationMiddleware($this->executor, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -507,10 +497,10 @@ final class PlainPageIntegrationTest extends TestCase
 			}
 		};
 
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new AuthorizationMiddleware($this->executor, $app, $config);
+		$middleware = new AuthorizationMiddleware($this->executor, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'create');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
@@ -530,10 +520,10 @@ final class PlainPageIntegrationTest extends TestCase
 			}
 		};
 
-		$app = $this->createMock(Application::class);
+		$pipeline = $this->createStub(PipelineExtension::class);
 		$config = new AppConfig();
 
-		$middleware = new AuthorizationMiddleware($this->executor, $app, $config);
+		$middleware = new AuthorizationMiddleware($this->executor, $pipeline, $config);
 
 		$routeResult = $this->createRouteResult($page, 'index');
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $routeResult);
