@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\DB;
 
+use ArrayObject;
 use Cycle\Database\Config\SQLite\MemoryConnectionConfig;
 use Cycle\Database\Config\SQLiteDriverConfig;
 use Cycle\ORM\Heap\Node;
@@ -23,6 +24,7 @@ use ON\DB\DatabaseManager;
 use ON\Event\EventsExtension;
 use ON\ExecutionContextInterface;
 use ON\Middleware\PipelineExtension;
+use ON\ScopedResourceInterface;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
@@ -32,6 +34,7 @@ use Psr\Http\Server\RequestHandlerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
 use RuntimeException;
+use SplObjectStorage;
 use stdClass;
 use Swoole\Coroutine;
 
@@ -128,6 +131,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		CoroutineStub::$cid = 1;
 		$contextDb = $manager->getDatabase();
 		$contextEntity = $this->attachEntity($contextDb);
+		$otherManager = $container->make(DatabaseManager::class);
+		$this->assertNotSame($contextDb, $otherManager->getDatabase());
 		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
 		$this->assertNotSame($contextDb, $firstDb);
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
@@ -137,6 +142,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertTrue($contextDb->getResource()->getHeap()->has($contextEntity));
 		CoroutineStub::finish();
 		$this->assertFalse($contextDb->getResource()->getHeap()->has($contextEntity));
+		$this->assertNotSame($contextDb, $manager->getDatabase());
+		CoroutineStub::finish();
 
 		CoroutineStub::$cid = 2;
 		$handler = $this->createStub(RequestHandlerInterface::class);
@@ -263,12 +270,20 @@ final class CoroutineStub
 {
 	public static int $cid = -1;
 
+	/** @var array<int, ArrayObject> */
+	private static array $contexts = [];
+
 	/** @var array<int, list<callable>> */
 	private static array $callbacks = [];
 
 	public static function getCid(): int
 	{
 		return self::$cid;
+	}
+
+	public static function getContext(): ArrayObject
+	{
+		return self::$contexts[self::$cid] ??= new ArrayObject();
 	}
 
 	public static function defer(callable $callback): void
@@ -283,6 +298,7 @@ final class CoroutineStub
 		foreach (array_reverse($callbacks) as $callback) {
 			$callback();
 		}
+		unset(self::$contexts[self::$cid]);
 	}
 }
 
@@ -290,25 +306,31 @@ final class TestExecutionContext implements ExecutionContextInterface
 {
 	public ?string $id = null;
 
-	/** @var array<string, list<callable>> */
-	private array $callbacks = [];
+	/** @var array<string, SplObjectStorage<object, ScopedResourceInterface>> */
+	private array $resources = [];
 
-	public function getId(): ?string
+	public function isActive(): bool
 	{
-		return $this->id;
+		return $this->id !== null;
 	}
 
-	public function onExit(callable $callback): void
+	public function getScopedResource(object $owner, callable $create): ?ScopedResourceInterface
 	{
-		$this->callbacks[$this->id][] = $callback;
+		if ($this->id === null) {
+			return null;
+		}
+
+		$resources = $this->resources[$this->id] ??= new SplObjectStorage();
+
+		return $resources[$owner] ??= $create();
 	}
 
 	public function finish(): void
 	{
-		$callbacks = $this->callbacks[$this->id] ?? [];
-		unset($this->callbacks[$this->id]);
-		foreach (array_reverse($callbacks) as $callback) {
-			$callback();
+		$resources = $this->resources[$this->id];
+		unset($this->resources[$this->id]);
+		foreach ($resources as $owner) {
+			$resources[$owner]->release();
 		}
 	}
 }

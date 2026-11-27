@@ -6,7 +6,6 @@ namespace ON\DB;
 
 use DI\Container;
 use Exception;
-use ON\DB\Cycle\CycleDatabase;
 use ON\Event\NamedEvent;
 use ON\ExecutionContextInterface;
 use Psr\Container\ContainerInterface;
@@ -15,12 +14,6 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 class DatabaseManager
 {
 	protected $instances = [];
-
-	/** @var array<array-key, array<string, DatabaseInterface>> */
-	private array $requestInstances = [];
-
-	/** @var array<array-key, array<string, DatabaseInterface>> */
-	private array $contextInstances = [];
 
 	protected $eventDispatcher = null;
 
@@ -60,26 +53,16 @@ class DatabaseManager
 	}
 
 	/**
-	 * Returns true when the caller opens the scope and is responsible for closing it.
+	 * Returns the scope to the caller responsible for closing it.
 	 * A forwarded request shares the scope that is already open.
 	 *
 	 * @internal
 	 */
-	public function openRequestScope(string $contextId): bool
+	public function openRequestScope(): ?DatabaseScope
 	{
-		if (isset($this->requestInstances[$contextId])) {
-			return false;
-		}
+		$scope = $this->getScope();
 
-		$this->requestInstances[$contextId] = [];
-
-		return true;
-	}
-
-	/** @internal */
-	public function closeRequestScope(string $contextId): void
-	{
-		$this->clearScope($this->requestInstances, $contextId);
+		return $scope?->openRequest() ? $scope : null;
 	}
 
 	public function getDatabase(?string $name = null)
@@ -119,33 +102,16 @@ class DatabaseManager
 
 	private function &getInstances(): array
 	{
-		$id = $this->executionContext?->getId();
-		if ($id === null) {
+		$scope = $this->getScope();
+		if ($scope === null) {
 			return $this->instances;
 		}
 
-		if (isset($this->requestInstances[$id])) {
-			return $this->requestInstances[$id];
-		}
-
-		if (! isset($this->contextInstances[$id])) {
-			$this->executionContext->onExit(function () use ($id): void {
-				$this->clearScope($this->contextInstances, $id);
-			});
-			$this->contextInstances[$id] = [];
-		}
-
-		return $this->contextInstances[$id];
+		return $scope->getInstances();
 	}
 
-	private function clearScope(array &$scopes, string $id): void
+	private function getScope(): ?DatabaseScope
 	{
-		$instances = $scopes[$id];
-		unset($scopes[$id]);
-		foreach ($instances as $database) {
-			if ($database instanceof CycleDatabase) {
-				$database->cleanHeap();
-			}
-		}
+		return $this->executionContext?->getScopedResource($this, static fn (): DatabaseScope => new DatabaseScope());
 	}
 }

@@ -6,13 +6,15 @@ namespace ON;
 
 interface ExecutionContextInterface
 {
-	/**
-	 * Return an ID unique among active contexts or null outside a managed context.
-	 */
-	public function getId(): ?string;
+	public function isActive(): bool;
 
 	/**
-	 * Run the callback when the current context exits, including on failure.
+	 * Reuse one resource per owner in the current context and release it on exit.
+	 * Return null outside a managed context.
+	 *
+	 * @template T of ScopedResourceInterface
+	 * @param callable(): T $create
+	 * @return T|null
 	 */
-	public function onExit(callable $callback): void;
+	public function getScopedResource(object $owner, callable $create): ?ScopedResourceInterface;
 }

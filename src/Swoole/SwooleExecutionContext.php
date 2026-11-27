@@ -5,19 +5,39 @@ declare(strict_types=1);
 namespace ON\Swoole;
 
 use ON\ExecutionContextInterface;
+use ON\ScopedResourceInterface;
+use SplObjectStorage;
 use Swoole\Coroutine;
 
 final class SwooleExecutionContext implements ExecutionContextInterface
 {
-	public function getId(): ?string
+	public function isActive(): bool
 	{
-		$id = class_exists(Coroutine::class, false) ? Coroutine::getCid() : -1;
-
-		return $id > 0 ? (string) $id : null;
+		return class_exists(Coroutine::class, false) && Coroutine::getCid() > 0;
 	}
 
-	public function onExit(callable $callback): void
+	public function getScopedResource(object $owner, callable $create): ?ScopedResourceInterface
 	{
-		Coroutine::defer($callback);
+		if (! $this->isActive()) {
+			return null;
+		}
+
+		$context = Coroutine::getContext();
+		if ($context === null) {
+			return null;
+		}
+
+		$resources = $context[self::class] ??= new SplObjectStorage();
+		if (isset($resources[$owner])) {
+			return $resources[$owner];
+		}
+
+		$resource = $resources[$owner] = $create();
+		Coroutine::defer(static function () use ($resources, $owner, $resource): void {
+			unset($resources[$owner]);
+			$resource->release();
+		});
+
+		return $resource;
 	}
 }

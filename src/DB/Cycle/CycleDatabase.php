@@ -13,10 +13,11 @@ use Cycle\ORM\Schema;
 use Cycle\Schema\Registry;
 use ON\DB\DatabaseConfig;
 use ON\DB\DatabaseInterface;
+use ON\ScopedResourceInterface;
 use RuntimeException;
 use function sprintf;
 
-class CycleDatabase implements DatabaseInterface
+class CycleDatabase implements DatabaseInterface, ScopedResourceInterface
 {
 	protected $entityManager = null;
 	protected $dbal = null;
@@ -85,6 +86,11 @@ class CycleDatabase implements DatabaseInterface
 	public function cleanHeap(): void
 	{
 		$this->orm?->getHeap()->clean();
+	}
+
+	public function release(): void
+	{
+		$this->cleanHeap();
 	}
 
 	public function getName(): string
