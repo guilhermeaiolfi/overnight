@@ -164,7 +164,7 @@ final class DirectusQueryParser implements QueryParserInterface
 				$source->select(...array_map($source->field(...), $fields));
 			} elseif (! $selectAll && $relations !== []) {
 				$source->getSelections()->clear();
-			} elseif ($fieldPaths === [] && $collection->getPrimaryKeyFields() !== []) {
+			} elseif ($fieldPaths === []) {
 				// An explicit empty projection only exposes internal primary keys.
 				$source->getSelections()->removeByTag(SelectionTag::DEFAULT);
 			}
