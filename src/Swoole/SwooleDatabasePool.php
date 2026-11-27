@@ -25,12 +25,12 @@ final class SwooleDatabasePool implements DatabasePoolInterface
 
 	public function openRequest(): bool
 	{
-		return $this->coroutinePool()?->openRequest() ?? false;
+		return $this->databasePool()->openRequest();
 	}
 
 	public function closeRequest(): void
 	{
-		$this->coroutinePool()?->closeRequest();
+		$this->databasePool()->closeRequest();
 	}
 
 	private function databasePool(): DatabasePool

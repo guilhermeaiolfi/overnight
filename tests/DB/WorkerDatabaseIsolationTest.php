@@ -58,6 +58,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$failure = new RuntimeException('request failed');
 		$failedDb = $failedEntity = null;
 		$firstDb = $firstEntity = $firstPdo = null;
+		$lastOutsideDb = null;
 		$pdo = $manager->getDatabaseConnection('pdo');
 
 		$app->pipe('/', function (ServerRequestInterface $request) use (
@@ -71,13 +72,16 @@ final class WorkerDatabaseIsolationTest extends TestCase
 			&$firstDb,
 			&$firstEntity,
 			&$firstPdo,
+			&$lastOutsideDb,
 		): ResponseInterface {
 			$db = $manager->getDatabase();
 			$this->assertSame($db, $manager->getDatabase('cycle'));
 
 			switch ($request->getUri()->getPath()) {
 				case '/outside':
-					$this->assertSame($startupDb, $db);
+					$this->assertNotSame($startupDb, $db);
+					$this->assertNotSame($lastOutsideDb, $db);
+					$lastOutsideDb = $db;
 
 					return new TextResponse('outside');
 
@@ -156,6 +160,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame('next', (string) $app->process(new ServerRequest([], [], '/next', 'GET'), $handler)->getBody());
 
 		CoroutineStub::$cid = -1;
+		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
 		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
 		$this->assertSame($startupDb, $manager->getDatabase());
 		$this->assertTrue($startupDb->getResource()->getHeap()->has($startupEntity));

@@ -73,7 +73,7 @@ class DatabaseExtension extends AbstractExtension
 	{
 		return $container->has(DatabasePoolInterface::class)
 			? $container->get(DatabasePoolInterface::class)
-			: new SwooleDatabasePool();
+			: $container->get(SwooleDatabasePool::class);
 	}
 
 	public function start(InitContext $context): void

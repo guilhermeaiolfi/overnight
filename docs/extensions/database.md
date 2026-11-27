@@ -328,12 +328,12 @@ $connection = $manager->getDatabaseConnection();
 
 ### Long-running workers
 
-In a long-running worker, `DatabaseScopeMiddleware` uses the database pool to
-give each outer HTTP dispatch its own database instances. The manager creates
-each named instance on first use, and the pool shares it with forwarded
-requests. When the dispatch returns or throws, the pool drops the request's
-instances and calls `close()` on each one that implements
-`ON\DB\ClosableDatabaseInterface`.
+Overnight opens a database scope for each outer HTTP dispatch, including
+successive requests in the same coroutine and sequential requests outside a
+coroutine. The manager creates each named instance on first lookup. A forward
+reuses the parent dispatch's instances. When the outer dispatch returns or
+throws, the pool releases its instances and calls `close()` on each one that
+implements `ON\DB\ClosableDatabaseInterface`.
 
 Both built-in databases implement `ClosableDatabaseInterface`:
 
