@@ -1134,12 +1134,6 @@ parameters:
 			path: src/RestApi/Hook/RestHookTransaction.php
 
 		-
-			message: '#^Parameter \#1 \$array \(array\{0\?\: ON\\RestApi\\Mutation\\BoundMutation\}\) of array_values is already a list, call has no effect\.$#'
-			identifier: arrayValues.list
-			count: 1
-			path: src/RestApi/Mutation/DirectusMutationBinder.php
-
-		-
 			message: '#^Parameter \#1 \.\.\.\$arguments of method ON\\Data\\Mapper\\MapBuilder\:\:args\(\) expects list\<mixed\>, ON\\Data\\Definition\\Collection\\CollectionInterface given\.$#'
 			identifier: argument.type
 			count: 1
@@ -1250,13 +1244,7 @@ parameters:
 		-
 			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
 			identifier: property.notFound
-			count: 2
-			path: src/RestApi/Query/Parser/DirectusQueryParser.php
-
-		-
-			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
-			identifier: property.notFound
-			count: 3
+			count: 1
 			path: src/RestApi/Query/Parser/DirectusQueryParser.php
 
 		-
@@ -1274,30 +1262,6 @@ parameters:
 		-
 			message: '#^Call to an undefined method ON\\Data\\Query\\Expression\\ValueExpressionInterface\:\:desc\(\)\.$#'
 			identifier: method.notFound
-			count: 1
-			path: src/RestApi/Query/Parser/DirectusQueryParser.php
-
-		-
-			message: '#^Call to function is_array\(\) with non\-empty\-list\<ON\\Data\\Definition\\Field\\FieldInterface\> will always evaluate to true\.$#'
-			identifier: function.alreadyNarrowedType
-			count: 1
-			path: src/RestApi/Query/Parser/DirectusQueryParser.php
-
-		-
-			message: '#^Parameter \#1 \$array \(non\-empty\-list\<ON\\Data\\Definition\\Field\\FieldInterface\>\) of array_values is already a list, call has no effect\.$#'
-			identifier: arrayValues.list
-			count: 1
-			path: src/RestApi/Query/Parser/DirectusQueryParser.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between \*NEVER\* and null will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
-			count: 1
-			path: src/RestApi/Query/Parser/DirectusQueryParser.php
-
-		-
-			message: '#^Strict comparison using \!\=\= between ON\\Data\\Query\\Relation\\RelationRef and null will always evaluate to true\.$#'
-			identifier: notIdentical.alwaysTrue
 			count: 1
 			path: src/RestApi/Query/Parser/DirectusQueryParser.php
 

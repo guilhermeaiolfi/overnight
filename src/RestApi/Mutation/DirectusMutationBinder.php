@@ -389,7 +389,6 @@ final class DirectusMutationBinder
 				continue;
 			}
 
-			assert($identity !== null);
 			unset($omitted[$identity->getHash()]);
 			$child = $this->stageRelatedItem($session, $relation, $item, retained: $retained);
 			$bound[] = $this->bindNested($session, $child);
