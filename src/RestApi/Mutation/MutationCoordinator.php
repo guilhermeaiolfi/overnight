@@ -38,6 +38,7 @@ use ON\RestApi\Support\MutationInput;
 use ON\RestApi\Support\PrimaryKey;
 use ON\Validation\CollectionValidator;
 use ON\Validation\ValidationFailedException;
+use ReflectionReference;
 use stdClass;
 use Throwable;
 
@@ -573,8 +574,7 @@ final class MutationCoordinator
 				throw RestApiError::notFound();
 			}
 
-			// Share scalar snapshots only. Mapped values can contain mutable objects or resources.
-			if (array_filter($row, static fn (mixed $value): bool => $value !== null && ! is_scalar($value)) === []) {
+			if ($this->isReusableSnapshot($row)) {
 				$reloadedRows[$hash] = $row;
 			}
 		}
@@ -582,6 +582,18 @@ final class MutationCoordinator
 		$bound->state->markReady($row + $key->getValues());
 
 		return $row;
+	}
+
+	/** @param array<string, mixed> $row */
+	private function isReusableSnapshot(array $row): bool
+	{
+		foreach ($row as $field => $value) {
+			if (($value !== null && ! is_scalar($value)) || ReflectionReference::fromArrayElement($row, $field) !== null) {
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	private function resolveKeyAfterFlush(Session $session, BoundMutation $bound): Key

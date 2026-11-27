@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Tests\ON\RestApi;
 
 use DateTimeImmutable;
+use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
+use ON\Data\Key;
 use ON\Data\Mapper\Mapping;
+use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\DataIntegration\Container\DataRuntimeFactory;
 use ON\RestApi\Event\ItemUpdated;
 use ON\RestApi\Hook\RestHooks;
@@ -14,6 +17,7 @@ use ON\RestApi\Mutation\DirectusMutationBinder;
 use ON\RestApi\Mutation\MutationCoordinator;
 use ON\RestApi\Mutation\Payload\DirectusPayloadParser;
 use ON\RestApi\Mutation\SessionFactory;
+use ON\RestApi\Repository\ItemRepository;
 use PDO;
 use PDOStatement;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -32,7 +36,7 @@ final class MutationReloadTest extends TestCase
 	}
 
 	#[DataProvider('sharedRowFields')]
-	public function testBatchHooksReloadASharedNestedRow(bool $withMappedDate, int $expectedReloads): void
+	public function testBatchHooksReloadASharedNestedRow(bool $withMappedDate, int $expectedReloads, bool $withReference = false): void
 	{
 		$registry = new Registry();
 		$this->createFullSchema($registry);
@@ -53,6 +57,26 @@ final class MutationReloadTest extends TestCase
 
 		$items = $this->createItems($registry, $db);
 		$runtime = $this->runtimeForItems($items);
+		if ($withReference) {
+			$items = new class ($registry, $runtime, $db->database()) extends ItemRepository {
+				private array $names = [];
+
+				public function findByIdentity(
+					CollectionInterface $collection,
+					Key|string $identity,
+					string $output = PhpRepresentation::class,
+				): ?array {
+					$row = parent::findByIdentity($collection, $identity, $output);
+					if ($row !== null && $collection->getName() === 'tag') {
+						$this->names[] = $row['name'];
+						$latest = array_key_last($this->names);
+						$row['name'] = &$this->names[$latest];
+					}
+
+					return $row;
+				}
+			};
+		}
 		$sessions = new SessionFactory($runtime);
 		$coordinator = new MutationCoordinator(
 			$sessions,
@@ -66,7 +90,7 @@ final class MutationReloadTest extends TestCase
 		$seen = [];
 		$dates = [];
 		RestHooks::for($registry->getCollection('tag'))
-			->on('update.after', static function (ItemUpdated $event) use (&$seen, &$dates): void {
+			->on('update.after', static function (ItemUpdated $event) use (&$seen, &$dates, $withReference): void {
 				$row = $event->getRow();
 				$seen[] = [
 					$event->getRootState()->getKey()?->getValue(),
@@ -75,6 +99,9 @@ final class MutationReloadTest extends TestCase
 					$row['name'] ?? null,
 				];
 				$dates[] = $row['created_on'] ?? null;
+				if ($withReference) {
+					$row['name'] = 'hook-local reference edit';
+				}
 				$event->getState()->setValue('name', 'hook-local edit');
 			});
 
@@ -112,6 +139,7 @@ final class MutationReloadTest extends TestCase
 	{
 		yield 'scalar fields share one read' => [false, 1];
 		yield 'mapped date values stay independent' => [true, 2];
+		yield 'reference-backed fields stay independent' => [false, 2, true];
 	}
 }
 
