@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "2d196c7f024d38b8977cb3bfb7f7c9a2",
+    "content-hash": "c13ac35c570c0a0921d3c1b5663fa494",
     "packages": [
         {
             "name": "cycle/database",
@@ -574,10 +574,16 @@
         {
             "name": "guilhermeaiolfi/overnight-data",
             "version": "dev-master",
-            "dist": {
-                "type": "path",
-                "url": "../ondata",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/guilhermeaiolfi/overnight-data.git",
                 "reference": "622961bbcf082e420cd903d5e7b16f0cd2679d1d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/guilhermeaiolfi/overnight-data/zipball/622961bbcf082e420cd903d5e7b16f0cd2679d1d",
+                "reference": "622961bbcf082e420cd903d5e7b16f0cd2679d1d",
+                "shasum": ""
             },
             "require": {
                 "php": ">=8.3"
@@ -588,6 +594,7 @@
                 "phpstan/phpstan": "^1.12",
                 "phpunit/phpunit": "^11.5"
             },
+            "default-branch": true,
             "type": "library",
             "extra": {
                 "branch-alias": {
@@ -656,10 +663,11 @@
                 "metadata",
                 "php"
             ],
-            "transport-options": {
-                "symlink": true,
-                "relative": true
-            }
+            "support": {
+                "source": "https://github.com/guilhermeaiolfi/overnight-data/tree/master",
+                "issues": "https://github.com/guilhermeaiolfi/overnight-data/issues"
+            },
+            "time": "2026-11-26T19:13:29+00:00"
         },
         {
             "name": "illuminate/collections",
