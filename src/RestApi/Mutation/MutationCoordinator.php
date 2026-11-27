@@ -582,13 +582,15 @@ final class MutationCoordinator
 	{
 		$state = $session->getRepresentations()->get($bound->representation);
 		$root = $bound->rootRecord ?? $state?->getRootRecord();
-		if ($root?->getCollection()->getName() === $bound->collection->getName() && $root->hasKey()) {
-			return $root->getKey();
+		$key = $root?->getKey();
+		if ($key !== null && $key->getCollection()->getName() === $bound->collection->getName()) {
+			return $key;
 		}
 
 		foreach ($state?->getRecordsForCollection($bound->collection) ?? [] as $record) {
-			if ($record->hasKey()) {
-				return $record->getKey();
+			$key = $record->getKey();
+			if ($key !== null) {
+				return $key;
 			}
 		}
 

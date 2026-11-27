@@ -1,0 +1,13 @@
+includes:
+	- phpstan-baseline.neon
+
+parameters:
+	level: 5
+	phpVersion: 80300
+	paths:
+		- src
+	excludePaths:
+		analyse:
+			# These optional integrations need dependencies absent from the default install.
+			- src/Image
+			- src/Swoole
