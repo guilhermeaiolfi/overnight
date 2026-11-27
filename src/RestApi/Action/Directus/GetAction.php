@@ -76,12 +76,14 @@ final class GetAction implements RestActionInterface
 			throw RestApiError::notFound();
 		}
 
-		if ($context->hasNativeRelationAliases() && ! $manualResult) {
-			$item = RelationAliases::mapNative($item, $query->getFetchSchema(), $output);
+		$nativeAliases = $context->hasNativeRelationAliases();
+		$schema = $nativeAliases ? $query->getFetchSchema() : null;
+		if ($schema !== null) {
+			$item = RelationAliases::mapNative($item, $schema, $output);
 		}
 		$item = map($item)->args($collection)->from(PhpRepresentation::class)->as($output)->to([]);
-		if (! $context->hasNativeRelationAliases() || $manualResult) {
-			$item = RelationAliases::apply($item, $context->getRelationResponseNames());
+		if (! $nativeAliases || ($manualResult && $schema === null)) {
+			$item = RelationAliases::apply($item, $context->getRelationResponseNames(), preserveExisting: $nativeAliases);
 		}
 
 		return ['data' => $item];

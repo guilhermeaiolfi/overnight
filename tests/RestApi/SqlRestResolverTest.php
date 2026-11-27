@@ -9,7 +9,10 @@ use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\M2MRelation;
 use ON\Data\Mapper\Representation\WireRepresentation;
+use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\ItemGet;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\RestApiConfig;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -563,6 +566,20 @@ final class SqlRestResolverTest extends TestCase
 		self::assertSame([], $data[1]['drafts']);
 		self::assertSame([1, 2], array_column($data[0]['posts'], 'id'));
 		self::assertSame($data[0], $readActions->get($users, '1', $query, WireRepresentation::class));
+
+		RestHooks::for($users)->on('get', static function (ItemGet $event): void {
+			$event->allow();
+			$event->setResult($event->getQuery()->fetchOne());
+			$event->preventDefault();
+		});
+		$get = new GetAction(
+			$registry,
+			$this->createDataRuntime($database),
+			new RestApiConfig(['databaseType' => 'sqlite']),
+			$this->noopHookDispatcher($registry),
+		);
+		$fromHook = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
+		self::assertSame($data[0], $fromHook['data']);
 	}
 
 	public function testListWithMeta(): void
