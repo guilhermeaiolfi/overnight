@@ -9,6 +9,7 @@ use ON\Data\Query\Condition\ComparisonCondition;
 use ON\Data\Query\Condition\ComparisonOperator;
 use ON\Data\Query\Expression\AggregateExpression;
 use ON\Data\Query\Expression\AggregateFunction;
+use ON\Data\Query\Expression\AliasedExpression;
 use ON\Data\Query\Expression\FunctionCallExpression;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
@@ -75,7 +76,7 @@ final class QueryParserTest extends TestCase
 		$hasCountDistinct = false;
 		foreach ($selections as $selection) {
 			$expr = $selection->getExpression();
-			if ($expr instanceof \ON\Data\Query\Expression\AliasedExpression) {
+			if ($expr instanceof AliasedExpression) {
 				$expr = $expr->getExpression();
 			}
 			if ($expr instanceof AggregateExpression && $expr->getFunction() === AggregateFunction::COUNT_DISTINCT) {
@@ -104,6 +105,7 @@ final class QueryParserTest extends TestCase
 				$left = $condition->getLeft();
 				if ($left instanceof FunctionCallExpression) {
 					$filterExpr = $left;
+
 					break;
 				}
 			}
