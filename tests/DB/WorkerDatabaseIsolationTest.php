@@ -397,6 +397,48 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertNotSame($healthy, $manager->getDatabase('healthy'));
 	}
 
+	public function testPdoPreservesNamedPersistentPoolsAndUpdatesPersistenceOnSetConnection(): void
+	{
+		$this->previousCwd = (string) getcwd();
+		$this->projectDir = sys_get_temp_dir() . '/overnight-worker-db-' . bin2hex(random_bytes(8));
+		mkdir($this->projectDir, recursive: true);
+		$dsn = 'sqlite:' . $this->projectDir . '/named-pools.sqlite';
+
+		$config = new DatabaseConfig();
+		$config->addDatabase(name: 'pool_a', dsn: $dsn, options: [PDO::ATTR_PERSISTENT => 'pool_a']);
+		$config->addDatabase(name: 'pool_b', dsn: $dsn, options: [PDO::ATTR_PERSISTENT => 'pool_b']);
+		$config->addDatabase(name: 'dedicated', dsn: 'sqlite::memory:');
+
+		$dbA = new PdoDatabase('pool_a', $config);
+		$dbB = new PdoDatabase('pool_b', $config);
+		$pdoA = $dbA->getConnection();
+		$pdoB = $dbB->getConnection();
+
+		try {
+			$pdoA->beginTransaction();
+			$this->assertTrue($pdoA->inTransaction());
+			$this->assertFalse($pdoB->inTransaction());
+
+			// Replacing a non-persistent wrapper's handle with a persistent handle avoids active rollback on close().
+			$dedicated = new PdoDatabase('dedicated', $config);
+			$siblingPoolA = new PDO($dsn, null, null, [PDO::ATTR_PERSISTENT => 'pool_a']);
+			$dedicated->setConnection($siblingPoolA);
+			$dedicated->close();
+
+			$this->assertNull($dedicated->getConnection());
+			$this->assertTrue($pdoA->inTransaction());
+		} finally {
+			if ($pdoA->inTransaction()) {
+				$pdoA->rollBack();
+			}
+			$siblingPoolA = null;
+			$pdoA = null;
+			$pdoB = null;
+			$dbA->close();
+			$dbB->close();
+		}
+	}
+
 	private function bootWorker(?string $aliasClass = null, ?string $factoryClass = null): Application
 	{
 		if ($aliasClass === null && $factoryClass === null) {

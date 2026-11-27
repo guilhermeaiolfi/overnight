@@ -110,4 +110,42 @@ final class CycleDatabaseTest extends TestCase
 		$db->close();
 		$this->assertFalse($driver->isConnected());
 	}
+
+	public function testCloseSkipsUninitializedDriversAndStillDisconnectsActiveDrivers(): void
+	{
+		$config = new DatabaseConfig([
+			'databases' => [
+				'default' => [
+					'class' => CycleDatabase::class,
+					'options' => [
+						'default' => 'default',
+						'databases' => [
+							'default' => ['connection' => 'sqlite'],
+						],
+						'connections' => [
+							'sqlite' => new SQLiteDriverConfig(
+								connection: new MemoryConnectionConfig(),
+							),
+							'unused_broken' => [
+								'driver' => 'NonExistentDriverClass',
+							],
+						],
+					],
+				],
+			],
+		]);
+
+		$db = new CycleDatabase('default', $config);
+		$driver = $db->getConnection()->driver('sqlite');
+		$driver->connect();
+		$driver->beginTransaction();
+
+		$this->assertTrue($driver->isConnected());
+		$this->assertSame(1, $driver->getTransactionLevel());
+
+		$db->close();
+
+		$this->assertFalse($driver->isConnected());
+		$this->assertSame(0, $driver->getTransactionLevel());
+	}
 }

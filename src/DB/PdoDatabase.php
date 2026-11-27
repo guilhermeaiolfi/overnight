@@ -7,6 +7,7 @@ namespace ON\DB;
 use Exception;
 use ON\DB\DebugPDO\DebugPDO;
 use PDO;
+use Throwable;
 
 class PdoDatabase implements ClosableDatabaseInterface
 {
@@ -27,10 +28,10 @@ class PdoDatabase implements ClosableDatabaseInterface
 		$options = ! empty($parameters["options"]) ? $parameters["options"] : [];
 
 		// Persistent connections
-		if (! empty($parameters["persistent"]) || ! empty($options[PDO::ATTR_PERSISTENT])) {
-			$this->persistent = true;
+		if (! empty($parameters["persistent"]) && empty($options[PDO::ATTR_PERSISTENT])) {
 			$options[PDO::ATTR_PERSISTENT] = true;
 		}
+		$this->persistent = ! empty($options[PDO::ATTR_PERSISTENT]);
 
 		try {
 			$this->rawConnection = $this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
@@ -87,6 +88,14 @@ class PdoDatabase implements ClosableDatabaseInterface
 	{
 		$this->connection = $connection;
 		$this->rawConnection = $connection instanceof PDO ? $connection : null;
+		$this->persistent = false;
+		if ($this->rawConnection !== null) {
+			try {
+				$this->persistent = (bool) $this->rawConnection->getAttribute(PDO::ATTR_PERSISTENT);
+			} catch (Throwable) {
+				$this->persistent = false;
+			}
+		}
 	}
 
 	public function setResource($resource)
