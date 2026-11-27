@@ -44,6 +44,37 @@ abstract class AbstractCacheAdapter implements CacheAdapterInterface
 
 	abstract public function recover(DiscoverInterface $discover, DiscoveryLocation $location): DiscoverInterface;
 
+	/** @return list<string> */
+	protected function resolveLocationPatterns(DiscoveryLocation $location): array
+	{
+		$project = rtrim(str_replace('\\', '/', $this->app->paths->get('project')->getAbsolutePath()), '/');
+		$globProject = DIRECTORY_SEPARATOR === '\\'
+			? strtr($project, ['[' => '[[]', ']' => '[]]'])
+			: addcslashes($project, '*?[]{}');
+		$patterns = [];
+		foreach ($location->pattern as $pattern) {
+			if ($pattern === '' || str_contains($pattern, '://')) {
+				$patterns[] = $pattern;
+
+				continue;
+			}
+
+			if (DIRECTORY_SEPARATOR === '\\') {
+				$pattern = str_replace('\\', '/', $pattern);
+			}
+			if (Path::isAbsoluteString($pattern)) {
+				$patterns[] = $pattern;
+
+				continue;
+			}
+
+			$directory = $project . '/' . $pattern;
+			$patterns[] = $project !== $globProject && ! is_dir($directory) ? $globProject . '/' . $pattern : $directory;
+		}
+
+		return $patterns;
+	}
+
 	public function clear(?DiscoverInterface $discover = null, ?DiscoveryLocation $location = null): void
 	{
 		if ($discover === null || $location === null) {

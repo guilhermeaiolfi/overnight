@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace ON\Console\Command;
 
+use ON\Container\ApplicationBinding;
+use ON\FS\Path;
+use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -13,6 +16,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 class ServeCommand extends Command
 {
 	public function __construct(
+		private ?ContainerInterface $container = null,
 	) {
 		parent::__construct();
 	}
@@ -26,7 +30,7 @@ class ServeCommand extends Command
 			->setDefinition([
 				new InputOption('host', null, InputOption::VALUE_REQUIRED, 'Host', 'localhost'),
 				new InputOption('port', null, InputOption::VALUE_REQUIRED, 'Port', 8000),
-				new InputOption('publicDir', null, InputOption::VALUE_REQUIRED, 'Public Directoy (where index.php is at)', "public/"),
+				new InputOption('publicDir', null, InputOption::VALUE_REQUIRED, 'Public directory (defaults to the application public path)'),
 			])
 			->setDescription('Start a PHP built-in development server');
 		;
@@ -38,7 +42,9 @@ class ServeCommand extends Command
 
 		$host = trim((string) $input->getOption("host"));
 		$port = $input->getOption("port");
-		$publicDir = (string) $input->getOption("publicDir");
+		$app = $this->container === null ? null : ApplicationBinding::get($this->container);
+		$projectPath = $app?->paths->get('project');
+		$publicDir = (string) ($input->getOption('publicDir') ?? $app?->paths->get('public')->getAbsolutePath() ?? 'public/');
 
 		$bindHost = $this->validateHost($host);
 		if ($bindHost === null) {
@@ -54,6 +60,9 @@ class ServeCommand extends Command
 			return Command::FAILURE;
 		}
 
+		if ($projectPath !== null && trim($publicDir) !== '' && ! str_contains($publicDir, "\0")) {
+			$publicDir = Path::from($publicDir, $projectPath)->getAbsolutePath();
+		}
 		if ($publicDir === '' || str_contains($publicDir, "\0") || ! is_dir($publicDir)) {
 			$io->error(sprintf('Invalid public directory "%s". Directory does not exist.', $publicDir));
 
@@ -65,7 +74,7 @@ class ServeCommand extends Command
 			? [0 => STDIN, 1 => STDOUT, 2 => STDERR]
 			: [];
 
-		$process = proc_open($command, $descriptors, $pipes);
+		$process = proc_open($command, $descriptors, $pipes, $projectPath?->getAbsolutePath());
 		if (! is_resource($process)) {
 			$io->error('Failed to start PHP built-in development server.');
 

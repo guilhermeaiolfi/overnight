@@ -4,9 +4,13 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
+use Cycle\Database\Config\DriverConfig;
+use Cycle\Database\Config\SQLite\FileConnectionConfig;
+use Cycle\Migrations\Config\MigrationConfig;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
+use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\DB\Command\MigrateAllCommand;
@@ -21,6 +25,9 @@ use ON\DB\Cycle\CycleDatabase;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\DB\Middleware\DatabaseScopeMiddleware;
 use ON\Extension\AbstractExtension;
+use ON\FS\Path;
+use ON\FS\PathInterface;
+use ON\Init\Attribute\Before;
 use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -29,6 +36,54 @@ use ON\Swoole\SwooleDatabaseStore;
 class DatabaseExtension extends AbstractExtension
 {
 	public const ID = 'db';
+
+	#[Before]
+	public function onConfigReady(ConfigReadyEvent $event): void
+	{
+		$config = $event->config->get(DatabaseConfig::class);
+		$projectPath = $this->app->paths->get('project');
+		$migration = $config->get('migration');
+		if ($migration instanceof MigrationConfig) {
+			$options = $migration->toArray();
+			$directory = $migration->getDirectory();
+			$options['directory'] = Path::from($directory === '' ? '.' : $directory, $projectPath)->getAbsolutePath();
+			if (isset($options['vendorDirectories'])) {
+				$options['vendorDirectories'] = array_map(
+					static fn (string $path): string => Path::from($path === '' ? '.' : $path, $projectPath)->getAbsolutePath(),
+					$migration->getVendorDirectories()
+				);
+			}
+			$config->set('migration', new MigrationConfig($options));
+		}
+
+		foreach ($config->get('databases', []) as $name => $database) {
+			$dsn = $database['dsn'] ?? null;
+			if (is_a($database['class'] ?? '', PdoDatabase::class, true) && is_string($dsn) && str_starts_with($dsn, 'sqlite:')) {
+				$database['dsn'] = 'sqlite:' . $this->resolveSqliteFile(substr($dsn, strlen('sqlite:')), $projectPath);
+			} elseif (is_a($database['class'] ?? '', CycleDatabase::class, true)) {
+				foreach ($database['options']['connections'] ?? [] as $key => $driver) {
+					$connection = $driver instanceof DriverConfig ? $driver->connection : null;
+					if ($driver instanceof DriverConfig && $connection instanceof FileConnectionConfig) {
+						$connection = clone $connection;
+						$connection->database = $this->resolveSqliteFile($connection->database, $projectPath);
+						$driver = clone $driver;
+						$driver->connection = $connection;
+						$database['options']['connections'][$key] = $driver;
+					}
+				}
+			}
+			$config->set("databases.{$name}", $database);
+		}
+	}
+
+	private function resolveSqliteFile(string $file, PathInterface $projectPath): string
+	{
+		if ($file === '' || $file === ':memory:' || str_starts_with($file, 'file:') || Path::isAbsoluteString($file)) {
+			return $file;
+		}
+
+		return Path::from($file, $projectPath)->getAbsolutePath();
+	}
 
 	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void

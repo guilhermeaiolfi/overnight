@@ -28,6 +28,8 @@ use function is_string;
 use function is_writable;
 use Laminas\Diactoros\ServerRequestFactory;
 use Laminas\Stdlib\ArrayUtils;
+use ON\FS\Path;
+use ON\FS\PathInterface;
 use ON\Router\Exception\InvalidCacheDirectoryException;
 use ON\Router\Exception\InvalidCacheException;
 use ON\Router\Exception\RuntimeException;
@@ -143,7 +145,8 @@ class Router implements RouterInterface
 	public function __construct(
 		protected RouterConfig $config,
 		?RouteCollector $collection = null,
-		?callable $dispatcherFactory = null
+		?callable $dispatcherFactory = null,
+		protected ?PathInterface $projectPath = null,
 	) {
 		if (null === $collection) {
 			$collection = $this->createCollection();
@@ -168,6 +171,9 @@ class Router implements RouterInterface
 		$this->cacheEnabled = (bool) $config->get("cache_enabled", false);
 		$cacheFile = $config->get("cache_file", null);
 		$this->cacheFile = is_string($cacheFile) && $cacheFile !== '' ? $cacheFile : null;
+		if ($this->cacheFile !== null && $this->projectPath !== null) {
+			$this->cacheFile = Path::from($this->cacheFile, $this->projectPath)->getAbsolutePath();
+		}
 		$this->basepath = $config->get("baseHref", null);
 
 		if ($this->basepath === null) {

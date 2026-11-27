@@ -11,6 +11,7 @@ use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
+use ON\Init\Attribute\Before;
 use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\RouterConfig;
@@ -32,22 +33,9 @@ class FileRoutingExtension extends AbstractExtension
 	{
 		$fileroutingCfg = $event->config->get(FileRoutingConfig::class);
 		$router_cfg = $event->config->get(RouterConfig::class);
-		$view_cfg = $event->config->get(ViewConfig::class);
-		$template_namespace = $fileroutingCfg->get('template.namespace', 'filerouting');
-		$configuredCachePath = $fileroutingCfg->get('cachePath');
-
-		$cache_path = $this->app->paths->get('cache')->append('filerouting')->getAbsolutePath();
-		if ($configuredCachePath !== null && trim($configuredCachePath) !== '') {
-			$cache_path = Path::from($configuredCachePath, $this->app->paths->get('project'))
-				->getAbsolutePath();
+		if (! $fileroutingCfg->has('cachePath')) {
+			$fileroutingCfg->set('cachePath', $this->app->paths->get('cache')->append('filerouting')->getAbsolutePath());
 		}
-		$fileroutingCfg->set('cachePath', $cache_path);
-
-		if (! is_dir($cache_path) && ! mkdir($cache_path, 0755, true) && ! is_dir($cache_path)) {
-			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cache_path));
-		}
-
-		$view_cfg->set("templates.paths.{$template_namespace}", $cache_path);
 		$baseUrl = trim((string) $fileroutingCfg->get('url', '__fileRouting'), '/');
 		$this->registerApiRouteIfEnabled($fileroutingCfg, $router_cfg);
 		$router_cfg->addRoute(
@@ -58,11 +46,30 @@ class FileRoutingExtension extends AbstractExtension
 		);
 	}
 
-	#[On]
+	#[Before]
 	public function onConfigReady(ConfigReadyEvent $event): void
 	{
 		$fileroutingCfg = $event->config->get(FileRoutingConfig::class);
 		$router_cfg = $event->config->get(RouterConfig::class);
+		$view_cfg = $event->config->get(ViewConfig::class);
+		$projectPath = $this->app->paths->get('project');
+		$pagesPath = $fileroutingCfg->get('pagesPath');
+		if (is_string($pagesPath) && trim($pagesPath) !== '') {
+			$fileroutingCfg->set('pagesPath', Path::from($pagesPath, $projectPath)->getAbsolutePath());
+		}
+
+		$configuredCachePath = $fileroutingCfg->get('cachePath');
+		$cachePath = is_string($configuredCachePath) && trim($configuredCachePath) !== ''
+			? Path::from($configuredCachePath, $projectPath)->getAbsolutePath()
+			: $this->app->paths->get('cache')->append('filerouting')->getAbsolutePath();
+		$fileroutingCfg->set('cachePath', $cachePath);
+
+		if (! is_dir($cachePath) && ! mkdir($cachePath, 0755, true) && ! is_dir($cachePath)) {
+			throw new RuntimeException(sprintf('Unable to create file routing cache directory "%s".', $cachePath));
+		}
+
+		$templateNamespace = $fileroutingCfg->get('template.namespace', 'filerouting');
+		$view_cfg->set("templates.paths.{$templateNamespace}", $cachePath);
 
 		$this->registerApiRouteIfEnabled($fileroutingCfg, $router_cfg);
 	}

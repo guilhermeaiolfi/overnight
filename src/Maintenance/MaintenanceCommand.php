@@ -59,7 +59,7 @@ class MaintenanceCommand extends Command
 			return;
 		}
 
-		$envFile = '.env';
+		$envFile = $this->app->getDotenvPath();
 		$lines = is_file($envFile) ? (file($envFile) ?: []) : [];
 		$updated = [];
 		foreach ($lines as $index => $line) {

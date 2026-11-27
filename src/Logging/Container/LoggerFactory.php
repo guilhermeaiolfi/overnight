@@ -8,6 +8,8 @@ use Exception;
 use Monolog\Handler\StreamHandler;
 use Monolog\Level;
 use Monolog\Logger;
+use ON\Container\ApplicationBinding;
+use ON\FS\Path;
 use ON\Logging\LoggingConfig;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -30,6 +32,9 @@ final class LoggerFactory
 		if ($settings["type"] == "rotating_file") {
 			$format = date($settings["date_format"] ?? "Ymd");
 			$path = str_replace("%date%", $format, $path);
+		}
+		if (! str_contains($path, '://') && ($app = ApplicationBinding::get($container)) !== null) {
+			$path = Path::from($path, $app->paths->get('project'))->getAbsolutePath();
 		}
 
 		$logger->pushHandler(new StreamHandler($path, Level::Warning));

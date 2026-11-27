@@ -109,8 +109,8 @@ final class RouterRuntimeTest extends TestCase
 
 	public function testRouterFactoryHandlesMissingRouterConfig(): void
 	{
-		$container = $this->createMock(ContainerInterface::class);
-		$container->method('has')->with(RouterConfig::class)->willReturn(false);
+		$container = $this->createStub(ContainerInterface::class);
+		$container->method('has')->willReturn(false);
 
 		$router = (new RouterFactory())($container);
 		$this->assertInstanceOf(Router::class, $router);

@@ -138,14 +138,17 @@ class ConfigExtension extends AbstractExtension
 
 		$context->emit(new ConfigConfigureEvent($this));
 
-		$env = $_ENV['APP_ENV'] ?? 'production';
-		$files = array_values(array_filter(
-			Glob::glob("config" . sprintf('{,/*.}{all,%s,local}.php', $env), Glob::GLOB_BRACE, true),
-			static fn (string $file): bool => ! str_ends_with(str_replace('\\', '/', $file), 'config/extensions.php')
-		));
-
-		foreach ($files as $file) {
-			$this->processFile($file);
+		$directory = $this->app->paths->get('config')->getAbsolutePath();
+		// Glob patterns use forward slashes and match the configured directory literally.
+		$literalGlob = ['[' => '[[]', ']' => '[]]', '*' => '[*]', '?' => '[?]'];
+		$directory = rtrim(strtr(str_replace('\\', '/', $directory), $literalGlob), '/');
+		foreach (array_unique(['all', $_ENV['APP_ENV'] ?? 'production', 'local']) as $env) {
+			$suffix = strtr($env, $literalGlob);
+			foreach (Glob::glob("{$directory}/*.{$suffix}.php") as $file) {
+				if (is_file($file)) {
+					$this->processFile($file);
+				}
+			}
 		}
 
 		$this->saveCache();
@@ -155,6 +158,7 @@ class ConfigExtension extends AbstractExtension
 
 	protected function processFile(string $file): void
 	{
+		$file = Path::from($file, $this->app->paths->get('project'))->getAbsolutePath();
 		$obj = include $file;
 
 		if ($obj instanceof Closure) {

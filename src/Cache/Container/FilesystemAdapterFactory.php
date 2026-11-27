@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\Cache\Container;
 
 use Exception;
-use ON\Application;
 use ON\Cache\CacheConfig;
+use ON\Container\ApplicationBinding;
 use ON\FS\Path;
 use Psr\Container\ContainerInterface;
 use Psr\Log\LoggerInterface;
@@ -21,14 +21,12 @@ class FilesystemAdapterFactory
 		}
 		$config = $c->get(CacheConfig::class);
 
-		$defaultDirectory = 'var/cache/symfony';
-		if ($c->has(Application::class)) {
-			$defaultDirectory = $c->get(Application::class)->paths->get('cache')->append('symfony')->getAbsolutePath();
-		}
+		$app = ApplicationBinding::get($c);
+		$defaultDirectory = $app?->paths->get('cache')->append('symfony')->getAbsolutePath() ?? 'var/cache/symfony';
 
 		$directory = $config->get("adapter.directory", $defaultDirectory);
-		if ($c->has(Application::class)) {
-			$directory = Path::from($directory, $c->get(Application::class)->paths->get('project'))
+		if ($app !== null) {
+			$directory = Path::from($directory, $app->paths->get('project'))
 				->getAbsolutePath();
 		}
 		$namespace = $config->get("adapter.namespace", "ON");

@@ -33,7 +33,7 @@ class TimestampCacheAdapter extends AbstractCacheAdapter
 		$finder = new Finder();
 
 		$timestamp = (int) $this->oldest($discovers, $location);
-		$finder->files()->in($location->pattern)->date(">= " . date("d.m.Y H:i:s", $timestamp));
+		$finder->files()->in($this->resolveLocationPatterns($location))->date(">= " . date("d.m.Y H:i:s", $timestamp));
 
 		// Pre-load all timestamps before the loop
 		$timestamps = [];

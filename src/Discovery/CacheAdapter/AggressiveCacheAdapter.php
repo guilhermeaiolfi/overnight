@@ -40,7 +40,7 @@ class AggressiveCacheAdapter extends AbstractCacheAdapter
 		}
 
 		$finder = new Finder();
-		$finder->files()->in($location->pattern);
+		$finder->files()->in($this->resolveLocationPatterns($location));
 		foreach ($finder as $file) {
 			foreach ($noCacheableDiscovers as $discover) {
 				$discover->discover($file, $location);

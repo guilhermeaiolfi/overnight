@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Router\Container;
 
+use ON\Container\ApplicationBinding;
 use ON\Router\Router;
 use ON\Router\RouterConfig;
 use Psr\Container\ContainerInterface;
@@ -16,6 +17,6 @@ class RouterFactory
 			? $c->get(RouterConfig::class)
 			: new RouterConfig();
 
-		return new Router($config);
+		return new Router($config, projectPath: ApplicationBinding::get($c)?->paths->get('project'));
 	}
 }

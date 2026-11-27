@@ -6,6 +6,7 @@ namespace ON\View\Latte;
 
 use Latte\Engine;
 use ON\Application;
+use ON\FS\Path;
 use ON\View\ViewConfig;
 use Psr\Container\ContainerInterface;
 
@@ -18,8 +19,9 @@ class LatteRendererFactory
 
 		$latte->addExtension(new SectionLatteExtension());
 
-		if (isset($config['latte']['tempDirectory']) && is_string($config['latte']['tempDirectory']) && $config['latte']['tempDirectory'] !== '') {
-			$latte->setTempDirectory($config['latte']['tempDirectory']);
+		$tempDirectory = $config['latte']['tempDirectory'] ?? null;
+		if (is_string($tempDirectory) && $tempDirectory !== '') {
+			$latte->setTempDirectory(Path::from($tempDirectory, $app->paths->get('project'))->getAbsolutePath());
 		}
 
 		$autoRefresh = filter_var($config['latte']['autorefresh'] ?? false, FILTER_VALIDATE_BOOLEAN);
