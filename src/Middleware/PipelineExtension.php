@@ -47,6 +47,7 @@ use ON\MiddlewareFactoryInterface;
 use ON\RequestStack;
 use ON\RequestStackInterface;
 use ON\Response\ServerRequestErrorResponseGenerator;
+use ON\Runtime\HttpRuntime;
 use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
@@ -72,7 +73,7 @@ class PipelineExtension extends AbstractExtension
 	private const FORWARD_DEPTH_ATTRIBUTE = self::class . '::forward_depth';
 
 	protected RequestHandlerRunnerInterface $runner;
-	protected RequestStack $requestStack;
+	protected RequestStackInterface $requestStack;
 	protected MiddlewarePipeInterface $pipeline;
 	public MiddlewareFactory $factory;
 	protected ContainerInterface $container;
@@ -82,9 +83,7 @@ class PipelineExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		if (! $this->app->isCli()) {
-			$this->app->setRunner([$this, 'run']);
-		}
+		$this->app->registerRuntime('http', new HttpRuntime());
 	}
 
 	#[On]
@@ -153,7 +152,7 @@ class PipelineExtension extends AbstractExtension
 
 	protected function setupPipeline(ContainerInterface $container): void
 	{
-		$this->requestStack = $container->get(RequestStack::class);
+		$this->requestStack = $container->get(RequestStackInterface::class);
 		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
 		$this->factory = $container->get(MiddlewareFactory::class);
 		$this->runner = $container->get(RequestHandlerRunner::class);

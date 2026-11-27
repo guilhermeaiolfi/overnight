@@ -7,6 +7,9 @@ namespace Tests\ON\Console;
 use Fiber;
 use ON\Application;
 use ON\Cache\CacheExtension;
+use ON\Config\Scanner\AttributeReader;
+use ON\Console\Attribute\ConsoleAttributeProcessor;
+use ON\Console\Attribute\ConsoleCommand;
 use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
@@ -19,12 +22,50 @@ use ON\Init\Init;
 use ON\Router\RouterExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use ReflectionClass;
 use RuntimeException;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Tester\CommandTester;
 
 final class ConsoleExtensionTest extends TestCase
 {
+	public function testConsoleAttributesAreDiscoveredOutsideCliAndRemainQueued(): void
+	{
+		$app = $this->createMock(Application::class);
+		$app->expects($this->never())->method('isCli');
+		$app->method('hasExtension')->with(ConsoleExtension::class)->willReturn(true);
+		$console = new ConsoleExtension($app);
+		$app->method('ext')->with(ConsoleExtension::class)->willReturn($console);
+
+		$reader = new AttributeReader();
+		$fixture = new ReflectionClass(ConsoleAttributeFixture::class);
+		$reader->cacheData($fixture->getName(), $reader->extractData($fixture));
+		$container = $this->createStub(ContainerInterface::class);
+		$container->method('get')->willReturnMap([
+			[ExecutorInterface::class, $this->createStub(ExecutorInterface::class)],
+			[ServeCommand::class, new ServeCommand()],
+		]);
+
+		$console->onContainerReady(new ContainerReadyEvent($this->createStub(ContainerExtension::class), $container));
+		(new ConsoleAttributeProcessor($app, $container))($reader);
+		$this->assertFalse($console->getConsoleApp()->has('demo:attribute'));
+
+		$console->flush();
+		$this->assertTrue($console->getConsoleApp()->has('demo:attribute'));
+	}
+
+	public function testConsoleAttributeProcessorSkipsDiscoveryWithoutTheConsoleExtension(): void
+	{
+		$app = $this->createMock(Application::class);
+		$app->expects($this->never())->method('isCli');
+		$app->expects($this->once())->method('hasExtension')->with(ConsoleExtension::class)->willReturn(false);
+		$app->expects($this->never())->method('ext');
+		$reader = $this->createMock(AttributeReader::class);
+		$reader->expects($this->never())->method('getAttributes');
+
+		(new ConsoleAttributeProcessor($app, $this->createStub(ContainerInterface::class)))($reader);
+	}
+
 	public function testAddCommandDuringContainerReadyDoesNotCrashBeforeStart(): void
 	{
 		$app = $this->createMock(Application::class);
@@ -195,5 +236,13 @@ final class ConsoleExtensionTest extends TestCase
 		} finally {
 			@unlink($tmpFile);
 		}
+	}
+}
+
+final class ConsoleAttributeFixture
+{
+	#[ConsoleCommand('demo:attribute')]
+	public function execute(): void
+	{
 	}
 }

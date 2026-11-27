@@ -10,6 +10,7 @@ use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
 use ON\Init\InitAttributeLoader;
+use ON\Runtime\RuntimeInterface;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -35,10 +36,13 @@ class Application
 
 	protected ExtensionProfiler $extensionProfiler;
 
-	/** @var callable|null */
-	protected $runner = null;
+	/** @var array<string, RuntimeInterface> */
+	protected array $runtimes = [];
 
-	protected ?string $runnerOwner = null;
+	/** @var array<string, string> */
+	protected array $runtimeOwners = [];
+
+	protected ?string $activeRuntime = null;
 
 	/**
 	 * @param array{
@@ -52,13 +56,16 @@ class Application
 	 *   dotenv_path?: ?string,
 	 *   test_envs?: ?string[],
 	 *   use_putenv?: ?bool,
-	 *   runtimes?: ?array,
+	 *   runtime?: RuntimeInterface|string|null,
+	 *   runtimes?: array<string, RuntimeInterface>|null,
 	 *   error_handler?: string|false,
 	 *   env_var_name?: string,
 	 *   debug_var_name?: string,
 	 *   dotenv_overload?: ?bool,
 	 *   error_reporting?: ?int,
 	 * }|null $options `paths` accepts a map of path names to strings.
+	 *     `runtimes` registers named instances before extensions load.
+	 *     `runtime` selects the default by name, registered class, or instance.
 	 */
 	public function __construct(
 		protected ?array $options = []
@@ -128,6 +135,10 @@ class Application
 
 		$this->extensionProfiler = new ExtensionProfiler((bool) ($options['profile'] ?? false));
 		$this->init = new Init($this->extensionProfiler);
+
+		foreach ($options['runtimes'] ?? [] as $name => $runtime) {
+			$this->registerRuntime((string) $name, $runtime);
+		}
 
 		$this->loadExtensions();
 	}
@@ -531,23 +542,103 @@ class Application
 		return $this->extensions[$className] ?? $this->aliases[$className];
 	}
 
-	public function setRunner(callable $runner): void
+	public function registerRuntime(string $name, RuntimeInterface $runtime): void
 	{
-		$owner = $this->init->getCurrentExtension() ?? 'unknown';
-		if ($this->runner !== null) {
-			throw new Exception("Conflict detected: The runner was registered by multiple extensions: [{$this->runnerOwner}, {$owner}]. Only one extension can define the runner.");
+		if (trim($name) === '') {
+			throw new Exception('Runtime names must be non-empty.');
 		}
 
-		$this->runner = $runner;
-		$this->runnerOwner = $owner;
+		$owner = $this->init->getCurrentExtension() ?? 'unknown';
+		if ($this->hasRuntime($name)) {
+			$existingOwner = $this->runtimeOwners[$name];
+
+			throw new Exception("Conflict detected: Runtime \"{$name}\" was registered by multiple extensions: [{$existingOwner}, {$owner}].");
+		}
+
+		$this->runtimes[$name] = $runtime;
+		$this->runtimeOwners[$name] = $owner;
 	}
 
-	public function run(): mixed
+	public function hasRuntime(string $name): bool
 	{
-		if ($this->runner === null) {
-			throw new Exception('There is no extension defining the runner.');
+		return isset($this->runtimes[$name]);
+	}
+
+	public function getRuntime(string $name): RuntimeInterface
+	{
+		return $this->runtimes[$name] ?? throw new Exception("Runtime \"{$name}\" is not registered on the application.");
+	}
+
+	/** @return array<string, RuntimeInterface> */
+	public function getRuntimes(): array
+	{
+		return $this->runtimes;
+	}
+
+	public function getActiveRuntime(): ?string
+	{
+		return $this->activeRuntime;
+	}
+
+	public function run(RuntimeInterface|string|null $runtime = null): int
+	{
+		$runtime ??= $this->options['runtime'] ?? $this->defaultRuntimeName();
+		if ($runtime instanceof RuntimeInterface) {
+			$activeName = $runtime::class;
+			$resolved = $runtime;
+		} else {
+			$activeName = $this->resolveRuntimeName($runtime);
+			$resolved = $this->getRuntime($activeName);
 		}
 
-		return ($this->runner)();
+		$previousRuntime = $this->activeRuntime;
+		$this->activeRuntime = $activeName;
+
+		try {
+			return $resolved->run($this);
+		} finally {
+			$this->activeRuntime = $previousRuntime;
+		}
+	}
+
+	private function defaultRuntimeName(): string
+	{
+		if ($this->runtimes === []) {
+			throw new Exception('There are no runtimes registered on the application.');
+		}
+		if (count($this->runtimes) === 1) {
+			return (string) array_key_first($this->runtimes);
+		}
+
+		$default = $this->isCli() ? 'console' : 'http';
+		if ($this->hasRuntime($default)) {
+			return $default;
+		}
+
+		$registered = implode(', ', array_keys($this->runtimes));
+
+		throw new Exception(
+			"No default runtime matches this SAPI. Registered runtimes: {$registered}. "
+			. 'Select one with $app->run("...") or new Application(["runtime" => "..."]).'
+		);
+	}
+
+	private function resolveRuntimeName(string $runtime): string
+	{
+		if ($this->hasRuntime($runtime)) {
+			return $runtime;
+		}
+
+		$matches = array_filter($this->runtimes, static fn (RuntimeInterface $candidate): bool => $candidate instanceof $runtime);
+		if (count($matches) === 1) {
+			return (string) array_key_first($matches);
+		}
+
+		$registered = $this->runtimes === [] ? '(none)' : implode(', ', array_keys($this->runtimes));
+		if ($matches !== []) {
+			throw new Exception("Runtime \"{$runtime}\" matches multiple registered runtimes. Select one by name. Registered runtimes: {$registered}.");
+		}
+
+		throw new Exception("Runtime \"{$runtime}\" is not registered on the application. Registered runtimes: {$registered}.");
 	}
 }
