@@ -15,7 +15,7 @@ use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use ReflectionFunction;
 use RuntimeException;
@@ -46,13 +46,6 @@ class ConfigExtension extends AbstractExtension
 				->getAbsolutePath();
 		} else {
 			$this->cachePath = $app->paths->get('cache')->append('config.php')->getAbsolutePath();
-		}
-	}
-
-	public function register(Init $init): void
-	{
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
 		}
 	}
 
@@ -229,6 +222,7 @@ class ConfigExtension extends AbstractExtension
 		return false;
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(

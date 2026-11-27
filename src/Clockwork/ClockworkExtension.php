@@ -15,7 +15,7 @@ use ON\Clockwork\Middleware\ClockworkMiddleware;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\EventSubscriberInterface;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Router;
 use Psr\Container\ContainerInterface;
@@ -60,16 +60,14 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		];
 	}
 
-	public function register(Init $init): void
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		if (! $this->isActive()) {
+		if ($this->clockwork === null) {
 			return;
 		}
 
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
-		$init->on(PipelineReadyEvent::class, function (): void {
-			$this->injectMiddleware();
-		});
+		$event->pipeline->pipe("/", ClockworkMiddleware::class, 900);
 	}
 
 	public function injectMiddleware(): void
@@ -81,6 +79,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$this->app->pipe("/", ClockworkMiddleware::class, 900);
 	}
 
+	#[On(optional: true)]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
 		if ($this->clockwork === null) {

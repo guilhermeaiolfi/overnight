@@ -19,6 +19,8 @@ use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\PipelineExtension;
 use ON\RequestStackInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -141,8 +143,13 @@ final class ClockworkMiddlewareTest extends TestCase
 		$this->assertFalse($prodExt->isActive());
 
 		$init = new Init();
-		$prodExt->register($init);
-		$this->assertSame([], $init->getSubscriptionMap());
+		$init->registerExtension($prodExt);
+		$prodContainer = $this->createMock(ContainerInterface::class);
+		$prodContainer->expects($this->never())->method('has');
+		$pipeline = $this->createMock(PipelineExtension::class);
+		$pipeline->expects($this->never())->method('pipe');
+		$init->emit(new ContainerReadyEvent($this->createStub(ContainerExtension::class), $prodContainer));
+		$init->emit(new PipelineReadyEvent($pipeline, $prodContainer));
 
 		// Non-Monolog PSR-3 logger should not crash onContainerReady when active
 		$debugApp = $this->createMock(Application::class);
@@ -176,7 +183,9 @@ final class ClockworkMiddlewareTest extends TestCase
 		};
 		$container->set(LoggerInterface::class, new NullLogger());
 
-		$activeExt->onContainerReady(new ContainerReadyEvent(
+		$init = new Init();
+		$init->registerExtension($activeExt);
+		$init->emit(new ContainerReadyEvent(
 			$this->createMock(ContainerExtension::class),
 			$container
 		));

@@ -22,7 +22,9 @@ use ON\Auth\Middleware\SecurityMiddleware;
 use ON\Config\AppConfig;
 use ON\Container\Executor\Executor;
 use ON\Container\Executor\TypeHintContainerResolver;
+use ON\Init\Init;
 use ON\Middleware\ExecutionMiddleware;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\MiddlewarePriorityPipe;
 use ON\Middleware\NotFoundMiddleware;
 use ON\Middleware\PipelineExtension;
@@ -240,8 +242,9 @@ class AuthMiddlewareTest extends TestCase
 
 		$pipelineExt->registerMiddlewares();
 
-		$authExt = new AuthExtension($app);
-		$authExt->onPipelineReady();
+		$init = new Init();
+		$init->registerExtension(new AuthExtension($app));
+		$init->emit(new PipelineReadyEvent($pipelineExt, $this->createStub(ContainerInterface::class)));
 
 		$pipe->process(new ServerRequest(), new class () implements RequestHandlerInterface {
 			public function handle(ServerRequestInterface $request): ResponseInterface

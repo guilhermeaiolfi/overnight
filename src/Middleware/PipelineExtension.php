@@ -35,6 +35,7 @@ use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
 use ON\Handler\NotFoundHandler;
 use ON\Http\RequestContext;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -87,16 +88,14 @@ class PipelineExtension extends AbstractExtension
 		if (! $this->app->isCli()) {
 			$this->app->registerMethod('run', [$this, 'run']);
 		}
-
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 	}
 
+	#[On]
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
 	}
 
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -123,6 +122,7 @@ class PipelineExtension extends AbstractExtension
 		]);
 	}
 
+	#[On]
 	public function onContainerReady(ContainerReadyEvent $event, InitContext $context): void
 	{
 		$this->container = $event->container;
@@ -198,8 +198,6 @@ class PipelineExtension extends AbstractExtension
 	 * @param null|string|array|callable|MiddlewareInterface|RequestHandlerInterface $middleware
 	 *     If present, middleware or request handler to segregate by the path
 	 *     specified in $middlewareOrPath.
-	 * @psalm-param string|MiddlewareParam $middlewareOrPath
-	 * @psalm-param null|MiddlewareParam $middleware
 	 */
 	public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
 	{

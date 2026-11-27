@@ -8,7 +8,7 @@ use League\Plates\Engine;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\OutputTypeMiddleware;
@@ -18,26 +18,29 @@ class ViewExtension extends AbstractExtension
 {
 	public const ID = 'view';
 
-	public function register(Init $init): void
+	#[On]
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$init->on(PipelineReadyEvent::class, function (): void {
-			$this->injectMiddleware();
-		});
+		$viewConfig = $event->config->get(ViewConfig::class);
 
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$viewConfig = $event->config->get(ViewConfig::class);
+		$viewConfig->set(
+			'templates.paths.overnight',
+			[__DIR__ . DIRECTORY_SEPARATOR . 'templates']
+		);
+	}
 
-			$viewConfig->set(
-				'templates.paths.overnight',
-				[__DIR__ . DIRECTORY_SEPARATOR . 'templates']
-			);
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addFactories([
+			Engine::class => PlatesEngineFactory::class,
+		]);
+	}
 
-		});
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactories([
-				Engine::class => PlatesEngineFactory::class,
-			]);
-		});
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
+	{
+		$this->injectMiddleware();
 	}
 
 	public function start(InitContext $context): void

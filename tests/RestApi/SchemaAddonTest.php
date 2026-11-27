@@ -13,6 +13,7 @@ use ON\Container\ContainerExtension;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Data\Definition\Registry;
 use ON\FS\PathRegistry;
+use ON\Init\Init;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\MiddlewarePriorityPipe;
 use ON\Middleware\PipelineExtension;
@@ -161,9 +162,9 @@ final class SchemaAddonTest extends TestCase
 		]));
 		$container->set(RateLimiterInterface::class, new InMemoryRateLimiter());
 		$container->set(EventDispatcherInterface::class, $this->createStub(EventDispatcherInterface::class));
-		(new RestApiExtension($app))->onPipelineReady(
-			new PipelineReadyEvent(new PipelineExtension($app), $container),
-		);
+		$init = new Init();
+		$init->registerExtension(new RestApiExtension($app));
+		$init->emit(new PipelineReadyEvent(new PipelineExtension($app), $container));
 
 		$this->assertSame(200, $middleware->handle(new ServerRequest(uri: '/items/_schema'))->getStatusCode());
 		$this->assertSame(429, $middleware->handle(new ServerRequest(uri: '/items/_schema'))->getStatusCode());
@@ -179,7 +180,9 @@ final class SchemaAddonTest extends TestCase
 		};
 		$extension = new ContainerExtension($app);
 		$config = new ContainerConfig(['write_proxies' => false]);
-		(new RestApiExtension($app))->onContainerConfigure(new ContainerConfigureEvent($extension, $config));
+		$init = new Init();
+		$init->registerExtension(new RestApiExtension($app));
+		$init->emit(new ContainerConfigureEvent($extension, $config));
 		$container = $extension->createContainer($config);
 		$repository = $this->createItems(new Registry(), new CycleSqliteTestDatabase());
 		$container->set(ItemRepository::class, $repository);

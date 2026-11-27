@@ -6,9 +6,10 @@ namespace ON\Cache\Init\Event;
 
 use ON\Application;
 use ON\Cache\CacheClearerRegistry;
+use ON\Cache\CacheExtension;
 use ON\Init\Attribute\InitEvent;
 
-#[InitEvent(lazy: true)]
+#[InitEvent(owner: CacheExtension::class, lazy: true)]
 final class CacheClearersConfigureEvent
 {
 	public function __construct(

@@ -6,19 +6,18 @@ namespace ON\Session;
 
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Session\Container\SessionFactory;
 
 class SessionExtension extends AbstractExtension
 {
 	public const ID = 'session';
 
-	public function register(Init $init): void
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactories([
-				SessionInterface::class => SessionFactory::class,
-			]);
-		});
+		$event->containerConfig->addFactories([
+			SessionInterface::class => SessionFactory::class,
+		]);
 	}
 }

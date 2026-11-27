@@ -12,7 +12,7 @@ use ON\GraphQL\Middleware\GraphQLMiddleware;
 use ON\GraphQL\Resolver\CycleResolver;
 use ON\GraphQL\Resolver\GraphQLResolverInterface;
 use ON\GraphQL\Resolver\SqlResolver;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
@@ -23,19 +23,13 @@ class GraphQLExtension extends AbstractExtension
 {
 	public const ID = 'graphql';
 
-	public function register(Init $init): void
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$enabled = $this->options['enabled'] ?? true;
-
-		if (! $enabled) {
+		if (! ($this->options['enabled'] ?? true)) {
 			return;
 		}
 
-		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-	}
-
-	public function onPipelineReady(PipelineReadyEvent $event): void
-	{
 		$container = $event->container;
 
 		$path = $this->options['path'] ?? '/graphql';
@@ -88,14 +82,14 @@ class GraphQLExtension extends AbstractExtension
 			$maxRequests = $this->options['rateLimit'] ?? 60;
 			$windowSeconds = $this->options['rateLimitWindow'] ?? 60;
 
-			$this->app->pipe($path, new RateLimitMiddleware(
+			$event->pipeline->pipe($path, new RateLimitMiddleware(
 				$rateLimiter,
 				$maxRequests,
 				$windowSeconds
 			), 11); // higher priority = runs before GraphQL middleware (priority 10)
 		}
 
-		$this->app->pipe($path, $middleware, 10);
+		$event->pipeline->pipe($path, $middleware, 10);
 	}
 
 	protected function buildResolver(ContainerInterface $container): ?GraphQLResolverInterface

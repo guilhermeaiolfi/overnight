@@ -11,7 +11,7 @@ use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
@@ -21,23 +21,18 @@ class FileRoutingExtension extends AbstractExtension
 {
 	public const ID = 'filerouting';
 
-	public function register(Init $init): void
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
-		$init->on(ConfigReadyEvent::class, [$this, 'onConfigReady']);
-		$init->on(PipelineReadyEvent::class, function (): void {
-			$this->injectMiddleware();
-		});
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
+		$this->injectMiddleware();
 	}
 
-	public function onConfigConfigure(): void
+	#[On]
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$fileroutingCfg = $this->app->config->get(FileRoutingConfig::class);
-		$router_cfg = $this->app->config->get(RouterConfig::class);
-		$view_cfg = $this->app->config->get(ViewConfig::class);
+		$fileroutingCfg = $event->config->get(FileRoutingConfig::class);
+		$router_cfg = $event->config->get(RouterConfig::class);
+		$view_cfg = $event->config->get(ViewConfig::class);
 		$template_namespace = $fileroutingCfg->get('template.namespace', 'filerouting');
 		$configuredCachePath = $fileroutingCfg->get('cachePath');
 
@@ -63,10 +58,11 @@ class FileRoutingExtension extends AbstractExtension
 		);
 	}
 
-	public function onConfigReady(): void
+	#[On]
+	public function onConfigReady(ConfigReadyEvent $event): void
 	{
-		$fileroutingCfg = $this->app->config->get(FileRoutingConfig::class);
-		$router_cfg = $this->app->config->get(RouterConfig::class);
+		$fileroutingCfg = $event->config->get(FileRoutingConfig::class);
+		$router_cfg = $event->config->get(RouterConfig::class);
 
 		$this->registerApiRouteIfEnabled($fileroutingCfg, $router_cfg);
 	}
@@ -102,6 +98,7 @@ class FileRoutingExtension extends AbstractExtension
 		return false;
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(
