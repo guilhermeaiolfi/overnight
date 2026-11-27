@@ -4,16 +4,31 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Query\Directus;
 
+use ON\Data\Query\QueryFunction\Standard\Temporal\DateValue;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Day;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Hour;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
+use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
+
 final class DirectusFunctionParser
 {
-	private const FUNCTIONS = ['year', 'month', 'day', 'hour', 'date'];
+	/**
+	 * @var array<string, class-string>
+	 */
+	public const FUNCTION_CLASSES = [
+		'year' => Year::class,
+		'month' => Month::class,
+		'day' => Day::class,
+		'hour' => Hour::class,
+		'date' => DateValue::class,
+	];
 
 	public function parse(string $value): ParsedField
 	{
 		$value = trim($value);
 		if (preg_match('/^([a-zA-Z_][a-zA-Z0-9_]*)\(([a-zA-Z_][a-zA-Z0-9_]*)\)$/', $value, $matches)) {
 			$function = strtolower($matches[1]);
-			if (in_array($function, self::FUNCTIONS, true)) {
+			if (isset(self::FUNCTION_CLASSES[$function])) {
 				return new ParsedField($matches[2], $function);
 			}
 		}
@@ -23,12 +38,6 @@ final class DirectusFunctionParser
 
 	public function alias(string $value): string
 	{
-		$parsed = $this->parse($value);
-
-		return preg_replace(
-			'/[^a-zA-Z0-9_]/',
-			'_',
-			$parsed->isFunction() ? $parsed->function . '_' . $parsed->field : $value,
-		);
+		return $this->parse($value)->alias($value);
 	}
 }

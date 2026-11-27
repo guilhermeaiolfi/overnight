@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Action\Directus;
 
-use function ON\Data\Mapper\map;
+use ON\Data\Mapper\MapBuilder;
+use ON\Data\Mapper\Mapping;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\Schema\RepresentationRelationSchema;
 use ON\Data\Schema\RepresentationSchema;
@@ -37,7 +38,13 @@ final class RelationAliases
 		$relatedSchema = $relation->getRelatedSchema();
 		$row = self::mapNative($row, $relatedSchema, $output);
 		if ($relation->getPath() !== $relation->getRelationName()) {
-			$row = map($row)->args($relatedSchema->getCollection())->from(PhpRepresentation::class)->as($output)->to([]);
+			$row = (new MapBuilder(
+				$row,
+				Mapping::getDefaultGateway(),
+				sourceRepresentation: PhpRepresentation::class,
+				outputRepresentation: $output,
+				arguments: [$relatedSchema->getCollection()],
+			))->to([]);
 		}
 
 		return $row;

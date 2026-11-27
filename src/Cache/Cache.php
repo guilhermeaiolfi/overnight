@@ -9,16 +9,21 @@ use DateTimeInterface;
 use ON\Cache\Exception\UnableClearCacheException;
 use Psr\Cache\CacheItemInterface;
 use Symfony\Component\Cache\Adapter\AdapterInterface;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
+use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 use Symfony\Component\Cache\Adapter\ProxyAdapter;
 
 class Cache implements CacheInterface
 {
+	private AdapterInterface $rootAdapter;
+
 	public function __construct(
 		protected AdapterInterface $adapter,
 		protected bool $enabled = false,
-		protected string $namespace = ''
+		protected string $namespace = '',
+		private ?string $lockDirectory = null
 	) {
-
+		$this->rootAdapter = $adapter;
 	}
 
 	public function remove(string $key): bool
@@ -99,15 +104,36 @@ class Cache implements CacheInterface
 			? $namespace
 			: $this->namespace . ':' . $namespace;
 
-		return new self(
+		$scoped = new self(
 			new ProxyAdapter($this->adapter, $namespace),
 			$this->enabled,
-			$scopedNamespace
+			$scopedNamespace,
+			$this->lockDirectory
 		);
+		$scoped->rootAdapter = $this->rootAdapter;
+
+		return $scoped;
 	}
 
 	public function getNamespace(): string
 	{
 		return $this->namespace;
+	}
+
+	/** @internal */
+	public function getSynchronizedPool(): ?SynchronizedCachePool
+	{
+		if (! $this->isEnabled()) {
+			return null;
+		}
+
+		return match (true) {
+			$this->rootAdapter instanceof ArrayAdapter => new SynchronizedCachePool($this->adapter, null),
+			$this->rootAdapter instanceof FilesystemAdapter => new SynchronizedCachePool(
+				$this->adapter,
+				$this->lockDirectory ?? SynchronizedCachePool::defaultLockDirectory()
+			),
+			default => null,
+		};
 	}
 }

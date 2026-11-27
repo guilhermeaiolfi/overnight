@@ -25,6 +25,11 @@ class CacheFactory
 
 		$enable = $config->get("enable", false);
 
-		return new Cache($adapter, $enable, (string) $config->get("adapter.namespace", ""));
+		return new Cache(
+			$adapter,
+			$enable,
+			(string) $config->get("adapter.namespace", ""),
+			$config->get("lockDirectory")
+		);
 	}
 }

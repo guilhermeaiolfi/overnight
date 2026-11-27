@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace ON\RestApi\Repository;
 
-use ON\Data\Query\SelectQuery;
 use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Key;
 use ON\Data\Mapper\Representation\PhpRepresentation;
 use ON\Data\Mapper\Representation\RepresentationInterface;
+use ON\Data\Query\SelectQuery;
 
 interface ItemRepositoryInterface
 {

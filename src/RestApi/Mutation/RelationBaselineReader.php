@@ -17,7 +17,7 @@ use stdClass;
  * Loads current represented relation membership through ON\Data writable queries.
  *
  * The baseline query runs in an isolated Session so relation sync from the read
- * does not pollute the mutation Session. Identities are re-attached with identify().
+ * does not pollute the mutation Session. Active identities are re-attached with identify().
  *
  * Returns represented-collection identities only (target or junction, whichever
  * the relation exposes via getCollection()). Through-table metadata is not leaked.
@@ -80,7 +80,9 @@ final class RelationBaselineReader
 				continue;
 			}
 			$keysByHash[$hash] = $key;
-			$itemsByNormalizedKey[$hash] = $session->identify($target, $key);
+			$record = $session->getRecords()->get($key);
+			// A prior batch root may have scheduled deletion of a committed member.
+			$itemsByNormalizedKey[$hash] = $record?->isRemoved() ? $record : $session->identify($target, $key);
 		}
 
 		return new RelationBaseline($keysByHash, $itemsByNormalizedKey);

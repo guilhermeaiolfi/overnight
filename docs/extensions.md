@@ -27,7 +27,7 @@ Extensions are modular components that extend the framework's functionality.
 | `RestApiExtension` | REST API endpoints from entity definitions | [rest-api.md](extensions/rest-api.md) |
 | `DataExtension` | ON\Data runtime, registry & conversion gateway | [ondata-cycle-schema-migration.md](ondata-cycle-schema-migration.md) |
 | `ImageExtension` | Image processing | [image.md](extensions/image.md) |
-| `RateLimitExtension` | Rate limiting | |
+| `RateLimitExtension` | Rate limiting | [rate-limiting.md](extensions/rate-limiting.md) |
 | `PipelineExtension` | PSR-15 middleware pipeline | |
 
 ## Extension Documentation
