@@ -291,6 +291,26 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame(1, $healthy->closeCount);
 	}
 
+	public function testClosingPoolStillReleasesExecutionDatabasesWhenRequestCleanupThrows(): void
+	{
+		$pool = new DatabasePool();
+		$owner = new stdClass();
+		$executionDatabase = new TestClosableDatabase('execution');
+		$pool->set($owner, 'execution', $executionDatabase);
+		$pool->openRequest();
+		$pool->set($owner, 'request', new TestFailingCloseDatabase('request'));
+
+		$this->expectException(RuntimeException::class);
+		$this->expectExceptionMessage('close failed');
+
+		try {
+			$pool->close();
+		} finally {
+			$this->assertSame(1, $executionDatabase->closeCount);
+			$this->assertNull($pool->get($owner, 'execution'));
+		}
+	}
+
 	private function bootWorker(?string $poolClass = null): Application
 	{
 		if ($poolClass === null) {

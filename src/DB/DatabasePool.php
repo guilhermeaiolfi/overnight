@@ -34,9 +34,13 @@ final class DatabasePool implements DatabasePoolInterface
 
 	public function closeRequest(): void
 	{
-		$request = $this->request;
+		$requestInstances = $this->request;
 		$this->request = null;
-		$this->closeInstances($request);
+
+		$error = $this->closeInstances($requestInstances);
+		if ($error !== null) {
+			throw $error;
+		}
 	}
 
 	public function get(object $owner, string $name): ?DatabaseInterface
@@ -56,38 +60,42 @@ final class DatabasePool implements DatabasePoolInterface
 
 	public function close(): void
 	{
-		$request = $this->request;
+		$requestInstances = $this->request;
+		$executionInstances = $this->instances;
 		$this->request = null;
-		$instances = $this->instances;
 		$this->instances = new SplObjectStorage();
 
-		$this->closeInstances($request, $instances);
+		$requestError = $this->closeInstances($requestInstances);
+		$executionError = $this->closeInstances($executionInstances);
+
+		$firstError = $requestError ?? $executionError;
+		if ($firstError !== null) {
+			throw $firstError;
+		}
 	}
 
-	/** @param SplObjectStorage<object, array<string, DatabaseInterface>>|null ...$caches */
-	private function closeInstances(?SplObjectStorage ...$caches): void
+	/** @param SplObjectStorage<object, array<string, DatabaseInterface>>|null $instances */
+	private function closeInstances(?SplObjectStorage $instances): ?Throwable
 	{
-		$firstError = null;
-		foreach ($caches as $instances) {
-			if ($instances === null) {
-				continue;
-			}
+		if ($instances === null) {
+			return null;
+		}
 
-			foreach ($instances as $owner) {
-				foreach ($instances[$owner] as $database) {
-					if ($database instanceof ClosableDatabaseInterface) {
-						try {
-							$database->close();
-						} catch (Throwable $error) {
-							$firstError ??= $error;
-						}
-					}
+		$firstError = null;
+		foreach ($instances as $owner) {
+			foreach ($instances[$owner] as $database) {
+				if (! $database instanceof ClosableDatabaseInterface) {
+					continue;
+				}
+
+				try {
+					$database->close();
+				} catch (Throwable $error) {
+					$firstError ??= $error;
 				}
 			}
 		}
 
-		if ($firstError !== null) {
-			throw $firstError;
-		}
+		return $firstError;
 	}
 }
