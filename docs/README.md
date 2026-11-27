@@ -28,29 +28,10 @@ A modern PHP framework with PSR-7/PSR-15 compliance, dependency injection, and p
 composer install
 ```
 
-Composer installs the locked ON Data revision from GitHub. A sibling checkout is
-optional.
-
-To develop Overnight and ON Data together, put the ON Data checkout at
-`../ondata` and configure an alternate manifest. This keeps the local path out
-of the committed dependency files.
-
-```bash
-cp composer.json composer.local.json
-cp composer.lock composer.local.lock
-export COMPOSER=composer.local.json
-composer config repositories.local-ondata path ../ondata
-composer update guilhermeaiolfi/overnight-data
-```
-
-In PowerShell, set `$env:COMPOSER = 'composer.local.json'` in place of
-`export`. Clear the variable and run `composer install` to restore the
-locked GitHub dependency in `vendor/`.
-
-The ON Data `master` branch provides the required `1.2.x-dev` alias. For a local
-feature branch, set the path repository's
-`options.versions.guilhermeaiolfi/overnight-data` to `1.2.x-dev` in
-`composer.local.json` before updating.
+Composer installs the locked ON Data revision from GitHub. If you have an ON Data
+checkout at `../ondata`, a local development install loads PHP code from that
+checkout automatically. Its edits are available immediately. CI and
+`composer install --no-dev` use the locked GitHub copy.
 
 Applications that install Overnight from GitHub can register both GitHub
 repositories in their own Composer manifest. Composer reads repositories from

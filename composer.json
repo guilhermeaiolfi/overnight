@@ -51,6 +51,7 @@
       }
     },
     "scripts": {
+      "pre-autoload-dump": "ON\\Composer\\LocalOnData::configure",
       "analyse": "phpstan analyse --configuration=phpstan.neon.dist --no-progress",
       "bench": "phpbench run --config=phpbench.json",
       "bench:bootstrap": "phpbench run --config=phpbench.json --filter=BootstrapBench",
@@ -59,7 +60,8 @@
     },
     "autoload": {
       "psr-4": {
-        "ON\\": "src/"
+        "ON\\": "src/",
+        "ON\\Composer\\": "tools/composer/"
       }
     },
     "minimum-stability": "dev",
