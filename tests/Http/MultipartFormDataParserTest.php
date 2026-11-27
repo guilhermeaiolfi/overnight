@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\Http;
 
+use ON\Http\Exception\InvalidMultipartFormDataException;
 use ON\Http\MultipartFormDataParser;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\UploadedFileInterface;
@@ -118,20 +119,42 @@ final class MultipartFormDataParserTest extends TestCase
 	public function testPreservesSparseArrayKeysAndReplacesRepeatedNamedFiles(): void
 	{
 		$body = "--boundary\r\n"
-			. "Content-Disposition: form-data; name=\"files%5B5%5D\"; filename=\"old.txt\"\r\n\r\nold\r\n"
+			. "Content-Disposition: form-data; name=\"nested[files]%5B1%5D\"; filename=\"old.txt\"\r\n\r\nold\r\n"
 			. "--boundary\r\n"
-			. "Content-Disposition: form-data; name=\"files[]\"; filename=\"append.txt\"\r\n\r\nappend\r\n"
+			. "Content-Disposition: form-data; name=\"nested[files][]\"; filename=\"append.txt\"\r\n\r\nappend\r\n"
 			. "--boundary\r\n"
-			. "Content-Disposition: form-data; name=\"files[5]\"; filename=\"new.txt\"\r\n\r\nnew\r\n"
+			. "Content-Disposition: form-data; name=\"nested[files][1]\"; filename=\"new.txt\"\r\n\r\nnew\r\n"
 			. "--boundary--\r\n";
 
 		$result = (new MultipartFormDataParser())->parse('multipart/form-data; boundary=boundary', $body);
-		$files = $result['uploadedFiles']['files'];
+		$files = $result['uploadedFiles']['nested']['files'];
 
-		$this->assertSame([5, 1], array_keys($files));
-		$this->assertSame('new.txt', $files[5]->getClientFilename());
-		$this->assertSame('new', $files[5]->getStream()->getContents());
-		$this->assertSame('append.txt', $files[1]->getClientFilename());
+		$this->assertSame([1, 2], array_keys($files));
+		$this->assertSame('new.txt', $files[1]->getClientFilename());
+		$this->assertSame('new', $files[1]->getStream()->getContents());
+		$this->assertSame('append.txt', $files[2]->getClientFilename());
+	}
+
+	public function testLimitsNamedUploadsAndIgnoresEmptyFileInputs(): void
+	{
+		$parser = new MultipartFormDataParser(maxFileUploads: 1);
+		$contentType = 'multipart/form-data; boundary=boundary';
+		$body = "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"empty\"; filename=\"\"\r\n\r\n\r\n"
+			. "--boundary\r\n"
+			. "Content-Disposition: form-data; name=\"files[]\"; filename=\"one.txt\"\r\n\r\none\r\n";
+
+		$result = $parser->parse($contentType, $body . "--boundary--\r\n");
+		$this->assertSame(UPLOAD_ERR_NO_FILE, $result['uploadedFiles']['empty']->getError());
+		$this->assertSame('one.txt', $result['uploadedFiles']['files'][0]->getClientFilename());
+
+		$this->expectException(InvalidMultipartFormDataException::class);
+		$parser->parse(
+			$contentType,
+			$body . "--boundary\r\n"
+				. "Content-Disposition: form-data; name=\"files[]\"; filename=\"two.txt\"\r\n\r\ntwo\r\n"
+				. "--boundary--\r\n",
+		);
 	}
 
 	public function testParsedUploadCanBeMovedToDestination(): void

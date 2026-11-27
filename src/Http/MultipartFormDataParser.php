@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace ON\Http;
 
+use InvalidArgumentException;
 use Laminas\Diactoros\StreamFactory;
 use Laminas\Diactoros\UploadedFile;
 use ON\Http\Exception\InvalidMultipartFormDataException;
@@ -15,6 +16,17 @@ use Psr\Http\Message\UploadedFileInterface;
  */
 final class MultipartFormDataParser
 {
+	private readonly int $maxFileUploads;
+
+	public function __construct(?int $maxFileUploads = null)
+	{
+		$configuredLimit = ini_get('max_file_uploads');
+		$this->maxFileUploads = $maxFileUploads ?? ($configuredLimit === false ? 20 : (int) $configuredLimit);
+		if ($this->maxFileUploads < 0) {
+			throw new InvalidArgumentException('The multipart file limit must be zero or greater.');
+		}
+	}
+
 	/**
 	 * @return array{parsedBody: array<string, mixed>, uploadedFiles: array<string, mixed>}
 	 */
@@ -30,6 +42,7 @@ final class MultipartFormDataParser
 
 		$parsedBody = [];
 		$uploadedFiles = [];
+		$fileCount = 0;
 
 		foreach ($this->splitParts($body, $boundary) as $part) {
 			if ($part === '' || $part === '--') {
@@ -46,12 +59,17 @@ final class MultipartFormDataParser
 			$name = $disposition['name'];
 
 			if ($disposition['hasFilename']) {
-				$this->setUploadedFile(
+				$filename = $disposition['filename'] ?? '';
+				if ($filename !== '' && ++$fileCount > $this->maxFileUploads) {
+					throw new InvalidMultipartFormDataException('The multipart request contains too many uploaded files.');
+				}
+
+				$this->setNestedValue(
 					$uploadedFiles,
 					$name,
 					$this->createUploadedFile(
 						$content,
-						$disposition['filename'] ?? '',
+						$filename,
 						$headers['content-type'] ?? 'application/octet-stream',
 					),
 				);
@@ -228,27 +246,6 @@ final class MultipartFormDataParser
 		$stream = (new StreamFactory())->createStreamFromResource($resource);
 
 		return new UploadedFile($stream, $size, UPLOAD_ERR_OK, $filename, $mimeType);
-	}
-
-	/**
-	 * @param array<string, mixed> $files
-	 */
-	private function setUploadedFile(array &$files, string $fieldName, UploadedFileInterface $file): void
-	{
-		$keys = $this->parseFieldPath($fieldName);
-		$key = array_shift($keys);
-		$current = &$files;
-
-		foreach ($keys as $nextKey) {
-			if (! isset($current[$key]) || ! is_array($current[$key])) {
-				$current[$key] = [];
-			}
-
-			$current = &$current[$key];
-			$key = $nextKey === '' ? count($current) : $nextKey;
-		}
-
-		$current[$key] = $file;
 	}
 
 	/**
