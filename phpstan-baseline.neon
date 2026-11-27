@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^Call to function is_string\(\) with string will always evaluate to true\.$#'
-			identifier: function.alreadyNarrowedType
-			count: 1
-			path: src/Application.php
-
-		-
 			message: '''
 				#^PHPDoc tag @param has invalid value \(array \{
 				  debug\?\: \?bool,

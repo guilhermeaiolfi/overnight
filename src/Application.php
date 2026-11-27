@@ -10,7 +10,7 @@ use ON\Extension\ExtensionInterface;
 use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
-use ON\Init\NonLifecycleOrderingEventInterface;
+use ON\Init\InitAttributeLoader;
 use OutOfBoundsException;
 use Symfony\Component\Dotenv\Dotenv;
 
@@ -204,9 +204,22 @@ class Application
 			$this->install($ext_class, $ext_options);
 		}
 
-		// Phase 2: Registration Pass (Collecting all subscriptions and methods)
+		$extensionsHash = md5(serialize(array_keys($this->extensions)));
+		$cache = $this->readLifecycleCache();
+		$cachedHooks = ($cache !== null && ($cache['extensionsHash'] ?? null) === $extensionsHash && is_array($cache['hooks'] ?? null))
+			? $cache['hooks']
+			: null;
+
+		$extractedHooks = [];
+
+		// Phase 2: Registration Pass (declarative attributes + imperative register())
 		foreach ($this->extensions as $class => $instance) {
 			$this->init->setCurrentExtension($class);
+
+			$hooks = $cachedHooks[$class] ?? InitAttributeLoader::extractHooks($instance);
+			$extractedHooks[$class] = $hooks;
+			$this->init->registerAttributeHooks($instance, $hooks);
+
 			$this->extensionProfiler->begin(
 				$class,
 				'extension.register',
@@ -222,13 +235,14 @@ class Application
 		}
 		$this->init->setCurrentExtension(null);
 
-		$subscriptionMap = $this->init->getSubscriptionMap();
+		$subscriptions = $this->init->getSubscriptions();
 
-		// Phase 3: Lifecycle Order (Hash Check or Rebuild)
-		$orderedClasses = $this->getLifecycleOrder($subscriptionMap);
+		// Phase 3: Lifecycle Order (Cache Check or Rebuild)
+		$lifecycle = $this->getLifecycleOrder($subscriptions, $extractedHooks, $extensionsHash, $cache);
+		$orderedClasses = $lifecycle['order'];
 
-
-		// Phase 4: Sorting & Resolution (Deferred execution logic)
+		// Phase 4: Prune unavailable optional hooks, sort listeners & resolve methods
+		$this->init->removeOptionalListenersForEvents($lifecycle['prunedEvents']);
 		$this->init->sortListeners($orderedClasses);
 		$this->resolveMethods($orderedClasses);
 
@@ -252,49 +266,100 @@ class Application
 		}
 	}
 
-	/** @return string[] Array of ordered extension classes */
-	protected function getLifecycleOrder(array $subscriptionMap): array
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	protected function readLifecycleCache(): ?array
 	{
-		$hash = md5(serialize($subscriptionMap));
-		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
-
-		if (! $this->debug && file_exists($cacheFile)) {
-			$cache = require $cacheFile;
-			if ($cache['hash'] === $hash) {
-				return $cache['order'];
-			}
+		if ($this->debug) {
+			return null;
 		}
 
-		// Cache miss or debug mode: Heavy Lifting
-		$order = $this->rebuildLifecycleOrder($subscriptionMap);
+		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
+		if (! file_exists($cacheFile)) {
+			return null;
+		}
+
+		$cache = require $cacheFile;
+
+		return is_array($cache) ? $cache : null;
+	}
+
+	/**
+	 * @param array<string, list<array{event: string, optional: bool}>> $subscriptions
+	 * @param array<string, list<array{method: string, event: string, stage: string, optional: bool}>> $hooks
+	 * @param array<string, mixed>|null $cache
+	 * @return array{order: list<string>, prunedEvents: list<string>}
+	 */
+	protected function getLifecycleOrder(
+		array $subscriptions,
+		array $hooks,
+		string $extensionsHash,
+		?array $cache = null,
+	): array {
+		$hash = md5(serialize([
+			'extensionsHash' => $extensionsHash,
+			'subscriptions' => $subscriptions,
+		]));
+
+		if (
+			! $this->debug
+			&& $cache !== null
+			&& ($cache['hash'] ?? null) === $hash
+			&& is_array($cache['order'] ?? null)
+			&& is_array($cache['prunedEvents'] ?? null)
+		) {
+			return [
+				'order' => $cache['order'],
+				'prunedEvents' => $cache['prunedEvents'],
+			];
+		}
+
+		$result = $this->rebuildLifecycleOrder($subscriptions);
 
 		if (! $this->debug) {
-			$cacheDir = dirname($cacheFile);
-			if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
-				throw new Exception("Unable to create cache directory: {$cacheDir}");
-			}
-			$content = "<?php\n\nreturn " . var_export(['hash' => $hash, 'order' => $order], true) . ";\n";
-			$tempFile = tempnam($cacheDir, 'app_lifecycle_');
-			if ($tempFile === false) {
-				throw new Exception("Unable to create temporary lifecycle cache file in: {$cacheDir}");
-			}
-			if (file_put_contents($tempFile, $content, LOCK_EX) !== strlen($content)) {
-				@unlink($tempFile);
-
-				throw new Exception("Unable to write temporary lifecycle cache file: {$tempFile}");
-			}
-			@chmod($tempFile, 0644);
-			if (! @rename($tempFile, $cacheFile)) {
-				@unlink($tempFile);
-
-				throw new Exception("Unable to move lifecycle cache file into place: {$cacheFile}");
-			}
-			if (function_exists('opcache_invalidate')) {
-				@opcache_invalidate($cacheFile, true);
-			}
+			$this->writeLifecycleCache([
+				'hash' => $hash,
+				'extensionsHash' => $extensionsHash,
+				'hooks' => $hooks,
+				'order' => $result['order'],
+				'prunedEvents' => $result['prunedEvents'],
+			]);
 		}
 
-		return $order;
+		return $result;
+	}
+
+	/**
+	 * @param array<string, mixed> $payload
+	 */
+	protected function writeLifecycleCache(array $payload): void
+	{
+		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
+		$cacheDir = dirname($cacheFile);
+		if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+			throw new Exception("Unable to create cache directory: {$cacheDir}");
+		}
+
+		$content = "<?php\n\nreturn " . var_export($payload, true) . ";\n";
+		$tempFile = tempnam($cacheDir, 'app_lifecycle_');
+		if ($tempFile === false) {
+			throw new Exception("Unable to create temporary lifecycle cache file in: {$cacheDir}");
+		}
+		if (file_put_contents($tempFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tempFile);
+
+			throw new Exception("Unable to write temporary lifecycle cache file: {$tempFile}");
+		}
+		@chmod($tempFile, 0644);
+		if (! @rename($tempFile, $cacheFile)) {
+			@unlink($tempFile);
+
+			throw new Exception("Unable to move lifecycle cache file into place: {$cacheFile}");
+		}
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($cacheFile, true);
+		}
 	}
 
 	protected function resolveMethods(array $orderedClasses): void
@@ -312,32 +377,57 @@ class Application
 	}
 
 	/**
-	 * @param array<string, string[]> $subscriptionMap [ListenerClass => [EventClasses]]
-	 * @return string[] Ordered list of extension classes
+	 * @param array<string, list<array{event: string, optional: bool}>> $subscriptions
+	 * @return array{order: list<string>, prunedEvents: list<string>}
 	 */
-	protected function rebuildLifecycleOrder(array $subscriptionMap): array
+	protected function rebuildLifecycleOrder(array $subscriptions): array
 	{
 		$graph = [];
 		$extensionNamespaces = [];
+		$prunedEvents = [];
+		$eventMetadataCache = [];
 
-		// Build a map of NamespaceRoot => ExtensionClass
+		// Build a map of NamespaceRoot => ExtensionClass for legacy fallback
 		foreach ($this->extensions as $class => $inst) {
 			$parts = explode('\\', $class);
-			array_pop($parts); // Remove class name
+			array_pop($parts);
 			$ns = implode('\\', $parts);
 			$extensionNamespaces[$ns] = $class;
 			$graph[$class] = [];
 		}
 
-		// Infer dependencies from event namespaces
-		foreach ($subscriptionMap as $listenerClass => $events) {
-			foreach ($events as $eventClass) {
-				if (is_string($eventClass) && is_subclass_of($eventClass, NonLifecycleOrderingEventInterface::class, true)) {
-					continue;
+		foreach ($subscriptions as $listenerClass => $entries) {
+			foreach ($entries as $entry) {
+				$eventClass = $entry['event'];
+				$optional = $entry['optional'];
+
+				if (! array_key_exists($eventClass, $eventMetadataCache)) {
+					$eventMetadataCache[$eventClass] = InitAttributeLoader::extractEventMetadata($eventClass);
 				}
 
-				$ownerClass = $this->inferEventOwner($eventClass, $extensionNamespaces);
-				if ($ownerClass && $ownerClass !== $listenerClass) {
+				$meta = $eventMetadataCache[$eventClass];
+				if ($meta !== null) {
+					$ownerClass = $meta['owner'];
+					if ($ownerClass !== null && ! isset($graph[$ownerClass])) {
+						if ($optional) {
+							$prunedEvents[$eventClass] = true;
+
+							continue;
+						}
+
+						throw new Exception(
+							"Extension {$listenerClass} listens to {$eventClass} (owned by {$ownerClass}), which is not installed."
+						);
+					}
+
+					if ($meta['lazy']) {
+						continue;
+					}
+				} else {
+					$ownerClass = $this->inferEventOwner($eventClass, $extensionNamespaces);
+				}
+
+				if ($ownerClass !== null && $ownerClass !== $listenerClass) {
 					$graph[$listenerClass][] = $ownerClass;
 				}
 			}
@@ -352,8 +442,10 @@ class Application
 			$this->sortExtension($class, $graph, $ordered, $visiting, $visited);
 		}
 
-
-		return $ordered;
+		return [
+			'order' => $ordered,
+			'prunedEvents' => array_keys($prunedEvents),
+		];
 	}
 
 	private function inferEventOwner(string $eventClass, array $extensionNamespaces): ?string
