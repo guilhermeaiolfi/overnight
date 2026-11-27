@@ -6,6 +6,7 @@ namespace ON\Event\Attribute;
 
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
+use ON\Event\EventsExtension;
 use ON\Event\LazyListener;
 use Psr\Container\ContainerInterface;
 
@@ -44,7 +45,7 @@ class EventHandlerAttributeProcessor
 					$attribute->__methodName,
 				]
 			);
-			$this->app->events->registerListener(
+			$this->app->ext(EventsExtension::class)->registerListener(
 				$eventName,
 				$callable,
 				$attribute->getPriority(),

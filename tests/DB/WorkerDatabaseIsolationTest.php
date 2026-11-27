@@ -53,7 +53,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 	public function testOverlappingRequestsIsolateConnectionsAndCleanOnlyTheirOwnHeaps(): void
 	{
 		$app = $this->bootWorker();
-		$container = $app->ext('container')->getContainer();
+		$container = $app->ext(ContainerExtension::class)->getContainer();
+		$pipeline = $app->ext(PipelineExtension::class);
 		$manager = $container->get(DatabaseManager::class);
 		$pipe = $container->get(MiddlewarePipeInterface::class);
 
@@ -69,8 +70,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$capturedRequest = null;
 		$lastOutsideDb = null;
 
-		$app->pipe('/', function (ServerRequestInterface $request) use (
-			$app,
+		$pipeline->pipe('/', function (ServerRequestInterface $request) use (
+			$pipeline,
 			$manager,
 			$pipe,
 			$startupCycleDb,
@@ -140,7 +141,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
 
 					// Forward AND nested fresh request in same coroutine share the parent scope without closing it.
-					$this->assertSame('forwarded', (string) $app->processForward('/forwarded', $request)->getBody());
+					$this->assertSame('forwarded', (string) $pipeline->processForward('/forwarded', $request)->getBody());
 					$this->assertSame('nested', (string) $pipe->handle(new ServerRequest([], [], '/nested', 'GET'))->getBody());
 					$this->assertTrue($firstPdo->inTransaction());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
@@ -159,10 +160,10 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		CoroutineStub::$cid = 1;
 		$backgroundDb = $manager->getDatabase();
 		$backgroundEntity = $this->attachEntity($backgroundDb);
-		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
+		$this->assertSame('first', (string) $pipeline->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
 		$this->assertNotSame($backgroundDb, $firstDb);
 		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
-		$this->assertSame('next', (string) $app->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
+		$this->assertSame('next', (string) $pipeline->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
 		$this->assertSame($backgroundDb, $manager->getDatabase());
 		$this->assertTrue($backgroundDb->getResource()->getHeap()->has($backgroundEntity));
 		CoroutineStub::finish();
@@ -172,13 +173,13 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 		CoroutineStub::$cid = 2;
 		$handler = $this->createStub(RequestHandlerInterface::class);
-		$this->assertSame('next', (string) $app->process(new ServerRequest([], [], '/next', 'GET'), $handler)->getBody());
+		$this->assertSame('next', (string) $pipeline->process(new ServerRequest([], [], '/next', 'GET'), $handler)->getBody());
 
 		// Sequential requests and redispatching a retained request outside a coroutine still isolate and clean up.
 		CoroutineStub::$cid = -1;
-		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
+		$this->assertSame('outside', (string) $pipeline->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
 		$firstOutsideDb = $lastOutsideDb;
-		$this->assertSame('outside', (string) $app->handle($capturedRequest)->getBody());
+		$this->assertSame('outside', (string) $pipeline->handle($capturedRequest)->getBody());
 		$this->assertNotSame($firstOutsideDb, $lastOutsideDb);
 
 		// Startup databases remain live and usable after HTTP dispatches.
@@ -228,7 +229,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 	public function testDatabaseStoreSupportsFactoryBoundRuntime(): void
 	{
 		$app = $this->bootWorker(factoryClass: TestRuntimeStoreFactory::class);
-		$container = $app->ext('container')->getContainer();
+		$container = $app->ext(ContainerExtension::class)->getContainer();
+		$pipeline = $app->ext(PipelineExtension::class);
 		$store = $container->get(DatabaseStoreInterface::class);
 		$this->assertInstanceOf(TestRuntimeStore::class, $store);
 		$manager = $container->get(DatabaseManager::class);
@@ -250,12 +252,12 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$store->finish();
 
 		$store->id = 'first';
-		$app->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
+		$pipeline->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
 			$this->assertNotSame($firstDb, $manager->getDatabase());
 
 			return new TextResponse('scoped');
 		}, 1500);
-		$this->assertSame('scoped', (string) $app->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
+		$this->assertSame('scoped', (string) $pipeline->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
 		$this->assertSame($firstDb, $manager->getDatabase());
 		$this->assertTrue($firstDb->getResource()->getHeap()->has($entity));
 		$store->finish();
@@ -265,7 +267,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 	public function testClosesCustomClosablePdoWrapperPersistentAndNonClosableDatabaseImplementers(): void
 	{
 		$app = $this->bootWorker(aliasClass: DatabaseStore::class);
-		$container = $app->ext('container')->getContainer();
+		$container = $app->ext(ContainerExtension::class)->getContainer();
+		$pipeline = $app->ext(PipelineExtension::class);
 		$config = $container->get(DatabaseConfig::class);
 		$persistentPath = $this->projectDir . '/persistent.sqlite';
 		$config->addDatabase(name: 'closable', class: TestClosableDatabase::class);
@@ -290,7 +293,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$firstClosable = $firstLegacy = null;
 		$secondPdoDb = $secondClosable = $secondLegacy = null;
 
-		$app->pipe('/', function (ServerRequestInterface $request) use (
+		$pipeline->pipe('/', function (ServerRequestInterface $request) use (
 			$manager,
 			&$firstPdoDb,
 			&$firstPdo,
@@ -329,7 +332,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 
 		try {
-			$app->handle(new ServerRequest([], [], '/fail', 'GET'));
+			$pipeline->handle(new ServerRequest([], [], '/fail', 'GET'));
 			$this->fail('Expected /fail to throw.');
 		} catch (RuntimeException $e) {
 			$this->assertSame('boom', $e->getMessage());
@@ -361,7 +364,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame(1, $firstClosable->closeCount);
 		$this->assertInstanceOf(TestLegacyDatabase::class, $firstLegacy);
 
-		$this->assertSame('ok', (string) $app->handle(new ServerRequest([], [], '/ok', 'GET'))->getBody());
+		$this->assertSame('ok', (string) $pipeline->handle(new ServerRequest([], [], '/ok', 'GET'))->getBody());
 		$this->assertNotSame($firstPdoDb, $secondPdoDb);
 		$this->assertNotSame($firstClosable, $secondClosable);
 		$this->assertNotSame($firstLegacy, $secondLegacy);
@@ -371,14 +374,15 @@ final class WorkerDatabaseIsolationTest extends TestCase
 	public function testScopeClosesAllDatabasesEvenWhenOneCloseThrows(): void
 	{
 		$app = $this->bootWorker(aliasClass: DatabaseStore::class);
-		$container = $app->ext('container')->getContainer();
+		$container = $app->ext(ContainerExtension::class)->getContainer();
+		$pipeline = $app->ext(PipelineExtension::class);
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'broken', class: TestFailingCloseDatabase::class);
 		$config->addDatabase(name: 'healthy', class: TestClosableDatabase::class);
 		$manager = $container->get(DatabaseManager::class);
 
 		$healthy = null;
-		$app->pipe('/', function () use ($manager, &$healthy): ResponseInterface {
+		$pipeline->pipe('/', function () use ($manager, &$healthy): ResponseInterface {
 			$manager->getDatabase('broken');
 			$healthy = $manager->getDatabase('healthy');
 
@@ -386,7 +390,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 
 		try {
-			$app->handle(new ServerRequest([], [], '/', 'GET'));
+			$pipeline->handle(new ServerRequest([], [], '/', 'GET'));
 			$this->fail('Expected failing close to surface.');
 		} catch (RuntimeException $e) {
 			$this->assertSame('close failed', $e->getMessage());

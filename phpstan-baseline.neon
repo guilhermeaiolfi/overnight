@@ -1,12 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '#^PHPDoc tag @return with type T is not subtype of native type ON\\Extension\\ExtensionInterface\.$#'
-			identifier: return.phpDocType
-			count: 1
-			path: src/Application.php
-
-		-
 			message: '#^Unreachable statement \- code above always terminates\.$#'
 			identifier: deadCode.unreachable
 			count: 1
@@ -23,18 +17,6 @@ parameters:
 			identifier: interface.nameCase
 			count: 1
 			path: src/Auth/AuthenticationService.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Auth/Middleware/AuthorizationMiddleware.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Auth/Middleware/SecurityMiddleware.php
 
 		-
 			message: '#^PHPDoc tag @throws with type ON\\Auth\\Storage\\ExceptionInterface is not subtype of Throwable$#'
@@ -56,12 +38,6 @@ parameters:
 
 		-
 			message: '#^Call to an undefined method Clockwork\\Support\\Vanilla\\Clockwork\:\:userData\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Clockwork/ClockworkExtension.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
 			identifier: method.notFound
 			count: 1
 			path: src/Clockwork/ClockworkExtension.php
@@ -205,12 +181,6 @@ parameters:
 			path: src/Config/Scanner/Scanner.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Console/Attribute/ConsoleAttributeProcessor.php
-
-		-
 			message: '#^Call to method getDeclaringClass\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
 			identifier: class.notFound
 			count: 1
@@ -257,18 +227,6 @@ parameters:
 			identifier: deadCode.unreachable
 			count: 1
 			path: src/Container/ConfigDefinitionSource.php
-
-		-
-			message: '#^Call to method getContainer\(\) on an unknown class container\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/DB/Container/CycleDatabaseFactory.php
-
-		-
-			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<container\>, string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/DB/Container/CycleDatabaseFactory.php
 
 		-
 			message: '#^Parameter \#2 \$container of class ON\\DB\\DatabaseManager constructor expects DI\\Container, Psr\\Container\\ContainerInterface given\.$#'
@@ -331,18 +289,6 @@ parameters:
 			path: src/DB/PdoDatabase.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Discovery/AttributesDiscoverer.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Discovery/DiscoveryExtension.php
-
-		-
 			message: '#^Call to method getDeclaringClass\(\) on an unknown class ON\\Config\\Scanner\\Reflector\.$#'
 			identifier: class.notFound
 			count: 1
@@ -379,12 +325,6 @@ parameters:
 			path: src/Event/Attribute/EventHandler.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$events\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Event/Attribute/EventHandlerAttributeProcessor.php
-
-		-
 			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
 			identifier: function.alreadyNarrowedType
 			count: 1
@@ -395,12 +335,6 @@ parameters:
 			identifier: isset.initializedProperty
 			count: 1
 			path: src/Event/EventsExtension.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$autowiring\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Extension/AutoWiringExtension.php
 
 		-
 			message: '#^Unsafe usage of new static\(\)\.$#'
@@ -419,18 +353,6 @@ parameters:
 			identifier: identical.alwaysFalse
 			count: 1
 			path: src/FileRouting/FileRouter.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/FileRouting/FileRoutingExtension.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/FileRouting/FileRoutingExtension.php
 
 		-
 			message: '#^PHPDoc tag @param references unknown parameter\: \$delegate$#'
@@ -473,12 +395,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: src/GraphQL/CachedGraphQLRegistryGenerator.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$events\.$#'
-			identifier: property.notFound
-			count: 2
-			path: src/GraphQL/GraphQLExtension.php
 
 		-
 			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$fields\.$#'
@@ -679,34 +595,16 @@ parameters:
 			path: src/GraphQL/Resolver/SqlResolver.php
 
 		-
-			message: '#^Call to an undefined method ON\\Application\:\:processForward\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Handler/NotFoundHandler.php
-
-		-
 			message: '#^Offset 1 on array\{list\<string\>, list\<string\>\} on left side of \?\? always exists and is not nullable\.$#'
 			identifier: nullCoalesce.offset
 			count: 1
 			path: src/Http/MultipartFormDataParser.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Logging/Command/MonitorLogsCommand.php
-
-		-
 			message: '#^Call to an undefined method Psr\\Log\\LoggerInterface\:\:getHandlers\(\)\.$#'
 			identifier: method.notFound
 			count: 1
 			path: src/Logging/Command/MonitorLogsCommand.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/Maintenance/MaintenanceExtension.php
 
 		-
 			message: '#^Unreachable statement \- code above always terminates\.$#'
@@ -733,52 +631,10 @@ parameters:
 			path: src/Middleware/MiddlewarePriorityPipe.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$requestStack\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Call to method dispatch\(\) on an unknown class events\.$#'
-			identifier: class.notFound
-			count: 2
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^If condition is always true\.$#'
-			identifier: if.alwaysTrue
-			count: 2
-			path: src/Middleware/PipelineExtension.php
-
-		-
 			message: '#^Method Laminas\\Stratigility\\MiddlewarePipeInterface\:\:pipe\(\) invoked with 2 parameters, 1 required\.$#'
 			identifier: arguments.count
 			count: 1
 			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<events\>, string given\.$#'
-			identifier: argument.type
-			count: 2
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Call to method dispatch\(\) on an unknown class events\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Middleware/RegisterRequestMiddleware.php
-
-		-
-			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<events\>, string given\.$#'
-			identifier: argument.type
-			count: 1
-			path: src/Middleware/RegisterRequestMiddleware.php
 
 		-
 			message: '#^Call to function is_object\(\) with \*NEVER\* will always evaluate to true\.$#'
@@ -1219,12 +1075,6 @@ parameters:
 			path: src/RestApi/Repository/ItemRepository.php
 
 		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 3
-			path: src/RestApi/RestApiExtension.php
-
-		-
 			message: '#^Access to an undefined property ON\\Data\\Definition\\Collection\\CollectionInterface\:\:\$relations\.$#'
 			identifier: property.notFound
 			count: 1
@@ -1253,12 +1103,6 @@ parameters:
 			identifier: varTag.variableNotFound
 			count: 1
 			path: src/Router/Attribute/Route.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Router/Attribute/RouteAttributeProcessor.php
 
 		-
 			message: '#^Variable \$attr in PHPDoc tag @var does not exist\.$#'
@@ -1307,12 +1151,6 @@ parameters:
 			identifier: argument.type
 			count: 1
 			path: src/Router/Router.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Router/RouterExtension.php
 
 		-
 			message: '#^Parameter \$middleware of method ON\\Router\\RouterExtension\:\:any\(\) has invalid type ON\\Router\\MiddlewareInterface\.$#'
@@ -1702,19 +1540,7 @@ parameters:
 			path: src/Validation/CollectionValidator.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/View/Latte/LatteExtension.php
-
-		-
 			message: '#^Unsafe usage of new static\(\)\.$#'
 			identifier: new.static
 			count: 1
 			path: src/View/Latte/SectionNode.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 1
-			path: src/View/ViewExtension.php

@@ -35,7 +35,6 @@ class AutoWiringExtension extends AbstractExtension
 		array $options = []
 	) {
 		parent::__construct($app, $options);
-		$app->autowiring = $this;
 		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->getAbsolutePath();
 		$this->installDiscoveredExtensions();
 	}

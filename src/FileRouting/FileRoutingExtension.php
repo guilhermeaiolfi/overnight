@@ -7,12 +7,14 @@ namespace ON\FileRouting;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
+use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\PipelineExtension;
 use ON\Router\RouterConfig;
 use ON\View\ViewConfig;
 use RuntimeException;
@@ -24,7 +26,7 @@ class FileRoutingExtension extends AbstractExtension
 	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$this->injectMiddleware();
+		$this->injectMiddleware($event->pipeline);
 	}
 
 	#[On]
@@ -105,7 +107,7 @@ class FileRoutingExtension extends AbstractExtension
 			name: 'file-routing',
 			label: 'File routing',
 			clear: function (): void {
-				$config = $this->app->config->get(FileRoutingConfig::class);
+				$config = $this->app->ext(ConfigExtension::class)->get(FileRoutingConfig::class);
 				$cachePath = $config->get('cachePath', null);
 
 				CachePathCleaner::clearDirectoryContents(is_string($cachePath) ? $cachePath : null);
@@ -115,9 +117,9 @@ class FileRoutingExtension extends AbstractExtension
 		));
 	}
 
-	public function injectMiddleware(): void
+	public function injectMiddleware(?PipelineExtension $pipeline = null): void
 	{
 		// 101 because it should run just before the RouteMiddleware (100)
-		$this->app->pipe("/", FileRoutingMiddleware::class, 101);
+		($pipeline ?? $this->app->ext(PipelineExtension::class))->pipe("/", FileRoutingMiddleware::class, 101);
 	}
 }

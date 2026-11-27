@@ -134,8 +134,8 @@ final class SchemaAddonTest extends TestCase
 	{
 		$registry = new Registry();
 		$middleware = new MiddlewarePriorityPipe(new RequestStack());
-		$app = new class ($middleware) extends Application {
-			public function __construct(private MiddlewarePriorityPipe $middleware)
+		$app = new class () extends Application {
+			public function __construct()
 			{
 			}
 
@@ -148,10 +148,17 @@ final class SchemaAddonTest extends TestCase
 			{
 				return false;
 			}
-
-			public function pipe(string $path, MiddlewareInterface $middleware, int $priority): void
+		};
+		$pipeline = new class ($app, $middleware) extends PipelineExtension {
+			public function __construct(Application $app, MiddlewarePriorityPipe $pipe)
 			{
-				$this->middleware->pipe(\Laminas\Stratigility\path($path, $middleware), $priority);
+				parent::__construct($app);
+				$this->pipeline = $pipe;
+			}
+
+			public function prepareMiddleware($middleware): MiddlewareInterface
+			{
+				return $middleware;
 			}
 		};
 		$container = new Container();
@@ -164,7 +171,7 @@ final class SchemaAddonTest extends TestCase
 		$container->set(EventDispatcherInterface::class, $this->createStub(EventDispatcherInterface::class));
 		$init = new Init();
 		$init->registerExtension(new RestApiExtension($app));
-		$init->emit(new PipelineReadyEvent(new PipelineExtension($app), $container));
+		$init->emit(new PipelineReadyEvent($pipeline, $container));
 
 		$this->assertSame(200, $middleware->handle(new ServerRequest(uri: '/items/_schema'))->getStatusCode());
 		$this->assertSame(429, $middleware->handle(new ServerRequest(uri: '/items/_schema'))->getStatusCode());

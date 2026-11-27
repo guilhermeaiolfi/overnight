@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace ON;
 
-use BadMethodCallException;
 use Exception;
 use ON\Extension\ExtensionInterface;
 use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
 use ON\Init\InitAttributeLoader;
-use OutOfBoundsException;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -22,11 +20,8 @@ class Application
 
 	protected array $aliases = [];
 
+	/** @var array<class-string<ExtensionInterface>, ExtensionInterface> */
 	protected array $extensions = [];
-
-	protected array $__methods = [];
-
-	protected array $__properties = [];
 
 	protected bool $debug = true;
 
@@ -40,8 +35,10 @@ class Application
 
 	protected ExtensionProfiler $extensionProfiler;
 
-	/** @var array<string, array<string, callable>> [MethodName => [ExtensionClass => Callback]] */
-	protected array $unresolvedMethods = [];
+	/** @var callable|null */
+	protected $runner = null;
+
+	protected ?string $runnerOwner = null;
 
 	/**
 	 * @param array{
@@ -158,15 +155,15 @@ class Application
 	}
 
 	/**
-	 * @template T
-	 * @param class-string<T> $name
-	 * @return T
+	 * @template T of ExtensionInterface
+	 * @return ($name is class-string<T> ? T : ExtensionInterface)
 	 */
-	public function ext(string $name)
+	public function ext(string $name): ExtensionInterface
 	{
 		return $this->getExtension($name);
 	}
 
+	/** @return list<class-string<ExtensionInterface>> */
 	public function getInstalledExtensions()
 	{
 		return array_keys($this->extensions);
@@ -226,10 +223,9 @@ class Application
 		$lifecycle = $this->getLifecycleOrder($subscriptions, $extractedHooks, $extensionsHash, $cache);
 		$orderedClasses = $lifecycle['order'];
 
-		// Phase 4: Prune unavailable optional hooks, sort listeners & resolve methods
+		// Phase 4: Prune unavailable optional hooks and sort listeners
 		$this->init->removeOptionalListenersForEvents($lifecycle['prunedEvents']);
 		$this->init->sortListeners($orderedClasses);
-		$this->resolveMethods($orderedClasses);
 
 		// Phase 5: Execution (Start in sorted order)
 		foreach ($orderedClasses as $class) {
@@ -344,20 +340,6 @@ class Application
 		}
 		if (function_exists('opcache_invalidate')) {
 			@opcache_invalidate($cacheFile, true);
-		}
-	}
-
-	protected function resolveMethods(array $orderedClasses): void
-	{
-		foreach ($this->unresolvedMethods as $name => $registrations) {
-			if (count($registrations) > 1) {
-				$owners = implode(', ', array_keys($registrations));
-
-				throw new Exception("Conflict detected: The method '{$name}' was registered by multiple extensions: [{$owners}]. Only one extension can define a specific method.");
-			}
-
-			$owner = array_key_first($registrations);
-			$this->__methods[$name] = $registrations[$owner];
 		}
 	}
 
@@ -515,21 +497,11 @@ class Application
 		if (isset($instance)) {
 			$this->extensions[$extension_class] = $instance;
 			$this->registerExtension($instance->id(), $instance);
-			$this->registerExtensionShortcut($instance);
 
 			return $instance;
 		}
 
 		return null;
-	}
-
-	private function registerExtensionShortcut(ExtensionInterface $instance): void
-	{
-		$id = $instance->id();
-
-		if (! isset($this->__properties[$id])) {
-			$this->__properties[$id] = $instance;
-		}
 	}
 
 	public function registerExtension(string $name_or_class, ExtensionInterface $instance): void
@@ -547,9 +519,8 @@ class Application
 	}
 
 	/**
-	 * @template T
-	 * @param class-string<T> $className
-	 * @return T
+	 * @template T of ExtensionInterface
+	 * @return ($className is class-string<T> ? T : ExtensionInterface)
 	 */
 	public function getExtension(string $className): ExtensionInterface
 	{
@@ -560,48 +531,23 @@ class Application
 		return $this->extensions[$className] ?? $this->aliases[$className];
 	}
 
-	public function __get($name)
+	public function setRunner(callable $runner): void
 	{
-		if (! array_key_exists($name, $this->__properties)) {
-			throw new OutOfBoundsException("Undefined Application property '{$name}'.");
+		$owner = $this->init->getCurrentExtension() ?? 'unknown';
+		if ($this->runner !== null) {
+			throw new Exception("Conflict detected: The runner was registered by multiple extensions: [{$this->runnerOwner}, {$owner}]. Only one extension can define the runner.");
 		}
 
-		return $this->__properties[$name];
+		$this->runner = $runner;
+		$this->runnerOwner = $owner;
 	}
 
-	public function __isset($name): bool
+	public function run(): mixed
 	{
-		return isset($this->__properties[$name]);
-	}
-
-	public function __set($name, $value)
-	{
-		if (isset($this->__properties[$name])) {
-			throw new Exception("It's not possible to overwrite properties already defined.");
-		}
-		$this->__properties[$name] = $value;
-	}
-
-	public function __call($name, $args)
-	{
-		if (! isset($this->__methods[$name])) {
-			throw new BadMethodCallException("Call to undefined Application method '{$name}'.");
+		if ($this->runner === null) {
+			throw new Exception('There is no extension defining the runner.');
 		}
 
-		return call_user_func_array($this->__methods[$name], $args);
-	}
-
-	public function registerMethod($name, callable $method)
-	{
-		$owner = $this->init->getCurrentExtension();
-		$this->unresolvedMethods[$name][$owner] = $method;
-	}
-
-	public function run()
-	{
-		if (! isset($this->__methods["run"])) {
-			throw new Exception("There is no extension defining the run method.");
-		}
-		call_user_func($this->__methods["run"]);
+		return ($this->runner)();
 	}
 }

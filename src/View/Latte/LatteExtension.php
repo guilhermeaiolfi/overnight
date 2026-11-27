@@ -7,6 +7,7 @@ namespace ON\View\Latte;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
+use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
@@ -41,7 +42,7 @@ class LatteExtension extends AbstractExtension
 			name: 'latte',
 			label: 'Latte',
 			clear: function (): void {
-				$config = $this->app->config->get(ViewConfig::class);
+				$config = $this->app->ext(ConfigExtension::class)->get(ViewConfig::class);
 				$tempDirectory = $config->get('latte.tempDirectory', null);
 				if (is_string($tempDirectory) && $tempDirectory !== '') {
 					$tempDirectory = Path::from($tempDirectory, $this->app->paths->get('project'))

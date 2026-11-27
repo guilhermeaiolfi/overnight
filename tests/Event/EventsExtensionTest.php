@@ -90,7 +90,7 @@ final class EventsExtensionTest extends TestCase
 	{
 		$app = $this->createMock(Application::class);
 		$events = new EventsExtension($app);
-		$app->method('__get')->with('events')->willReturn($events);
+		$app->method('ext')->with(EventsExtension::class)->willReturn($events);
 
 		$handler = new SampleAttributeHandler();
 		$container = $this->createMock(ContainerInterface::class);

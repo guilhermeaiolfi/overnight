@@ -6,7 +6,7 @@ namespace Tests\ON\View;
 
 use Exception;
 use Laminas\Diactoros\Response\HtmlResponse;
-use ON\Application;
+use ON\Middleware\PipelineExtension;
 use ON\RequestStack;
 use ON\Router\Route;
 use ON\View\GenericView;
@@ -328,14 +328,12 @@ final class ViewTest extends TestCase
 		$this->assertSame('PLATES:pages::show|OVERRIDE:app::footer.phtml', $result);
 	}
 
-	public function testRouteSectionsStillRenderThroughApplication(): void
+	public function testRouteSectionsRenderThroughThePipeline(): void
 	{
-		$app = new class () {
-			public function processForward(): HtmlResponse
-			{
-				return new HtmlResponse('ROUTE');
-			}
-		};
+		$pipeline = $this->createMock(PipelineExtension::class);
+		$pipeline->expects($this->once())->method('processForward')
+			->with('/footer', null, 'GET')
+			->willReturn(new HtmlResponse('ROUTE'));
 
 		$outerRenderer = new class () implements RendererInterface {
 			public function render($layoutConfig, $templateName, $data, $params = [])
@@ -372,10 +370,10 @@ final class ViewTest extends TestCase
 
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
-			->willReturnCallback(function (string $class) use ($outerRenderer, $app) {
+			->willReturnCallback(function (string $class) use ($outerRenderer, $pipeline) {
 				return match ($class) {
 					'OuterRenderer' => $outerRenderer,
-					Application::class => $app,
+					PipelineExtension::class => $pipeline,
 					default => null,
 				};
 			});

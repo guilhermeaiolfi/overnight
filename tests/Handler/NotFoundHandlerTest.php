@@ -8,59 +8,39 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\ResponseFactory;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Uri;
-use ON\Application;
 use ON\Handler\NotFoundHandler;
 use ON\Middleware\OutputTypeMiddleware;
+use ON\Middleware\PipelineExtension;
 use PHPUnit\Framework\TestCase;
-use Psr\Http\Message\ResponseInterface;
-use RuntimeException;
 
 final class NotFoundHandlerTest extends TestCase
 {
 	public function testForwardsHtmlRequestsToConfigured404Path(): void
 	{
 		$forwarded = new HtmlResponse('custom 404');
-		$app = new class ($forwarded) extends Application {
-			public ?string $forwardedMethod = null;
+		$pipeline = $this->createMock(PipelineExtension::class);
 
-			public function __construct(private ResponseInterface $response)
-			{
-			}
-
-			public function processForward($path, $request, $method = null): ResponseInterface
-			{
-				$this->forwardedMethod = $method;
-
-				return $this->response;
-			}
-		};
-
-		$handler = new NotFoundHandler($app, '/404', new ResponseFactory());
+		$handler = new NotFoundHandler($pipeline, '/404', new ResponseFactory());
 		$request = (new ServerRequest())
 			->withMethod('POST')
 			->withUri(new Uri('/missing'))
 			->withAttribute(OutputTypeMiddleware::class, 'html');
 
+		$pipeline->expects($this->once())->method('processForward')
+			->with('/404', $request, 'GET')
+			->willReturn($forwarded);
+
 		$response = $handler->handle($request);
 
 		$this->assertSame('custom 404', (string) $response->getBody());
-		$this->assertSame('GET', $app->forwardedMethod);
 	}
 
 	public function testDoesNotForwardAgainWhenAlreadyOn404Path(): void
 	{
-		$app = new class () extends Application {
-			public function __construct()
-			{
-			}
+		$pipeline = $this->createMock(PipelineExtension::class);
+		$pipeline->expects($this->never())->method('processForward');
 
-			public function processForward($path, $request, $method = null): ResponseInterface
-			{
-				throw new RuntimeException('Should not forward recursively.');
-			}
-		};
-
-		$handler = new NotFoundHandler($app, '/404', new ResponseFactory());
+		$handler = new NotFoundHandler($pipeline, '/404', new ResponseFactory());
 		$request = (new ServerRequest())
 			->withUri(new Uri('/404'))
 			->withMethod('GET')

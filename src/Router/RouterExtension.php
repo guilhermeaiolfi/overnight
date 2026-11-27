@@ -8,6 +8,7 @@ use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
+use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Init\Event\ConsoleReadyEvent;
@@ -17,7 +18,6 @@ use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
 use ON\Init\Attribute\On;
-use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Router\Attribute\RouteAttributeProcessor;
@@ -40,17 +40,6 @@ class RouterExtension extends AbstractExtension
 	protected ContainerInterface $container;
 
 	protected array $pendingTasks = [ ];
-
-	public function register(Init $init): void
-	{
-		$this->app->registerMethod("get", [$this, 'get']);
-		$this->app->registerMethod("put", [$this, 'put']);
-		$this->app->registerMethod("patch", [$this, 'patch']);
-		$this->app->registerMethod("delete", [$this, 'delete']);
-		$this->app->registerMethod("any", [$this, 'any']);
-		$this->app->registerMethod("post", [$this, 'post']);
-		$this->app->registerMethod("route", [$this, 'route']);
-	}
 
 	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
@@ -103,7 +92,7 @@ class RouterExtension extends AbstractExtension
 			name: 'router',
 			label: 'Router',
 			clear: function (): void {
-				$config = $this->app->config->get(RouterConfig::class);
+				$config = $this->app->ext(ConfigExtension::class)->get(RouterConfig::class);
 				$cacheFile = $config->get('cache_file', null);
 				if (is_string($cacheFile) && $cacheFile !== '') {
 					$cacheFile = Path::from($cacheFile, $this->app->paths->get('project'))

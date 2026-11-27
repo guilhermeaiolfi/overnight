@@ -12,6 +12,7 @@ use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\OutputTypeMiddleware;
+use ON\Middleware\PipelineExtension;
 use ON\View\Plates\PlatesEngineFactory;
 
 class ViewExtension extends AbstractExtension
@@ -40,15 +41,15 @@ class ViewExtension extends AbstractExtension
 	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$this->injectMiddleware();
+		$this->injectMiddleware($event->pipeline);
 	}
 
 	public function start(InitContext $context): void
 	{
 	}
 
-	public function injectMiddleware(): void
+	public function injectMiddleware(?PipelineExtension $pipeline = null): void
 	{
-		$this->app->pipe(OutputTypeMiddleware::class);
+		($pipeline ?? $this->app->ext(PipelineExtension::class))->pipe(OutputTypeMiddleware::class);
 	}
 }

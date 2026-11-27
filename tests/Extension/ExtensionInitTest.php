@@ -127,18 +127,6 @@ final class ExtensionInitTest extends TestCase
 		], InitRegisterProbeExtension::$events);
 	}
 
-	public function testMethodsRegisteredDuringRegisterAreAvailableAfterBootstrap(): void
-	{
-		RegisterMethodProbeExtension::$calls = 0;
-
-		$app = $this->createApplication([
-			RegisterMethodProbeExtension::class => [],
-		]);
-
-		$this->assertSame('probe-result', $app->probeMethod());
-		$this->assertSame(1, RegisterMethodProbeExtension::$calls);
-	}
-
 	public function testApplicationExposesNormalizedPaths(): void
 	{
 		$app = $this->createApplication([]);
@@ -147,19 +135,6 @@ final class ExtensionInitTest extends TestCase
 		$this->assertSame($normalizedProjectDir, $app->paths->get('project')->getAbsolutePath());
 		$this->assertSame($normalizedProjectDir . DIRECTORY_SEPARATOR . 'var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->getAbsolutePath());
 		$this->assertSame('var' . DIRECTORY_SEPARATOR . 'cache', $app->paths->get('cache')->getRelativePath());
-	}
-
-	public function testDeferredCrossExtensionMethodUsageCanFollowEventsInsteadOfInstallOrder(): void
-	{
-		RegisterMethodProbeExtension::$calls = 0;
-
-		$this->createApplication([
-			MethodConsumerExtension::class => [],
-			RegisterMethodProbeExtension::class => [],
-		]);
-
-		$this->assertSame(1, RegisterMethodProbeExtension::$calls);
-		$this->assertSame(['event', 'method'], MethodConsumerExtension::$events);
 	}
 
 	public function testExtensionProfilerIsDisabledWithoutDebugClockwork(): void
@@ -410,45 +385,6 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
 			self::$events[] = 'probe.config.setup';
 		});
-	}
-}
-
-final class RegisterMethodProbeExtension extends AbstractExtension
-{
-	public static int $calls = 0;
-
-	public function register(Init $init): void
-	{
-		$this->app->registerMethod('probeMethod', function (): string {
-			self::$calls++;
-
-			return 'probe-result';
-		});
-	}
-}
-
-final class MethodProviderReadyEvent
-{
-}
-
-final class MethodConsumerExtension extends AbstractExtension
-{
-	public static array $events = [];
-
-	public function register(Init $init): void
-	{
-		self::$events = [];
-
-		$init->on(MethodProviderReadyEvent::class, function (): void {
-			self::$events[] = 'event';
-			$this->app->probeMethod();
-			self::$events[] = 'method';
-		});
-	}
-
-	public function start(InitContext $context): void
-	{
-		$context->emit(new MethodProviderReadyEvent());
 	}
 }
 

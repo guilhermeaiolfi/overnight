@@ -6,6 +6,7 @@ namespace ON\Discovery;
 
 use ON\Application;
 use ON\Config\AppConfig;
+use ON\Config\ConfigExtension;
 use ON\Config\Scanner\AttributeReader;
 use Psr\Container\ContainerInterface;
 use ReflectionClass;
@@ -28,7 +29,7 @@ class AttributesDiscoverer implements DiscoverInterface
 		protected ClassFinder $classFinder,
 	) {
 		$this->reader = new AttributeReader();
-		$this->config = $app->config->get(AppConfig::class);
+		$this->config = $app->ext(ConfigExtension::class)->get(AppConfig::class);
 		$this->processors = $this->config->get('discovery.discoverers.' . self::class . '.processors', []);
 		$this->items = new DiscoveryItems();
 	}

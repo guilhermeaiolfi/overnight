@@ -76,16 +76,8 @@ class EventsExtension extends AbstractExtension
 
 	public function registerEventSubscribersForExtensions()
 	{
-		$exts = $this->app->getInstalledExtensions();
-		foreach ($exts as $ext) {
-			$class = $ext;
-			if (is_array($ext)) {
-				$class = $ext["class"];
-			}
-			$obj = $this->app->ext($class);
-			if ($obj) {
-				$this->loadEventSubscriber($obj);
-			}
+		foreach ($this->app->getInstalledExtensions() as $class) {
+			$this->loadEventSubscriber($this->app->ext($class));
 		}
 	}
 
