@@ -25,9 +25,6 @@ class EventsExtension extends AbstractExtension
 {
 	public const ID = 'events';
 
-	public const NAMESPACE = "core.extensions.events";
-	protected int $type = self::TYPE_EXTENSION;
-
 	/** @var EventDispatcher */
 	public EventDispatcherInterface $eventDispatcher;
 	protected ?ContainerInterface $container = null;
@@ -37,9 +34,10 @@ class EventsExtension extends AbstractExtension
 	protected array $__states = [ ];
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		$this->eventDispatcher = new EventDispatcher();
 	}
 

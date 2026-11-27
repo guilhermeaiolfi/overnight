@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Logging;
 
-use ON\Application;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
@@ -18,18 +17,7 @@ class LoggingExtension extends AbstractExtension
 {
 	public const ID = 'logging';
 
-	protected int $type = self::TYPE_EXTENSION;
-	protected Application $app;
-	protected array $options;
 	protected array $configs = [];
-
-	public function __construct(
-		Application $app,
-		array $options = []
-	) {
-		$this->options = $options;
-		$this->app = $app;
-	}
 
 	public function register(Init $init): void
 	{

@@ -29,9 +29,10 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 	protected ?ContainerInterface $container = null;
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		if (! filter_var($options['force'] ?? $options['enable'] ?? $this->app->isDebug(), FILTER_VALIDATE_BOOLEAN)) {
 			return;
 		}
@@ -40,6 +41,7 @@ class ClockworkExtension extends AbstractExtension implements EventSubscriberInt
 		$settings['api'] = rtrim(Router::detectBaseUrl(), '/') . '/__clockwork/';
 		$this->clockwork = Clockwork::init($settings);
 		$this->clockwork->event('Booting')->begin();
+		$this->app->extensionProfiler()->setEnabled(true);
 	}
 
 	public function isActive(): bool

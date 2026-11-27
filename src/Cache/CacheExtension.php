@@ -23,9 +23,10 @@ class CacheExtension extends AbstractExtension
 	protected CacheClearerRegistry $clearers;
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		$this->clearers = new CacheClearerRegistry();
 	}
 

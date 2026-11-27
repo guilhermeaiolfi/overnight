@@ -37,20 +37,12 @@ class ContainerExtension extends AbstractExtension
 {
 	public const ID = 'container';
 
-	public const NAMESPACE = "core.extensions.container";
-	protected int $type = self::TYPE_EXTENSION;
 	protected $container;
 
 	protected string $cache_path;
 	protected array $definitions;
 
 	private int $delegatorCounter = 0;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

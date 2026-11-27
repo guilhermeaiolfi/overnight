@@ -14,7 +14,6 @@ use Laminas\Stratigility\Middleware\ErrorHandler;
 use Laminas\Stratigility\MiddlewarePipeInterface;
 use function Laminas\Stratigility\path;
 use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
-use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\BodyParamsMiddlewareFactory;
@@ -66,12 +65,9 @@ class PipelineExtension extends AbstractExtension
 {
 	public const ID = 'pipeline';
 
-	public const NAMESPACE = 'core.extensions.pipeline';
-
 	private const MAX_FORWARD_DEPTH = 10;
 	private const FORWARD_DEPTH_ATTRIBUTE = self::class . '::forward_depth';
 
-	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
 	protected RequestStack $requestStack;
 	protected MiddlewarePipeInterface $pipeline;
@@ -80,12 +76,6 @@ class PipelineExtension extends AbstractExtension
 	protected array $q = [];
 	/** @var array<int, array{priority:int, preparer:RequestPreparerInterface}> */
 	protected array $requestPreparers = [];
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\FileRouting;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -21,14 +20,6 @@ use RuntimeException;
 class FileRoutingExtension extends AbstractExtension
 {
 	public const ID = 'filerouting';
-
-	protected int $type = self::TYPE_EXTENSION;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Image;
 
 use Intervention\Image\ImageManager as InterventionImageManager;
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -22,12 +21,6 @@ use ON\Router\RouterConfig;
 class ImageExtension extends AbstractExtension
 {
 	public const ID = 'image';
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

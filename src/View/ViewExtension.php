@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\View;
 
 use League\Plates\Engine;
-use ON\Application;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
@@ -18,14 +17,6 @@ use ON\View\Plates\PlatesEngineFactory;
 class ViewExtension extends AbstractExtension
 {
 	public const ID = 'view';
-
-	protected int $type = self::TYPE_EXTENSION;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

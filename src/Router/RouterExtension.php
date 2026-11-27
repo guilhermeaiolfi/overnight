@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Router;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -32,21 +31,12 @@ class RouterExtension extends AbstractExtension
 {
 	public const ID = 'router';
 
-	public const NAMESPACE = "core.extensions.router";
-	protected int $type = self::TYPE_EXTENSION;
-
 	protected RouterInterface $router;
 
 	protected RouterConfig $config;
 	protected ContainerInterface $container;
 
 	protected array $pendingTasks = [ ];
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{
