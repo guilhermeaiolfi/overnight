@@ -8,7 +8,11 @@ use ON\Data\Definition\Collection\CollectionInterface;
 use ON\Data\Definition\Registry;
 use ON\Data\Definition\Relation\FirstOfManyRelation;
 use ON\Data\Definition\Relation\M2MRelation;
+use ON\Data\Mapper\Representation\WireRepresentation;
+use ON\RestApi\Action\Directus\GetAction;
 use ON\RestApi\Error\RestApiError;
+use ON\RestApi\Event\ItemGet;
+use ON\RestApi\Hook\RestHooks;
 use ON\RestApi\RestApiConfig;
 use PHPUnit\Framework\Attributes\RequiresPhpExtension;
 use PHPUnit\Framework\TestCase;
@@ -339,6 +343,25 @@ final class SqlRestResolverTest extends TestCase
 		$this->assertSame(['GraphQL', 'REST'], array_column($postsByTitle['GraphQL Guide']['tags'], 'name'));
 	}
 
+	public function testListWithManyToManyDeepPaginationAppliesToEachParent(): void
+	{
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$db = $this->createFullDatabase();
+		$posts = $registry->getCollection('post');
+
+		$result = $this->createDirectusReadActions($registry, $db)->list($posts, $this->q($posts, [
+			'fields' => 'id,title,tags.name',
+			'sort' => 'id',
+			'deep' => ['tags' => ['_sort' => '-name', '_offset' => 1, '_limit' => 1]],
+		]));
+
+		$postsByTitle = array_column($result['data'], 'tags', 'title');
+		self::assertSame([['name' => 'GraphQL']], $postsByTitle['PHP Tips']);
+		self::assertSame([['name' => 'GraphQL']], $postsByTitle['GraphQL Guide']);
+		self::assertSame([], $postsByTitle['Draft Post']);
+	}
+
 	public function testListWithFirstOfManyRelationUsesRelationOrdering(): void
 	{
 		$registry = new Registry();
@@ -537,9 +560,72 @@ final class SqlRestResolverTest extends TestCase
 
 	public function testListWithRelationAliasesAndIndependentDeepFilters(): void
 	{
-		$this->markTestSkipped(
-			'Multiple aliases for the same relation path are not supported by ON\\Data RelationRef yet.'
+		$registry = new Registry();
+		$this->createFullSchema($registry);
+		$database = $this->createFullDatabase();
+		$users = $registry->getCollection('user');
+		$query = $this->q($users, [
+			'fields' => 'id,published.title,published.created_at,published.replies.body,drafts.title,drafts.created_at,posts.id',
+			'alias' => ['published' => 'posts', 'drafts' => 'posts', 'published.replies' => 'comments'],
+			'deep' => [
+				'published' => ['_filter' => ['status' => ['_eq' => 'published']]],
+				'drafts' => ['_filter' => ['status' => ['_eq' => 'draft']]],
+			],
+			'sort' => 'id',
+		]);
+		$readActions = $this->createDirectusReadActions($registry, $database);
+		$data = $readActions->list($users, $query, WireRepresentation::class)['data'];
+
+		self::assertSame(['PHP Tips'], array_column($data[0]['published'], 'title'));
+		self::assertSame(['Draft Post'], array_column($data[0]['drafts'], 'title'));
+		self::assertSame(['Great tips!', 'Very helpful'], array_column($data[0]['published'][0]['replies'], 'body'));
+		self::assertStringStartsWith('2025-01-10', $data[0]['published'][0]['created_at']);
+		self::assertStringStartsWith('2025-02-11', $data[0]['drafts'][0]['created_at']);
+		self::assertSame(['GraphQL Guide'], array_column($data[1]['published'], 'title'));
+		self::assertSame([], $data[1]['drafts']);
+		self::assertSame([1, 2], array_column($data[0]['posts'], 'id'));
+		self::assertSame($data[0], $readActions->get($users, '1', $query, WireRepresentation::class));
+
+		$fetchCopy = false;
+		$returnCanonicalOnly = false;
+		RestHooks::for($users)->on('get', static function (ItemGet $event) use (&$fetchCopy, &$returnCanonicalOnly): void {
+			$event->allow();
+			$eventQuery = $event->getQuery();
+			$row = ($fetchCopy ? $eventQuery->copy() : $eventQuery)->fetchOne();
+			if ($returnCanonicalOnly) {
+				$row = ['id' => $row['id'], 'posts' => $row['published']];
+			}
+			$event->setResult($row);
+			$event->preventDefault();
+		});
+		$get = new GetAction(
+			$registry,
+			$this->createDataRuntime($database),
+			new RestApiConfig(['databaseType' => 'sqlite']),
+			$this->noopHookDispatcher($registry),
 		);
+		$fromHook = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
+		self::assertSame($data[0], $fromHook['data']);
+
+		$fetchCopy = true;
+		$fromCopy = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
+		self::assertSame($data[0], $fromCopy['data']);
+
+		$fetchCopy = false;
+		$returnCanonicalOnly = true;
+		$canonicalQuery = $this->q($users, [
+			'fields' => 'id,published.title,published.created_at',
+			'alias' => ['published' => 'posts'],
+			'deep' => ['published' => ['_filter' => ['status' => ['_eq' => 'published']]]],
+		]);
+		$canonicalResult = $get(
+			['collection' => 'user', 'id' => '1'],
+			['query' => $canonicalQuery],
+			['output' => WireRepresentation::class],
+		)['data'];
+		self::assertSame(['PHP Tips'], array_column($canonicalResult['published'], 'title'));
+		self::assertStringStartsWith('2025-01-10', $canonicalResult['published'][0]['created_at']);
+		self::assertArrayNotHasKey('posts', $canonicalResult);
 	}
 
 	public function testListWithMeta(): void

@@ -28,6 +28,41 @@ A modern PHP framework with PSR-7/PSR-15 compliance, dependency injection, and p
 composer install
 ```
 
+Composer installs the locked ON Data revision from GitHub. For local development,
+put a separate ON Data checkout in `packages/overnight-data/` and run the same
+`composer install` command. PHP edits in that checkout take effect immediately.
+CI and `composer install --no-dev` use the locked GitHub copy.
+
+Applications that install Overnight from GitHub can register both GitHub
+repositories in their own Composer manifest. Composer reads repositories from
+the application manifest when Overnight is a dependency. For example, from the
+application root:
+
+```bash
+composer config repositories.overnight vcs https://github.com/guilhermeaiolfi/overnight.git
+composer config repositories.overnight-data vcs https://github.com/guilhermeaiolfi/overnight-data.git
+composer require guilhermeaiolfi/overnight:dev-master guilhermeaiolfi/overnight-data:1.2.x-dev
+```
+
+To develop an application and its libraries together, add the hook to the
+application's root `composer.json` and ignore `/packages/` in the application
+repository.
+
+```json
+{
+    "scripts": {
+        "pre-autoload-dump": "ON\\Composer\\LocalPackages::configure"
+    }
+}
+```
+
+Put the application's own Git checkouts in `packages/overnight/` and
+`packages/overnight-data/`. Each checkout is optional. The hook selects which PHP
+files the application loads, while the application's lockfile controls dependency
+installation. When a library changes its Composer requirements, publish the
+commit and run a targeted Composer update in the application. For example, run
+`composer update guilhermeaiolfi/overnight -W` when Overnight adds a dependency.
+
 ### Basic Application
 
 ```php

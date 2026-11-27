@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace ON\RestApi;
 
-use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
@@ -51,18 +50,7 @@ class RestApiExtension extends AbstractExtension
 	protected bool $activated = false;
 	protected ?RestApiConfig $config = null;
 
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
-
-	public function register(Init $init): void
-	{
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -76,6 +64,7 @@ class RestApiExtension extends AbstractExtension
 		$event->containerConfig->addAlias(QueryParserInterface::class, DirectusQueryParser::class);
 	}
 
+	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
 		$container = $event->container;

@@ -15,6 +15,8 @@ use ON\RestApi\RestApiConfig;
  */
 final class QueryContext
 {
+	private bool $nativeRelationAliases = false;
+
 	/**
 	 * @param array<string, mixed|callable():mixed> $dynamicVariables
 	 * @param list<string> $meta
@@ -112,6 +114,18 @@ final class QueryContext
 	public function getRelationResponseNames(): array
 	{
 		return $this->relationResponseNames;
+	}
+
+	public function markNativeRelationAlias(string $relationPath, string $responseName): void
+	{
+		$this->nativeRelationAliases = true;
+		// Hook-supplied rows can still use the original relation name.
+		$this->relationResponseNames[$relationPath] ??= $responseName;
+	}
+
+	public function hasNativeRelationAliases(): bool
+	{
+		return $this->nativeRelationAliases;
 	}
 
 	public function setRelationResponseName(string $relationPath, string $responseName): void

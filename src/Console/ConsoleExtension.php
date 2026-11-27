@@ -6,14 +6,13 @@ namespace ON\Console;
 
 use Exception;
 use ON\Application;
-use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\OvernightCommand;
-use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use Psr\Container\ContainerInterface;
@@ -32,9 +31,10 @@ class ConsoleExtension extends AbstractExtension
 	];
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		$this->consoleApp = new ConsoleApplication();
 	}
 
@@ -45,16 +45,6 @@ class ConsoleExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
-
-		if ($this->app->hasExtension('cache') && ! in_array(ClearCacheCommand::class, $this->q, true)) {
-			$this->q[] = ClearCacheCommand::class;
-		}
-
-		if ($this->app->hasExtension('router') && ! in_array(RoutesCommand::class, $this->q, true)) {
-			$this->q[] = RoutesCommand::class;
-		}
-
 		if ($this->app->isCli()) {
 			$this->app->registerMethod("run", [$this, "run"]);
 		}
@@ -67,6 +57,7 @@ class ConsoleExtension extends AbstractExtension
 		$context->emit(new ConsoleReadyEvent($this));
 	}
 
+	#[On(optional: true)]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
 		$this->container = $event->container;

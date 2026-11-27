@@ -104,14 +104,20 @@ final class ListAction implements RestActionInterface
 			$event->setResult($result['data'] ?? [], $result['meta']['filter_count'] ?? null);
 		}
 
-		$result['data'] = map($result['data'] ?? [])
+		$output = ($responseOptions ?? $options)['output'];
+		$rows = $result['data'] ?? [];
+		if ($context->hasNativeRelationAliases() && $output !== PhpRepresentation::class) {
+			$schema = $query->getFetchSchema();
+			$rows = array_map(static fn (array $row): array => RelationAliases::mapNative($row, $schema, $output), $rows);
+		}
+		$result['data'] = map($rows)
 			->args($collection)
 			->from(PhpRepresentation::class)
-			->as(($responseOptions ?? $options)['output'])
+			->as($output)
 			->collection()
 			->to([]);
 		$aliases = $context->getRelationResponseNames();
-		if ($aliases !== []) {
+		if (! $context->hasNativeRelationAliases() && $aliases !== []) {
 			$result['data'] = array_map(static fn (array $row): array => RelationAliases::apply($row, $aliases), $result['data']);
 		}
 

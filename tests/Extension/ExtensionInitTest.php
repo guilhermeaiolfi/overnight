@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Tests\ON\Extension;
 
+use Exception;
 use FilesystemIterator;
 use ON\Application;
 use ON\Clockwork\ClockworkExtension;
@@ -15,6 +16,10 @@ use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Discovery\DiscoveryCache;
 use ON\Discovery\DiscoveryExtension;
 use ON\Extension\AbstractExtension;
+use ON\Init\Attribute\After;
+use ON\Init\Attribute\Before;
+use ON\Init\Attribute\InitEvent;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use PHPUnit\Framework\TestCase;
@@ -194,6 +199,82 @@ final class ExtensionInitTest extends TestCase
 		$this->assertNotEmpty($matches);
 	}
 
+	public function testAttributeHooksRunInBeforeOnAfterOrderAndCacheInProduction(): void
+	{
+		AttributeStageProbeExtension::$events = [];
+
+		$this->createApplication([
+			AttributeStageProbeExtension::class => [],
+			AttributeEventOwnerExtension::class => [],
+		], false);
+
+		$this->assertSame(['before', 'on', 'after'], AttributeStageProbeExtension::$events);
+
+		$cacheFile = $this->projectDir . '/var/cache/app_lifecycle.php';
+		$this->assertFileExists($cacheFile);
+		$cache = require $cacheFile;
+		$this->assertArrayHasKey('hooks', $cache);
+		$this->assertCount(3, $cache['hooks'][AttributeStageProbeExtension::class]);
+		$this->assertSame([AttributeEventOwnerExtension::class, AttributeStageProbeExtension::class], $cache['order']);
+
+		// Second production boot reuses cached attribute hooks cleanly
+		AttributeStageProbeExtension::$events = [];
+		$this->createApplication([
+			AttributeStageProbeExtension::class => [],
+			AttributeEventOwnerExtension::class => [],
+		], false);
+
+		$this->assertSame(['before', 'on', 'after'], AttributeStageProbeExtension::$events);
+	}
+
+	public function testRequiredInitEventOwnerMissingFailsFast(): void
+	{
+		$this->expectException(Exception::class);
+		$this->expectExceptionMessage(AttributeEventOwnerExtension::class);
+
+		$this->createApplication([
+			AttributeStageProbeExtension::class => [],
+		], true);
+	}
+
+	public function testOptionalInitEventOwnerMissingIsSilentlyPruned(): void
+	{
+		OptionalListenerProbeExtension::$calls = 0;
+		$extensions = [OptionalListenerProbeExtension::class => []];
+
+		$app = $this->createApplication($extensions);
+		$app->init()->emit(new AttributeOwnedBootEvent());
+		$this->assertSame(0, OptionalListenerProbeExtension::$calls);
+		$app->init()->emit('probe.optional', new stdClass());
+		$this->assertSame(1, OptionalListenerProbeExtension::$calls);
+		OptionalListenerProbeExtension::$calls = 0;
+
+		$cache = require $this->projectDir . '/var/cache/app_lifecycle.php';
+		$this->assertSame([AttributeOwnedBootEvent::class], $cache['prunedEvents']);
+
+		$app = $this->createApplication($extensions);
+		$app->init()->emit(new AttributeOwnedBootEvent());
+		$this->assertSame(0, OptionalListenerProbeExtension::$calls);
+
+		$this->createApplication($extensions + [AttributeEventOwnerExtension::class => []]);
+		$this->assertSame(1, OptionalListenerProbeExtension::$calls);
+	}
+
+	public function testLazyInitEventDoesNotCreateCircularDependency(): void
+	{
+		LazyCycleOwnerExtension::$events = [];
+
+		$app = $this->createApplication([
+			LazyCycleOwnerExtension::class => [],
+			LazyCycleConsumerExtension::class => [],
+		], true);
+
+		$this->assertSame(['owner.boot', 'consumer.on.boot'], LazyCycleOwnerExtension::$events);
+
+		$app->init()->emit(new LazyOnDemandEvent());
+		$this->assertSame(['owner.boot', 'consumer.on.boot', 'owner.on.lazy'], LazyCycleOwnerExtension::$events);
+	}
+
 	/**
 	 * @param array<class-string, array<string, mixed>> $extensions
 	 */
@@ -322,10 +403,6 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 {
 	public static array $events = [];
 
-	public function __construct(private Application $app, private array $options = [])
-	{
-	}
-
 	public function register(Init $init): void
 	{
 		self::$events[] = 'probe.register';
@@ -339,12 +416,6 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 final class RegisterMethodProbeExtension extends AbstractExtension
 {
 	public static int $calls = 0;
-
-	public function __construct(
-		private Application $app,
-		private array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{
@@ -363,12 +434,6 @@ final class MethodProviderReadyEvent
 final class MethodConsumerExtension extends AbstractExtension
 {
 	public static array $events = [];
-
-	public function __construct(
-		private Application $app,
-		private array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{
@@ -391,10 +456,6 @@ final class ContainerDefinitionProbeExtension extends AbstractExtension
 {
 	public static int $containerSetupCalls = 0;
 
-	public function __construct(private Application $app, private array $options = [])
-	{
-	}
-
 	public function register(Init $init): void
 	{
 		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
@@ -410,4 +471,88 @@ interface ContainerProbeInterface
 
 final class ContainerProbeService implements ContainerProbeInterface
 {
+}
+
+#[InitEvent(owner: AttributeEventOwnerExtension::class)]
+final class AttributeOwnedBootEvent
+{
+}
+
+final class AttributeEventOwnerExtension extends AbstractExtension
+{
+	public function start(InitContext $context): void
+	{
+		$context->emit(new AttributeOwnedBootEvent());
+	}
+}
+
+final class AttributeStageProbeExtension extends AbstractExtension
+{
+	public static array $events = [];
+
+	#[After]
+	public function afterBoot(AttributeOwnedBootEvent $event): void
+	{
+		self::$events[] = 'after';
+	}
+
+	#[On]
+	public function onBoot(AttributeOwnedBootEvent $event): void
+	{
+		self::$events[] = 'on';
+	}
+
+	#[Before]
+	public function beforeBoot(AttributeOwnedBootEvent $event): void
+	{
+		self::$events[] = 'before';
+	}
+}
+
+final class OptionalListenerProbeExtension extends AbstractExtension
+{
+	public static int $calls = 0;
+
+	#[On(AttributeOwnedBootEvent::class, optional: true)]
+	#[On('probe.optional', optional: true)]
+	public function onOptional(): void
+	{
+		self::$calls++;
+	}
+}
+
+#[InitEvent(owner: LazyCycleOwnerExtension::class)]
+final class LazyCycleBootEvent
+{
+}
+
+#[InitEvent(owner: LazyCycleConsumerExtension::class, lazy: true)]
+final class LazyOnDemandEvent
+{
+}
+
+final class LazyCycleOwnerExtension extends AbstractExtension
+{
+	public static array $events = [];
+
+	public function start(InitContext $context): void
+	{
+		self::$events[] = 'owner.boot';
+		$context->emit(new LazyCycleBootEvent());
+	}
+
+	#[On(optional: true)]
+	public function onLazy(LazyOnDemandEvent $event): void
+	{
+		self::$events[] = 'owner.on.lazy';
+	}
+}
+
+final class LazyCycleConsumerExtension extends AbstractExtension
+{
+	#[On]
+	public function onOwnerBoot(LazyCycleBootEvent $event): void
+	{
+		LazyCycleOwnerExtension::$events[] = 'consumer.on.boot';
+	}
 }

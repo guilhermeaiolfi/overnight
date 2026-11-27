@@ -7,66 +7,83 @@ namespace ON\RateLimit;
 use DateTimeImmutable;
 use function hash;
 use function max;
+use ON\Cache\Cache;
 use ON\Cache\CacheInterface;
+use ON\Cache\SynchronizedCachePool;
+use Psr\Cache\CacheItemPoolInterface;
+use RuntimeException;
 use function time;
 
 class CacheRateLimiter implements RateLimiterInterface
 {
+	private SynchronizedCachePool $pool;
+
 	public function __construct(
 		protected CacheInterface $cache,
 		protected string $prefix = 'ratelimit_'
 	) {
+		$pool = $cache instanceof Cache ? $cache->getSynchronizedPool() : null;
+		$this->pool = $pool ?? throw new RuntimeException(
+			'CacheRateLimiter requires an enabled framework Cache backed by FilesystemAdapter or ArrayAdapter. '
+			. 'Configure a custom RateLimiterInterface for other backends.'
+		);
 	}
 
 	public function attempt(string $key, int $maxAttempts = 60, int $windowSeconds = 60): RateLimitResult
 	{
 		$cacheKey = $this->formatKey($key);
-		$data = $this->cache->get($cacheKey);
 
-		if ($data === null) {
-			$data = ['count' => 0, 'start' => time()];
-		}
+		return $this->pool->synchronized($cacheKey, static function (CacheItemPoolInterface $pool) use ($cacheKey, $maxAttempts, $windowSeconds): RateLimitResult {
+			$item = $pool->getItem($cacheKey);
+			$data = $item->get();
+			$now = time();
+			if ($data === null || $now - $data['start'] >= $windowSeconds) {
+				$data = ['count' => 0, 'start' => $now];
+			}
 
-		// Check if window has expired
-		if (time() - $data['start'] >= $windowSeconds) {
-			$data = ['count' => 0, 'start' => time()];
-		}
+			$end = $data['start'] + $windowSeconds;
+			if ($data['count'] >= $maxAttempts) {
+				return new RateLimitResult(false, 0, $maxAttempts, max(0, $end - $now));
+			}
 
-		if ($data['count'] >= $maxAttempts) {
-			$retryAfter = $windowSeconds - (time() - $data['start']);
+			$data['count']++;
+			// Symfony rounds storage TTLs down to whole seconds. Keep the item through the logical window.
+			$item->set($data)->expiresAt(new DateTimeImmutable('@' . ($end + 1)));
+			if (! $pool->save($item)) {
+				throw new RuntimeException('Unable to save the rate limit counter.');
+			}
 
-			return new RateLimitResult(false, 0, $maxAttempts, max(0, $retryAfter));
-		}
-
-		$data['count']++;
-		$this->cache->put($cacheKey, $data, (new DateTimeImmutable())->modify("+{$windowSeconds} seconds"));
-
-		return new RateLimitResult(true, $maxAttempts - $data['count'], $maxAttempts);
+			return new RateLimitResult(true, $maxAttempts - $data['count'], $maxAttempts);
+		});
 	}
 
 	public function peek(string $key, int $maxAttempts = 60, int $windowSeconds = 60): RateLimitResult
 	{
 		$cacheKey = $this->formatKey($key);
-		$data = $this->cache->get($cacheKey);
 
-		if ($data === null || time() - $data['start'] >= $windowSeconds) {
-			return new RateLimitResult(true, $maxAttempts, $maxAttempts);
-		}
+		return $this->pool->synchronized($cacheKey, static function (CacheItemPoolInterface $pool) use ($cacheKey, $maxAttempts, $windowSeconds): RateLimitResult {
+			$data = $pool->getItem($cacheKey)->get();
+			$now = time();
+			if ($data === null || $now - $data['start'] >= $windowSeconds) {
+				return new RateLimitResult(true, $maxAttempts, $maxAttempts);
+			}
 
-		$remaining = max(0, $maxAttempts - $data['count']);
+			if ($data['count'] >= $maxAttempts) {
+				return new RateLimitResult(false, 0, $maxAttempts, $windowSeconds - ($now - $data['start']));
+			}
 
-		if ($data['count'] >= $maxAttempts) {
-			$retryAfter = $windowSeconds - (time() - $data['start']);
-
-			return new RateLimitResult(false, 0, $maxAttempts, max(0, $retryAfter));
-		}
-
-		return new RateLimitResult(true, $remaining, $maxAttempts);
+			return new RateLimitResult(true, $maxAttempts - $data['count'], $maxAttempts);
+		});
 	}
 
 	public function reset(string $key): void
 	{
-		$this->cache->remove($this->formatKey($key));
+		$cacheKey = $this->formatKey($key);
+		$this->pool->synchronized($cacheKey, static function (CacheItemPoolInterface $pool) use ($cacheKey): void {
+			if (! $pool->deleteItem($cacheKey)) {
+				throw new RuntimeException('Unable to reset the rate limit counter.');
+			}
+		});
 	}
 
 	private function formatKey(string $key): string

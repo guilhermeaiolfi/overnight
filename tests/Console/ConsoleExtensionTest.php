@@ -6,6 +6,7 @@ namespace Tests\ON\Console;
 
 use Fiber;
 use ON\Application;
+use ON\Cache\CacheExtension;
 use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
@@ -15,6 +16,7 @@ use ON\Container\ContainerExtension;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Init\Init;
+use ON\Router\RouterExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use RuntimeException;
@@ -55,7 +57,6 @@ final class ConsoleExtensionTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 
 		$appWithoutOptional = $this->createMock(Application::class);
-		$appWithoutOptional->method('hasExtension')->willReturn(false);
 		$appWithoutOptional->method('isCli')->willReturn(false);
 
 		$container = $this->createMock(ContainerInterface::class);
@@ -69,8 +70,10 @@ final class ConsoleExtensionTest extends TestCase
 		});
 
 		$console = new ConsoleExtension($appWithoutOptional);
-		$console->register(new Init());
-		$console->onContainerReady(new ContainerReadyEvent($this->createMock(ContainerExtension::class), $container));
+		$init = new Init();
+		$init->registerExtension($console);
+		$init->emit(new ContainerReadyEvent($this->createMock(ContainerExtension::class), $container));
+		$console->start($init->context());
 		$console->flush();
 
 		$this->assertSame([ServeCommand::class], $resolved);
@@ -86,7 +89,6 @@ final class ConsoleExtensionTest extends TestCase
 		$executor = $this->createMock(ExecutorInterface::class);
 
 		$appWithAll = $this->createMock(Application::class);
-		$appWithAll->method('hasExtension')->willReturnCallback(fn (string $ext): bool => in_array($ext, ['cache', 'router'], true));
 		$appWithAll->method('isCli')->willReturn(false);
 
 		$container = $this->createMock(ContainerInterface::class);
@@ -102,8 +104,12 @@ final class ConsoleExtensionTest extends TestCase
 		});
 
 		$console = new ConsoleExtension($appWithAll);
-		$console->register(new Init());
+		$init = new Init();
+		$init->registerExtension($console);
+		$init->registerExtension(new CacheExtension($appWithAll));
+		$init->registerExtension(new RouterExtension($appWithAll));
 		$console->onContainerReady(new ContainerReadyEvent($this->createMock(ContainerExtension::class), $container));
+		$console->start($init->context());
 		$console->flush();
 
 		$this->assertSame([

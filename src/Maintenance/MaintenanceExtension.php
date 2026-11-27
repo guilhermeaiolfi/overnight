@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace ON\Maintenance;
 
 use Laminas\Diactoros\Response\HtmlResponse;
-use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Maintenance\Container\MaintenanceModeFactory;
 use ON\Maintenance\Middleware\MaintenanceMiddleware;
@@ -24,35 +24,34 @@ class MaintenanceExtension extends AbstractExtension implements MaintenanceModeI
 {
 	public const ID = 'maintenance';
 
-	protected int $type = self::TYPE_EXTENSION;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
-
 	public function register(Init $init): void
 	{
 		$this->app->registerMethod("isMaintenanceMode", [$this, "isMaintenanceMode"]);
+	}
 
-		$init->on(ConfigConfigureEvent::class, function (ConfigConfigureEvent $event): void {
-			$appCfg = $event->config->get(AppConfig::class);
-			$appCfg->set("controllers.maintenance", self::class . "::" . "process");
-		});
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
-		});
+	#[On]
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
+	{
+		$appCfg = $event->config->get(AppConfig::class);
+		$appCfg->set("controllers.maintenance", self::class . "::" . "process");
+	}
 
-		$init->on(PipelineReadyEvent::class, function (): void {
-			$this->injectMiddleware();
-		});
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		$event->containerConfig->addFactory(MaintenanceModeInterface::class, MaintenanceModeFactory::class);
+	}
 
-		if ($this->app->isCli()) {
-			$init->on(ConsoleReadyEvent::class, function (): void {
-				$this->app->console->addCommand(MaintenanceCommand::class);
-			});
-		}
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
+	{
+		$this->injectMiddleware();
+	}
+
+	#[On(optional: true)]
+	public function onConsoleReady(ConsoleReadyEvent $event): void
+	{
+		$event->console->addCommand(MaintenanceCommand::class);
 	}
 
 	public function isMaintenanceMode(): bool

@@ -58,5 +58,4 @@ trait RegistrySupportTrait
 
 		return array_values(array_unique($fieldNames));
 	}
-
 }

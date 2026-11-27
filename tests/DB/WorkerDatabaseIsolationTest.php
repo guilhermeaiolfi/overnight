@@ -29,9 +29,11 @@ use ON\DB\PdoDatabase;
 use ON\Event\EventsExtension;
 use ON\Middleware\PipelineExtension;
 use ON\Swoole\SwooleDatabaseStore;
+use PDO;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
+use Psr\Container\ContainerInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -54,15 +56,24 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$container = $app->ext('container')->getContainer();
 		$manager = $container->get(DatabaseManager::class);
 		$pipe = $container->get(MiddlewarePipeInterface::class);
+
+		// Startup databases (e.g. GraphQLExtension resolvers) must survive HTTP dispatches intact.
+		$startupCycleDb = $manager->getDatabase();
+		$startupEntity = $this->attachEntity($startupCycleDb);
+		$startupPdoDb = $manager->getDatabase('pdo');
+		$startupPdo = $startupPdoDb->getConnection();
+
 		$failure = new RuntimeException('request failed');
 		$failedDb = $failedEntity = $failedPdo = null;
 		$firstDb = $firstEntity = $firstPdo = null;
+		$capturedRequest = null;
 		$lastOutsideDb = null;
 
 		$app->pipe('/', function (ServerRequestInterface $request) use (
 			$app,
 			$manager,
 			$pipe,
+			$startupCycleDb,
 			$failure,
 			&$failedDb,
 			&$failedEntity,
@@ -70,6 +81,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 			&$firstDb,
 			&$firstEntity,
 			&$firstPdo,
+			&$capturedRequest,
 			&$lastOutsideDb,
 		): ResponseInterface {
 			$db = $manager->getDatabase();
@@ -77,16 +89,19 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 			switch ($request->getUri()->getPath()) {
 				case '/outside':
+					$this->assertNotSame($startupCycleDb, $db);
 					$this->assertNotSame($lastOutsideDb, $db);
 					$lastOutsideDb = $db;
+					$capturedRequest = $request;
 
 					return new TextResponse('outside');
 
 				case '/forwarded':
+				case '/nested':
 					$this->assertSame($firstDb, $db);
 					$this->assertSame($firstPdo, $manager->getDatabaseConnection('pdo'));
 
-					return new TextResponse('forwarded');
+					return new TextResponse(ltrim($request->getUri()->getPath(), '/'));
 
 				case '/failure':
 					$failedDb = $db;
@@ -103,6 +118,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 				case '/first':
 					$firstDb = $db;
+					$this->assertNotSame($startupCycleDb, $db);
 					$firstEntity = $this->attachEntity($db);
 					$firstPdo = $manager->getDatabaseConnection('pdo');
 					$firstPdo->beginTransaction();
@@ -116,15 +132,19 @@ final class WorkerDatabaseIsolationTest extends TestCase
 					} finally {
 						CoroutineStub::$cid = 1;
 						$this->assertTrue($firstPdo->inTransaction());
-						$firstPdo->rollBack();
 					}
 
 					$this->assertFalse($failedDb->getResource()->getHeap()->has($failedEntity));
 					$this->assertFalse($failedDb->getConnection()->driver('sqlite')->isConnected());
 					$this->assertFalse($failedPdo->inTransaction());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
+
+					// Forward AND nested fresh request in same coroutine share the parent scope without closing it.
 					$this->assertSame('forwarded', (string) $app->processForward('/forwarded', $request)->getBody());
+					$this->assertSame('nested', (string) $pipe->handle(new ServerRequest([], [], '/nested', 'GET'))->getBody());
+					$this->assertTrue($firstPdo->inTransaction());
 					$this->assertTrue($db->getResource()->getHeap()->has($firstEntity));
+					$firstPdo->rollBack();
 
 					return new TextResponse('first');
 
@@ -137,14 +157,14 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		}, 1500);
 
 		CoroutineStub::$cid = 1;
-		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
-		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
-		$this->assertSame('next', (string) $app->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
-
-		// Non-HTTP coroutine work closes when the coroutine exits.
 		$backgroundDb = $manager->getDatabase();
 		$backgroundEntity = $this->attachEntity($backgroundDb);
+		$this->assertSame('first', (string) $app->handle(new ServerRequest([], [], '/first', 'GET'))->getBody());
+		$this->assertNotSame($backgroundDb, $firstDb);
+		$this->assertFalse($firstDb->getResource()->getHeap()->has($firstEntity));
+		$this->assertSame('next', (string) $app->handle(new ServerRequest([], [], '/next', 'GET'))->getBody());
 		$this->assertSame($backgroundDb, $manager->getDatabase());
+		$this->assertTrue($backgroundDb->getResource()->getHeap()->has($backgroundEntity));
 		CoroutineStub::finish();
 		$this->assertFalse($backgroundDb->getResource()->getHeap()->has($backgroundEntity));
 		$this->assertNotSame($backgroundDb, $manager->getDatabase());
@@ -154,23 +174,23 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$handler = $this->createStub(RequestHandlerInterface::class);
 		$this->assertSame('next', (string) $app->process(new ServerRequest([], [], '/next', 'GET'), $handler)->getBody());
 
-		// Sequential requests outside a coroutine still isolate per dispatch.
+		// Sequential requests and redispatching a retained request outside a coroutine still isolate and clean up.
 		CoroutineStub::$cid = -1;
 		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
-		$this->assertSame('outside', (string) $app->handle(new ServerRequest([], [], '/outside', 'GET'))->getBody());
+		$firstOutsideDb = $lastOutsideDb;
+		$this->assertSame('outside', (string) $app->handle($capturedRequest)->getBody());
+		$this->assertNotSame($firstOutsideDb, $lastOutsideDb);
 
-		// Non-HTTP lookups outside a coroutine stay cached until explicitly closed.
-		$cliDb = $manager->getDatabase();
-		$cliEntity = $this->attachEntity($cliDb);
-		$this->assertSame($cliDb, $manager->getDatabase());
-		$manager->close();
-		$this->assertFalse($cliDb->getResource()->getHeap()->has($cliEntity));
-		$this->assertNotSame($cliDb, $manager->getDatabase());
+		// Startup databases remain live and usable after HTTP dispatches.
+		$this->assertSame($startupCycleDb, $manager->getDatabase());
+		$this->assertTrue($startupCycleDb->getResource()->getHeap()->has($startupEntity));
+		$this->assertSame($startupPdo, $startupPdoDb->getConnection());
+		$this->assertSame('1', (string) $startupPdoDb->getConnection()->query('SELECT 1')->fetchColumn());
 	}
 
 	#[RunInSeparateProcess]
 	#[PreserveGlobalState(false)]
-	public function testMultipleSwooleStoresDoNotCollideAndSkipAllocationWhenUnused(): void
+	public function testMultipleSwooleStoresDoNotCollideAndSkipDeferWhenUnused(): void
 	{
 		if (class_exists(Coroutine::class)) {
 			$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
@@ -181,7 +201,8 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$storeB = new SwooleDatabaseStore();
 
 		CoroutineStub::$cid = 10;
-		// Closing without touching any DB does not register deferred cleanup.
+		// Running a scope or closing without touching any DB does not register deferred cleanup.
+		$this->assertSame('ok', $storeA->scoped(static fn (): string => 'ok'));
 		$storeA->close();
 		$this->assertSame(0, CoroutineStub::deferredCount(10));
 
@@ -204,11 +225,12 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertSame(1, $dbB->closeCount);
 	}
 
-	public function testDatabaseStoreSupportsAnotherRuntime(): void
+	public function testDatabaseStoreSupportsFactoryBoundRuntime(): void
 	{
-		$app = $this->bootWorker(TestRuntimeStore::class);
+		$app = $this->bootWorker(factoryClass: TestRuntimeStoreFactory::class);
 		$container = $app->ext('container')->getContainer();
-		$store = $container->get(TestRuntimeStore::class);
+		$store = $container->get(DatabaseStoreInterface::class);
+		$this->assertInstanceOf(TestRuntimeStore::class, $store);
 		$manager = $container->get(DatabaseManager::class);
 
 		$store->id = 'first';
@@ -229,32 +251,53 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 		$store->id = 'first';
 		$app->pipe('/', function () use ($manager, $firstDb): ResponseInterface {
-			$this->assertSame($firstDb, $manager->getDatabase());
+			$this->assertNotSame($firstDb, $manager->getDatabase());
 
 			return new TextResponse('scoped');
 		}, 1500);
 		$this->assertSame('scoped', (string) $app->handle(new ServerRequest([], [], '/', 'GET'))->getBody());
-		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
-		$this->assertNotSame($firstDb, $manager->getDatabase());
+		$this->assertSame($firstDb, $manager->getDatabase());
+		$this->assertTrue($firstDb->getResource()->getHeap()->has($entity));
 		$store->finish();
+		$this->assertFalse($firstDb->getResource()->getHeap()->has($entity));
 	}
 
-	public function testClosesCustomClosablePdoAndPreservesNonClosableDatabaseImplementers(): void
+	public function testClosesCustomClosablePdoWrapperPersistentAndNonClosableDatabaseImplementers(): void
 	{
-		$app = $this->bootWorker(DatabaseStore::class);
+		$app = $this->bootWorker(aliasClass: DatabaseStore::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
+		$persistentPath = $this->projectDir . '/persistent.sqlite';
 		$config->addDatabase(name: 'closable', class: TestClosableDatabase::class);
 		$config->addDatabase(name: 'legacy', class: TestLegacyDatabase::class);
+		$config->addDatabase(
+			name: 'wrapped_pdo',
+			dsn: 'sqlite::memory:',
+			wrapper_class: TestDelegatingPdoWrapper::class,
+		);
+		$config->addDatabase(
+			name: 'persistent_pdo',
+			dsn: 'sqlite:' . $persistentPath,
+			persistent: true,
+		);
 		$manager = $container->get(DatabaseManager::class);
 
-		$firstPdoDb = $firstPdo = $firstClosable = $firstLegacy = null;
+		// A separate persistent handle in the same process shares the underlying connection.
+		$siblingPersistent = new PDO('sqlite:' . $persistentPath, null, null, [PDO::ATTR_PERSISTENT => true]);
+		$siblingPersistent->beginTransaction();
+
+		$firstPdoDb = $firstPdo = $firstWrappedDb = $firstWrappedPdo = $firstPersistentDb = $firstPersistentPdo = null;
+		$firstClosable = $firstLegacy = null;
 		$secondPdoDb = $secondClosable = $secondLegacy = null;
 
 		$app->pipe('/', function (ServerRequestInterface $request) use (
 			$manager,
 			&$firstPdoDb,
 			&$firstPdo,
+			&$firstWrappedDb,
+			&$firstWrappedPdo,
+			&$firstPersistentDb,
+			&$firstPersistentPdo,
 			&$firstClosable,
 			&$firstLegacy,
 			&$secondPdoDb,
@@ -265,6 +308,13 @@ final class WorkerDatabaseIsolationTest extends TestCase
 				$firstPdoDb = $manager->getDatabase('pdo');
 				$firstPdo = $firstPdoDb->getConnection();
 				$firstPdo->beginTransaction();
+
+				$firstWrappedDb = $manager->getDatabase('wrapped_pdo');
+				$firstWrappedPdo = $firstWrappedDb->getConnection()->pdo;
+				$firstWrappedPdo->beginTransaction();
+
+				$firstPersistentDb = $manager->getDatabase('persistent_pdo');
+				$firstPersistentPdo = $firstPersistentDb->getConnection();
 				$firstClosable = $manager->getDatabase('closable');
 				$firstLegacy = $manager->getDatabase('legacy');
 
@@ -283,12 +333,30 @@ final class WorkerDatabaseIsolationTest extends TestCase
 			$this->fail('Expected /fail to throw.');
 		} catch (RuntimeException $e) {
 			$this->assertSame('boom', $e->getMessage());
+		} finally {
+			$persistentTxActive = $siblingPersistent->inTransaction();
+			if ($persistentTxActive) {
+				$siblingPersistent->rollBack();
+			}
+			$firstPersistentPdo = null;
+			$siblingPersistent = null;
 		}
 
 		$this->assertInstanceOf(PdoDatabase::class, $firstPdoDb);
 		$this->assertNull($firstPdoDb->getConnection());
 		$this->assertNull($firstPdoDb->getResource());
 		$this->assertFalse($firstPdo->inTransaction());
+
+		// Delegating non-PDO wrapper still rolls back the underlying PDO transaction.
+		$this->assertInstanceOf(PdoDatabase::class, $firstWrappedDb);
+		$this->assertNull($firstWrappedDb->getConnection());
+		$this->assertFalse($firstWrappedPdo->inTransaction());
+
+		// Persistent PDO drops wrapper references without rolling back sibling handle's transaction.
+		$this->assertInstanceOf(PdoDatabase::class, $firstPersistentDb);
+		$this->assertNull($firstPersistentDb->getConnection());
+		$this->assertTrue($persistentTxActive);
+
 		$this->assertInstanceOf(TestClosableDatabase::class, $firstClosable);
 		$this->assertSame(1, $firstClosable->closeCount);
 		$this->assertInstanceOf(TestLegacyDatabase::class, $firstLegacy);
@@ -302,7 +370,7 @@ final class WorkerDatabaseIsolationTest extends TestCase
 
 	public function testScopeClosesAllDatabasesEvenWhenOneCloseThrows(): void
 	{
-		$app = $this->bootWorker(DatabaseStore::class);
+		$app = $this->bootWorker(aliasClass: DatabaseStore::class);
 		$container = $app->ext('container')->getContainer();
 		$config = $container->get(DatabaseConfig::class);
 		$config->addDatabase(name: 'broken', class: TestFailingCloseDatabase::class);
@@ -329,9 +397,9 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->assertNotSame($healthy, $manager->getDatabase('healthy'));
 	}
 
-	private function bootWorker(?string $storeClass = null): Application
+	private function bootWorker(?string $aliasClass = null, ?string $factoryClass = null): Application
 	{
-		if ($storeClass === null) {
+		if ($aliasClass === null && $factoryClass === null) {
 			if (class_exists(Coroutine::class)) {
 				$this->markTestSkipped('This test simulates coroutine switches without the Swoole extension.');
 			}
@@ -342,10 +410,17 @@ final class WorkerDatabaseIsolationTest extends TestCase
 		$this->projectDir = sys_get_temp_dir() . '/overnight-worker-db-' . bin2hex(random_bytes(8));
 		mkdir($this->projectDir . '/config', recursive: true);
 		file_put_contents($this->projectDir . '/config/pipeline.php', '<?php return static function (): void {};');
-		if ($storeClass !== null) {
+		if ($aliasClass !== null) {
 			$config = [
 				ContainerConfig::class => [
-					'definitions' => ['aliases' => [DatabaseStoreInterface::class => $storeClass]],
+					'definitions' => ['aliases' => [DatabaseStoreInterface::class => $aliasClass]],
+				],
+			];
+			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
+		} elseif ($factoryClass !== null) {
+			$config = [
+				ContainerConfig::class => [
+					'definitions' => ['factories' => [DatabaseStoreInterface::class => $factoryClass]],
 				],
 			];
 			file_put_contents($this->projectDir . '/config/container.all.php', '<?php return ' . var_export($config, true) . ';');
@@ -399,9 +474,9 @@ final class WorkerDatabaseIsolationTest extends TestCase
 			RecursiveIteratorIterator::CHILD_FIRST,
 		);
 		foreach ($iterator as $file) {
-			$file->isDir() ? rmdir($file->getPathname()) : unlink($file->getPathname());
+			$file->isDir() ? @rmdir($file->getPathname()) : @unlink($file->getPathname());
 		}
-		rmdir($this->projectDir);
+		@rmdir($this->projectDir);
 	}
 }
 
@@ -446,6 +521,14 @@ final class CoroutineStub
 	}
 }
 
+final class TestRuntimeStoreFactory
+{
+	public function __invoke(ContainerInterface $container): TestRuntimeStore
+	{
+		return new TestRuntimeStore();
+	}
+}
+
 final class TestRuntimeStore implements DatabaseStoreInterface
 {
 	public ?string $id = null;
@@ -463,6 +546,11 @@ final class TestRuntimeStore implements DatabaseStoreInterface
 	public function set(string $name, DatabaseInterface $database): void
 	{
 		$this->currentStore(create: true)->set($name, $database);
+	}
+
+	public function scoped(callable $callback): mixed
+	{
+		return $this->currentStore(create: true)->scoped($callback);
 	}
 
 	public function close(): void
@@ -495,6 +583,18 @@ final class TestRuntimeStore implements DatabaseStoreInterface
 		}
 
 		return $this->fallback ??= new DatabaseStore();
+	}
+}
+
+final class TestDelegatingPdoWrapper
+{
+	public function __construct(public PDO $pdo)
+	{
+	}
+
+	public function setAttribute(int $attribute, mixed $value): bool
+	{
+		return $this->pdo->setAttribute($attribute, $value);
 	}
 }
 

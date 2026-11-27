@@ -12,6 +12,8 @@ class PdoDatabase implements ClosableDatabaseInterface
 {
 	protected $resource;
 	protected $connection;
+	protected ?PDO $rawConnection = null;
+	protected bool $persistent = false;
 
 	public function __construct(
 		protected string $name,
@@ -25,12 +27,13 @@ class PdoDatabase implements ClosableDatabaseInterface
 		$options = ! empty($parameters["options"]) ? $parameters["options"] : [];
 
 		// Persistent connections
-		if (! empty($parameters["persistent"])) {
+		if (! empty($parameters["persistent"]) || ! empty($options[PDO::ATTR_PERSISTENT])) {
+			$this->persistent = true;
 			$options[PDO::ATTR_PERSISTENT] = true;
 		}
 
 		try {
-			$this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
+			$this->rawConnection = $this->connection = $this->resource = new PDO($dsn, $username, $password, $options);
 
 			if (! empty($parameters["wrapper_class"]) && class_exists($parameters["wrapper_class"])) {
 				$this->connection = $this->resource = new $parameters["wrapper_class"]($this->connection);
@@ -83,6 +86,7 @@ class PdoDatabase implements ClosableDatabaseInterface
 	public function setConnection($connection)
 	{
 		$this->connection = $connection;
+		$this->rawConnection = $connection instanceof PDO ? $connection : null;
 	}
 
 	public function setResource($resource)
@@ -102,12 +106,19 @@ class PdoDatabase implements ClosableDatabaseInterface
 
 	public function close(): void
 	{
+		$rawConnection = $this->rawConnection;
 		$connection = $this->connection;
+		$this->rawConnection = null;
 		$this->connection = null;
 		$this->resource = null;
 
-		if ($connection instanceof PDO && $connection->inTransaction()) {
-			$connection->rollBack();
+		if ($this->persistent) {
+			return;
+		}
+
+		$pdo = $rawConnection ?? ($connection instanceof PDO ? $connection : null);
+		if ($pdo !== null && $pdo->inTransaction()) {
+			$pdo->rollBack();
 		}
 	}
 }

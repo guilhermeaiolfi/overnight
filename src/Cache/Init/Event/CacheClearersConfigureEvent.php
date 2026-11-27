@@ -6,9 +6,11 @@ namespace ON\Cache\Init\Event;
 
 use ON\Application;
 use ON\Cache\CacheClearerRegistry;
-use ON\Init\NonLifecycleOrderingEventInterface;
+use ON\Cache\CacheExtension;
+use ON\Init\Attribute\InitEvent;
 
-final class CacheClearersConfigureEvent implements NonLifecycleOrderingEventInterface
+#[InitEvent(owner: CacheExtension::class, lazy: true)]
+final class CacheClearersConfigureEvent
 {
 	public function __construct(
 		public CacheClearerRegistry $registry,

@@ -44,7 +44,7 @@ final class LatteExtensionTest extends TestCase
 		$configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
-		$extension->register($init);
+		$init->registerExtension($extension);
 		$init->emit(new ConfigConfigureEvent($configExt));
 		$init->emit(new ContainerConfigureEvent(new ContainerExtension($app), $containerConfig));
 
@@ -72,7 +72,7 @@ final class LatteExtensionTest extends TestCase
 		$configExt->set(ContainerConfig::class, $containerConfig);
 
 		$init = new Init();
-		$extension->register($init);
+		$init->registerExtension($extension);
 		$init->emit(new ConfigConfigureEvent($configExt));
 
 		$this->assertSame('custom-latte', $viewConfig->get('latte.extension'));

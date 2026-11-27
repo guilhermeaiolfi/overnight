@@ -11,7 +11,7 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Discovery\ClassFinder;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -22,10 +22,6 @@ class AutoWiringExtension extends AbstractExtension
 {
 	public const ID = 'autowiring';
 
-	public const NAMESPACE = "core.extensions.autowiring";
-
-	protected int $type = self::TYPE_EXTENSION;
-
 	private const DEFAULT_SCAN_PATH = 'modules';
 
 	private const DEFAULT_CACHE_MODE = 'auto';
@@ -35,9 +31,10 @@ class AutoWiringExtension extends AbstractExtension
 	private string $cacheFile;
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		$app->autowiring = $this;
 		$this->cacheFile = $this->app->paths->get('cache')->append($options["cache_file"] ?? self::DEFAULT_CACHE_FILE)->getAbsolutePath();
 		$this->installDiscoveredExtensions();
@@ -47,13 +44,7 @@ class AutoWiringExtension extends AbstractExtension
 	{
 	}
 
-	public function register(Init $init): void
-	{
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
-	}
-
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(

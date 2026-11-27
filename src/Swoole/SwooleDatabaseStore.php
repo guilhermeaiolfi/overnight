@@ -15,11 +15,15 @@ final class SwooleDatabaseStore implements DatabaseStoreInterface
 
 	private string $contextKey;
 
+	private string $deferKey;
+
 	private ?DatabaseStore $fallback = null;
 
 	public function __construct()
 	{
-		$this->contextKey = self::class . ':' . (++self::$nextInstanceId);
+		$id = ++self::$nextInstanceId;
+		$this->contextKey = self::class . ':' . $id;
+		$this->deferKey = $this->contextKey . ':defer';
 	}
 
 	public function get(string $name): ?DatabaseInterface
@@ -29,7 +33,12 @@ final class SwooleDatabaseStore implements DatabaseStoreInterface
 
 	public function set(string $name, DatabaseInterface $database): void
 	{
-		$this->currentStore(create: true)->set($name, $database);
+		$this->currentStore(create: true, deferClose: true)->set($name, $database);
+	}
+
+	public function scoped(callable $callback): mixed
+	{
+		return $this->currentStore(create: true)->scoped($callback);
 	}
 
 	public function close(): void
@@ -37,7 +46,7 @@ final class SwooleDatabaseStore implements DatabaseStoreInterface
 		$this->currentStore(create: false)?->close();
 	}
 
-	private function currentStore(bool $create): ?DatabaseStore
+	private function currentStore(bool $create, bool $deferClose = false): ?DatabaseStore
 	{
 		if (class_exists(Coroutine::class, false) && Coroutine::getCid() > 0) {
 			$context = Coroutine::getContext();
@@ -47,15 +56,21 @@ final class SwooleDatabaseStore implements DatabaseStoreInterface
 						return null;
 					}
 
-					$store = $context[$this->contextKey] = new DatabaseStore();
+					$context[$this->contextKey] = new DatabaseStore();
+				}
+
+				$store = $context[$this->contextKey];
+				if ($deferClose && ! isset($context[$this->deferKey])) {
+					$context[$this->deferKey] = true;
 					$key = $this->contextKey;
-					Coroutine::defer(static function () use ($context, $key, $store): void {
-						unset($context[$key]);
+					$deferKey = $this->deferKey;
+					Coroutine::defer(static function () use ($context, $key, $deferKey, $store): void {
+						unset($context[$key], $context[$deferKey]);
 						$store->close();
 					});
 				}
 
-				return $context[$this->contextKey];
+				return $store;
 			}
 		}
 

@@ -9,6 +9,7 @@ use ON\Data\Query\Condition\ComparisonCondition;
 use ON\Data\Query\Condition\ComparisonOperator;
 use ON\Data\Query\Expression\AggregateExpression;
 use ON\Data\Query\Expression\AggregateFunction;
+use ON\Data\Query\Expression\AliasedExpression;
 use ON\Data\Query\Expression\FunctionCallExpression;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Month;
 use ON\Data\Query\QueryFunction\Standard\Temporal\Year;
@@ -40,8 +41,9 @@ final class QueryParserTest extends TestCase
 			],
 		], $context);
 
-		$this->assertSame('published_posts', $context->getRelationResponseNames()['posts'] ?? null);
-		$posts = $query->relation('posts');
+		$this->assertTrue($context->hasNativeRelationAliases());
+		$posts = $query->relation('posts', as: 'published_posts');
+		$this->assertSame(['published_posts'], $posts->getPath());
 		$this->assertTrue($posts->isSelected());
 		$this->assertNotEmpty($posts->getConditions());
 		$condition = $posts->getConditions()[0];
@@ -62,20 +64,23 @@ final class QueryParserTest extends TestCase
 			'search' => 'GraphQL',
 			'sort' => '-month(created_at)',
 			'aggregate' => ['countDistinct' => 'user_id'],
-			'groupBy' => ['year(created_at)'],
+			'groupBy' => [' YEAR(created_at) '],
 		], $context);
 
 		$this->assertTrue($context->isAggregate());
 		$this->assertSame('countDistinct', $context->getAggregates()[0]['function']);
 		$this->assertSame('user_id', $context->getAggregates()[0]['field']);
-		$this->assertSame('year(created_at)', $context->getGroupBy()[0]['responseName']);
+		$this->assertSame([
+			'responseName' => ' YEAR(created_at) ',
+			'alias' => 'year_created_at',
+		], $context->getGroupBy()[0]);
 
 		$selections = $query->getSelections()->getAll();
 		$this->assertNotEmpty($selections);
 		$hasCountDistinct = false;
 		foreach ($selections as $selection) {
 			$expr = $selection->getExpression();
-			if ($expr instanceof \ON\Data\Query\Expression\AliasedExpression) {
+			if ($expr instanceof AliasedExpression) {
 				$expr = $expr->getExpression();
 			}
 			if ($expr instanceof AggregateExpression && $expr->getFunction() === AggregateFunction::COUNT_DISTINCT) {
@@ -104,6 +109,7 @@ final class QueryParserTest extends TestCase
 				$left = $condition->getLeft();
 				if ($left instanceof FunctionCallExpression) {
 					$filterExpr = $left;
+
 					break;
 				}
 			}
@@ -135,9 +141,9 @@ final class QueryParserTest extends TestCase
 		], $context);
 
 		$posts = $query->relation('posts');
-		$comments = $posts->relation('comments');
+		$comments = $posts->relation('comments', as: 'published_comments');
 		$this->assertTrue($comments->isSelected());
-		$this->assertSame('published_comments', $context->getRelationResponseNames()['posts.comments'] ?? null);
+		$this->assertSame(['posts', 'published_comments'], $comments->getPath());
 		$this->assertNotEmpty($comments->getConditions());
 	}
 
