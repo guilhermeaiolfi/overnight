@@ -28,7 +28,6 @@ use PHPUnit\Framework\TestCase;
 use Psr\EventDispatcher\EventDispatcherInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
-use Psr\Http\Server\MiddlewareInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Tests\ON\RestApi\Support\CycleSqliteTestDatabase;
 use Tests\ON\RestApi\Support\RestApiTestFixtures;
@@ -133,8 +132,8 @@ final class SchemaAddonTest extends TestCase
 	{
 		$registry = new Registry();
 		$middleware = new MiddlewarePriorityPipe(new RequestStack());
-		$app = new class ($middleware) extends Application {
-			public function __construct(private MiddlewarePriorityPipe $middleware)
+		$app = new class () extends Application {
+			public function __construct()
 			{
 			}
 
@@ -147,10 +146,16 @@ final class SchemaAddonTest extends TestCase
 			{
 				return false;
 			}
-
-			public function pipe(string $path, MiddlewareInterface $middleware, int $priority): void
+		};
+		$pipeline = new class ($app, $middleware) extends PipelineExtension {
+			public function __construct(Application $app, private MiddlewarePriorityPipe $testMiddleware)
 			{
-				$this->middleware->pipe(\Laminas\Stratigility\path($path, $middleware), $priority);
+				parent::__construct($app);
+			}
+
+			public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
+			{
+				$this->testMiddleware->pipe(\Laminas\Stratigility\path($middlewareOrPath, $middleware), $priority);
 			}
 		};
 		$container = new Container();
@@ -162,7 +167,7 @@ final class SchemaAddonTest extends TestCase
 		$container->set(RateLimiterInterface::class, new InMemoryRateLimiter());
 		$container->set(EventDispatcherInterface::class, $this->createStub(EventDispatcherInterface::class));
 		(new RestApiExtension($app))->onPipelineReady(
-			new PipelineReadyEvent(new PipelineExtension($app), $container),
+			new PipelineReadyEvent($pipeline, $container),
 		);
 
 		$this->assertSame(200, $middleware->handle(new ServerRequest(uri: '/items/_schema'))->getStatusCode());

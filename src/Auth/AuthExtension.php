@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Auth;
 
-use ON\Application;
 use ON\Auth\Authenticator\DummyAuthenticator;
 use ON\Auth\Container\AuthenticationServiceFactory;
 use ON\Auth\Middleware\AuthorizationMiddleware;
@@ -13,42 +12,30 @@ use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 
 class AuthExtension extends AbstractExtension
 {
 	public const ID = 'auth';
 
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
-
-	public function register(Init $init): void
-	{
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$containerConfig = $event->containerConfig;
 		$containerConfig->addAliases([
 			StorageInterface::class => SessionStorage::class,
 			AuthenticatorInterface::class => DummyAuthenticator::class,
-			//AuthorizationServiceInterface::class => AuthorizationService::class,
 		]);
 		$containerConfig->addFactories([
 			AuthenticationServiceInterface::class => AuthenticationServiceFactory::class,
 		]);
 	}
 
-	public function onPipelineReady(): void
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$this->app->pipe('/', SecurityMiddleware::class, 50);
-
-		$this->app->pipe('/', AuthorizationMiddleware::class, 40);
+		$event->pipeline->pipe('/', SecurityMiddleware::class, 50);
+		$event->pipeline->pipe('/', AuthorizationMiddleware::class, 40);
 	}
 }

@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace ON\View;
 
 use Exception;
-use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Http\RequestContext;
+use ON\Middleware\RequestForwarderInterface;
 use ON\RequestStackInterface;
 use ON\Router\Route;
 use Psr\Container\ContainerInterface;
@@ -268,9 +268,9 @@ class ViewManager
 				return (string) $sectionDefinition['content'];
 
 			case 'uri':
-				$app = $this->container->get(Application::class);
+				$forwarder = $this->container->get(RequestForwarderInterface::class);
 
-				$response = $app->processForward(
+				$response = $forwarder->processForward(
 					$sectionDefinition['uri'],
 					$request,
 					'GET'

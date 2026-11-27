@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace ON\RestApi;
 
-use ON\Application;
-use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
+use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
+use ON\Middleware\PipelineExtension;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
 use ON\RestApi\Action\Directus\BatchDeleteAction;
@@ -28,8 +28,8 @@ use ON\RestApi\Container\DirectusQueryParserFactory;
 use ON\RestApi\Container\FileUploadEventEmitterFactory;
 use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\MutationCoordinatorFactory;
+use ON\RestApi\Container\RestApiExecutorFactory;
 use ON\RestApi\Container\RestHookDispatcherFactory;
-use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
@@ -48,21 +48,10 @@ class RestApiExtension extends AbstractExtension
 	public const ID = 'restapi';
 
 	protected ?ContainerInterface $container = null;
-	protected bool $activated = false;
 	protected ?RestApiConfig $config = null;
+	protected ?RestApiExecutorInterface $fallbackExecutor = null;
 
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
-
-	public function register(Init $init): void
-	{
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -71,18 +60,30 @@ class RestApiExtension extends AbstractExtension
 			RestHookDispatcher::class => RestHookDispatcherFactory::class,
 			MutationCoordinator::class => MutationCoordinatorFactory::class,
 			DirectusQueryParser::class => DirectusQueryParserFactory::class,
+			RestApiExecutor::class => RestApiExecutorFactory::class,
 		]);
 		$event->containerConfig->addAlias(ItemRepositoryInterface::class, ItemRepository::class);
 		$event->containerConfig->addAlias(QueryParserInterface::class, DirectusQueryParser::class);
+		$event->containerConfig->addAlias(RestApiExecutorInterface::class, RestApiExecutor::class);
 	}
 
+	#[On]
+	public function onContainerReady(ContainerReadyEvent $event): void
+	{
+		$this->container = $event->container;
+		$this->config = $event->container->get(RestApiConfig::class);
+		$this->registerDefaultActions($this->config);
+	}
+
+	#[On(optional: true)]
 	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
 		$container = $event->container;
 		$this->container = $container;
-		$config = $this->config = $container->get(RestApiConfig::class);
+		$config = $this->config ??= $container->get(RestApiConfig::class);
 		$this->registerDefaultActions($config);
 
+		$executor = $this->resolveExecutor($container);
 		$path = $config->get('endpointUri', '/items');
 		$debug = $this->app->isDebug();
 		$defaultLimit = $config->get('defaultLimit', 100);
@@ -91,7 +92,7 @@ class RestApiExtension extends AbstractExtension
 
 		$middleware = new RestMiddleware(
 			new RestActionRouter($config->get('actions', [])),
-			[$this, 'execute'],
+			[$executor, 'execute'],
 			[
 				'endpointUri' => $path,
 				'pathPrefixStripped' => true,
@@ -103,7 +104,7 @@ class RestApiExtension extends AbstractExtension
 				'debug' => $debug,
 			],
 			$container->get(EventDispatcherInterface::class),
-			[$this, 'ensureActivated'],
+			[$executor, 'ensureActivated'],
 		);
 
 		// Add rate limiting if the extension is installed
@@ -112,7 +113,7 @@ class RestApiExtension extends AbstractExtension
 			$maxRequests = $config->get('rateLimit', 100);
 			$windowSeconds = $config->get('rateLimitWindow', 60);
 
-			$this->app->pipe($path, new RateLimitMiddleware(
+			$event->pipeline->pipe($path, new RateLimitMiddleware(
 				$rateLimiter,
 				$maxRequests,
 				$windowSeconds
@@ -120,10 +121,9 @@ class RestApiExtension extends AbstractExtension
 		}
 
 		// Load addons
-		$this->loadAddons($container, $path);
+		$this->loadAddons($container, $event->pipeline, $path);
 
-		$this->app->pipe($path, $middleware, 10);
-
+		$event->pipeline->pipe($path, $middleware, 10);
 	}
 
 	public function execute(string|RestActionInterface $action, array $params = [], mixed $payload = null, ?array $options = null): mixed
@@ -132,50 +132,31 @@ class RestApiExtension extends AbstractExtension
 			throw new RuntimeException('REST API extension cannot execute actions before the container is ready.');
 		}
 
-		$this->ensureActivated();
-
-		if (is_string($action)) {
-			$action = $this->container->get($this->resolveActionClass($action));
-		}
-
-		return $this->container->get(ExecutorInterface::class)->execute($action, [
-			'params' => $params,
-			'payload' => $payload,
-			'options' => $options,
-		]);
+		return $this->resolveExecutor($this->container)
+			->execute($action, $params, $payload, $options);
 	}
 
 	public function ensureActivated(): void
 	{
-		if ($this->activated || $this->container === null) {
+		if ($this->container === null) {
 			return;
 		}
 
-		$this->activated = true;
-		$config = $this->config ?? $this->container->get(RestApiConfig::class);
-		$dispatcher = $this->container->get(EventDispatcherInterface::class);
-
-		$dispatcher->dispatch(new RestApiActivatedEvent(
-			$this->container,
-			$config,
-			(string) $config->get('endpointUri', '/items'),
-		));
+		$this->resolveExecutor($this->container)->ensureActivated();
 	}
 
-	private function resolveActionClass(string $action): string
+	protected function resolveExecutor(ContainerInterface $container): RestApiExecutorInterface
 	{
-		if (class_exists($action)) {
-			return $action;
+		if ($container->has(RestApiExecutorInterface::class)) {
+			return $container->get(RestApiExecutorInterface::class);
 		}
 
-		$config = $this->container->get(RestApiConfig::class);
-		foreach ($config->get('actions', []) as $registeredAction) {
-			if (($registeredAction['name'] ?? null) === $action) {
-				return $registeredAction['action'];
-			}
-		}
-
-		return $action;
+		return $this->fallbackExecutor ??= new RestApiExecutor(
+			$container,
+			$this->config ?? $container->get(RestApiConfig::class),
+			$container->get(EventDispatcherInterface::class),
+			isset($this->app) ? $this->app : null,
+		);
 	}
 
 	protected function registerDefaultActions(RestApiConfig $config): void
@@ -197,6 +178,7 @@ class RestApiExtension extends AbstractExtension
 
 	protected function loadAddons(
 		ContainerInterface $container,
+		PipelineExtension $pipeline,
 		string $apiEndpointPath
 	): void {
 		$addons = $container->get(RestApiConfig::class)->get('addons', []);
@@ -225,7 +207,7 @@ class RestApiExtension extends AbstractExtension
 			$addon->register($addonOptions);
 
 			if ($addon instanceof MiddlewareInterface) {
-				$this->app->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
+				$pipeline->pipe($apiEndpointPath, $addon, $addon instanceof SchemaAddon ? 10 : 12);
 			}
 		}
 	}

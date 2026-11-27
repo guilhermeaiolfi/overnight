@@ -6,7 +6,7 @@ namespace Tests\ON\View;
 
 use Exception;
 use Laminas\Diactoros\Response\HtmlResponse;
-use ON\Application;
+use ON\Middleware\RequestForwarderInterface;
 use ON\RequestStack;
 use ON\Router\Route;
 use ON\View\GenericView;
@@ -16,6 +16,8 @@ use ON\View\ViewInterface;
 use ON\View\ViewManager;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
+use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
 use stdClass;
 
 final class ViewTest extends TestCase
@@ -328,10 +330,10 @@ final class ViewTest extends TestCase
 		$this->assertSame('PLATES:pages::show|OVERRIDE:app::footer.phtml', $result);
 	}
 
-	public function testRouteSectionsStillRenderThroughApplication(): void
+	public function testRouteSectionsStillRenderThroughRequestForwarder(): void
 	{
-		$app = new class () {
-			public function processForward(): HtmlResponse
+		$forwarder = new class () implements RequestForwarderInterface {
+			public function processForward(string $path, ?ServerRequestInterface $request = null, ?string $method = null): ResponseInterface
 			{
 				return new HtmlResponse('ROUTE');
 			}
@@ -372,10 +374,10 @@ final class ViewTest extends TestCase
 
 		$container = $this->createMock(ContainerInterface::class);
 		$container->method('get')
-			->willReturnCallback(function (string $class) use ($outerRenderer, $app) {
+			->willReturnCallback(function (string $class) use ($outerRenderer, $forwarder) {
 				return match ($class) {
 					'OuterRenderer' => $outerRenderer,
-					Application::class => $app,
+					RequestForwarderInterface::class => $forwarder,
 					default => null,
 				};
 			});

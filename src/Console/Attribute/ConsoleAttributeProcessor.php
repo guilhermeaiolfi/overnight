@@ -7,6 +7,7 @@ namespace ON\Console\Attribute;
 use Attribute;
 use ON\Application;
 use ON\Config\Scanner\AttributeReader;
+use ON\Console\ConsoleExtension;
 use Psr\Container\ContainerInterface;
 
 class ConsoleAttributeProcessor
@@ -26,7 +27,7 @@ class ConsoleAttributeProcessor
 
 		$attributes = $reader->getAttributes(attrClassNames: [ ConsoleCommand::class ], target: Attribute::TARGET_METHOD);
 		foreach ($attributes as $attr) {
-			$this->app->console->addCommand(
+			$this->app->ext(ConsoleExtension::class)->addCommand(
 				$attr->name,
 				$attr->__declaringClass . "::" . $attr->__methodName,
 				$attr->description

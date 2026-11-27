@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -21,46 +20,31 @@ use ON\DB\Container\DatabaseManagerFactory;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\Cycle\Schema\CycleRegistryGenerator;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
-use ON\Init\InitContext;
+use ON\Init\Attribute\On;
 
 class DatabaseExtension extends AbstractExtension
 {
 	public const ID = 'db';
 
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
-
-	public function register(Init $init): void
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		if ($this->app->isCli()) {
-			$init->on(ConsoleReadyEvent::class, function (): void {
-				$this->app->console->addCommand(MigrateCommand::class);
-				$this->app->console->addCommand(MigrateUpCommand::class);
-				$this->app->console->addCommand(MigrateAllCommand::class);
-				$this->app->console->addCommand(MigrateDownCommand::class);
-				$this->app->console->addCommand(MigrateStatusCommand::class);
-			});
-
-			if (class_exists(CacheClearersConfigureEvent::class)) {
-				$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-			}
-		}
-
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
-			$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
-			$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
-		});
+		$event->containerConfig->addFactory(CycleDatabase::class, CycleDatabaseFactory::class);
+		$event->containerConfig->addFactory(DatabaseManager::class, DatabaseManagerFactory::class);
+		$event->containerConfig->addFactory(CycleRegistryGenerator::class, CycleRegistryGeneratorFactory::class);
 	}
 
-	public function start(InitContext $context): void
+	#[On(optional: true)]
+	public function onConsoleReady(ConsoleReadyEvent $event): void
 	{
+		$event->console->addCommand(MigrateCommand::class);
+		$event->console->addCommand(MigrateUpCommand::class);
+		$event->console->addCommand(MigrateAllCommand::class);
+		$event->console->addCommand(MigrateDownCommand::class);
+		$event->console->addCommand(MigrateStatusCommand::class);
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(
@@ -76,15 +60,5 @@ class DatabaseExtension extends AbstractExtension
 			priority: 75,
 			description: 'Clears cached Cycle ORM schema.'
 		));
-	}
-
-	public function onContainerConfigure(): void
-	{
-
-	}
-
-	public function onConfigConfigure(): void
-	{
-
 	}
 }

@@ -6,6 +6,7 @@ namespace Tests\ON\Console;
 
 use Fiber;
 use ON\Application;
+use ON\Cache\CacheExtension;
 use ON\Console\Command\ClearCacheCommand;
 use ON\Console\Command\RoutesCommand;
 use ON\Console\Command\ServeCommand;
@@ -15,6 +16,7 @@ use ON\Container\ContainerExtension;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Init\Init;
+use ON\Router\RouterExtension;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
 use RuntimeException;
@@ -102,8 +104,12 @@ final class ConsoleExtensionTest extends TestCase
 		});
 
 		$console = new ConsoleExtension($appWithAll);
-		$console->register(new Init());
+		$init = new Init();
+		$init->registerExtension($console);
+		$init->registerExtension(new CacheExtension($appWithAll));
+		$init->registerExtension(new RouterExtension($appWithAll));
 		$console->onContainerReady(new ContainerReadyEvent($this->createMock(ContainerExtension::class), $container));
+		$console->start($init->context());
 		$console->flush();
 
 		$this->assertSame([

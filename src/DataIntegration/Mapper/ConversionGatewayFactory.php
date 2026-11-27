@@ -6,6 +6,7 @@ namespace ON\DataIntegration\Mapper;
 
 use DI\FactoryInterface;
 use ON\Application;
+use ON\Config\ConfigExtension;
 use ON\Data\Mapper\ConversionGateway;
 use Psr\Container\ContainerInterface;
 use Psr\Container\NotFoundExceptionInterface;
@@ -62,8 +63,8 @@ final class ConversionGatewayFactory
 	private function config(ContainerInterface $container): DataMapperConfig
 	{
 		$app = $container->get(Application::class);
-		if ($app->hasExtension('config')) {
-			return $app->config->get(DataMapperConfig::class);
+		if ($app->hasExtension(ConfigExtension::class)) {
+			return $app->ext(ConfigExtension::class)->get(DataMapperConfig::class);
 		}
 
 		return new DataMapperConfig();

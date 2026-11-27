@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Tests\ON\Extension;
 
-use BadMethodCallException;
 use Exception;
 use FilesystemIterator;
 use ON\Application;
 use ON\Extension\AbstractExtension;
-use OutOfBoundsException;
 use PHPUnit\Framework\Attributes\BackupGlobals;
 use PHPUnit\Framework\TestCase;
 use RecursiveDirectoryIterator;
@@ -153,23 +151,25 @@ final class ApplicationTest extends TestCase
 		]);
 	}
 
-	public function testRegisteredPropertiesSupportIsset(): void
+	public function testRunnerCanBeRegisteredAndInvoked(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
 			'extensions' => [],
 			'debug' => true,
 		]);
-		$app->service = new stdClass();
-		$app->optionalService = null;
+		$called = false;
+		$app->setRunner(function () use (&$called): string {
+			$called = true;
 
-		$this->assertTrue(isset($app->service));
-		$this->assertFalse(isset($app->optionalService));
-		$this->assertFalse(isset($app->unregisteredService));
-		$this->assertNull($app->optionalService);
+			return 'ran';
+		});
+
+		$this->assertSame('ran', $app->run());
+		$this->assertTrue($called);
 	}
 
-	public function testUndefinedPropertyThrowsOutOfBoundsException(): void
+	public function testRunWithoutRegisteredRunnerThrows(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
@@ -177,24 +177,38 @@ final class ApplicationTest extends TestCase
 			'debug' => true,
 		]);
 
-		$this->expectException(OutOfBoundsException::class);
-		$this->expectExceptionMessage('missingProp');
+		$this->expectException(Exception::class);
+		$this->expectExceptionMessage('runner');
 
-		$_ = $app->missingProp;
+		$app->run();
 	}
 
-	public function testUndefinedMethodThrowsBadMethodCallException(): void
+	public function testDuplicateRunnerRegistrationThrows(): void
 	{
 		$app = new Application([
 			'paths' => ['project' => $this->projectDir],
 			'extensions' => [],
 			'debug' => true,
 		]);
+		$app->setRunner(static fn (): int => 0);
 
-		$this->expectException(BadMethodCallException::class);
-		$this->expectExceptionMessage('missingMethod');
+		$this->expectException(Exception::class);
+		$this->expectExceptionMessage('Conflict detected');
 
-		$app->missingMethod();
+		$app->setRunner(static fn (): int => 1);
+	}
+
+	public function testProfileOptionEnablesExtensionProfilerWithoutClockwork(): void
+	{
+		$app = new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [SampleValidExtension::class => []],
+			'debug' => true,
+			'profile' => true,
+		]);
+
+		$this->assertTrue($app->extensionProfiler()->isEnabled());
+		$this->assertNotEmpty($app->extensionProfiler()->samples());
 	}
 
 	private function removeDirectory(string $dir): void

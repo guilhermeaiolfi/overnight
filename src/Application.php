@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace ON;
 
-use BadMethodCallException;
 use Exception;
 use ON\Extension\ExtensionInterface;
 use ON\Extension\ExtensionProfiler;
 use ON\FS\PathRegistry;
 use ON\Init\Init;
-use ON\Init\NonLifecycleOrderingEventInterface;
-use OutOfBoundsException;
+use ON\Init\InitAttributeLoader;
 use Symfony\Component\Dotenv\Dotenv;
 
 class Application
@@ -22,15 +20,12 @@ class Application
 
 	protected array $aliases = [];
 
+	/** @var array<class-string<ExtensionInterface>, ExtensionInterface> */
 	protected array $extensions = [];
-
-	protected array $__methods = [];
-
-	protected array $__properties = [];
 
 	protected bool $debug = true;
 
-	protected string $environment = "development";
+	protected string $environment = 'development';
 
 	public ?Dotenv $env = null;
 
@@ -40,8 +35,10 @@ class Application
 
 	protected ExtensionProfiler $extensionProfiler;
 
-	/** @var array<string, array<string, callable>> [MethodName => [ExtensionClass => Callback]] */
-	protected array $unresolvedMethods = [];
+	/** @var callable|null */
+	protected $runner = null;
+
+	protected ?string $runnerOwner = null;
 
 	/**
 	 * @param array {
@@ -59,12 +56,12 @@ class Application
 	 *   debug_var_name?: string,
 	 *   dotenv_overload?: ?bool,
 	 *   error_reporting?: ?int,
+	 *   profile?: ?bool,
 	 * } $options
 	 */
 	public function __construct(
 		protected ?array $options = []
 	) {
-
 		if (! isset(self::$instance)) {
 			self::$instance = $this;
 		}
@@ -84,7 +81,7 @@ class Application
 			chdir($project_dir);
 		}
 
-		$extensions = $options["extensions"] ?? "./config/extensions.php";
+		$extensions = $options['extensions'] ?? './config/extensions.php';
 
 		if (is_string($extensions)) {
 			$extensions = require $extensions;
@@ -112,7 +109,7 @@ class Application
 			}
 		}
 
-		$debug = $options["debug"] ?? $_ENV[$debugVarName] ?? $_SERVER[$debugVarName] ?? false;
+		$debug = $options['debug'] ?? $_ENV[$debugVarName] ?? $_SERVER[$debugVarName] ?? false;
 		$this->debug = $_ENV['APP_DEBUG'] = filter_var($debug, FILTER_VALIDATE_BOOLEAN);
 
 		$this->configureErrorDisplay();
@@ -127,7 +124,7 @@ class Application
 			$this->extensionsToInstall[$ext_class] = $ext_options;
 		}
 
-		$this->extensionProfiler = new ExtensionProfiler($this->shouldProfileExtensions());
+		$this->extensionProfiler = new ExtensionProfiler((bool) ($options['profile'] ?? false));
 		$this->init = new Init($this->extensionProfiler);
 
 		$this->loadExtensions();
@@ -137,7 +134,7 @@ class Application
 	{
 		ini_set('display_errors', $this->debug ? '1' : '0');
 		ini_set('display_startup_errors', $this->debug ? '1' : '0');
-		error_reporting($this->options["error_reporting"] ?? E_ALL);
+		error_reporting($this->options['error_reporting'] ?? E_ALL);
 	}
 
 	public function isDebug(): bool
@@ -156,16 +153,19 @@ class Application
 	}
 
 	/**
-	 * @template T
-	 * @param class-string<T> $name
-	 * @return T
+	 * @template T of ExtensionInterface
+	 * @param class-string<T>|string $name
+	 * @return ($name is class-string<T> ? T : ExtensionInterface)
 	 */
-	public function ext(string $name)
+	public function ext(string $name): ExtensionInterface
 	{
 		return $this->getExtension($name);
 	}
 
-	public function getInstalledExtensions()
+	/**
+	 * @return list<class-string<ExtensionInterface>>
+	 */
+	public function getInstalledExtensions(): array
 	{
 		return array_keys($this->extensions);
 	}
@@ -180,33 +180,41 @@ class Application
 		return $this->extensionProfiler;
 	}
 
-	private function shouldProfileExtensions(): bool
+	public function setRunner(callable $runner): void
 	{
-		if (! $this->debug) {
-			return false;
+		$owner = $this->init->getCurrentExtension() ?? 'unknown';
+		if ($this->runner !== null) {
+			throw new Exception("Conflict detected: The runner was registered by multiple extensions: [{$this->runnerOwner}, {$owner}]. Only one extension can define the runner.");
 		}
 
-		foreach ($this->extensionsToInstall as $class => $options) {
-			if ($class !== 'ON\\Clockwork\\ClockworkExtension') {
-				continue;
-			}
-
-			return ! isset($options['enabled']) || $options['enabled'] !== false;
-		}
-
-		return false;
+		$this->runner = $runner;
+		$this->runnerOwner = $owner;
 	}
 
-	protected function loadExtensions()
+	protected function loadExtensions(): void
 	{
-		// Phase 1: Instantiate all extensions (Order doesn't matter yet)
+		// Phase 1: Instantiate all extensions
 		foreach ($this->extensionsToInstall as $ext_class => $ext_options) {
 			$this->install($ext_class, $ext_options);
 		}
 
-		// Phase 2: Registration Pass (Collecting all subscriptions and methods)
+		$installedClasses = array_keys($this->extensions);
+		$extensionsHash = md5(serialize($installedClasses));
+		$cache = $this->readLifecycleCache();
+		$cachedHooks = ($cache !== null && ($cache['extensionsHash'] ?? null) === $extensionsHash && is_array($cache['hooks'] ?? null))
+			? $cache['hooks']
+			: null;
+
+		$extractedHooks = [];
+
+		// Phase 2: Registration Pass (declarative attributes + imperative register())
 		foreach ($this->extensions as $class => $instance) {
 			$this->init->setCurrentExtension($class);
+
+			$hooks = $cachedHooks[$class] ?? InitAttributeLoader::extractHooks($instance);
+			$extractedHooks[$class] = $hooks;
+			$this->init->registerAttributeHooks($instance, $hooks);
+
 			$this->extensionProfiler->begin(
 				$class,
 				'extension.register',
@@ -222,15 +230,15 @@ class Application
 		}
 		$this->init->setCurrentExtension(null);
 
-		$subscriptionMap = $this->init->getSubscriptionMap();
+		$subscriptions = $this->init->getSubscriptions();
 
-		// Phase 3: Lifecycle Order (Hash Check or Rebuild)
-		$orderedClasses = $this->getLifecycleOrder($subscriptionMap);
+		// Phase 3: Lifecycle Order (Cache Check or Rebuild)
+		$lifecycle = $this->getLifecycleOrder($subscriptions, $extractedHooks, $extensionsHash, $cache);
+		$orderedClasses = $lifecycle['order'];
 
-
-		// Phase 4: Sorting & Resolution (Deferred execution logic)
+		// Phase 4: Prune unavailable optional hooks & sort listeners
+		$this->init->removeOptionalListenersForEvents($lifecycle['prunedEvents']);
 		$this->init->sortListeners($orderedClasses);
-		$this->resolveMethods($orderedClasses);
 
 		// Phase 5: Execution (Start in sorted order)
 		foreach ($orderedClasses as $class) {
@@ -252,92 +260,165 @@ class Application
 		}
 	}
 
-	/** @return string[] Array of ordered extension classes */
-	protected function getLifecycleOrder(array $subscriptionMap): array
+	/**
+	 * @return array<string, mixed>|null
+	 */
+	protected function readLifecycleCache(): ?array
 	{
-		$hash = md5(serialize($subscriptionMap));
+		if ($this->debug) {
+			return null;
+		}
+
 		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
-
-		if (! $this->debug && file_exists($cacheFile)) {
-			$cache = require $cacheFile;
-			if ($cache['hash'] === $hash) {
-				return $cache['order'];
-			}
+		if (! file_exists($cacheFile)) {
+			return null;
 		}
 
-		// Cache miss or debug mode: Heavy Lifting
-		$order = $this->rebuildLifecycleOrder($subscriptionMap);
+		$cache = require $cacheFile;
 
-		if (! $this->debug) {
-			$cacheDir = dirname($cacheFile);
-			if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
-				throw new Exception("Unable to create cache directory: {$cacheDir}");
-			}
-			$content = "<?php\n\nreturn " . var_export(['hash' => $hash, 'order' => $order], true) . ";\n";
-			$tempFile = tempnam($cacheDir, 'app_lifecycle_');
-			if ($tempFile === false) {
-				throw new Exception("Unable to create temporary lifecycle cache file in: {$cacheDir}");
-			}
-			if (file_put_contents($tempFile, $content, LOCK_EX) !== strlen($content)) {
-				@unlink($tempFile);
-
-				throw new Exception("Unable to write temporary lifecycle cache file: {$tempFile}");
-			}
-			@chmod($tempFile, 0644);
-			if (! @rename($tempFile, $cacheFile)) {
-				@unlink($tempFile);
-
-				throw new Exception("Unable to move lifecycle cache file into place: {$cacheFile}");
-			}
-			if (function_exists('opcache_invalidate')) {
-				@opcache_invalidate($cacheFile, true);
-			}
-		}
-
-		return $order;
+		return is_array($cache) ? $cache : null;
 	}
 
-	protected function resolveMethods(array $orderedClasses): void
+	/**
+	 * @param array<string, list<array{event: string, optional: bool}>> $subscriptions
+	 * @param array<string, list<array{method: string, event: string, stage: string, optional: bool}>> $hooks
+	 * @param array<string, mixed>|null $cache
+	 * @return array{order: list<string>, prunedEvents: list<string>}
+	 */
+	protected function getLifecycleOrder(
+		array $subscriptions,
+		array $hooks,
+		string $extensionsHash,
+		?array $cache = null,
+	): array {
+		$hash = md5(serialize([
+			'extensionsHash' => $extensionsHash,
+			'subscriptions' => $subscriptions,
+		]));
+
+		if (
+			! $this->debug
+			&& $cache !== null
+			&& ($cache['hash'] ?? null) === $hash
+			&& is_array($cache['order'] ?? null)
+		) {
+			return [
+				'order' => $cache['order'],
+				'prunedEvents' => is_array($cache['prunedEvents'] ?? null) ? $cache['prunedEvents'] : [],
+			];
+		}
+
+		$result = $this->rebuildLifecycleOrder($subscriptions);
+
+		if (! $this->debug) {
+			$this->writeLifecycleCache([
+				'hash' => $hash,
+				'extensionsHash' => $extensionsHash,
+				'hooks' => $hooks,
+				'order' => $result['order'],
+				'prunedEvents' => $result['prunedEvents'],
+			]);
+		}
+
+		return $result;
+	}
+
+	/**
+	 * @param array<string, mixed> $payload
+	 */
+	protected function writeLifecycleCache(array $payload): void
 	{
-		foreach ($this->unresolvedMethods as $name => $registrations) {
-			if (count($registrations) > 1) {
-				$owners = implode(', ', array_keys($registrations));
+		$cacheFile = $this->paths->get('cache')->append('app_lifecycle.php')->getAbsolutePath();
+		$cacheDir = dirname($cacheFile);
+		if (! is_dir($cacheDir) && ! @mkdir($cacheDir, 0755, true) && ! is_dir($cacheDir)) {
+			throw new Exception("Unable to create cache directory: {$cacheDir}");
+		}
 
-				throw new Exception("Conflict detected: The method '{$name}' was registered by multiple extensions: [{$owners}]. Only one extension can define a specific method.");
-			}
+		$content = "<?php\n\nreturn " . var_export($payload, true) . ";\n";
+		$tempFile = tempnam($cacheDir, 'app_lifecycle_');
+		if ($tempFile === false) {
+			throw new Exception("Unable to create temporary lifecycle cache file in: {$cacheDir}");
+		}
+		if (file_put_contents($tempFile, $content, LOCK_EX) !== strlen($content)) {
+			@unlink($tempFile);
 
-			$owner = array_key_first($registrations);
-			$this->__methods[$name] = $registrations[$owner];
+			throw new Exception("Unable to write temporary lifecycle cache file: {$tempFile}");
+		}
+		@chmod($tempFile, 0644);
+		if (! @rename($tempFile, $cacheFile)) {
+			@unlink($tempFile);
+
+			throw new Exception("Unable to move lifecycle cache file into place: {$cacheFile}");
+		}
+		if (function_exists('opcache_invalidate')) {
+			@opcache_invalidate($cacheFile, true);
 		}
 	}
 
 	/**
-	 * @param array<string, string[]> $subscriptionMap [ListenerClass => [EventClasses]]
-	 * @return string[] Ordered list of extension classes
+	 * @param array<string, list<array{event: string, optional: bool}>> $subscriptions
+	 * @return array{order: list<string>, prunedEvents: list<string>}
 	 */
-	protected function rebuildLifecycleOrder(array $subscriptionMap): array
+	protected function rebuildLifecycleOrder(array $subscriptions): array
 	{
 		$graph = [];
 		$extensionNamespaces = [];
+		$prunedEvents = [];
+		$eventMetadataCache = [];
 
-		// Build a map of NamespaceRoot => ExtensionClass
+		// Build a map of NamespaceRoot => ExtensionClass for legacy fallback
 		foreach ($this->extensions as $class => $inst) {
 			$parts = explode('\\', $class);
-			array_pop($parts); // Remove class name
+			array_pop($parts);
 			$ns = implode('\\', $parts);
 			$extensionNamespaces[$ns] = $class;
 			$graph[$class] = [];
 		}
 
-		// Infer dependencies from event namespaces
-		foreach ($subscriptionMap as $listenerClass => $events) {
-			foreach ($events as $eventClass) {
-				if (is_string($eventClass) && is_subclass_of($eventClass, NonLifecycleOrderingEventInterface::class, true)) {
+		foreach ($subscriptions as $listenerClass => $entries) {
+			foreach ($entries as $entry) {
+				$eventClass = $entry['event'];
+				$optional = $entry['optional'];
+
+				if (! array_key_exists($eventClass, $eventMetadataCache)) {
+					$eventMetadataCache[$eventClass] = InitAttributeLoader::extractEventMetadata($eventClass);
+				}
+
+				$meta = $eventMetadataCache[$eventClass];
+				if ($meta !== null) {
+					$ownerClass = $meta['owner'];
+					if ($ownerClass !== null && ! $this->hasExtension($ownerClass)) {
+						if ($optional) {
+							$prunedEvents[$eventClass] = true;
+
+							continue;
+						}
+
+						throw new Exception(
+							"Extension {$listenerClass} listens to {$eventClass} (owned by {$ownerClass}), which is not installed."
+						);
+					}
+
+					if ($meta['lazy']) {
+						continue;
+					}
+
+					if ($ownerClass !== null && $ownerClass !== $listenerClass) {
+						$graph[$listenerClass][] = $ownerClass;
+					}
+
+					continue;
+				}
+
+				// Fallback for events without #[InitEvent]
+				if ($optional && ! class_exists($eventClass)) {
+					$prunedEvents[$eventClass] = true;
+
 					continue;
 				}
 
 				$ownerClass = $this->inferEventOwner($eventClass, $extensionNamespaces);
-				if ($ownerClass && $ownerClass !== $listenerClass) {
+				if ($ownerClass !== null && $ownerClass !== $listenerClass) {
 					$graph[$listenerClass][] = $ownerClass;
 				}
 			}
@@ -352,8 +433,10 @@ class Application
 			$this->sortExtension($class, $graph, $ordered, $visiting, $visited);
 		}
 
-
-		return $ordered;
+		return [
+			'order' => $ordered,
+			'prunedEvents' => array_keys($prunedEvents),
+		];
 	}
 
 	private function inferEventOwner(string $eventClass, array $extensionNamespaces): ?string
@@ -396,19 +479,18 @@ class Application
 		$ordered[] = $class;
 	}
 
-	public function install(string $extension_class, array $extension_options): ?ExtensionInterface
+	public function install(string $extension_class, array $extension_options = []): ?ExtensionInterface
 	{
-
-		if (isset($extension_options["enabled"])) {
-			if (is_callable($extension_options["enabled"])) {
-				$extension_options["enabled"] = $extension_options["enabled"]($this);
+		if (isset($extension_options['enabled'])) {
+			if (is_callable($extension_options['enabled'])) {
+				$extension_options['enabled'] = $extension_options['enabled']($this);
 			}
 
-			if (! $extension_options["enabled"]) {
+			if (! $extension_options['enabled']) {
 				return null;
 			}
 
-			unset($extension_options["enabled"]);
+			unset($extension_options['enabled']);
 		}
 
 		if ($this->hasExtension($extension_class)) {
@@ -420,7 +502,7 @@ class Application
 		}
 
 		if (! is_subclass_of($extension_class, ExtensionInterface::class)) {
-			throw new Exception("Extensions must implement \\ON\\Extension\\ExtensionInterface.");
+			throw new Exception('Extensions must implement \\ON\\Extension\\ExtensionInterface.');
 		}
 
 		$this->extensionProfiler->begin(
@@ -435,24 +517,11 @@ class Application
 		} finally {
 			$this->extensionProfiler->end();
 		}
-		if (isset($instance)) {
-			$this->extensions[$extension_class] = $instance;
-			$this->registerExtension($instance->id(), $instance);
-			$this->registerExtensionShortcut($instance);
 
-			return $instance;
-		}
+		$this->extensions[$extension_class] = $instance;
+		$this->registerExtension($instance->id(), $instance);
 
-		return null;
-	}
-
-	private function registerExtensionShortcut(ExtensionInterface $instance): void
-	{
-		$id = $instance->id();
-
-		if (! isset($this->__properties[$id])) {
-			$this->__properties[$id] = $instance;
-		}
+		return $instance;
 	}
 
 	public function registerExtension(string $name_or_class, ExtensionInterface $instance): void
@@ -470,9 +539,9 @@ class Application
 	}
 
 	/**
-	 * @template T
-	 * @param class-string<T> $className
-	 * @return T
+	 * @template T of ExtensionInterface
+	 * @param class-string<T>|string $className
+	 * @return ($className is class-string<T> ? T : ExtensionInterface)
 	 */
 	public function getExtension(string $className): ExtensionInterface
 	{
@@ -483,48 +552,12 @@ class Application
 		return $this->extensions[$className] ?? $this->aliases[$className];
 	}
 
-	public function __get($name)
+	public function run(): mixed
 	{
-		if (! array_key_exists($name, $this->__properties)) {
-			throw new OutOfBoundsException("Undefined Application property '{$name}'.");
+		if ($this->runner === null) {
+			throw new Exception('There is no extension defining the runner.');
 		}
 
-		return $this->__properties[$name];
-	}
-
-	public function __isset($name): bool
-	{
-		return isset($this->__properties[$name]);
-	}
-
-	public function __set($name, $value)
-	{
-		if (isset($this->__properties[$name])) {
-			throw new Exception("It's not possible to overwrite properties already defined.");
-		}
-		$this->__properties[$name] = $value;
-	}
-
-	public function __call($name, $args)
-	{
-		if (! isset($this->__methods[$name])) {
-			throw new BadMethodCallException("Call to undefined Application method '{$name}'.");
-		}
-
-		return call_user_func_array($this->__methods[$name], $args);
-	}
-
-	public function registerMethod($name, callable $method)
-	{
-		$owner = $this->init->getCurrentExtension();
-		$this->unresolvedMethods[$name][$owner] = $method;
-	}
-
-	public function run()
-	{
-		if (! isset($this->__methods["run"])) {
-			throw new Exception("There is no extension defining the run method.");
-		}
-		call_user_func($this->__methods["run"]);
+		return ($this->runner)();
 	}
 }

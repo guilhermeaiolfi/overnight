@@ -14,6 +14,29 @@ use stdClass;
 
 final class InitTest extends TestCase
 {
+	public function testBeforeOnAfterStagesRunInOrder(): void
+	{
+		$init = new Init();
+		$events = [];
+
+		$init->after('orm.setup', function () use (&$events): void {
+			$events[] = 'after-1';
+		});
+		$init->on('orm.setup', function () use (&$events): void {
+			$events[] = 'on-1';
+		});
+		$init->before('orm.setup', function () use (&$events): void {
+			$events[] = 'before-1';
+		});
+		$init->on('orm.setup')->done(function () use (&$events): void {
+			$events[] = 'done-alias';
+		});
+
+		$init->emit('orm.setup', new stdClass());
+
+		$this->assertSame(['before-1', 'on-1', 'after-1', 'done-alias'], $events);
+	}
+
 	public function testDoneListenersRunAfterNormalListeners(): void
 	{
 		$init = new Init();

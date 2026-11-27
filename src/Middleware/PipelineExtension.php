@@ -16,7 +16,7 @@ use function Laminas\Stratigility\path;
 use Mezzio\Helper\BodyParams\BodyParamsMiddleware;
 use ON\Application;
 use ON\Config\AppConfig;
-use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Config\ConfigExtension;
 use ON\Container\BodyParamsMiddlewareFactory;
 use ON\Container\EmitterFactory;
 use ON\Container\ErrorHandlerFactory;
@@ -32,10 +32,12 @@ use ON\Container\ServerRequestFactoryFactory;
 use ON\Container\StreamFactoryFactory;
 use ON\Container\WhoopsFactory;
 use ON\Container\WhoopsPageHandlerFactory;
+use ON\Event\EventsExtension;
 use ON\Event\NamedEvent;
 use ON\Extension\AbstractExtension;
 use ON\Handler\NotFoundHandler;
 use ON\Http\RequestContext;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -62,16 +64,13 @@ use function sprintf;
  * queues middleware registration until the container is ready, and forwards
  * requests by rewriting the request and re-entering the pipeline.
  */
-class PipelineExtension extends AbstractExtension
+class PipelineExtension extends AbstractExtension implements RequestForwarderInterface
 {
 	public const ID = 'pipeline';
-
-	public const NAMESPACE = 'core.extensions.pipeline';
 
 	private const MAX_FORWARD_DEPTH = 10;
 	private const FORWARD_DEPTH_ATTRIBUTE = self::class . '::forward_depth';
 
-	protected int $type = self::TYPE_EXTENSION;
 	protected RequestHandlerRunnerInterface $runner;
 	protected RequestStack $requestStack;
 	protected MiddlewarePipeInterface $pipeline;
@@ -89,24 +88,12 @@ class PipelineExtension extends AbstractExtension
 
 	public function register(Init $init): void
 	{
-		$this->app->registerMethod('pipe', [$this, 'pipe']);
-		$this->app->registerMethod('processForward', [$this, 'processForward']);
-		$this->app->registerMethod('process', [$this, 'process']);
-		$this->app->registerMethod('handle', [$this, 'handle']);
-
 		if (! $this->app->isCli()) {
-			$this->app->registerMethod('run', [$this, 'run']);
+			$this->app->setRunner([$this, 'run']);
 		}
-
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
 	}
 
-	public function onConfigConfigure(ConfigConfigureEvent $event): void
-	{
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -130,9 +117,11 @@ class PipelineExtension extends AbstractExtension
 			MiddlewareFactoryInterface::class => MiddlewareFactory::class,
 			RequestStackInterface::class => RequestStack::class,
 			ResponseFactoryInterface::class => ResponseFactory::class,
+			RequestForwarderInterface::class => self::class,
 		]);
 	}
 
+	#[On]
 	public function onContainerReady(ContainerReadyEvent $event, InitContext $context): void
 	{
 		$this->container = $event->container;
@@ -143,7 +132,7 @@ class PipelineExtension extends AbstractExtension
 		$this->registerMiddlewares();
 		$this->flush();
 
-		$appCfg = $this->app->config->get(AppConfig::class);
+		$appCfg = $this->app->ext(ConfigExtension::class)->get(AppConfig::class);
 		$this->loadPipeline($appCfg->get('app.pipeline_file', 'config/pipeline.php'));
 
 		$context->emit(new PipelineReadyEvent($this, $this->container));
@@ -166,7 +155,7 @@ class PipelineExtension extends AbstractExtension
 
 	protected function setupPipeline(ContainerInterface $container): void
 	{
-		$this->app->requestStack = $this->requestStack = $container->get(RequestStack::class);
+		$this->requestStack = $container->get(RequestStack::class);
 		$this->pipeline = $container->get(MiddlewarePipeInterface::class);
 		$this->factory = $container->get(MiddlewareFactory::class);
 		$this->runner = $container->get(RequestHandlerRunner::class);
@@ -177,9 +166,9 @@ class PipelineExtension extends AbstractExtension
 		return $this->factory->prepare($middleware);
 	}
 
-	protected function loadPipeline(string $file)
+	protected function loadPipeline(string $file): void
 	{
-		(require $file)($this->app);
+		(require $file)($this->app, $this);
 	}
 
 	public function flush(): void
@@ -296,10 +285,10 @@ class PipelineExtension extends AbstractExtension
 
 	public function processForward(
 		string $path,
-		ServerRequestInterface $request,
+		?ServerRequestInterface $request = null,
 		?string $method = null
 	): ResponseInterface {
-		$depth = (int) $request->getAttribute(self::FORWARD_DEPTH_ATTRIBUTE, 0) + 1;
+		$depth = (int) ($request?->getAttribute(self::FORWARD_DEPTH_ATTRIBUTE, 0) ?? 0) + 1;
 		if ($depth > self::MAX_FORWARD_DEPTH) {
 			throw new RuntimeException(sprintf(
 				'Maximum forward depth (%d) exceeded while forwarding to "%s".',
@@ -318,14 +307,14 @@ class PipelineExtension extends AbstractExtension
 
 	public function run(): void
 	{
-		if ($dispatcher = $this->app->ext('events')) {
-			$dispatcher->dispatch(new NamedEvent('core.run'));
-		}
+		$events = $this->app->hasExtension(EventsExtension::class)
+			? $this->app->ext(EventsExtension::class)
+			: null;
+
+		$events?->dispatch(new NamedEvent('core.run'));
 
 		$this->runner->run();
 
-		if ($dispatcher = $this->app->ext('events')) {
-			$dispatcher->dispatch(new NamedEvent('core.end'));
-		}
+		$events?->dispatch(new NamedEvent('core.end'));
 	}
 }

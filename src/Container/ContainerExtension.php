@@ -27,7 +27,7 @@ use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use Psr\Container\ContainerInterface;
 use function rtrim;
@@ -37,8 +37,6 @@ class ContainerExtension extends AbstractExtension
 {
 	public const ID = 'container';
 
-	public const NAMESPACE = "core.extensions.container";
-	protected int $type = self::TYPE_EXTENSION;
 	protected $container;
 
 	protected string $cache_path;
@@ -52,21 +50,14 @@ class ContainerExtension extends AbstractExtension
 	) {
 	}
 
-	public function register(Init $init): void
-	{
-		$init->on(ConfigConfigureEvent::class, [$this, 'configureContainer']);
-		$init->on(ConfigReadyEvent::class, [$this, 'buildContainer']);
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
-	}
-
+	#[On]
 	public function configureContainer(ConfigConfigureEvent $event, InitContext $context): void
 	{
 		$containerConfig = $event->config->get(ContainerConfig::class);
 		$context->emit(new ContainerConfigureEvent($this, $containerConfig));
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(
@@ -80,6 +71,7 @@ class ContainerExtension extends AbstractExtension
 		));
 	}
 
+	#[On]
 	public function buildContainer(ConfigReadyEvent $event, InitContext $context): void
 	{
 		$configs = $event->config->get();

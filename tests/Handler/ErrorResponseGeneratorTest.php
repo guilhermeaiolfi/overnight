@@ -7,13 +7,13 @@ namespace Tests\ON\Handler;
 use Laminas\Diactoros\Response;
 use Laminas\Diactoros\ResponseFactory;
 use Laminas\Diactoros\ServerRequest;
-use ON\Application;
 use ON\Config\AppConfig;
 use ON\Container\ErrorResponseGeneratorFactory;
 use ON\Container\NotFoundHandlerFactory;
 use ON\Container\ServerRequestErrorResponseGeneratorFactory;
 use ON\Container\WhoopsPageHandlerFactory;
 use ON\Middleware\OutputTypeMiddleware;
+use ON\Middleware\RequestForwarderInterface;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Psr\Container\ContainerInterface;
@@ -70,7 +70,7 @@ final class ErrorResponseGeneratorTest extends TestCase
 		$container = $this->createStub(ContainerInterface::class);
 		$container->method('get')->willReturnMap([
 			[AppConfig::class, new AppConfig()],
-			[Application::class, $this->createStub(Application::class)],
+			[RequestForwarderInterface::class, $this->createStub(RequestForwarderInterface::class)],
 			[ResponseInterface::class, new ResponseFactory()],
 		]);
 		$handler = (new NotFoundHandlerFactory())($container);

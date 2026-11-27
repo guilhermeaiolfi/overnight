@@ -23,9 +23,11 @@ use ON\Config\AppConfig;
 use ON\Container\Executor\Executor;
 use ON\Container\Executor\TypeHintContainerResolver;
 use ON\Middleware\ExecutionMiddleware;
+use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\Middleware\MiddlewarePriorityPipe;
 use ON\Middleware\NotFoundMiddleware;
 use ON\Middleware\PipelineExtension;
+use ON\Middleware\RequestForwarderInterface;
 use ON\Middleware\ValidationMiddleware;
 use ON\RequestStack;
 use ON\Router\Route;
@@ -68,7 +70,7 @@ class AuthMiddlewareTest extends TestCase
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
 		$auth->method('hasIdentity')->willReturn(false);
 
-		$middleware = new SecurityMiddleware($auth, $this->createMock(Application::class), new AppConfig());
+		$middleware = new SecurityMiddleware($auth, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->expects($this->never())->method('handle');
@@ -91,7 +93,7 @@ class AuthMiddlewareTest extends TestCase
 		$auth->method('hasIdentity')->willReturn(false);
 
 		$forwardResponse = new HtmlResponse('login');
-		$app = new class ($forwardResponse) extends Application {
+		$forwarder = new class ($forwardResponse) implements RequestForwarderInterface {
 			public ?string $forwardedMethod = null;
 			public ?string $forwardedPath = null;
 
@@ -99,7 +101,7 @@ class AuthMiddlewareTest extends TestCase
 			{
 			}
 
-			public function processForward($path, $request, ?string $method = null): ResponseInterface
+			public function processForward(string $path, ?ServerRequestInterface $request = null, ?string $method = null): ResponseInterface
 			{
 				$this->forwardedPath = $path;
 				$this->forwardedMethod = $method;
@@ -111,7 +113,7 @@ class AuthMiddlewareTest extends TestCase
 		$config = new AppConfig();
 		$config->set('controllers.login', '/login');
 
-		$middleware = new SecurityMiddleware($auth, $app, $config);
+		$middleware = new SecurityMiddleware($auth, $forwarder, $config);
 		$request = (new ServerRequest())
 			->withMethod('POST')
 			->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));
@@ -119,14 +121,14 @@ class AuthMiddlewareTest extends TestCase
 		$response = $middleware->process($request, $this->createMock(RequestHandlerInterface::class));
 
 		$this->assertStringContainsString('login', (string) $response->getBody());
-		$this->assertSame('/login', $app->forwardedPath);
-		$this->assertSame('GET', $app->forwardedMethod);
+		$this->assertSame('/login', $forwarder->forwardedPath);
+		$this->assertSame('GET', $forwarder->forwardedMethod);
 	}
 
 	public function testSecurityMiddlewarePassesThroughWhenTargetInstanceIsNull(): void
 	{
 		$auth = $this->createMock(AuthenticationServiceInterface::class);
-		$middleware = new SecurityMiddleware($auth, $this->createMock(Application::class), new AppConfig());
+		$middleware = new SecurityMiddleware($auth, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 
 		$route = new Route('/test', $this->createMock(MiddlewareInterface::class));
 		$routeResult = RouteResult::fromRoute($route);
@@ -141,7 +143,7 @@ class AuthMiddlewareTest extends TestCase
 
 	public function testAuthorizationMiddlewarePassesThroughWhenTargetInstanceIsNull(): void
 	{
-		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
+		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 
 		$route = new Route('/test', $this->createMock(MiddlewareInterface::class));
 		$routeResult = RouteResult::fromRoute($route);
@@ -164,7 +166,7 @@ class AuthMiddlewareTest extends TestCase
 		};
 
 		$forwardResponse = new HtmlResponse('forbidden', 403);
-		$app = new class ($forwardResponse) extends Application {
+		$forwarder = new class ($forwardResponse) implements RequestForwarderInterface {
 			public ?string $forwardedMethod = null;
 			public ?string $forwardedPath = null;
 
@@ -172,7 +174,7 @@ class AuthMiddlewareTest extends TestCase
 			{
 			}
 
-			public function processForward($path, $request, ?string $method = null): ResponseInterface
+			public function processForward(string $path, ?ServerRequestInterface $request = null, ?string $method = null): ResponseInterface
 			{
 				$this->forwardedPath = $path;
 				$this->forwardedMethod = $method;
@@ -184,7 +186,7 @@ class AuthMiddlewareTest extends TestCase
 		$config = new AppConfig();
 		$config->set('controllers.errors.403', '/403');
 
-		$middleware = new AuthorizationMiddleware($this->executor, $app, $config);
+		$middleware = new AuthorizationMiddleware($this->executor, $forwarder, $config);
 		$request = (new ServerRequest())
 			->withMethod('POST')
 			->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));
@@ -192,8 +194,8 @@ class AuthMiddlewareTest extends TestCase
 		$response = $middleware->process($request, $this->createMock(RequestHandlerInterface::class));
 
 		$this->assertSame(403, $response->getStatusCode());
-		$this->assertSame('/403', $app->forwardedPath);
-		$this->assertSame('GET', $app->forwardedMethod);
+		$this->assertSame('/403', $forwarder->forwardedPath);
+		$this->assertSame('GET', $forwarder->forwardedMethod);
 	}
 
 	public function testAuthMiddlewaresRunStrictlyBeforeValidationMiddleware(): void
@@ -231,17 +233,26 @@ class AuthMiddlewareTest extends TestCase
 		};
 
 		// Simulate PipelineExtension::registerMiddlewares() running before AuthExtension::onPipelineReady()
-		$pipelineExt = new class ($app) extends PipelineExtension {
+		$pipelineExt = new class ($app, $pipe, $makeMiddleware) extends PipelineExtension {
+			public function __construct(
+				Application $app,
+				private MiddlewarePriorityPipe $testPipe,
+				private Closure $makeMiddleware
+			) {
+				parent::__construct($app);
+			}
+
 			public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
 			{
-				$this->app->pipe($middlewareOrPath, $middleware, $priority);
+				$name = $middleware ?? $middlewareOrPath;
+				$this->testPipe->pipe(($this->makeMiddleware)($name), $priority);
 			}
 		};
 
 		$pipelineExt->registerMiddlewares();
 
 		$authExt = new AuthExtension($app);
-		$authExt->onPipelineReady();
+		$authExt->onPipelineReady(new PipelineReadyEvent($pipelineExt, $this->createMock(ContainerInterface::class)));
 
 		$pipe->process(new ServerRequest(), new class () implements RequestHandlerInterface {
 			public function handle(ServerRequestInterface $request): ResponseInterface
@@ -279,7 +290,7 @@ class AuthMiddlewareTest extends TestCase
 			}
 		};
 
-		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
+		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->expects($this->never())->method('handle');
@@ -310,7 +321,7 @@ class AuthMiddlewareTest extends TestCase
 			}
 		};
 
-		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
+		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 		$request = (new ServerRequest())->withAttribute(RouteResult::class, $this->createRouteResult($page, 'create'));
 		$handler = $this->createMock(RequestHandlerInterface::class);
 		$handler->expects($this->once())
@@ -337,7 +348,7 @@ class AuthMiddlewareTest extends TestCase
 			}
 		};
 
-		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(Application::class), new AppConfig());
+		$middleware = new AuthorizationMiddleware($this->executor, $this->createMock(RequestForwarderInterface::class), new AppConfig());
 		$request = (new ServerRequest())
 			->withUri(new Uri('/auth-check'))
 			->withAttribute(RouteResult::class, $this->createRouteResult($page, 'index'));

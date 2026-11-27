@@ -8,17 +8,15 @@ use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
+use ON\Config\ConfigExtension;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use Psr\Container\ContainerInterface;
 
 class DiscoveryExtension extends AbstractExtension
 {
 	public const ID = 'discovery';
-
-	public const NAMESPACE = "core.extensions.discovery";
-	protected int $type = self::TYPE_EXTENSION;
 
 	protected array $discovers = [];
 	protected array $pendingProcess = [];
@@ -38,14 +36,7 @@ class DiscoveryExtension extends AbstractExtension
 		//$this->cache = $app->container->get(DiscoveryCache::class);
 	}
 
-	public function register(Init $init): void
-	{
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
-	}
-
+	#[On]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
 		$this->container = $event->container;
@@ -53,6 +44,7 @@ class DiscoveryExtension extends AbstractExtension
 		$this->runDiscovery();
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(
@@ -78,7 +70,7 @@ class DiscoveryExtension extends AbstractExtension
 
 	public function runDiscovery(): void
 	{
-		$this->appCfg = $this->app->config->get(AppConfig::class);
+		$this->appCfg = $this->app->ext(ConfigExtension::class)->get(AppConfig::class);
 
 		$discoverClassnames = array_keys($this->appCfg->get('discovery.discoverers', []));
 

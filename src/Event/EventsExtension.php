@@ -16,7 +16,7 @@ use ON\Event\Attribute\EventHandlerAttributeProcessor;
 use ON\Event\Container\EventDispatcherFactory;
 use ON\Event\Event\ReadyEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use Psr\Container\ContainerInterface;
 use Psr\EventDispatcher\EventDispatcherInterface;
@@ -24,9 +24,6 @@ use Psr\EventDispatcher\EventDispatcherInterface;
 class EventsExtension extends AbstractExtension
 {
 	public const ID = 'events';
-
-	public const NAMESPACE = "core.extensions.events";
-	protected int $type = self::TYPE_EXTENSION;
 
 	/** @var EventDispatcher */
 	public EventDispatcherInterface $eventDispatcher;
@@ -43,15 +40,7 @@ class EventsExtension extends AbstractExtension
 		$this->eventDispatcher = new EventDispatcher();
 	}
 
-	public function register(Init $init): void
-	{
-		if ($this->app->hasExtension('container')) {
-			$init->on(ContainerReadyEvent::class, [ $this, 'onContainerReady' ]);
-			$init->on(ContainerConfigureEvent::class, [ $this, 'onContainerConfigure' ]);
-			$init->on(ConfigConfigureEvent::class, [ $this, 'onConfigConfigure' ]);
-		}
-	}
-
+	#[On(optional: true)]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -62,10 +51,11 @@ class EventsExtension extends AbstractExtension
 		]);
 	}
 
-	public function onConfigConfigure(): void
+	#[On(optional: true)]
+	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
-		$appCfg = $this->app->config->get(AppConfig::class);
-		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . EventHandlerAttributeProcessor::class, []);
+		$appCfg = $event->config->get(AppConfig::class);
+		$appCfg->set('discovery.discoverers.' . AttributesDiscoverer::class . '.processors.' . EventHandlerAttributeProcessor::class, []);
 	}
 
 	public function start(InitContext $context): void
@@ -76,6 +66,7 @@ class EventsExtension extends AbstractExtension
 		$this->flush();
 	}
 
+	#[On(optional: true)]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
 		$this->container = $event->container;

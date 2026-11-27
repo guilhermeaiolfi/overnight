@@ -8,11 +8,12 @@ use Laminas\Diactoros\Response\HtmlResponse;
 use Laminas\Diactoros\ResponseFactory;
 use Laminas\Diactoros\ServerRequest;
 use Laminas\Diactoros\Uri;
-use ON\Application;
 use ON\Handler\NotFoundHandler;
 use ON\Middleware\OutputTypeMiddleware;
+use ON\Middleware\RequestForwarderInterface;
 use PHPUnit\Framework\TestCase;
 use Psr\Http\Message\ResponseInterface;
+use Psr\Http\Message\ServerRequestInterface;
 use RuntimeException;
 
 final class NotFoundHandlerTest extends TestCase
@@ -20,14 +21,14 @@ final class NotFoundHandlerTest extends TestCase
 	public function testForwardsHtmlRequestsToConfigured404Path(): void
 	{
 		$forwarded = new HtmlResponse('custom 404');
-		$app = new class ($forwarded) extends Application {
+		$forwarder = new class ($forwarded) implements RequestForwarderInterface {
 			public ?string $forwardedMethod = null;
 
 			public function __construct(private ResponseInterface $response)
 			{
 			}
 
-			public function processForward($path, $request, $method = null): ResponseInterface
+			public function processForward(string $path, ?ServerRequestInterface $request = null, ?string $method = null): ResponseInterface
 			{
 				$this->forwardedMethod = $method;
 
@@ -35,7 +36,7 @@ final class NotFoundHandlerTest extends TestCase
 			}
 		};
 
-		$handler = new NotFoundHandler($app, '/404', new ResponseFactory());
+		$handler = new NotFoundHandler($forwarder, '/404', new ResponseFactory());
 		$request = (new ServerRequest())
 			->withMethod('POST')
 			->withUri(new Uri('/missing'))
@@ -44,23 +45,19 @@ final class NotFoundHandlerTest extends TestCase
 		$response = $handler->handle($request);
 
 		$this->assertSame('custom 404', (string) $response->getBody());
-		$this->assertSame('GET', $app->forwardedMethod);
+		$this->assertSame('GET', $forwarder->forwardedMethod);
 	}
 
 	public function testDoesNotForwardAgainWhenAlreadyOn404Path(): void
 	{
-		$app = new class () extends Application {
-			public function __construct()
-			{
-			}
-
-			public function processForward($path, $request, $method = null): ResponseInterface
+		$forwarder = new class () implements RequestForwarderInterface {
+			public function processForward(string $path, ?ServerRequestInterface $request = null, ?string $method = null): ResponseInterface
 			{
 				throw new RuntimeException('Should not forward recursively.');
 			}
 		};
 
-		$handler = new NotFoundHandler($app, '/404', new ResponseFactory());
+		$handler = new NotFoundHandler($forwarder, '/404', new ResponseFactory());
 		$request = (new ServerRequest())
 			->withUri(new Uri('/404'))
 			->withMethod('GET')

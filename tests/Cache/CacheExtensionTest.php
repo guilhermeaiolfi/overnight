@@ -46,15 +46,16 @@ final class CacheExtensionTest extends TestCase
 		$this->removeDirectory($this->projectDir);
 	}
 
-	public function testEmitsCacheClearersConfigureEventInCli(): void
+	public function testEmitsCacheClearersConfigureEventLazilyWhenRegistryIsResolved(): void
 	{
 		$app = $this->createApplication(Application::class);
 
+		$this->assertSame(0, CacheClearerProbeExtension::$configureCalls);
+
+		$registry = $app->ext('container')->getContainer()->get(CacheClearerRegistry::class);
+
 		$this->assertSame(1, CacheClearerProbeExtension::$configureCalls);
-		$this->assertInstanceOf(
-			CacheClearerRegistry::class,
-			$app->ext('container')->getContainer()->get(CacheClearerRegistry::class)
-		);
+		$this->assertInstanceOf(CacheClearerRegistry::class, $registry);
 	}
 
 	public function testContainerCanResolveClearCacheCommand(): void

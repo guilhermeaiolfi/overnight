@@ -35,6 +35,7 @@ use Psr\Http\Message\StreamInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
+use ReflectionProperty;
 
 final class RouterRuntimeTest extends TestCase
 {
@@ -158,28 +159,33 @@ final class RouterRuntimeTest extends TestCase
 		$container = $this->createStub(ContainerInterface::class);
 		$pipe = new MiddlewarePriorityPipe(new RequestStack());
 
-		$app = new class ($router, $container, $pipe) extends Application {
-			public function __construct(
-				private Router $router,
-				private ContainerInterface $container,
-				private MiddlewarePriorityPipe $pipe,
-			) {
-				$this->init = new Init();
-				$this->pipeline = new PipelineExtension($this);
-			}
-
-			public function __call($name, $args)
+		$app = new class () extends Application {
+			public function __construct()
 			{
-				[, $middleware, $priority] = $args;
-				$instance = $middleware === RouteMiddleware::class
-					? new RouteMiddleware($this->router, $this, $this->container)
-					: new $middleware();
-				$this->pipe->pipe($instance, $priority);
+				$this->init = new Init();
 			}
 		};
-		$init = new Init();
-		(new RouterExtension($app))->register($init);
-		$init->emit(new PipelineReadyEvent($app->pipeline, $container));
+		$pipeline = new class ($app, $router, $container, $pipe) extends PipelineExtension {
+			public function __construct(
+				Application $app,
+				private Router $router,
+				private ContainerInterface $testContainer,
+				private MiddlewarePriorityPipe $testPipe,
+			) {
+				parent::__construct($app);
+			}
+
+			public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
+			{
+				$mw = $middleware ?? $middlewareOrPath;
+				$instance = $mw === RouteMiddleware::class
+					? new RouteMiddleware($this->router, $this->app, $this->testContainer)
+					: new $mw();
+				$this->testPipe->pipe($instance, $priority);
+			}
+		};
+		$routerExt = new RouterExtension($app);
+		$routerExt->onPipelineReady(new PipelineReadyEvent($pipeline, $container));
 
 		$handler = $this->createStub(RequestHandlerInterface::class);
 		$handler->method('handle')->willReturn(new TextResponse('fallback', 404));
@@ -287,23 +293,27 @@ final class RouterRuntimeTest extends TestCase
 		);
 	}
 
-	public function testRouterExtensionRegistersDeleteMacro(): void
+	public function testRouterExtensionProvidesTypedHttpRouteHelpers(): void
 	{
-		$registered = [];
 		$app = $this->createMock(Application::class);
-		$app->method('isCli')->willReturn(false);
-		$app->method('registerMethod')->willReturnCallback(function (string $name, callable $cb) use (&$registered): void {
-			$registered[] = $name;
-		});
-
 		$ext = new RouterExtension($app);
-		$ext->register(new Init());
 
-		$this->assertContains('delete', $registered);
-		$this->assertContains('get', $registered);
-		$this->assertContains('post', $registered);
-		$this->assertContains('put', $registered);
-		$this->assertContains('patch', $registered);
+		$config = new RouterConfig(['cache_enabled' => false]);
+		$ref = new ReflectionProperty(RouterExtension::class, 'config');
+		$ref->setValue($ext, $config);
+
+		$ext->get('/items', 'ItemPage::index');
+		$ext->post('/items', 'ItemPage::create');
+		$ext->put('/items/{id}', 'ItemPage::replace');
+		$ext->patch('/items/{id}', 'ItemPage::update');
+		$ext->delete('/items/{id}', 'ItemPage::delete');
+
+		$methods = array_map(
+			static fn (Route $route): array => $route->getAllowedMethods(),
+			$config->getRoutesToInject()
+		);
+
+		$this->assertSame([['GET'], ['POST'], ['PUT'], ['PATCH'], ['DELETE']], $methods);
 	}
 
 	private function createCapturingHandler(?ServerRequestInterface &$captured): RequestHandlerInterface

@@ -6,6 +6,7 @@ namespace ON\Router\Middleware;
 
 use ON\Application;
 use ON\Http\InvocationContext;
+use ON\Middleware\PipelineExtension;
 use ON\Router\RouteResult;
 use ON\Router\RouterInterface;
 use Psr\Container\ContainerInterface;
@@ -83,8 +84,8 @@ class RouteMiddleware implements MiddlewareInterface
 			$result->setTargetInstance($this->container->get($className));
 			$result->setMethod($method);
 		} else {
-			$prepared = isset($this->app->pipeline)
-				? $this->app->pipeline->prepareMiddleware($middleware)
+			$prepared = $this->app->hasExtension(PipelineExtension::class)
+				? $this->app->ext(PipelineExtension::class)->prepareMiddleware($middleware)
 				: $middleware;
 
 			$result->setTargetInstance($prepared);

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace ON\Handler;
 
 use Fig\Http\Message\StatusCodeInterface;
-use ON\Application;
 use ON\Middleware\OutputTypeMiddleware;
+use ON\Middleware\RequestForwarderInterface;
 use Psr\Http\Message\ResponseFactoryInterface;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
@@ -19,7 +19,7 @@ class NotFoundHandler implements RequestHandlerInterface
 	* @param callable|ResponseFactoryInterface $responseFactory
 	**/
 	public function __construct(
-		private Application $app,
+		private RequestForwarderInterface $forwarder,
 		private string $path,
 		private $responseFactory
 	) {
@@ -35,7 +35,7 @@ class NotFoundHandler implements RequestHandlerInterface
 			return $this->generatePlainTextResponse($request);
 		}
 
-		return $this->app->processForward($this->path, $request, 'GET');
+		return $this->forwarder->processForward($this->path, $request, 'GET');
 	}
 
 	/**
