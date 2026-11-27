@@ -12,19 +12,14 @@ use ON\Auth\Storage\SessionStorage;
 use ON\Auth\Storage\StorageInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 
 class AuthExtension extends AbstractExtension
 {
 	public const ID = 'auth';
 
-	public function register(Init $init): void
-	{
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		$init->on(PipelineReadyEvent::class, [$this, 'onPipelineReady']);
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$containerConfig = $event->containerConfig;
@@ -38,10 +33,11 @@ class AuthExtension extends AbstractExtension
 		]);
 	}
 
-	public function onPipelineReady(): void
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
 	{
-		$this->app->pipe('/', SecurityMiddleware::class, 50);
+		$event->pipeline->pipe('/', SecurityMiddleware::class, 50);
 
-		$this->app->pipe('/', AuthorizationMiddleware::class, 40);
+		$event->pipeline->pipe('/', AuthorizationMiddleware::class, 40);
 	}
 }

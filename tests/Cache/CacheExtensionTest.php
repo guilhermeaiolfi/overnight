@@ -46,15 +46,18 @@ final class CacheExtensionTest extends TestCase
 		$this->removeDirectory($this->projectDir);
 	}
 
-	public function testEmitsCacheClearersConfigureEventInCli(): void
+	public function testEmitsCacheClearersConfigureEventOnFirstRegistryResolution(): void
 	{
 		$app = $this->createApplication(Application::class);
 
+		$this->assertSame(0, CacheClearerProbeExtension::$configureCalls);
+
+		$registry = $app->ext('container')->getContainer()->get(CacheClearerRegistry::class);
+		$this->assertInstanceOf(CacheClearerRegistry::class, $registry);
 		$this->assertSame(1, CacheClearerProbeExtension::$configureCalls);
-		$this->assertInstanceOf(
-			CacheClearerRegistry::class,
-			$app->ext('container')->getContainer()->get(CacheClearerRegistry::class)
-		);
+
+		$this->assertSame($registry, $app->ext('cache')->getClearerRegistry());
+		$this->assertSame(1, CacheClearerProbeExtension::$configureCalls);
 	}
 
 	public function testContainerCanResolveClearCacheCommand(): void
@@ -159,7 +162,7 @@ final class CacheExtensionTest extends TestCase
 		$this->assertFileDoesNotExist($imageCache);
 	}
 
-	public function testDoesNotEmitCacheClearersConfigureEventOutsideCli(): void
+	public function testDoesNotEmitCacheClearersConfigureEventWithoutResolutionOutsideCli(): void
 	{
 		$this->createApplication(NonCliApplication::class);
 

@@ -9,11 +9,14 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
+use ON\Console\Command\RoutesCommand;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Discovery\AttributesDiscoverer;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
+use ON\Init\Attribute\On;
 use ON\Init\Init;
 use ON\Init\InitContext;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
@@ -47,27 +50,30 @@ class RouterExtension extends AbstractExtension
 		$this->app->registerMethod("any", [$this, 'any']);
 		$this->app->registerMethod("post", [$this, 'post']);
 		$this->app->registerMethod("route", [$this, 'route']);
-
-		$init->on(PipelineReadyEvent::class, function () {
-			$this->app->pipe("/", RouteMiddleware::class, 100);
-			$this->app->pipe("/", MethodNotAllowedMiddleware::class, 90);
-			$this->app->pipeline->addRequestPreparer(new RouteResultCleanupPreparer(), 1000);
-		});
-
-		$init->on(ContainerReadyEvent::class, [$this, 'onContainerReady']);
-		$init->on(ConfigConfigureEvent::class, [$this, 'onConfigConfigure']);
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
 	}
 
+	#[On(optional: true)]
+	public function onPipelineReady(PipelineReadyEvent $event): void
+	{
+		$event->pipeline->pipe("/", RouteMiddleware::class, 100);
+		$event->pipeline->pipe("/", MethodNotAllowedMiddleware::class, 90);
+		$event->pipeline->addRequestPreparer(new RouteResultCleanupPreparer(), 1000);
+	}
+
+	#[On(optional: true)]
+	public function onConsoleReady(ConsoleReadyEvent $event): void
+	{
+		$event->console->addCommand(RoutesCommand::class);
+	}
+
+	#[On]
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
 	{
 		$appCfg = $event->config->get(AppConfig::class);
 		$appCfg->set("discovery.discoverers." . AttributesDiscoverer::class . ".processors." . RouteAttributeProcessor::class, []);
 	}
 
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addAlias(RouterInterface::class, Router::class);
@@ -79,6 +85,7 @@ class RouterExtension extends AbstractExtension
 		]);
 	}
 
+	#[On]
 	public function onContainerReady(ContainerReadyEvent $event, InitContext $context): void
 	{
 		$container = $this->container = $event->container;
@@ -89,6 +96,7 @@ class RouterExtension extends AbstractExtension
 		$context->emit(new RouterReadyEvent($this));
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(

@@ -22,7 +22,8 @@ use ON\DataIntegration\Definition\DefinitionRegistryProvider;
 use ON\DataIntegration\Mapper\ConversionGatewayFactory;
 use ON\Extension\AbstractExtension;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\After;
+use ON\Init\Attribute\On;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -30,22 +31,7 @@ final class DataExtension extends AbstractExtension
 {
 	public const ID = 'data';
 
-	public function register(Init $init): void
-	{
-		$init->on(ContainerConfigureEvent::class, [$this, 'onContainerConfigure']);
-		// Install the default gateway after normal ContainerReady listeners so
-		// Mapping::getDefaultGateway() is not raced by earlier consumers.
-		$init->on(ContainerReadyEvent::class)->done([$this, 'onContainerReady']);
-
-		if ($this->app->isCli()) {
-			$init->on(ConsoleReadyEvent::class, [$this, 'onConsoleReady']);
-		}
-
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
-	}
-
+	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
 		$event->containerConfig->addFactories([
@@ -76,17 +62,21 @@ final class DataExtension extends AbstractExtension
 		return is_string($cycleDatabase) && $cycleDatabase !== '' ? $cycleDatabase : 'default';
 	}
 
+	// Install the default gateway after the regular ContainerReady listeners.
+	#[After]
 	public function onContainerReady(ContainerReadyEvent $event): void
 	{
 		Mapping::setDefaultGateway($event->container->get(ConversionGateway::class));
 	}
 
+	#[On(optional: true)]
 	public function onConsoleReady(ConsoleReadyEvent $event): void
 	{
 		$event->console->addCommand(DefinitionsClearCommand::class);
 		$event->console->addCommand(DefinitionsWarmupCommand::class);
 	}
 
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(

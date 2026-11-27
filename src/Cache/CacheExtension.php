@@ -9,10 +9,12 @@ use ON\Cache\Container\CacheClearerRegistryFactory;
 use ON\Cache\Container\CacheFactory;
 use ON\Cache\Container\FilesystemAdapterFactory;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
+use ON\Console\Command\ClearCacheCommand;
+use ON\Console\Init\Event\ConsoleReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
-use ON\Init\InitContext;
+use ON\Init\Attribute\On;
+use ON\Init\InitException;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Cache\Adapter\FilesystemAdapter;
 
@@ -21,6 +23,7 @@ class CacheExtension extends AbstractExtension
 	public const ID = 'cache';
 
 	protected CacheClearerRegistry $clearers;
+	private bool $clearersConfigured = false;
 
 	public function __construct(
 		Application $app,
@@ -30,25 +33,26 @@ class CacheExtension extends AbstractExtension
 		$this->clearers = new CacheClearerRegistry();
 	}
 
-	public function register(Init $init): void
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactories([
-				CacheInterface::class => CacheFactory::class,
-				CacheClearerRegistry::class => CacheClearerRegistryFactory::class,
-				FilesystemAdapter::class => FilesystemAdapterFactory::class,
-			]);
-
-			/*$event->containerConfig->addAliases([
-				AdapterInterface::class => FilesystemAdapter::class,
-			]);*/
-		});
+		$event->containerConfig->addFactories([
+			CacheInterface::class => CacheFactory::class,
+			CacheClearerRegistry::class => CacheClearerRegistryFactory::class,
+			FilesystemAdapter::class => FilesystemAdapterFactory::class,
+		]);
 	}
 
-	public function start(InitContext $context): void
+	#[On(optional: true)]
+	public function onConsoleReady(ConsoleReadyEvent $event): void
 	{
-		if (! $this->app->isCli()) {
-			return;
+		$event->console->addCommand(ClearCacheCommand::class);
+	}
+
+	public function getClearerRegistry(): CacheClearerRegistry
+	{
+		if ($this->clearersConfigured) {
+			return $this->clearers;
 		}
 
 		$this->clearers->add(new CacheClearerDefinition(
@@ -81,11 +85,17 @@ class CacheExtension extends AbstractExtension
 			description: 'Clears cached extension lifecycle ordering.'
 		));
 
-		$context->emit(new CacheClearersConfigureEvent($this->clearers, $this->app));
-	}
+		$this->clearersConfigured = true;
 
-	public function getClearerRegistry(): CacheClearerRegistry
-	{
+		try {
+			$this->app->init()->emit(new CacheClearersConfigureEvent($this->clearers, $this->app));
+		} catch (InitException $error) {
+			$this->clearers = new CacheClearerRegistry();
+			$this->clearersConfigured = false;
+
+			throw $error;
+		}
+
 		return $this->clearers;
 	}
 }

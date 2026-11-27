@@ -6,7 +6,7 @@ namespace ON\Translation;
 
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 
 class TranslationExtension extends AbstractExtension
 {
@@ -14,12 +14,11 @@ class TranslationExtension extends AbstractExtension
 
 	protected array $configs = [];
 
-	public function register(Init $init): void
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
-		$init->on(ContainerConfigureEvent::class, function (ContainerConfigureEvent $event): void {
-			$event->containerConfig->addFactories([
-				TranslationManagerInterface::class => TranslationManagerFactory::class,
-			]);
-		});
+		$event->containerConfig->addFactories([
+			TranslationManagerInterface::class => TranslationManagerFactory::class,
+		]);
 	}
 }

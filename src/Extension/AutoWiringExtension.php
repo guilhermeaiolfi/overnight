@@ -11,7 +11,7 @@ use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Discovery\ClassFinder;
 use ON\FS\Path;
-use ON\Init\Init;
+use ON\Init\Attribute\On;
 use ON\Init\InitContext;
 use RecursiveDirectoryIterator;
 use RecursiveIteratorIterator;
@@ -44,13 +44,7 @@ class AutoWiringExtension extends AbstractExtension
 	{
 	}
 
-	public function register(Init $init): void
-	{
-		if ($this->app->isCli() && class_exists(CacheClearersConfigureEvent::class)) {
-			$init->on(CacheClearersConfigureEvent::class, [$this, 'onCacheClearersConfigure']);
-		}
-	}
-
+	#[On(optional: true)]
 	public function onCacheClearersConfigure(CacheClearersConfigureEvent $event): void
 	{
 		$event->registry->add(new CacheClearerDefinition(

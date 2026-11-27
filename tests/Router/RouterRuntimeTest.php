@@ -158,28 +158,29 @@ final class RouterRuntimeTest extends TestCase
 		$container = $this->createStub(ContainerInterface::class);
 		$pipe = new MiddlewarePriorityPipe(new RequestStack());
 
-		$app = new class ($router, $container, $pipe) extends Application {
+		$app = $this->createMock(Application::class);
+		$pipeline = new class ($app, $router, $container, $pipe) extends PipelineExtension {
 			public function __construct(
+				Application $app,
 				private Router $router,
-				private ContainerInterface $container,
-				private MiddlewarePriorityPipe $pipe,
+				ContainerInterface $container,
+				private MiddlewarePriorityPipe $testPipe,
 			) {
-				$this->init = new Init();
-				$this->pipeline = new PipelineExtension($this);
+				parent::__construct($app);
+				$this->container = $container;
 			}
 
-			public function __call($name, $args)
+			public function pipe($middlewareOrPath, $middleware = null, $priority = 1): void
 			{
-				[, $middleware, $priority] = $args;
 				$instance = $middleware === RouteMiddleware::class
-					? new RouteMiddleware($this->router, $this, $this->container)
+					? new RouteMiddleware($this->router, $this->app, $this->container)
 					: new $middleware();
-				$this->pipe->pipe($instance, $priority);
+				$this->testPipe->pipe($instance, $priority);
 			}
 		};
 		$init = new Init();
-		(new RouterExtension($app))->register($init);
-		$init->emit(new PipelineReadyEvent($app->pipeline, $container));
+		$init->registerExtension(new RouterExtension($app));
+		$init->emit(new PipelineReadyEvent($pipeline, $container));
 
 		$handler = $this->createStub(RequestHandlerInterface::class);
 		$handler->method('handle')->willReturn(new TextResponse('fallback', 404));

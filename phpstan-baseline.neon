@@ -19,12 +19,6 @@ parameters:
 			path: src/Application.php
 
 		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 2
-			path: src/Auth/AuthExtension.php
-
-		-
 			message: '#^Interface ON\\Auth\\AuthenticatorInterface referenced with incorrect case\: ON\\Auth\\authenticatorInterface\.$#'
 			identifier: interface.nameCase
 			count: 1
@@ -289,12 +283,6 @@ parameters:
 			path: src/DB/Cycle/Schema/CycleRegistryGenerator.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
-			identifier: property.notFound
-			count: 5
-			path: src/DB/DatabaseExtension.php
-
-		-
 			message: '#^Method ON\\DB\\DebugPDO\\DebugPDO\:\:prepare\(\) has invalid return type ON\\DB\\DebugPDO\\TraceablePDOStatement\.$#'
 			identifier: class.notFound
 			count: 1
@@ -397,12 +385,6 @@ parameters:
 			path: src/Event/Attribute/EventHandlerAttributeProcessor.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Event/EventsExtension.php
-
-		-
 			message: '#^Call to function is_array\(\) with array will always evaluate to true\.$#'
 			identifier: function.alreadyNarrowedType
 			count: 1
@@ -441,7 +423,7 @@ parameters:
 		-
 			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
 			identifier: property.notFound
-			count: 6
+			count: 1
 			path: src/FileRouting/FileRoutingExtension.php
 
 		-
@@ -495,12 +477,6 @@ parameters:
 		-
 			message: '#^Access to an undefined property ON\\Application\:\:\$events\.$#'
 			identifier: property.notFound
-			count: 2
-			path: src/GraphQL/GraphQLExtension.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
 			count: 2
 			path: src/GraphQL/GraphQLExtension.php
 
@@ -727,18 +703,6 @@ parameters:
 			path: src/Logging/Command/MonitorLogsCommand.php
 
 		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Logging/LoggingExtension.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$console\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Maintenance/MaintenanceExtension.php
-
-		-
 			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
 			identifier: method.notFound
 			count: 1
@@ -802,24 +766,6 @@ parameters:
 			message: '#^Parameter \#1 \$name of method ON\\Application\:\:ext\(\) expects class\-string\<events\>, string given\.$#'
 			identifier: argument.type
 			count: 2
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Parameter \#2 \$middleware of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) expects ON\\Middleware\\MiddlewareParam\|null, string given\.$#'
-			identifier: argument.type
-			count: 6
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Parameter \$middleware of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) has invalid type ON\\Middleware\\MiddlewareParam\.$#'
-			identifier: class.notFound
-			count: 1
-			path: src/Middleware/PipelineExtension.php
-
-		-
-			message: '#^Parameter \$middlewareOrPath of method ON\\Middleware\\PipelineExtension\:\:pipe\(\) has invalid type ON\\Middleware\\MiddlewareParam\.$#'
-			identifier: class.notFound
-			count: 1
 			path: src/Middleware/PipelineExtension.php
 
 		-
@@ -1366,18 +1312,6 @@ parameters:
 			message: '#^Access to an undefined property ON\\Application\:\:\$config\.$#'
 			identifier: property.notFound
 			count: 1
-			path: src/Router/RouterExtension.php
-
-		-
-			message: '#^Access to an undefined property ON\\Application\:\:\$pipeline\.$#'
-			identifier: property.notFound
-			count: 1
-			path: src/Router/RouterExtension.php
-
-		-
-			message: '#^Call to an undefined method ON\\Application\:\:pipe\(\)\.$#'
-			identifier: method.notFound
-			count: 2
 			path: src/Router/RouterExtension.php
 
 		-
