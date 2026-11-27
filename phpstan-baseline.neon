@@ -1,29 +1,6 @@
 parameters:
 	ignoreErrors:
 		-
-			message: '''
-				#^PHPDoc tag @param has invalid value \(array \{
-				  debug\?\: \?bool,
-				  env\?\: \?string,
-				  disable_dotenv\?\: \?bool,
-				  paths\?\: \?array\<string, string\>,
-				  prod_envs\?\: \?string\[\],
-				  dotenv_path\?\: \?string,
-				  test_envs\?\: \?string\[\],
-				  use_putenv\?\: \?bool,
-				  runtimes\?\: \?array,
-				  error_handler\?\: string\|false,
-				  env_var_name\?\: string,
-				  debug_var_name\?\: string,
-				  dotenv_overload\?\: \?bool,
-				  error_reporting\?\: \?int,
-				\} \$options\)\: Unexpected token "\{", expected variable at offset 21 on line 2$#
-			'''
-			identifier: phpDoc.parseError
-			count: 1
-			path: src/Application.php
-
-		-
 			message: '#^PHPDoc tag @return with type T is not subtype of native type ON\\Extension\\ExtensionInterface\.$#'
 			identifier: return.phpDocType
 			count: 1

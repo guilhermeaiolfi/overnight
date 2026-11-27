@@ -44,11 +44,13 @@ class Application
 	protected array $unresolvedMethods = [];
 
 	/**
-	 * @param array {
+	 * @param array{
 	 *   debug?: ?bool,
+	 *   profile?: ?bool,
 	 *   env?: ?string,
 	 *   disable_dotenv?: ?bool,
-	 *   paths?: ?array<string, string>,
+	 *   paths?: mixed,
+	 *   extensions?: array<class-string<ExtensionInterface>, array>|string|null,
 	 *   prod_envs?: ?string[],
 	 *   dotenv_path?: ?string,
 	 *   test_envs?: ?string[],
@@ -59,7 +61,7 @@ class Application
 	 *   debug_var_name?: string,
 	 *   dotenv_overload?: ?bool,
 	 *   error_reporting?: ?int,
-	 * } $options
+	 * }|null $options `paths` accepts a map of path names to strings.
 	 */
 	public function __construct(
 		protected ?array $options = []
@@ -127,7 +129,7 @@ class Application
 			$this->extensionsToInstall[$ext_class] = $ext_options;
 		}
 
-		$this->extensionProfiler = new ExtensionProfiler($this->shouldProfileExtensions());
+		$this->extensionProfiler = new ExtensionProfiler((bool) ($options['profile'] ?? false));
 		$this->init = new Init($this->extensionProfiler);
 
 		$this->loadExtensions();
@@ -178,23 +180,6 @@ class Application
 	public function extensionProfiler(): ExtensionProfiler
 	{
 		return $this->extensionProfiler;
-	}
-
-	private function shouldProfileExtensions(): bool
-	{
-		if (! $this->debug) {
-			return false;
-		}
-
-		foreach ($this->extensionsToInstall as $class => $options) {
-			if ($class !== 'ON\\Clockwork\\ClockworkExtension') {
-				continue;
-			}
-
-			return ! isset($options['enabled']) || $options['enabled'] !== false;
-		}
-
-		return false;
 	}
 
 	protected function loadExtensions()

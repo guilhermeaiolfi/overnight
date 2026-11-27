@@ -141,6 +141,23 @@ final class ApplicationTest extends TestCase
 		$this->assertSame([SampleValidExtension::class], $cached['order']);
 	}
 
+	public function testProfileOptionRecordsExtensionLifecycleWithoutClockwork(): void
+	{
+		$app = new Application([
+			'paths' => ['project' => $this->projectDir],
+			'extensions' => [SampleValidExtension::class => []],
+			'debug' => false,
+			'profile' => true,
+		]);
+
+		$profiler = $app->extensionProfiler();
+		$this->assertTrue($profiler->isEnabled());
+		$this->assertSame(
+			['extension.install', 'extension.register', 'extension.start'],
+			array_column($profiler->samples(), 'event')
+		);
+	}
+
 	public function testNonExtensionClassIsRejectedOutsideDebugMode(): void
 	{
 		$this->expectException(Exception::class);

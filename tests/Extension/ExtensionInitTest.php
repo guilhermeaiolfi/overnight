@@ -403,10 +403,6 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 {
 	public static array $events = [];
 
-	public function __construct(private Application $app, private array $options = [])
-	{
-	}
-
 	public function register(Init $init): void
 	{
 		self::$events[] = 'probe.register';
@@ -420,12 +416,6 @@ final class ConfigSetupProbeExtension extends AbstractExtension
 final class RegisterMethodProbeExtension extends AbstractExtension
 {
 	public static int $calls = 0;
-
-	public function __construct(
-		private Application $app,
-		private array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{
@@ -444,12 +434,6 @@ final class MethodProviderReadyEvent
 final class MethodConsumerExtension extends AbstractExtension
 {
 	public static array $events = [];
-
-	public function __construct(
-		private Application $app,
-		private array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{
@@ -471,10 +455,6 @@ final class MethodConsumerExtension extends AbstractExtension
 final class ContainerDefinitionProbeExtension extends AbstractExtension
 {
 	public static int $containerSetupCalls = 0;
-
-	public function __construct(private Application $app, private array $options = [])
-	{
-	}
 
 	public function register(Init $init): void
 	{

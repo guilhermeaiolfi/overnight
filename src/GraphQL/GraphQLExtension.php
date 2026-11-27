@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\GraphQL;
 
-use ON\Application;
 use ON\Data\Definition\Registry;
 use ON\DB\Cycle\CycleDatabase;
 use ON\DB\DatabaseManager;
@@ -23,12 +22,6 @@ use Psr\Container\ContainerInterface;
 class GraphQLExtension extends AbstractExtension
 {
 	public const ID = 'graphql';
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

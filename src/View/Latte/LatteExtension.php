@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\View\Latte;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -18,12 +17,6 @@ use ON\View\ViewConfig;
 class LatteExtension extends AbstractExtension
 {
 	public const ID = 'latte';
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\DataIntegration;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
@@ -30,12 +29,6 @@ use Symfony\Component\Console\Output\OutputInterface;
 final class DataExtension extends AbstractExtension
 {
 	public const ID = 'data';
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

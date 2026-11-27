@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\RestApi;
 
-use ON\Application;
 use ON\Container\Executor\ExecutorInterface;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Extension\AbstractExtension;
@@ -50,12 +49,6 @@ class RestApiExtension extends AbstractExtension
 	protected ?ContainerInterface $container = null;
 	protected bool $activated = false;
 	protected ?RestApiConfig $config = null;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

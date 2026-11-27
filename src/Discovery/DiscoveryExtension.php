@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\Discovery;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
 use ON\Config\AppConfig;
@@ -17,9 +16,6 @@ class DiscoveryExtension extends AbstractExtension
 {
 	public const ID = 'discovery';
 
-	public const NAMESPACE = "core.extensions.discovery";
-	protected int $type = self::TYPE_EXTENSION;
-
 	protected array $discovers = [];
 	protected array $pendingProcess = [];
 
@@ -30,13 +26,6 @@ class DiscoveryExtension extends AbstractExtension
 
 	protected DiscoveryCache $cache;
 	protected ContainerInterface $container;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-		//$this->cache = $app->container->get(DiscoveryCache::class);
-	}
 
 	public function register(Init $init): void
 	{

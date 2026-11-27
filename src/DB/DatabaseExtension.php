@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace ON\DB;
 
-use ON\Application;
 use ON\Cache\CacheClearerDefinition;
 use ON\Cache\CachePathCleaner;
 use ON\Cache\Init\Event\CacheClearersConfigureEvent;
@@ -27,12 +26,6 @@ use ON\Init\InitContext;
 class DatabaseExtension extends AbstractExtension
 {
 	public const ID = 'db';
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

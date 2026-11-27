@@ -27,10 +27,6 @@ class ConfigExtension extends AbstractExtension
 {
 	public const ID = 'config';
 
-	public const NAMESPACE = "core.extensions.config";
-	protected int $type = self::TYPE_EXTENSION;
-	protected Application $app;
-	protected array $options;
 	protected array $data = [];
 	protected array $instances = [];
 	protected ?string $cachePath = null;
@@ -40,8 +36,7 @@ class ConfigExtension extends AbstractExtension
 		Application $app,
 		array $options = []
 	) {
-		$this->options = $options;
-		$this->app = $app;
+		parent::__construct($app, $options);
 		if (! isset($this->options['debug'])) {
 			$this->options['debug'] = $app->isDebug();
 		}

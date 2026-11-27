@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\Maintenance;
 
 use Laminas\Diactoros\Response\HtmlResponse;
-use ON\Application;
 use ON\Config\AppConfig;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Console\Init\Event\ConsoleReadyEvent;
@@ -23,14 +22,6 @@ use Throwable;
 class MaintenanceExtension extends AbstractExtension implements MaintenanceModeInterface
 {
 	public const ID = 'maintenance';
-
-	protected int $type = self::TYPE_EXTENSION;
-
-	public function __construct(
-		protected Application $app,
-		protected array $options = []
-	) {
-	}
 
 	public function register(Init $init): void
 	{

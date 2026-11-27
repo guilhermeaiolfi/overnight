@@ -32,9 +32,10 @@ class ConsoleExtension extends AbstractExtension
 	];
 
 	public function __construct(
-		protected Application $app,
-		protected array $options = []
+		Application $app,
+		array $options = []
 	) {
+		parent::__construct($app, $options);
 		$this->consoleApp = new ConsoleApplication();
 	}
 
