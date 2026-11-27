@@ -10,6 +10,7 @@ use ON\Data\Definition\Registry;
 use ON\Data\Key;
 use function ON\Data\Mapper\map;
 use ON\Data\Mapper\Representation\PhpRepresentation;
+use ON\Data\Query\Schema\QueryRepresentationSchemaCompiler;
 use ON\Data\Query\SelectQuery;
 use function ON\Data\Query\x;
 use ON\RestApi\Action\RestActionInterface;
@@ -77,8 +78,8 @@ final class GetAction implements RestActionInterface
 		}
 
 		$nativeAliases = $context->hasNativeRelationAliases();
-		$schema = $nativeAliases ? $query->getFetchSchema() : null;
-		if ($schema !== null) {
+		if ($nativeAliases && $output !== PhpRepresentation::class) {
+			$schema = $query->getFetchSchema() ?? (new QueryRepresentationSchemaCompiler())->compile($query, forWrite: false);
 			$item = RelationAliases::mapNative($item, $schema, $output);
 		}
 		$item = map($item)->args($collection)->from(PhpRepresentation::class)->as($output)->to([]);

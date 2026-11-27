@@ -567,10 +567,12 @@ final class SqlRestResolverTest extends TestCase
 		self::assertSame([1, 2], array_column($data[0]['posts'], 'id'));
 		self::assertSame($data[0], $readActions->get($users, '1', $query, WireRepresentation::class));
 
+		$fetchCopy = false;
 		$returnCanonicalOnly = false;
-		RestHooks::for($users)->on('get', static function (ItemGet $event) use (&$returnCanonicalOnly): void {
+		RestHooks::for($users)->on('get', static function (ItemGet $event) use (&$fetchCopy, &$returnCanonicalOnly): void {
 			$event->allow();
-			$row = $event->getQuery()->fetchOne();
+			$eventQuery = $event->getQuery();
+			$row = ($fetchCopy ? $eventQuery->copy() : $eventQuery)->fetchOne();
 			if ($returnCanonicalOnly) {
 				$row = ['id' => $row['id'], 'posts' => $row['published']];
 			}
@@ -586,6 +588,11 @@ final class SqlRestResolverTest extends TestCase
 		$fromHook = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
 		self::assertSame($data[0], $fromHook['data']);
 
+		$fetchCopy = true;
+		$fromCopy = $get(['collection' => 'user', 'id' => '1'], ['query' => $query], ['output' => WireRepresentation::class]);
+		self::assertSame($data[0], $fromCopy['data']);
+
+		$fetchCopy = false;
 		$returnCanonicalOnly = true;
 		$canonicalQuery = $this->q($users, [
 			'fields' => 'id,published.title,published.created_at',
