@@ -13,6 +13,7 @@ use ON\Config\AppConfig;
 use ON\Config\ConfigExtension;
 use ON\Config\Init\Event\ConfigConfigureEvent;
 use ON\Container\ContainerExtension;
+use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Event\EventsExtension;
 use ON\Extension\AbstractExtension;
@@ -194,6 +195,32 @@ final class RestApiExecutorTest extends TestCase
 		$this->assertSame([['collection' => 'posts'], null, null], $app->ext(EarlyRestActionListener::class)->result);
 	}
 
+	public function testPreservesExplicitConfigFactoryForEarlyContainerReadyListeners(): void
+	{
+		$app = $this->boot(
+			[EarlyRestActionListener::class => ['action' => 'factory.list']],
+			['configFactory' => CustomRestApiConfigFactory::class],
+		);
+		$config = $app->ext(ContainerExtension::class)->getContainer()->get(RestApiConfig::class);
+
+		$this->assertSame('/factory-items', $config->endpointUri);
+		$this->assertSame(['factory.list'], array_column($config->actions, 'name'));
+		$this->assertSame([['collection' => 'posts'], null, null], $app->ext(EarlyRestActionListener::class)->result);
+	}
+
+	public function testRegistersAddonsBeforeEarlyExecutionAndOnlyOnce(): void
+	{
+		$app = $this->boot(
+			[EarlyRestActionListener::class => ['action' => ReadAddonRegistrationsAction::class]],
+			['addons' => [TrackingRestAddon::class => ['label' => 'configured']]],
+		);
+		$addon = $app->ext(ContainerExtension::class)->getContainer()->get(TrackingRestAddon::class);
+		$expected = [['label' => 'configured', 'apiEndpointPath' => '/items']];
+
+		$this->assertSame($expected, $app->ext(EarlyRestActionListener::class)->result);
+		$this->assertSame($expected, $addon->registrations);
+	}
+
 	public function testPreservesActionsFromConfigFilesForEarlyContainerReadyListeners(): void
 	{
 		$previousCwd = getcwd();
@@ -224,12 +251,11 @@ final class RestApiExecutorTest extends TestCase
 		}
 	}
 
-	public function testFallbackExecutorEmitsThroughBothChannelsWithTheContainerApplication(): void
+	public function testFallbackExecutorEmitsThroughBothChannelsWithTheExtensionApplication(): void
 	{
 		$app = $this->boot();
 		$listener = $app->ext(RestApiActivationListener::class);
 		$container = new Container();
-		$container->set(Application::class, $app);
 		$container->set(EventDispatcherInterface::class, $app->ext(EventsExtension::class)->eventDispatcher);
 		$extension = new RestApiExtension($app);
 		$extension->onContainerReady(new ContainerReadyEvent($app->ext(ContainerExtension::class), $container));
@@ -242,12 +268,31 @@ final class RestApiExecutorTest extends TestCase
 		$this->assertSame($container, $listener->initEvents[0]->container);
 	}
 
+	public function testDirectExtensionExecutionHonorsOverriddenActivation(): void
+	{
+		$app = $this->boot();
+		$extension = new class ($app) extends RestApiExtension {
+			public int $activationCalls = 0;
+
+			public function ensureActivated(): void
+			{
+				++$this->activationCalls;
+				parent::ensureActivated();
+			}
+		};
+		$containerExtension = $app->ext(ContainerExtension::class);
+		$extension->onContainerReady(new ContainerReadyEvent($containerExtension, $containerExtension->getContainer()));
+
+		$this->assertSame([[], null, null], $extension->execute(EchoRestAction::class));
+		$this->assertSame(1, $extension->activationCalls);
+	}
+
 	public function testHttpUsesTheCurrentExecutorBinding(): void
 	{
 		$app = $this->bootWithPipeline();
 		$container = $app->ext(ContainerExtension::class)->getContainer();
 		$executor = $this->createMock(RestApiExecutorInterface::class);
-		$executor->expects($this->once())->method('ensureActivated');
+		$executor->expects($this->atLeastOnce())->method('ensureActivated');
 		$executor->expects($this->once())->method('execute')
 			->with(ListAction::class, ['collection' => 'posts'])
 			->willReturn(['executor' => 'replacement']);
@@ -295,6 +340,14 @@ final class RestApiActivationListener extends AbstractExtension
 	public array $initEvents = [];
 	/** @var list<RestApiActivatedEvent> */
 	public array $runtimeEvents = [];
+
+	#[On]
+	public function onContainerConfigure(ContainerConfigureEvent $event): void
+	{
+		if (isset($this->options['configFactory'])) {
+			$event->containerConfig->addFactory(RestApiConfig::class, $this->options['configFactory']);
+		}
+	}
 
 	#[On]
 	public function onConfigConfigure(ConfigConfigureEvent $event): void
@@ -349,6 +402,29 @@ final class TrackingRestAddon implements RestApiAddonInterface, MiddlewareInterf
 	public function process(ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface
 	{
 		return new JsonResponse(['addon' => $this->registrations[0]['label']]);
+	}
+}
+
+final class CustomRestApiConfigFactory
+{
+	public function __invoke(): RestApiConfig
+	{
+		$config = new RestApiConfig();
+		$config->endpointUri = '/factory-items';
+
+		return $config->addAction('factory.list', 'GET', '{collection}', EchoRestAction::class);
+	}
+}
+
+final class ReadAddonRegistrationsAction implements RestActionInterface
+{
+	public function __construct(private readonly TrackingRestAddon $addon)
+	{
+	}
+
+	public function __invoke(array $params, mixed $payload = null, ?array $options = null): mixed
+	{
+		return $this->addon->registrations;
 	}
 }
 

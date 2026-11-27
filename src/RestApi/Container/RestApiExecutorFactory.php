@@ -14,9 +14,12 @@ final class RestApiExecutorFactory
 {
 	public function __invoke(ContainerInterface $container): RestApiExecutor
 	{
+		$config = $container->get(RestApiConfig::class);
+		$config->registerDefaultActions();
+
 		return new RestApiExecutor(
 			$container,
-			$container->get(RestApiConfig::class),
+			$config,
 			$container->get(EventDispatcherInterface::class),
 			$container->has(Application::class) ? $container->get(Application::class) : null,
 		);

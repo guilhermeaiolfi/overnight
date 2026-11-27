@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Application;
-use ON\Config\Init\Event\ConfigReadyEvent;
 use ON\Container\Init\Event\ContainerConfigureEvent;
 use ON\Container\Init\Event\ContainerReadyEvent;
 use ON\Extension\AbstractExtension;
@@ -14,14 +13,6 @@ use ON\Init\Attribute\On;
 use ON\Middleware\Init\Event\PipelineReadyEvent;
 use ON\RateLimit\Middleware\RateLimitMiddleware;
 use ON\RateLimit\RateLimiterInterface;
-use ON\RestApi\Action\Directus\BatchDeleteAction;
-use ON\RestApi\Action\Directus\BatchUpdateAction;
-use ON\RestApi\Action\Directus\CreateAction;
-use ON\RestApi\Action\Directus\DeleteAction;
-use ON\RestApi\Action\Directus\FilesAction;
-use ON\RestApi\Action\Directus\GetAction;
-use ON\RestApi\Action\Directus\ListAction;
-use ON\RestApi\Action\Directus\UpdateAction;
 use ON\RestApi\Action\RestActionInterface;
 use ON\RestApi\Action\RestActionRouter;
 use ON\RestApi\Addon\RestApiAddonInterface;
@@ -32,6 +23,7 @@ use ON\RestApi\Container\ItemRepositoryFactory;
 use ON\RestApi\Container\MutationCoordinatorFactory;
 use ON\RestApi\Container\RestApiExecutorFactory;
 use ON\RestApi\Container\RestHookDispatcherFactory;
+use ON\RestApi\Event\RestApiActivatedEvent;
 use ON\RestApi\Hook\RestHookDispatcher;
 use ON\RestApi\Middleware\RestMiddleware;
 use ON\RestApi\Mutation\FileUploadEventEmitter;
@@ -57,12 +49,6 @@ class RestApiExtension extends AbstractExtension
 	/** @var WeakMap<ContainerInterface, array<class-string, RestApiAddonInterface>>|null */
 	private ?WeakMap $registeredAddons = null;
 
-	#[Before]
-	public function onConfigReady(ConfigReadyEvent $event): void
-	{
-		$this->registerDefaultActions($event->config->get(RestApiConfig::class));
-	}
-
 	#[On]
 	public function onContainerConfigure(ContainerConfigureEvent $event): void
 	{
@@ -84,6 +70,12 @@ class RestApiExtension extends AbstractExtension
 	{
 		$config = $this->configureActions($event->container);
 		$this->registerAddons($event->container, $config->get('endpointUri', '/items'));
+	}
+
+	#[Before]
+	public function onRestApiActivated(RestApiActivatedEvent $event): void
+	{
+		$this->registerAddons($event->container, $event->endpointUri ?? $event->config->get('endpointUri', '/items'));
 	}
 
 	#[On(optional: true)]
@@ -140,6 +132,8 @@ class RestApiExtension extends AbstractExtension
 			throw new RuntimeException('REST API extension cannot execute actions before the container is ready.');
 		}
 
+		$this->ensureActivated();
+
 		return $this->resolveExecutor($this->container)->execute($action, $params, $payload, $options);
 	}
 
@@ -176,25 +170,13 @@ class RestApiExtension extends AbstractExtension
 			$container,
 			$this->config ?? $container->get(RestApiConfig::class),
 			$container->get(EventDispatcherInterface::class),
-			$container->has(Application::class) ? $container->get(Application::class) : (isset($this->app) ? $this->app : null),
+			isset($this->app) ? $this->app : ($container->has(Application::class) ? $container->get(Application::class) : null),
 		);
 	}
 
 	protected function registerDefaultActions(RestApiConfig $config): void
 	{
-		if ($config->hasActions()) {
-			return;
-		}
-
-		$config
-			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
-			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
-			->addAction('directus.files', 'POST', 'files', FilesAction::class)
-			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
-			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
-			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
-			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
-			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
+		$config->registerDefaultActions();
 	}
 
 	protected function loadAddons(

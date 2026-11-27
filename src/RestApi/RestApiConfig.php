@@ -5,6 +5,14 @@ declare(strict_types=1);
 namespace ON\RestApi;
 
 use ON\Config\Config;
+use ON\RestApi\Action\Directus\BatchDeleteAction;
+use ON\RestApi\Action\Directus\BatchUpdateAction;
+use ON\RestApi\Action\Directus\CreateAction;
+use ON\RestApi\Action\Directus\DeleteAction;
+use ON\RestApi\Action\Directus\FilesAction;
+use ON\RestApi\Action\Directus\GetAction;
+use ON\RestApi\Action\Directus\ListAction;
+use ON\RestApi\Action\Directus\UpdateAction;
 
 class RestApiConfig extends Config
 {
@@ -63,5 +71,22 @@ class RestApiConfig extends Config
 	public function hasActions(): bool
 	{
 		return $this->actions !== [];
+	}
+
+	public function registerDefaultActions(): void
+	{
+		if ($this->hasActions()) {
+			return;
+		}
+
+		$this
+			->addAction('directus.list', 'GET', '{collection}', ListAction::class)
+			->addAction('directus.get', 'GET', '{collection}/{id}', GetAction::class)
+			->addAction('directus.files', 'POST', 'files', FilesAction::class)
+			->addAction('directus.create', 'POST', '{collection}', CreateAction::class)
+			->addAction('directus.update', 'PATCH', '{collection}/{id}', UpdateAction::class)
+			->addAction('directus.batch-update', 'PATCH', '{collection}', BatchUpdateAction::class)
+			->addAction('directus.delete', 'DELETE', '{collection}/{id}', DeleteAction::class)
+			->addAction('directus.batch-delete', 'DELETE', '{collection}', BatchDeleteAction::class);
 	}
 }
